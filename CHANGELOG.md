@@ -24,7 +24,8 @@ they do not request a new release/tag or claim new published package evidence.
   retry.
 - **F1 / More → Help** gains local topic search and deliberate navigation to
   existing workspaces. The window stays modeless so live Stop/End remains
-  reachable. No model, paid API or cloud service is introduced.
+  reachable, and follows profile changes without taking focus. No model,
+  paid API or cloud service is introduced.
   Compact Art guidance and Notes reserve room for the in-window File/Help
   menu, retaining enlarged recovery text, editor space and session controls.
 - Atomic-write failures stop closing a descriptor after its file object has

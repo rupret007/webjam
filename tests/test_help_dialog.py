@@ -155,7 +155,6 @@ def test_help_reuses_one_window_refreshes_profile_and_leaves_stop_reachable(app,
     window.show_help()
     dialog = window._workflow_help_dialog
     window.set_creator_profile(get_creator_profile_by_key("art"))
-    window.show_help()
     assert window._workflow_help_dialog is dialog
     assert "Paint along" in dialog._body.toPlainText()
     stop = Mock()
@@ -168,6 +167,79 @@ def test_help_reuses_one_window_refreshes_profile_and_leaves_stop_reachable(app,
     stop.assert_called_once()
     assert dialog.isVisible()
     assert QApplication.activeModalWidget() is None
+
+
+@pytest.mark.parametrize("focus", ["search", "body", "workspace"])
+def test_visible_help_tracks_profile_without_losing_search_or_stealing_focus(app, window, focus):
+    window.show()
+    window.session_canvas.restore_notes("Keep these notes while Help follows the workspace.")
+    navigation, audio = Mock(), Mock()
+    window.workflow_help_requested.connect(navigation)
+    window.session_strip.launch_audio_requested.connect(audio)
+    window.show_help()
+    dialog = window._workflow_help_dialog
+    dialog._search.setText("favorite")
+    app.processEvents()
+    assert dialog._navigate.isVisible() and dialog._route == "studio"
+    target = {"search": dialog._search, "body": dialog._body,
+              "workspace": window.session_strip._title_input}[focus]
+    active = window if focus == "workspace" else dialog
+    active.activateWindow()
+    assert QTest.qWaitForWindowActive(active, 2000)
+    target.setFocus()
+    app.processEvents()
+    assert target.hasFocus()
+    workspace = window.workspace_stack.currentWidget()
+    for profile in ("art", "music"):
+        window.set_creator_profile(get_creator_profile_by_key(profile))
+        app.processEvents()
+        assert window._workflow_help_dialog is dialog and dialog.isVisible()
+        assert dialog._search.text() == "favorite"
+        assert target.hasFocus()
+        assert window.workspace_stack.currentWidget() is workspace
+        if profile == "art":
+            assert dialog._topics.count() == 0
+            assert "No matching" in dialog._body.toPlainText()
+            assert not dialog._navigate.isVisible() and not dialog._navigate.isEnabled()
+        else:
+            assert dialog._topics.count() >= 1
+            assert dialog._navigate.isVisible() and dialog._route == "studio"
+        navigation.assert_not_called()
+        audio.assert_not_called()
+    assert window.session_canvas.current_notes() == "Keep these notes while Help follows the workspace."
+
+
+def test_profile_change_does_not_create_or_reopen_hidden_help(app, window):
+    window.show()
+    window.set_creator_profile(get_creator_profile_by_key("art"))
+    assert getattr(window, "_workflow_help_dialog", None) is None
+    window.show_help()
+    dialog = window._workflow_help_dialog
+    dialog.hide()
+    window.set_creator_profile(get_creator_profile_by_key("music"))
+    app.processEvents()
+    assert window._workflow_help_dialog is dialog and not dialog.isVisible()
+
+
+def test_repeated_profile_presentation_preserves_help_reading_position(app, window):
+    window.show()
+    window.show_help()
+    dialog = window._workflow_help_dialog
+    # A short reading viewport makes a lost scroll position observable.
+    dialog._body.setMaximumHeight(96)
+    app.processEvents()
+    cursor = dialog._body.textCursor()
+    cursor.setPosition(4)
+    cursor.setPosition(18, cursor.MoveMode.KeepAnchor)
+    dialog._body.setTextCursor(cursor)
+    scroll = dialog._body.verticalScrollBar()
+    scroll.setValue(scroll.maximum())
+    assert scroll.value() > 0
+    before = (dialog._topics.currentItem().text(), scroll.value(), cursor.selectedText())
+    window.set_creator_profile(get_creator_profile_by_key("music"))
+    app.processEvents()
+    assert (dialog._topics.currentItem().text(), scroll.value(),
+            dialog._body.textCursor().selectedText()) == before
 
 
 def test_hidden_or_retired_help_cannot_dispatch_a_late_request(app, window):

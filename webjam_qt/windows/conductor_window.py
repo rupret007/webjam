@@ -608,6 +608,10 @@ class ConductorWindow(QMainWindow):
 
     def show_help(self) -> None:
         """Display the same short workflow the live screen presents."""
+        self._refresh_help(present=True)
+
+    def _refresh_help(self, *, present: bool) -> None:
+        """Keep Help current; focus changes only on an explicit open."""
         import sys
 
         from shiboken6 import isValid
@@ -615,6 +619,11 @@ class ConductorWindow(QMainWindow):
         from webjam_qt import __version__
         from webjam_qt.windows.help_dialog import HelpDialog
 
+        dialog = getattr(self, "_workflow_help_dialog", None)
+        if not present and (
+            dialog is None or not isValid(dialog) or not dialog.isVisible()
+        ):
+            return
         if sys.platform == "darwin":
             navigation_shortcuts = "⌘1 / ⌘2 / ⌘3"
             song_shortcut = "⌘4"
@@ -807,9 +816,10 @@ class ConductorWindow(QMainWindow):
         screen = QGuiApplication.screenAt(self.frameGeometry().center())
         if screen is None:
             screen = QGuiApplication.primaryScreen()
-        dialog = getattr(self, "_workflow_help_dialog", None)
         if dialog is not None and isValid(dialog):
             dialog.set_context(body, profile=profile.key, offline_studio=self._reference_studio_only)
+            if not present:
+                return
             dialog.show()
             dialog.raise_()
             dialog.activateWindow()
@@ -1112,6 +1122,7 @@ class ConductorWindow(QMainWindow):
             raise TypeError("profile must be a CreatorProfile")
         from webjam_qt import __version__
 
+        profile_changed = profile != self._creator_profile
         self._creator_profile = profile
         if profile.key != "art":
             self.art_room_overview.clear_room_connections()
@@ -1160,6 +1171,8 @@ class ConductorWindow(QMainWindow):
             )
         self._status_recording.setToolTip(recording_tip)
         self._status_recording.setAccessibleDescription(recording_tip)
+        if profile_changed:
+            self._refresh_help(present=False)
 
     def set_status_recording(self, active: bool) -> None:
         """Show/hide the red ● REC chip in the status bar."""
