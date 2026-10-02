@@ -21,6 +21,25 @@ v0.29.0 adds **File → Session library…** before a room and
 Music moments are plain notes unless a recording position is confirmed.
 See [the saved-work walkthrough](USER_GUIDE.md#save-a-session-and-continue-later).
 
+## Unreleased: return and find help
+
+The workflow continuity PR/test build keeps the v0.29.0 version number. Its
+new behavior is not part of the published v0.29.0 download.
+
+After ending or leaving a room, choose **File → Return to launch**. Saving,
+recording finalization and cleanup must finish first. If something cannot
+save or stop, keep the current work open and follow its recovery message.
+At launch, **File → New Music Project…** starts a separate local project;
+returning does not replay your old invitation or start audio.
+
+Press **F1** or choose **More → Help**, search for a task, and select a topic.
+Use its named button only when you want to open that workspace. Help stays
+beside your work so Stop/End remains reachable. It works locally without a
+model or paid API. Follow [the full steps](USER_GUIDE.md#return-to-launch-unreleased)
+or the [ten-minute Music/Art try list](docs/WORKFLOW_CONTINUITY_PILOT.md#ten-minute-first-pass).
+
+## Music and Art
+
 WebJam brings artists together to make, learn, and collaborate across mediums.
 Music supports live audio and separate recorded tracks; Art welcomes people
 working with their own materials and apps. Art is a newer Preview, and the aim
@@ -38,7 +57,7 @@ The current v0.29.0 source keeps Music and Podcast & Voice as GA
 creator profiles. Art and Review & Rehearsal are visibly Preview. Art offers
 **Make together**—a live room where people work locally and the host may open
 one shared canvas—or host-clocked **Paint along**, but no recording or
-standalone project. Review
+standalone audio project. Review
 & Rehearsal supports live WebJam-audio
 Host/Join, Record Session, local notes, and playback/read-only review of a
 completed session take. It blocks standalone projects, take editing/comp/mix
@@ -149,7 +168,9 @@ Jamulus display name, so it will not be silently shortened later.
 
 From the launch screen, choose **File → New Music Project…**, then
 **Play Along / Record**, **New Project**, or **Open Project…**. If a live
-session is open, end or leave it, quit WebJam, and relaunch first. The live
+session is open, end or leave it, then use **File → Return to launch** in this
+Unreleased test build. Published v0.29.0 requires quitting and relaunching
+after ending the session. The live
 **Studio** button opens completed-take review.
 
 Music and Podcast & Voice can use their local-project actions to play with

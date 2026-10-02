@@ -1970,7 +1970,10 @@ def test_returning_user_gets_host_join_gate_then_native_startup_journey(qapp):
         os.environ.pop("WEBJAM_SMOKE_AUTOSTART_AUDIO", None)
         assert app_module.run() == 0
     launcher_class.assert_called_once_with(initial, initial_invitation=None)
-    single_shot.assert_called_once_with(0, controller.begin_startup_journey)
+    single_shot.assert_called_once()
+    assert single_shot.call_args.args[0] == 0
+    single_shot.call_args.args[1]()
+    controller.begin_startup_journey.assert_called_once_with()
 
 
 def test_cold_launch_passes_command_line_invite_to_gate(qapp):
@@ -2137,7 +2140,8 @@ def test_file_music_project_bootstraps_offline(qapp, tmp_path, profile):
         assert kwargs["settings"].jamulus_server == "band.example"
         assert kwargs["session_invite"] is None
         assert kwargs["remote_invitation"] is None
-        single_shot.assert_called_once_with(0, controller.begin_reference_studio_journey)
+        single_shot.assert_called_once()
+        assert single_shot.call_args.args[0] == 0
         controller.begin_reference_studio_journey.assert_called_once_with()
         controller.begin_startup_journey.assert_not_called()
         controller._on_launch_audio.assert_not_called()

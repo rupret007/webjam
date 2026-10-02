@@ -407,6 +407,12 @@ class RecordingCoordinator:
         self._stale_capture_scan_done = False
         self._staged_take_scan_done = False
         self._staged_media_take_ids: set[str] = set()
+        self._staged_recovery_worker: threading.Thread | None = None
+        self._staged_recovery_pending = False
+        self._staged_recovery_generation = 0
+        self._staged_recovery_result = None
+        self._staged_recovery_lock = threading.Lock()
+        self._staged_recovery_timer = None
         # The validation worker, toggle-failure handler, and shutdown salvage
         # all hand off the capture; the lock makes the hand-off atomic so the
         # stream is finalized exactly once.
@@ -3023,6 +3029,11 @@ class RecordingCoordinator:
 
     def recover_interrupted_recordings(self) -> None:
         """Run the bounded local-audio and evidence recovery discovery once."""
+        if (getattr(self._c, "_shutdown", False)
+                or getattr(self._c, "_shutdown_in_progress", False)
+                or getattr(self._c, "_shutdown_cleanup_pending", False)
+                or self.workspace_transition_pending):
+            return
         if self._recover_staged_server_takes_once():
             # The staged-media worker owns ordering: it links and retires the
             # exact private journal before ordinary journal recovery can
@@ -3111,17 +3122,94 @@ class RecordingCoordinator:
             take_id for take_id, count in identity_counts.items() if count > 1
         }
         self._staged_media_take_ids = set(identity_counts)
+        self._staged_recovery_generation += 1
+        generation = self._staged_recovery_generation
+        self._staged_recovery_pending = True
+        self._staged_recovery_result = None
+        self._staged_recovery_worker = None
+
+        def recover() -> None:
+            recovered = 0
+            failed = False
+            try:
+                recovered = self._recover_staged_server_takes_worker(
+                    tuple(candidates), root_text, frozenset(conflicted_take_ids),
+                )
+            except Exception:  # noqa: BLE001 - preserve evidence; never expose paths
+                failed = True
+                LOGGER.warning("Interrupted recording recovery did not finish.")
+            finally:
+                with self._staged_recovery_lock:
+                    self._staged_recovery_result = (
+                        generation, len(candidates), recovered, root_text, failed,
+                    )
+                try:
+                    self._c._ui_invoker.invoke(
+                        lambda: self._accept_staged_recovery_result(generation)
+                    )
+                except Exception:  # noqa: BLE001 - the UI timer retains delivery
+                    LOGGER.warning("Interrupted recording recovery result awaits review.")
+
+        # Result ownership survives a failed/delayed queued callback. Polling
+        # only reads a completed result; it never joins or interrupts native IO.
+        from PySide6.QtCore import QTimer
+
         try:
-            threading.Thread(
-                target=self._recover_staged_server_takes_worker,
-                args=(tuple(candidates), root_text, frozenset(conflicted_take_ids)),
+            self._staged_recovery_timer = QTimer(self._c)
+            self._staged_recovery_timer.setInterval(100)
+            self._staged_recovery_timer.timeout.connect(
+                lambda: self._accept_staged_recovery_result(generation)
+            )
+            self._staged_recovery_timer.start()
+            self._staged_recovery_worker = threading.Thread(
+                target=recover,
                 daemon=True,
                 name="take-publication-recovery",
-            ).start()
+            )
+            self._staged_recovery_worker.start()
         except Exception:  # noqa: BLE001 - generic, path-free boundary
             LOGGER.warning("Could not start interrupted take recovery.")
-            return False
+            with self._staged_recovery_lock:
+                self._staged_recovery_result = (
+                    generation, len(candidates), 0, root_text, True,
+                )
+            self._accept_staged_recovery_result(generation)
         return True
+
+    @property
+    def workspace_transition_pending(self) -> bool:
+        """Keep this owner until recovery IO and its UI result have retired."""
+        worker = self._staged_recovery_worker
+        alive = getattr(worker, "is_alive", None)
+        return bool(self._staged_recovery_pending or (callable(alive) and alive()))
+
+    def _accept_staged_recovery_result(self, generation: int) -> None:
+        if generation != self._staged_recovery_generation or not self._staged_recovery_pending:
+            return
+        with self._staged_recovery_lock:
+            result = self._staged_recovery_result
+        if result is None or result[0] != generation:
+            return
+        try:
+            if getattr(self._c, "_shutdown", False):
+                return
+            self._finish_staged_server_take_recovery(*result[1:])
+        except Exception:  # noqa: BLE001 - a UI failure cannot strand the owner
+            LOGGER.warning("Interrupted recording recovery needs review in Studio.")
+            if not getattr(self._c, "_shutdown", False):
+                self._c.window.flash_message(
+                    "Interrupted-take recovery needs review. Open Studio to check "
+                    "the saved audio and recovery evidence, or reopen this workspace to retry.",
+                    ms=10000,
+                )
+        finally:
+            self._staged_recovery_pending = False
+            with self._staged_recovery_lock:
+                self._staged_recovery_result = None
+            if self._staged_recovery_timer is not None:
+                self._staged_recovery_timer.stop()
+                self._staged_recovery_timer.deleteLater()
+                self._staged_recovery_timer = None
 
     def _recover_staged_server_takes_worker(
         self,
@@ -3136,7 +3224,7 @@ class RecordingCoordinator:
         ],
         root_text: str,
         conflicted_take_ids: frozenset[str],
-    ) -> None:
+    ) -> int:
         """Reconcile staged media off the UI thread, then resume startup."""
 
         journal = RecordingManifestJournal(root_text)
@@ -3268,19 +3356,20 @@ class RecordingCoordinator:
                     "An interrupted take could not be reconciled automatically."
                 )
 
-        self._c._ui_invoker.invoke(
-            lambda: self._finish_staged_server_take_recovery(
-                len(candidates), recovered, root_text
-            )
-        )
+        return recovered
 
     def _finish_staged_server_take_recovery(
-        self, candidate_count: int, recovered: int, root_text: str
+        self, candidate_count: int, recovered: int, root_text: str, failed: bool = False,
     ) -> None:
         """Report worker results and continue ordered startup recovery."""
 
         noun = "recording" if candidate_count == 1 else "recordings"
-        if recovered:
+        if failed:
+            message = (
+                "Interrupted-take recovery could not finish. Open Studio to "
+                "review the saved audio and recovery evidence, or reopen this workspace to retry."
+            )
+        elif recovered:
             message = (
                 f"WebJam recovered interrupted {noun} without guessing musician "
                 "identity. Open Studio and review the preserved audio."

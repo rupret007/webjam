@@ -165,6 +165,7 @@ class ProjectPlaybackEngine:
         self._producer_eof = False
         self._callback_finished = False
         self._closed = False
+        self._cleanup_pending = False
         self._error = ""
         self._clipped_samples = 0
         self._backend_status_events = 0
@@ -343,15 +344,11 @@ class ProjectPlaybackEngine:
                 self._producer.start()
                 self.backend.start(self.process_output)
             except Exception as exc:
-                self._gate.cancel()
-                self._close_stream()
-                self._producer = None
+                # Startup may already own a producer and native output.
+                # Use the same retirement proof as Stop before clearing them.
+                self._stop_run(abort=True)
                 self._error = _safe_error(exc)
                 self._state = ProjectPlaybackState.FAILED
-                try:
-                    self.backend.abort()
-                except Exception:
-                    pass
                 raise ProjectPlaybackError(self._error) from None
             self._state = ProjectPlaybackState.PLAYING
 
@@ -365,7 +362,7 @@ class ProjectPlaybackEngine:
 
     def stop(self) -> None:
         with self._control_lock:
-            self._require_open()
+            self._require_open(allow_cleanup=True)
             self._stop_run(abort=False)
             # A clean user stop ends the failed run as well as the transport
             # thread.  Do not let a stale producer/device error overwrite a
@@ -477,9 +474,11 @@ class ProjectPlaybackEngine:
             self._closed = True
             self._state = ProjectPlaybackState.CLOSED
 
-    def _require_open(self) -> None:
+    def _require_open(self, *, allow_cleanup: bool = False) -> None:
         if self._closed:
             raise ProjectPlaybackError("Project playback is closed.")
+        if self._cleanup_pending and not allow_cleanup:
+            raise ProjectPlaybackError(self._error)
 
     def _require_renderer(self) -> StudioRenderer:
         if self._renderer is None:
@@ -488,28 +487,29 @@ class ProjectPlaybackEngine:
 
     def _close_stream(self) -> None:
         stream = self._stream
-        self._stream = None
         if stream is not None:
-            try:
-                stream.close()
-            except Exception:
-                pass
+            stream.close()
+            self._stream = None
 
     def _stop_run(self, *, abort: bool) -> None:
+        self._cleanup_pending = True
         self._paused = True
         self._gate.cancel()
         self._producer_wake.set()
+        failed = False
         try:
             if abort:
                 self.backend.abort()
             else:
                 self.backend.stop()
         except Exception:
-            if not abort:
+            if abort:
+                failed = True
+            else:
                 try:
                     self.backend.abort()
                 except Exception:
-                    pass
+                    failed = True
         producer = self._producer
         if (
             producer is not None
@@ -517,8 +517,24 @@ class ProjectPlaybackEngine:
             and producer is not threading.current_thread()
         ):
             producer.join(timeout=2.0)
-        self._producer = None
-        self._close_stream()
+        if producer is not None and producer.is_alive():
+            # A render reader must not close underneath its still-running
+            # producer. Retain both references for the next explicit retry.
+            failed = True
+        else:
+            self._producer = None
+            try:
+                self._close_stream()
+            except Exception:
+                failed = True
+        if failed:
+            self._state = ProjectPlaybackState.FAILED
+            self._error = (
+                "Project playback cleanup is still pending. Keep this workspace "
+                "open and try Stop or Return to launch again."
+            )
+            raise ProjectPlaybackError(self._error) from None
+        self._cleanup_pending = False
         self._token = None
         self._producer_eof = False
         self._callback_finished = False
@@ -655,32 +671,49 @@ class SoundDeviceProjectOutputBackend:
                 device=self.device,
                 callback=output_callback,
             )
+            # Starting can fail after the native stream was allocated. Keep
+            # its exact owner reachable until close has actually succeeded.
+            self._stream = stream
             stream.start()
         except Exception:
+            try:
+                self.abort()
+            except ProjectPlaybackError:
+                raise ProjectPlaybackError(
+                    "Studio output could not start and is still closing. "
+                    "Keep this workspace open and retry Stop."
+                ) from None
             raise ProjectPlaybackError(
                 "WebJam couldn't open the selected Studio output device."
             ) from None
-        self._stream = stream
 
     def stop(self) -> None:
-        stream = self._stream
-        self._stream = None
-        if stream is None:
-            return
-        try:
-            stream.stop()
-        finally:
-            stream.close()
+        self._stop_stream(abort=False)
 
     def abort(self) -> None:
+        self._stop_stream(abort=True)
+
+    def _stop_stream(self, *, abort: bool) -> None:
         stream = self._stream
-        self._stream = None
         if stream is None:
             return
         try:
-            stream.abort()
-        finally:
+            if abort:
+                stream.abort()
+            else:
+                stream.stop()
+        except Exception:
+            # A successful native close still proves retirement when an
+            # already-stopped stream refuses another stop/abort operation.
+            pass
+        try:
             stream.close()
+        except Exception:
+            raise ProjectPlaybackError(
+                "Studio output is still closing. Keep this workspace open "
+                "and retry Stop."
+            ) from None
+        self._stream = None
 
 
 __all__ = [

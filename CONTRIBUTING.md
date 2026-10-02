@@ -20,11 +20,15 @@ From the repository root:
 .venv/bin/ruff check webjam_qt/ core/ ui/ services/ api/ tests/
 .venv/bin/python -m compileall -q core webjam_qt ui services api tests
 .venv/bin/python -m pip check
-.venv/bin/python -m pytest -q
+git ls-files 'tests/test_*.py' | while IFS= read -r test_file; do
+  .venv/bin/python -m pytest "$test_file" -q || exit $?
+done
 ```
 
 Run the smallest relevant focused suite first, then the full suite when a
 shared controller, package contract, workflow, or privacy boundary changes.
+Like CI, run each tracked module in a fresh interpreter to isolate Qt's
+native lifetime while preserving every assertion, without retries.
 Physical audio, external Webex, iPhone pairing, signing, and notarization are
 separate evidence gates; do not mark them PASS from a source test.
 

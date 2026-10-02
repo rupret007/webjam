@@ -230,7 +230,7 @@ def test_help_and_about_use_the_canonical_trefoil_not_a_generic_icon():
         assert supplied.size().height() == 64
         assert supplied.toImage() == expected
     dialogs = []
-    with mock.patch("webjam_qt.windows.help_dialog.HelpDialog.exec", lambda dialog: dialogs.append(dialog) or 0):
+    with mock.patch("webjam_qt.windows.help_dialog.HelpDialog.show", lambda dialog: dialogs.append(dialog) or 0):
         window.show_help()
     dialog = dialogs[0]
     supplied = dialog.findChild(QLabel, "HelpBrand").pixmap()

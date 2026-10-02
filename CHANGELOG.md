@@ -6,7 +6,33 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-Changes after the v0.29.0 source line will be recorded here.
+### Workflow continuity — PR and test-build scope
+
+Source remains v0.29.0. These changes are after the published v0.29.0 baseline;
+they do not request a new release/tag or claim new published package evidence.
+
+- **File → Return to launch** is available from live and local Studio work.
+  Explicit End/Leave, successful saves, recording finalization and owned
+  cleanup precede a fresh launch screen; failure retains the current work.
+  Old invitations and audio startup choices do not replay.
+  Pending Studio ruler layout work is canceled with its retired window.
+  Interrupted-take publication keeps its owner until its result is consumed.
+  Failed workspace construction preserves existing notes, and incomplete
+  playback cleanup retains its resources for an explicit retry.
+- **F1 / More → Help** gains local topic search and deliberate navigation to
+  existing workspaces. The window stays modeless so live Stop/End remains
+  reachable. No model, paid API or cloud service is introduced.
+- Atomic-write failures stop closing a descriptor after its file object has
+  already released it, protecting unrelated files that reuse the descriptor.
+  Invalid Unicode in the recent-project index becomes a recoverable error;
+  the original index and ordinary project work remain available.
+- Jamulus integration CI gains an outer deadline and bounded diagnostics so
+  a blocked test can retain evidence and stop its owned process group before
+  the job deadline. A timeout remains a failure, not an automatic retry.
+- Current guides and roadmap distinguish the shipped baseline from this work.
+  The [workflow continuity pilot](docs/WORKFLOW_CONTINUITY_PILOT.md) starts all
+  physical observations at **NOT RUN**, with exact package/hash fields and a
+  ten-minute Music/Art try list. Jeff retains feel and Final Build judgment.
 
 ## [0.29.0] — Unsigned testing candidate
 

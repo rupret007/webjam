@@ -410,6 +410,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
             ]
         ] = queue.SimpleQueue()
         self._waveform_shutdown = False
+        self._shutdown_complete = False
         self._player = player or TakePlayer(sink=SoundDeviceSink())
         # Studio consumes epoch-tagged notifications so a callback from a
         # stopped or replaced take can never mutate the next playback run.
@@ -436,6 +437,9 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
         self._studio_title_elide_timer.timeout.connect(
             self._sync_studio_title
         )
+        self._legacy_ruler_alignment_timer = QTimer(self)
+        self._legacy_ruler_alignment_timer.setSingleShot(True)
+        self._legacy_ruler_alignment_timer.timeout.connect(self._align_legacy_ruler_origin)
         self._studio_waveform_schedule_timer = QTimer(self)
         self._studio_waveform_schedule_timer.setSingleShot(True)
         self._studio_waveform_schedule_timer.setInterval(30)
@@ -1341,7 +1345,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
     def _align_legacy_ruler_origin(self) -> None:
         """Align the legacy ruler after Qt has applied stylesheet frame widths."""
 
-        if not self._lanes or not self.isVisible():
+        if self._waveform_shutdown or not self._lanes or not self.isVisible():
             return
         lane = next(iter(self._lanes.values()))
         if not (lane.waveform.isVisible() and self._timeline_ruler.isVisible()):
@@ -3694,7 +3698,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
         )
         self._sync_timeline_ruler_inset()
         self._align_legacy_ruler_origin()
-        QTimer.singleShot(0, self._align_legacy_ruler_origin)
+        self._legacy_ruler_alignment_timer.start(0)
         if self._lanes:
             self._select_track(next(iter(self._lanes)))
         if self._studio_state_error:
@@ -4134,7 +4138,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
                 cancel_check()
             except CancelledError:
                 if preparation is not None:
-                    preparation.close()
+                    self._player.retire_studio_preparation(preparation)
                 return
             except PlaybackError as exc:
                 error = exc
@@ -4143,7 +4147,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
                 error = PlaybackError(str(exc))
             if cancel_event.is_set():
                 if preparation is not None:
-                    preparation.close()
+                    self._player.retire_studio_preparation(preparation)
                 return
             self._playback_prepare_results.put(
                 _PlaybackPreparationOutcome(
@@ -4173,7 +4177,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
                 or outcome.take_path != current_path
             ):
                 if outcome.preparation is not None:
-                    outcome.preparation.close()
+                    self._player.retire_studio_preparation(outcome.preparation)
                 continue
 
             autoplay = self._playback_prepare_autoplay
@@ -4537,31 +4541,43 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
         return self._flush_take_review() and self._flush_studio_state()
 
     def shutdown(self) -> bool:
-        if self._waveform_shutdown:
+        if self._shutdown_complete:
             return True
         if not self.prepare_close():
             return False
+        # Retire callbacks immediately, but retry resource cleanup until the
+        # separate completion latch proves every release below succeeded.
         self._waveform_shutdown = True
         self._workspace_layout_timer.stop()
-        self._studio_controller.shutdown()
+        self._legacy_ruler_alignment_timer.stop()
+        self._studio_title_elide_timer.stop()
+        self._studio_waveform_schedule_timer.stop()
+        self._timer.stop()
+        if self._studio_controller.shutdown() is False:
+            return False
         self._export_generation += 1
         self._export_cancel.set()
         self._exporting = False
         self._cancel_playback_preparation(restore_controls=False)
         self._studio_waveform_schedule_timer.stop()
-        self._studio_waveforms.shutdown()
+        if self._studio_waveforms.shutdown() is False:
+            return False
         self._cancel_waveform_jobs()
-        self._waveform_executor.shutdown(wait=False, cancel_futures=True)
-        self._playback_prepare_executor.shutdown(wait=True, cancel_futures=True)
+        if self._waveform_executor.shutdown(wait=False, cancel_futures=True) is False:
+            return False
+        if self._playback_prepare_executor.shutdown(wait=True, cancel_futures=True) is False:
+            return False
         while True:
             try:
                 outcome = self._playback_prepare_results.get_nowait()
             except queue.Empty:
                 break
             if outcome.preparation is not None:
-                outcome.preparation.close()
+                self._player.retire_studio_preparation(outcome.preparation)
         self._timer.stop()
-        self._player.stop()
+        if self._player.stop() is False:
+            return False
+        self._shutdown_complete = True
         return True
 
     def hideEvent(self, event) -> None:

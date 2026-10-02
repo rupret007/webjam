@@ -355,6 +355,16 @@ class ApplicationController(QObject):
     ) -> None:
         super().__init__(window)
         self.window = window
+        # A constructor exception prevents the factory's assignment from
+        # completing. Retain the actual resource owner before allocating any
+        # services, and distinguish abort from ordinary persistence teardown.
+        self._construction_complete = False
+        self._shutdown = False
+        self._shutdown_in_progress = False
+        # Once irreversible teardown begins, keep ordinary work disabled
+        # until a later retry proves every owned process/listener stopped.
+        self._shutdown_cleanup_pending = False
+        window._workspace_construction_owner = self
         self.settings = settings or load_settings()
         self._active_creator_profile_key = (
             canonical_creator_profile_key(
@@ -465,12 +475,6 @@ class ApplicationController(QObject):
         # rolling right now" from recorderState notifications).
         self._recorder_armed = False
 
-        self._shutdown = False
-        self._shutdown_in_progress = False
-        # Once irreversible teardown begins, a failed owner stop must not put
-        # the ordinary session UI back into service. Keep this latch set until
-        # a later Quit retry proves that every owned process/listener stopped.
-        self._shutdown_cleanup_pending = False
         # Bounded, allowlisted action evidence makes Show App versus meeting
         # handoff failures diagnosable without retaining a link, room name,
         # application path, account identity, or credential.
@@ -877,11 +881,20 @@ class ApplicationController(QObject):
         self.session_library = SessionLibraryCoordinator(self)
         self.window.session_canvas.notes_changed.connect(self.session_library.changed)
         self.window.session_strip._title_input.editingFinished.connect(self.session_library.changed)
+        from webjam_qt.controllers.workflow_help import WorkflowHelpCoordinator
+
+        self.workflow_help = WorkflowHelpCoordinator(self)
         self._start_routing_scan()
         # Give the visible shell one event-loop turn before surfacing any
         # interrupted local recording or private evidence checkpoint.  The
         # scan is bounded and never exposes a local path or journal payload.
-        QTimer.singleShot(0, self.recording.recover_interrupted_recordings)
+        QTimer.singleShot(0, lambda: (
+            self.recording.recover_interrupted_recordings()
+            if self._construction_complete and not self._shutdown
+            and not self._shutdown_cleanup_pending else None
+        ))
+        self._construction_complete = True
+        window._workspace_construction_owner = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -962,11 +975,15 @@ class ApplicationController(QObject):
 
         self._shutdown_in_progress = False
         self._render_shutdown_cleanup_pending()
+        action = (
+            "File → Return to launch"
+            if getattr(self, "_returning_to_launch", False) else "Quit"
+        )
         QMessageBox.information(
             self.window,
             title,
-            f"{detail} WebJam kept this window open. Choose Quit again after "
-            "a moment so it can finish cleanup safely.",
+            f"{detail} WebJam kept this window open. Choose {action} again "
+            "after a moment so it can finish cleanup safely.",
         )
         return False
 
@@ -976,6 +993,8 @@ class ApplicationController(QObject):
         if not bool(getattr(self, "_shutdown_cleanup_pending", False)):
             return
         window = getattr(self, "window", None)
+        returning = bool(getattr(self, "_returning_to_launch", False))
+        retry_action = "File → Return to launch" if returning else "Quit"
         strip = getattr(window, "session_strip", None)
         if strip is not None:
             set_tools_enabled = getattr(strip, "set_tools_enabled", None)
@@ -983,14 +1002,14 @@ class ApplicationController(QObject):
                 set_tools_enabled(False)
             set_audio_state = getattr(strip, "set_audio_state", None)
             if callable(set_audio_state):
-                set_audio_state("Finish quitting…", enabled=False)
+                set_audio_state("Finish closing…" if returning else "Finish quitting…", enabled=False)
         hud = getattr(window, "session_hud", None)
         set_state = getattr(hud, "set_state", None)
         if callable(set_state):
             set_state(
-                "Finish quitting safely",
-                "WebJam still owns cleanup from the previous quit. Wait a "
-                "moment, then choose Quit again.",
+                "Finish closing safely" if returning else "Finish quitting safely",
+                "WebJam still owns cleanup from the previous workspace. Wait a "
+                f"moment, then choose {retry_action} again.",
                 action_visible=False,
             )
 
@@ -1006,17 +1025,156 @@ class ApplicationController(QObject):
         self._render_shutdown_cleanup_pending()
         flash_message = getattr(getattr(self, "window", None), "flash_message", None)
         if callable(flash_message):
+            action = (
+                "File → Return to launch"
+                if getattr(self, "_returning_to_launch", False) else "Quit"
+            )
             flash_message(
-                "Finish the previous quit first: wait a moment, then choose "
-                "Quit again.",
+                "Finish the previous cleanup first: wait a moment, then choose "
+                f"{action} again.",
                 ms=7000,
             )
+        return True
+
+    def prepare_return_to_launch(self) -> bool:
+        """Refuse navigation until the session owner has completed End/Leave."""
+        if self._shutdown or self._shutdown_cleanup_pending:
+            return True
+        if self.recording.workspace_transition_pending:
+            self.window.flash_message(
+                "Interrupted-take recovery is still finishing. Wait for its "
+                "result before returning to launch.", ms=0,
+            )
+            return False
+        busy = (
+            self._shutdown_in_progress or self.audio.stopping
+            or self.audio.cleanup_retry_required or self.audio.recovering
+            or self._invite_switch_in_flight
+            or getattr(self, "_primary_recovery_retire_inflight", False)
+        )
+        if busy:
+            self.window.flash_message(
+                "Finish session cleanup first. Wait for End/Leave to finish, "
+                "or use its retry action, then choose Return to launch again.", ms=0,
+            )
+            return False
+        if self.recording.take_in_progress:
+            self.window.flash_message(
+                "Stop and finish the recording before returning to launch. "
+                "Keep this workspace open until the take is saved.", ms=0,
+            )
+            return False
+        if self.window.recording_studio.export_in_progress:
+            self.window.flash_message(
+                "Wait for the track export result before returning to launch.", ms=0,
+            )
+            return False
+        active = (
+            self._is_jamulus_running() or self.bridge.hosted_server_alive()
+            or self._art_room_active() or self._startup_attempt is not None
+            or self._remote_host_preparing or self._remote_session is not None
+            or self._remote_invite_owner is not None
+            or bool(getattr(self.host_peer, "active", False))
+            or self.guest_peer is not None
+            or self.session_lifecycle.phase not in {
+                SessionLifecyclePhase.IDLE, SessionLifecyclePhase.COMPLETED,
+                SessionLifecyclePhase.FAILED_FINAL, SessionLifecyclePhase.FAILED_RECOVERABLE,
+            }
+        )
+        if active:
+            self.window.flash_message(
+                "End or leave the current session first, then choose "
+                "File → Return to launch. Your saved work stays on this computer.", ms=0,
+            )
+            return False
+        return self.reference_studio_projects.prepare_navigation()
+
+    def _abort_construction(self) -> bool:
+        """Release known unstarted owners without saving uninitialized UI data."""
+        if self._shutdown:
+            return True
+        self._shutdown_in_progress = True
+        self._shutdown_cleanup_pending = True
+        self._returning_to_launch = True
+        window = self.window
+        window.confirm_close = lambda: True
+        window.finalize_close = self.shutdown
+        # The File menu remains available for Return to launch / Quit retries.
+        # No partially wired surface may create fresh work during cleanup.
+        window.workspace_stack.setEnabled(False)
+        window.session_strip.setEnabled(False)
+        window.session_controls.setEnabled(False)
+        for timer in self.findChildren(QTimer):
+            timer.stop()
+
+        complete = True
+
+        def release(owner, method, **kwargs):
+            nonlocal complete
+            if owner is None:
+                return
+            callback = getattr(owner, method, None)
+            if not callable(callback):
+                complete = False
+                return
+            try:
+                if callback(**kwargs) is False:
+                    complete = False
+            except Exception:
+                # Fixed copy only: an exception may carry private paths.
+                LOGGER.error("A workspace construction resource still needs cleanup")
+                complete = False
+
+        # Reference Studio may itself have raised after QObject parenting but
+        # before assignment. Its constructor never opens a project or starts
+        # playback; close only allocated resources, without invoking any save.
+        from webjam_qt.controllers.reference_studio_application import ReferenceStudioApplicationController
+
+        for project in self.findChildren(ReferenceStudioApplicationController):
+            project._closed = True
+            for event_name in ("_prepare_cancel", "_bounce_cancel"):
+                event = getattr(project, event_name, None)
+                if event is not None:
+                    event.set()
+            for name, method in (("playback", "close"), ("_waveforms", "shutdown"),
+                                 ("_tempo_guard", "shutdown"), ("studio_controller", "shutdown")):
+                release(getattr(project, name, None), method)
+            if getattr(project, "_owns_executor", False):
+                release(getattr(project, "_executor", None), "shutdown", wait=True, cancel_futures=True)
+
+        release(getattr(self, "_room_help", None), "shutdown")
+        release(getattr(self, "guest_peer", None), "stop")
+        release(getattr(self, "host_peer", None), "stop")
+        gateway = getattr(self, "pocket_stage_gateway", None)
+        release(gateway, "stop")
+        if gateway is not None and gateway.running:
+            complete = False
+        release(getattr(self, "api_bridge", None), "stop")
+        bridge = getattr(self, "bridge", None)
+        release(bridge, "stop_jamulus")
+        release(bridge, "stop_hosted_server")
+        release(getattr(self, "jamulus", None), "stop")
+        release(getattr(self, "webex", None), "stop")
+        release(window.recording_studio, "shutdown")
+        release(window.webex_embed, "shutdown")
+        self._shutdown_in_progress = False
+        if not complete:
+            window.flash_message(
+                "The workspace could not finish opening. Choose File → Return "
+                "to launch to retry cleanup. Your saved work has not been replaced.", ms=0,
+            )
+            return False
+        self._shutdown_cleanup_pending = False
+        self._shutdown = True
+        window._workspace_construction_owner = None
         return True
 
     def shutdown(self) -> bool:
         """Release every owned runtime or keep a safe, retryable close state."""
 
         try:
+            if not getattr(self, "_construction_complete", True):
+                return ApplicationController._abort_construction(self)
             # Keep the lifecycle callable in the small duck-typed regression
             # harnesses that exercise shutdown ordering without constructing
             # a QObject-backed controller.
@@ -1036,6 +1194,13 @@ class ApplicationController(QObject):
     def _shutdown_once(self) -> bool:
         if self._shutdown:
             return True  # closeEvent + app.py both call this; run teardown once
+        if bool(getattr(getattr(self, "recording", None), "workspace_transition_pending", False)):
+            self.window.flash_message(
+                "Interrupted-take recovery is still finishing. Keep this workspace "
+                "open until its result appears, then return to launch or quit again.",
+                ms=0,
+            )
+            return False
         # End/Leave and invitation switching already have a single teardown
         # owner. Starting the application-wide teardown beside that worker
         # could race recorder finalization, clear retained retry evidence, or
@@ -1064,7 +1229,9 @@ class ApplicationController(QObject):
         if self._save_notes() is False:
             self._shutdown_in_progress = False
             self.window.flash_message(
-                "Notes are not saved yet. Open Notes and choose Save Notes before quitting.",
+                ("Notes are not saved yet. Open Notes and choose Save Notes "
+                 "before returning to launch." if getattr(self, "_returning_to_launch", False)
+                 else "Notes are not saved yet. Open Notes and choose Save Notes before quitting."),
                 ms=0,
             )
             self.window.side_rail.trigger("canvas")
@@ -2650,6 +2817,8 @@ class ApplicationController(QObject):
         # A subsequent native close must not ask again using stale snapshots.
         if bool(getattr(self, "_shutdown", False)):
             return True
+        if bool(getattr(self, "_workspace_transition_pending", False)):
+            return False
         # A prior finalize_close attempt already obtained the user's approval
         # and began irreversible teardown. Let the next close reach shutdown()
         # directly so it can retry the retained owner.
@@ -6997,6 +7166,8 @@ class ApplicationController(QObject):
 
     def _on_launch_audio(self) -> None:
         """Toggle handler — launches Jamulus if stopped, stops it if running."""
+        if (self._shutdown or getattr(self, "_workspace_transition_pending", False)):
+            return
         if self._shutdown_cleanup_blocks_action():
             return
         if getattr(self, "_primary_recovery_retire_inflight", False):
@@ -7747,6 +7918,9 @@ class ApplicationController(QObject):
     ) -> bool:
         """Join one typed invitation with optional memory-only paste context."""
 
+        if (getattr(self, "_shutdown", False)
+                or getattr(self, "_workspace_transition_pending", False)):
+            return False
         meeting_url = self._validated_session_meeting_url(meeting_url)
 
         if self._shutdown_cleanup_blocks_action():

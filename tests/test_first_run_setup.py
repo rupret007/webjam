@@ -5,7 +5,7 @@ import os
 import stat
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -358,8 +358,13 @@ def test_startup_asks_for_a_musician_path_then_opens_native_journey(qapp):
     ):
         assert app_module.run() == 0
     launcher_class.assert_called_once_with(initial, initial_invitation=None)
-    qt_app.aboutToQuit.connect.assert_called_once_with(controller.shutdown)
-    single_shot.assert_called_once_with(0, controller.begin_startup_journey)
+    qt_app.aboutToQuit.connect.assert_called_once()
+    assert qt_app.aboutToQuit.connect.call_args.args[0].__self__.controller is controller
+    controller.shutdown.assert_called()
+    single_shot.assert_called_once()
+    assert single_shot.call_args.args[0] == 0
+    single_shot.call_args.args[1]()
+    controller.begin_startup_journey.assert_called_once_with()
 
 
 def test_reference_studio_launch_skips_live_services_and_audio_journey(qapp):
@@ -393,10 +398,10 @@ def test_reference_studio_launch_skips_live_services_and_audio_journey(qapp):
     controller.start_companion_api.assert_not_called()
     controller.begin_startup_journey.assert_not_called()
     controller._on_launch_audio.assert_not_called()
-    single_shot.assert_called_once_with(
-        0,
-        controller.begin_reference_studio_journey,
-    )
+    single_shot.assert_called_once()
+    assert single_shot.call_args.args[0] == 0
+    single_shot.call_args.args[1]()
+    controller.begin_reference_studio_journey.assert_called_once_with()
 
 
 def test_packaged_smoke_hook_schedules_real_audio_start_and_bounded_quit(qapp):
@@ -430,9 +435,13 @@ def test_packaged_smoke_hook_schedules_real_audio_start_and_bounded_quit(qapp):
     ):
         assert app_module.run() == 0
     launcher_class.assert_not_called()
-    qt_app.aboutToQuit.connect.assert_called_once_with(controller.shutdown)
+    qt_app.aboutToQuit.connect.assert_called_once()
+    assert qt_app.aboutToQuit.connect.call_args.args[0].__self__.controller is controller
+    controller.shutdown.assert_called()
     assert len(single_shot.call_args_list) == 2
-    assert single_shot.call_args_list[0] == call(0, controller._on_launch_audio)
+    assert single_shot.call_args_list[0].args[0] == 0
+    single_shot.call_args_list[0].args[1]()
+    controller._on_launch_audio.assert_called_once_with()
     assert single_shot.call_args_list[1].args[0] == 15000
     single_shot.call_args_list[1].args[1]()
     assert window.confirm_close() is True

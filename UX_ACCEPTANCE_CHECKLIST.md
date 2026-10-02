@@ -12,7 +12,36 @@
 > macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
 > gates remain **NOT RUN**. A source checkout is not a published package.
 
-## Owner click gate — current two-card door
+## Workflow continuity — Unreleased PR/test-build gate
+
+Source remains v0.29.0; these checks apply to the workflow continuity build,
+not the immutable v0.29.0 packages. Record exact source/package identity in
+[the new pilot ledger](docs/WORKFLOW_CONTINUITY_PILOT.md). Checkboxes describe
+acceptance requirements, not completed verification.
+
+- [ ] File → Return to launch is discoverable from live and local Studio work.
+      An active room requires explicit End/Leave first.
+- [ ] Unsaved work, recording/finalization and failed owned cleanup retain
+      their current owner and recovery controls; no replacement workspace is
+      created while a required guard fails.
+- [ ] Successful return creates a fresh launch/controller lifetime without
+      replaying old invitations, audio startup, playback or recording. Cancel
+      does not reconnect the previous session.
+- [ ] File → New Music Project… at the returned launch screen opens the
+      standalone route; saved sessions and local audio projects stay distinct.
+- [ ] F1 / More → Help is modeless and searchable with keyboard and enlarged
+      text. The main window's Stop/End and recovery controls remain usable.
+- [ ] Search and topic selection only display instructions. Explicit finite
+      navigation opens the existing workspace without selecting a new take,
+      starting playback/export, opening an Art reference or contacting a service.
+- [ ] Help matches the current profile and local-project/session context, and
+      cannot turn stale, failed or missing evidence into a Ready/saved result.
+- [ ] Malformed recent-project Unicode produces recoverable guidance while
+      preserving its bytes; failed atomic writes do not close unrelated files.
+- [ ] Exercise the Music return→review→export route and Art save→resume route
+      against this build. Keep automated, packaged and physical evidence separate.
+
+## Historical owner click gate: v0.28.4 two-card door
 
 **Status: NOT RUN.** This is the one attended first-screen feel check for the
 published unsigned/ad-hoc v0.28.4 package. Source tests prove labels, order,
@@ -272,8 +301,10 @@ change the package's NOT RUN status.
       extraction.
 - [ ] Physical two-Mac and hardware evidence is listed separately as PASS,
       FAIL, or NOT RUN.
-- [ ] No v0.28.0 physical or production-trust claim is made until the dedicated
-      [physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-      records exact-asset results. Two-machine music, Shared Track, recording,
-      Studio, external-editor, accessibility, signing, installation, and
-      platform-trust gates all currently remain **NOT RUN**.
+- [ ] Current physical claims use the exact package and hash in the
+      [workflow continuity pilot](docs/WORKFLOW_CONTINUITY_PILOT.md), whose
+      rows begin **NOT RUN**. Earlier
+      [physical results](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
+      remain historical. Automated checks do not pass two-machine music,
+      hardware recovery, external-editor import, or physical accessibility;
+      signing, notarization and platform trust are outside this milestone.

@@ -68,15 +68,30 @@ does not start, join, stop, configure, or feed Jamulus. Its persistence,
 migration, rendering, recording, and trust boundaries are defined in
 [ADR 0006](docs/adr/0006-standalone-reference-studio-projects.md).
 
+The Unreleased workflow-continuity change adds **File → Return to launch…**.
+One application-level navigator retires the current controller only after its
+session, project and recovery owners confirm safe cleanup, then constructs a
+fresh controller for the next explicit launch choice. It never repurposes a
+running controller's offline flag. Application-wide invitation delivery uses
+the current destination and generation; returning discards previously declined
+invitations. Constructor failures retain an unproved cleanup owner rather than
+allowing another workspace beside it. See
+[ADR 0015](docs/adr/0015-workspace-continuity.md).
+
+Offline Help contains packaged topics and explicit navigation to existing
+controls. Its modeless window keeps End/Leave accessible. Topic search reads no
+user files, performs no network calls and derives no operational status;
+navigation rechecks the current profile and existing cleanup authorities.
+
 ## Jamulus component trust and lifecycle
 
 The desktop package always contains its reviewed Jamulus 3.12.2 fallback.
 Independently updated Jamulus client/server packages are executable supply-chain
 inputs, so availability alone is never approval:
 
-For unsigned v0.28.0 source, the baked registry authorizes only the existing
+For unsigned v0.29.0 source, the baked registry authorizes only the existing
 exact Jamulus 3.12.2 and 3.12.3 records. Presence of any other version is not
-approval. The sealed v0.22.5 catalog does not authorize a managed v0.28.0
+approval. The sealed v0.22.5 catalog does not authorize a managed v0.29.0
 component.
 
 ```text

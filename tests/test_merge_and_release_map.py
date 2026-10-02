@@ -292,9 +292,9 @@ def test_owner_click_gate_is_exact_asset_bound_and_stays_not_run() -> None:
 
     checklist = (ROOT / "UX_ACCEPTANCE_CHECKLIST.md").read_text(encoding="utf-8")
     section = checklist.partition(
-        "## Owner click gate — current two-card door"
+        "## Historical owner click gate: v0.28.4 two-card door"
     )[2].partition("\n## ")[0]
-    assert section, "the current package needs one attended first-screen gate"
+    assert section, "the historical package retains its attended first-screen gate"
 
     required_identity = (
         "**Status: NOT RUN.**",
