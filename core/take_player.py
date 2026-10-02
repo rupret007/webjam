@@ -78,10 +78,9 @@ class StudioPlaybackPreparation:
         self._installed = True
         return self.stream, self.pipeline
 
-    def close(self) -> None:
+    def close(self) -> bool:
         if self._installed:
-            return
-        self._installed = True
+            return True
         try:
             if self.pipeline is not None:
                 closed = self.pipeline.stop()  # type: ignore[attr-defined]
@@ -89,10 +88,14 @@ class StudioPlaybackPreparation:
                     _logger.error(
                         "Studio preparation producer did not stop within its deadline."
                     )
+                    return False
             else:
-                self.stream.close()  # type: ignore[attr-defined]
+                if self.stream.close() is False:  # type: ignore[attr-defined]
+                    return False
         except Exception:  # noqa: BLE001
-            pass
+            return False
+        self._installed = True
+        return True
 
 
 @dataclass(frozen=True)
@@ -1040,6 +1043,9 @@ class SoundDeviceSink:
         self.device_name = str(device_name or "")
 
     def start(self, samplerate, blocksize, pull) -> None:
+        # A failed native close still owns its stream. Never overwrite that
+        # handle with a second output while cleanup remains unproved.
+        self.stop()
         import sounddevice as sd  # type: ignore
 
         def _callback(outdata, frames, time_info, status):
@@ -1073,9 +1079,17 @@ class SoundDeviceSink:
         if self._stream is not None:
             try:
                 self._stream.stop()
-                self._stream.close()
-            except Exception as exc:  # noqa: BLE001
-                _logger.debug("sounddevice stop error: %s", exc)
+            except Exception:  # noqa: BLE001
+                # An already-stopped stream may reject stop; a successful
+                # native close still proves its resources were released.
+                pass
+            try:
+                if self._stream.close() is False:
+                    raise PlaybackError("Audio output is still closing.")
+            except Exception:  # noqa: BLE001
+                # Retain the exact stream for retry; native exception text may
+                # include a device identifier or private backend detail.
+                raise PlaybackError("Audio output is still closing.") from None
             self._stream = None
 
 
@@ -1118,6 +1132,7 @@ class TakePlayer:
         self._studio_renderer = None
         self._studio_stream = None
         self._studio_pipeline: _StudioPlaybackPipeline | None = None
+        self._retired_studio_preparations: list[StudioPlaybackPreparation] = []
         self._studio_track_channels: dict[str, int] = {}
         self._studio_master = None
         self._studio_cycle_range: tuple[int, int] | None = None
@@ -1786,7 +1801,7 @@ class TakePlayer:
             self._pos_frames = 0
             self._studio_cycle_has_wrapped = False
             self._close_readers()
-            if self._studio_pipeline is not None:
+            if self._studio_pipeline is not None or self._retired_studio_preparations:
                 error = PlaybackError(
                     "Studio playback producer did not stop within its safety deadline."
                 )
@@ -2058,6 +2073,14 @@ class TakePlayer:
         return True
 
     # -- readers ----------------------------------------------------------
+    def retire_studio_preparation(self, preparation: StudioPlaybackPreparation) -> bool:
+        """Keep a failed cleanup owned until stop() can prove its release."""
+        with self._lock:
+            closed = preparation.close()
+            if not closed and not any(item is preparation for item in self._retired_studio_preparations):
+                self._retired_studio_preparations.append(preparation)
+            return closed
+
     def prepare_studio_playback(
         self,
         cancel_check: Callable[[], None] | None = None,
@@ -2067,6 +2090,8 @@ class TakePlayer:
         if cancel_check is not None and not callable(cancel_check):
             raise PlaybackError("cancel_check must be callable or null.")
         with self._lock:
+            if self._retired_studio_preparations:
+                raise PlaybackError("Previous Studio preparation is still shutting down.")
             renderer = self._studio_renderer
             if renderer is None:
                 raise PlaybackError("No Studio arrangement is loaded.")
@@ -2120,10 +2145,10 @@ class TakePlayer:
             if cancel_check is not None:
                 cancel_check()
         except Exception as exc:
-            if pipeline is not None:
-                pipeline.stop()
-            elif stream is not None:
-                stream.close()
+            if stream is not None:
+                self.retire_studio_preparation(StudioPlaybackPreparation(
+                    renderer=renderer, stream=stream, pipeline=pipeline,
+                ))
             from core.studio_renderer import StudioRenderError
 
             if isinstance(exc, StudioRenderError):
@@ -2154,14 +2179,14 @@ class TakePlayer:
                 or self._pos_frames != preparation.position_frame
                 or current_mix != preparation.mix
             ):
-                preparation.close()
+                self.retire_studio_preparation(preparation)
                 return False
             if not isinstance(preparation.pipeline, _StudioPlaybackPipeline):
-                preparation.close()
+                self.retire_studio_preparation(preparation)
                 raise PlaybackError("Studio preparation did not include audio prefill.")
             self._close_readers()
-            if self._studio_pipeline is not None:
-                preparation.close()
+            if self._studio_pipeline is not None or self._retired_studio_preparations:
+                self.retire_studio_preparation(preparation)
                 raise PlaybackError(
                     "Previous Studio playback producer is still shutting down."
                 )
@@ -2200,6 +2225,10 @@ class TakePlayer:
                 t._eof = False
 
     def _close_readers(self) -> None:
+        self._retired_studio_preparations = [
+            preparation for preparation in self._retired_studio_preparations
+            if not preparation.close()
+        ]
         pipeline = self._studio_pipeline
         if pipeline is not None:
             if pipeline.stop():

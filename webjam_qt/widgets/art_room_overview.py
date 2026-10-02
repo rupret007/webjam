@@ -365,8 +365,10 @@ class ArtRoomOverviewWidget(QScrollArea):
             height < 300 or (two_activities and height < 400)
             or (has_names and height < 460)
         )
+        tight_activities = two_activities and height < 360
         vertical_margin = (
-            Space.XS if short and two_activities else Space.SM if short else Space.LG
+            0 if tight_activities else Space.XS if short and two_activities
+            else Space.SM if short else Space.LG
         )
         self._body_layout.setContentsMargins(margin, vertical_margin, margin, vertical_margin)
         # Short rooms retain names, activities and actions while omitting
@@ -378,7 +380,13 @@ class ArtRoomOverviewWidget(QScrollArea):
                 and self._overview.title != self._overview.activity_label
                 and not short
             ))
-        self._content_layout.setSpacing(Space.SM if compact else Space.LG)
+        # An in-window File/Help menu leaves about 343–346 px at the
+        # minimum window size. Tighten spacing independently of the compact
+        # visibility rules, retaining recovery copy and both activities.
+        self._content_layout.setSpacing(
+            Space.XS if tight_activities
+            else Space.SM if compact or height < 360 else Space.LG
+        )
         direction = (
             QBoxLayout.Direction.TopToBottom
             if self.viewport().width() < 420

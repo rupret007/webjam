@@ -53,13 +53,63 @@ For completed Music or Podcast & Voice takes, follow
 [Review and compare completed takes](#review-and-compare-completed-takes)
 to save favorites and notes, audition A/B, and inspect an export receipt.
 
+## Return to launch: Unreleased
+
+This section and the searchable Help below describe the workflow continuity
+PR/test build after v0.29.0. The source still reports v0.29.0; use the build ID
+to distinguish it from the published release. No new release is requested.
+
+From the live workspace or a local Studio project, choose **File → Return to
+launch**. In a live room, first choose **End Session** or **Leave Session**.
+Returning is available only after saves, recording finalization and owned
+cleanup have completed. A pending or failed operation leaves the current
+workspace available with its recovery controls; it does not silently discard
+notes, Studio edits, a take, or an unfinished local project.
+
+If interrupted-take recovery is still running, wait for its result. If WebJam
+says **Finish closing safely**, new work stays disabled while cleanup is
+pending. Studio and open take-review editors stop accepting changes after
+their saved work begins closing. File and Help remain available; choose
+**File → Return to launch** again to retry. A workspace that could not finish
+opening may show the same cleanup guidance.
+
+The launch screen starts a fresh workspace owner. It does not replay the
+previous invitation, reconnect, record or start playback. Choose Music or Art,
+reopen saved work from **File → Session library…**, or choose **File → New Music
+Project…** for a separate offline project. Canceling the returned launch closes
+WebJam rather than restarting the previous room.
+
+See the [workflow continuity pilot](docs/WORKFLOW_CONTINUITY_PILOT.md) for the
+ten-minute try list and separate exact-build physical checks, all initially
+**NOT RUN**.
+
 ## Follow the current guide
 
-Press **F1** or choose **More → Help** for the current workspace's instructions.
-Help keeps **OK** visible on compact screens while long or enlarged text
-scrolls. Use **Tab / Shift+Tab** to move between the text and **OK**, and
-**Page Down / Page Up** to read the text. **Enter** on OK or **Esc** closes Help
-and returns to your workspace without changing the room, Notes, or recording.
+In the Unreleased workflow continuity build, press **F1**, choose **More →
+Help**, or use **Help → WebJam Help…**. Type in **Search workflow help** and select a topic, such as saved
+work, an unsaved draft, a blocked export, or a moved Art reference. The search
+uses instructions packaged with WebJam; it does not search your private notes,
+send a request to a model, or contact a service. Topics match the current
+creator profile and distinguish session takes from standalone local projects.
+An open Help window updates when the profile changes, keeping your search
+without taking focus from your work.
+
+Selecting a topic only changes the instructions. Its explicit button, such
+as **Open Session library**, **Open Rehearsal plan**, **Open Art project** or
+**Open Studio**, navigates to an existing workspace. It does not start a room,
+recording, playback, export, upload or external app, and it cannot unlock an
+unavailable action. Read the current workspace's status before acting.
+
+In standalone local Studio, use **Return to Studio** for its project guidance;
+the session-library navigation buttons are not offered there. To choose a
+saved session workspace, first use **File → Return to launch**.
+
+Help stays open alongside the main window, so Stop/End and recovery controls
+remain reachable. **⌘F** on Mac / **Ctrl+F** elsewhere focuses the search.
+Use **Tab / Shift+Tab** between search, topics, text and
+buttons; **Page Down / Page Up** scrolls the instructions. **OK** or **Esc**
+closes Help without changing the room, notes or recording. Compact screens
+and enlarged text keep the instructions scrollable and the actions reachable.
 
 The always-visible Session HUD is the dominant action surface. **Notes** opens
 your local writing area. In Music, Podcast & Voice, and Review & Rehearsal,

@@ -261,12 +261,14 @@ def test_compact_controls_restore_normal_and_other_profile_geometry(qapp):
         _settle(qapp)
         assert window.size() == QSize(720, 560)
         assert canvas.height() < 500
-        assert canvas.layout().spacing() == Space.XS
+        # The shortest splitter allocation spends outer gaps on readable
+        # Notes; profile-specific button styling still restores independently.
+        assert canvas.layout().spacing() == (0 if canvas.height() < 380 else Space.XS)
         assert button.height() == 34 < normal_height
         _assert_header_and_toolbar_fit(canvas)
         canvas.set_creator_profile(get_creator_profile_by_key("music"))
         _settle(qapp)
-        assert canvas.layout().spacing() == Space.SM
+        assert canvas.layout().spacing() == (0 if canvas.height() < 380 else Space.SM)
         assert button.height() == normal_height
         assert all(not item.styleSheet() for item in canvas._toolbar_buttons)
         assert not canvas.room_return_button().isVisible()

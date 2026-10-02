@@ -419,7 +419,7 @@ def test_native_release_build_uses_exact_hashed_locks_and_bounded_intel_exceptio
         assert f"setuptools=={expected_setuptools[target]}" in contents
         assert not re.search(r"(?m)^[A-Za-z0-9_.-]+\s*[~<>!]", contents)
     bootstrap = (RELEASE_LOCK_ROOT / "bootstrap.txt").read_text(encoding="utf-8")
-    assert "pip==26.1.2" in bootstrap
+    assert "pip==26.2" in bootstrap
     assert "--hash=sha256:" in bootstrap
 
 

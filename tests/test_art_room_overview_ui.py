@@ -78,6 +78,9 @@ def window(qapp):
         initial_mode_key="music_jam",
         initial_title="Making together",
     )
+    # Linux and Windows reserve client height for File/Help. Exercise that
+    # tighter layout on macOS too, where menus normally live outside it.
+    window.menuBar().setNativeMenuBar(False)
     window.setStyleSheet(load_stylesheet())
     window.set_creator_profile(get_creator_profile_by_key("art"))
     window.set_art_room_overview(overview())
@@ -382,6 +385,17 @@ def test_production_room_copy_fits_and_coexists_with_conversation(
     window.resize(*size)
     _settle(qapp)
     assert window.size() == QSize(*size)
+    menu = window.menuBar()
+    assert menu.isVisibleTo(window) and menu.height() > 0
+    for action in menu.actions():
+        assert action.isEnabled()
+        assert menu.rect().contains(menu.actionGeometry(action))
+    assert [action.text() for action in menu.actions()] == ["&File", "&Help"]
+    end_or_leave = window.session_strip._audio_button
+    assert end_or_leave.isVisibleTo(window) and end_or_leave.isEnabled()
+    assert window.rect().contains(
+        QRect(end_or_leave.mapTo(window, QPoint()), end_or_leave.size())
+    )
     panel = window.art_room_overview
     assert panel._overview.phase == phase
     assert panel.isVisibleTo(window)
@@ -389,6 +403,13 @@ def test_production_room_copy_fits_and_coexists_with_conversation(
     assert panel.horizontalScrollBar().maximum() == 0
     if not conversation_open:
         assert panel.verticalScrollBar().maximum() == 0
+        if phase in {"reconnecting", "cleanup_required"}:
+            # Fit must retain recovery context, not merely hide its copy.
+            assert panel._title.isVisibleTo(window)
+            assert panel._connection_detail.isVisibleTo(window)
+        if current.making_detail:
+            assert panel._making_detail.isVisibleTo(window)
+            assert panel._connection_detail.isVisibleTo(window)
     visible = [
         widget for widget in panel._content.findChildren(QLabel)
         if widget.isVisibleTo(window)

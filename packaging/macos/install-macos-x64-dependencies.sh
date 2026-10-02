@@ -100,7 +100,7 @@ from importlib.metadata import version
 expected = {
     "cffi": "2.1.0",
     "maturin": "1.14.1",
-    "pip": "26.1.2",
+    "pip": "26.2",
     "pycparser": "3.0",
     "setuptools": "81.0.0",
 }

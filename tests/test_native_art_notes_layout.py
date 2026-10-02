@@ -65,6 +65,7 @@ def _assert_real_notes_fit(window):
             assert button.height() >= button.minimumSizeHint().height(), button.text()
     assert panel.talk_share_button().isVisibleTo(window)
     assert window.session_strip._audio_button.isVisibleTo(window)
+    assert window.session_strip._tools_button.isVisibleTo(window)
 
 
 @pytest.mark.parametrize("size", [(720, 560), (760, 600), (1040, 720)])

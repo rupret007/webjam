@@ -76,6 +76,8 @@ from webjam_qt.widgets.room_help import RoomHelpPanel
 
 class ConductorWindow(QMainWindow):
     close_requested = Signal()
+    return_to_launch_requested = Signal()
+    workflow_help_requested = Signal(str)
     test_night_requested = Signal()
     notes_review_requested = Signal()
 
@@ -85,7 +87,7 @@ class ConductorWindow(QMainWindow):
     DEFAULT_HEIGHT = 900
     OFFLINE_INVITATION_GUIDANCE = (
         "Invitation not used — Reference Studio stays offline. "
-        "To join the jam, close WebJam and open the invitation again."
+        "Choose File → Return to launch, then open the invitation again to join."
     )
 
     def __init__(
@@ -118,6 +120,19 @@ class ConductorWindow(QMainWindow):
         self.finalize_close: Callable[[], bool] | None = None
         self.operator_mode = bool(operator_mode)
         self._reference_studio_only = False
+
+        file_menu = self.menuBar().addMenu("&File")
+        self._return_to_launch_action = file_menu.addAction("Return to launch…")
+        self._return_to_launch_action.setShortcut(QKeySequence("Ctrl+Shift+H"))
+        self._return_to_launch_action.triggered.connect(
+            self.return_to_launch_requested.emit
+        )
+        self._return_to_launch_action.setStatusTip(
+            "Finish the current workspace safely, then choose Music, Art, or a local project."
+        )
+        help_menu = self.menuBar().addMenu("&Help")
+        self._workflow_help_action = help_menu.addAction("WebJam Help…")
+        self._workflow_help_action.triggered.connect(self.show_help)
 
         # --- Central widgets
         self.session_strip = SessionStrip(
@@ -593,6 +608,10 @@ class ConductorWindow(QMainWindow):
 
     def show_help(self) -> None:
         """Display the same short workflow the live screen presents."""
+        self._refresh_help(present=True)
+
+    def _refresh_help(self, *, present: bool) -> None:
+        """Keep Help current; focus changes only on an explicit open."""
         import sys
 
         from shiboken6 import isValid
@@ -600,6 +619,11 @@ class ConductorWindow(QMainWindow):
         from webjam_qt import __version__
         from webjam_qt.windows.help_dialog import HelpDialog
 
+        dialog = getattr(self, "_workflow_help_dialog", None)
+        if not present and (
+            dialog is None or not isValid(dialog) or not dialog.isVisible()
+        ):
+            return
         if sys.platform == "darwin":
             navigation_shortcuts = "⌘1 / ⌘2 / ⌘3"
             song_shortcut = "⌘4"
@@ -740,7 +764,7 @@ class ConductorWindow(QMainWindow):
                 "<b>4.</b> The host presses <b>Record Session</b> for synchronized tracks.<br>"
                 "<b>5.</b> Choose <b>Studio</b> to review completed session "
                 "takes. For a standalone Music project, end or leave the "
-                "session and relaunch WebJam. Choose "
+                "session, then choose <b>File → Return to launch…</b>. At launch choose "
                 "<b>File → New Music Project…</b>, then "
                 "<b>Play Along / Record</b> or <b>Open Project…</b>.<br>"
                 "<b>6.</b> Choose <b>Conversation</b> to show meeting controls. "
@@ -765,6 +789,8 @@ class ConductorWindow(QMainWindow):
             "Open <b>More → Session library…</b>, or <b>File → Session library…</b> "
             "at launch. Search saved workspaces, read <b>Summary</b>, and choose "
             "<b>Continue this work</b>. Restoring notes does not start a room or recording."
+            " Use <b>File → Return to launch…</b> to choose another workflow after "
+            "unfinished work and session cleanup are resolved."
         )
         if profile.key == "music":
             moment_shortcut = "⌘M" if sys.platform == "darwin" else "Ctrl+M"
@@ -790,11 +816,29 @@ class ConductorWindow(QMainWindow):
         screen = QGuiApplication.screenAt(self.frameGeometry().center())
         if screen is None:
             screen = QGuiApplication.primaryScreen()
+        if dialog is not None and isValid(dialog):
+            dialog.set_context(body, profile=profile.key, offline_studio=self._reference_studio_only)
+            if not present:
+                return
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
+            return
         previous_focus = self.focusWidget()
-        dialog = HelpDialog(body, screen.availableGeometry() if screen else None)
-        try:
-            dialog.exec()
-        finally:
+        dialog = HelpDialog(body, screen.availableGeometry() if screen else None,
+            parent=self, profile=profile.key, offline_studio=self._reference_studio_only)
+        self._workflow_help_dialog = dialog
+
+        def navigate(route):
+            if (self._workflow_help_dialog is not dialog or not dialog.isVisible()
+                    or not self.isVisible()):
+                return
+            dialog.accept()
+            self.workflow_help_requested.emit(route)
+
+        def finished(_result):
+            if self._workflow_help_dialog is dialog:
+                self._workflow_help_dialog = None
             dialog.deleteLater()
             if isValid(self) and self.isVisible():
                 self.raise_()
@@ -802,6 +846,12 @@ class ConductorWindow(QMainWindow):
                 if (previous_focus is not None and isValid(previous_focus)
                         and previous_focus.isVisible() and previous_focus.isEnabled()):
                     previous_focus.setFocus(Qt.FocusReason.OtherFocusReason)
+
+        dialog.navigation_requested.connect(navigate)
+        dialog.finished.connect(finished)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
 
     def show_about(self) -> None:
         """Show privacy-safe package identity and the candidate trust boundary."""
@@ -1072,6 +1122,7 @@ class ConductorWindow(QMainWindow):
             raise TypeError("profile must be a CreatorProfile")
         from webjam_qt import __version__
 
+        profile_changed = profile != self._creator_profile
         self._creator_profile = profile
         if profile.key != "art":
             self.art_room_overview.clear_room_connections()
@@ -1120,6 +1171,8 @@ class ConductorWindow(QMainWindow):
             )
         self._status_recording.setToolTip(recording_tip)
         self._status_recording.setAccessibleDescription(recording_tip)
+        if profile_changed:
+            self._refresh_help(present=False)
 
     def set_status_recording(self, active: bool) -> None:
         """Show/hide the red ● REC chip in the status bar."""

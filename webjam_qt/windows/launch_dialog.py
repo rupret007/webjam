@@ -1444,6 +1444,22 @@ class LaunchDialog(QDialog):
         self.accept()
         return True
 
+    def restore_after_workspace_failure(self) -> None:
+        """Keep the existing launch screen usable after a retired factory fails."""
+        self.selected_role = ""
+        self.band_invite = None
+        self.remote_invitation = None
+        self.invitation_meeting_url = ""
+        self.selected_workspace_id = ""
+        self.selected_library_open = None
+        self.setResult(QDialog.DialogCode.Rejected)
+        self.show_choices()
+        self._choice_error.setText(
+            "That workspace could not be opened. Your saved work is still "
+            "available; choose a workspace to try again."
+        )
+        self._choice_error.setVisible(True)
+
     def show_ingress_error(self, message: str) -> None:
         """Show only fixed-copy errors emitted by the application ingress."""
 

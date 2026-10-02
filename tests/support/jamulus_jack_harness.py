@@ -33,6 +33,13 @@ from typing import Any, Callable
 
 import numpy as np
 
+from tests.support.jamulus_integration_diagnostics import (
+    archive_logs as archive_diagnostic_logs,
+    phase as diagnostic_phase,
+    register_process as register_diagnostic_process,
+    supervised as integration_supervised,
+)
+
 from core.process_socket_identity import (
     ProcessSocketIdentityError,
     exact_jamulus_client_udp_port,
@@ -704,18 +711,28 @@ def _reserve_ports(kinds: list[int]) -> list[int]:
                 pass
 
 
+def _signal_process(proc: subprocess.Popen[bytes], signum: int) -> None:
+    """Signal one supervised child, or its private standalone process group."""
+    if integration_supervised():
+        # The child shares pytest's group with JACK and the other clients.
+        # Only the outer supervisor may signal that entire owned group.
+        proc.send_signal(signum)
+    else:
+        os.killpg(proc.pid, signum)
+
+
 def _stop_process(proc: subprocess.Popen[bytes], timeout_s: float = 5.0) -> None:
     if proc.poll() is not None:
         return
     try:
-        os.killpg(proc.pid, signal.SIGTERM)
+        _signal_process(proc, signal.SIGTERM)
     except ProcessLookupError:
         return
     try:
         proc.wait(timeout=timeout_s)
     except subprocess.TimeoutExpired:
         try:
-            os.killpg(proc.pid, signal.SIGKILL)
+            _signal_process(proc, signal.SIGKILL)
         except ProcessLookupError:
             pass
         proc.wait(timeout=timeout_s)
@@ -764,7 +781,7 @@ def probe_client_capability(binary: str | Path) -> ClientCapability:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             env=env,
-            start_new_session=True,
+            start_new_session=not integration_supervised(),
         )
         try:
             output_bytes, _ = proc.communicate(timeout=2.0)
@@ -879,8 +896,12 @@ class ManagedProcess:
             stdout=self._log,
             stderr=subprocess.STDOUT,
             env=env,
-            start_new_session=True,
+            # Under the opt-in CI supervisor, every harness child remains in
+            # pytest's owned group. An outer deadline can retire that whole
+            # group even if a native JACK close never returns in this process.
+            start_new_session=not integration_supervised(),
         )
+        register_diagnostic_process(name, self.proc.pid, log_path)
 
     def tail(self, limit: int = 8_000) -> str:
         self._log.flush()
@@ -928,6 +949,7 @@ class ManagedProcess:
 
     def stop(self) -> None:
         _stop_process(self.proc)
+        archive_diagnostic_logs()
         self._log.close()
 
 
@@ -947,6 +969,7 @@ class JackBoundary:
     """JACK ports immediately outside two musicians and an optional track."""
 
     def __init__(self, server_name: str) -> None:
+        diagnostic_phase("jack.open")
         try:
             import jack  # type: ignore
         except ImportError as exc:
@@ -972,6 +995,7 @@ class JackBoundary:
                 f"JACK block is {self.client.blocksize}, expected {JACK_BLOCK_SIZE}"
             )
 
+        diagnostic_phase("jack.register_ports")
         self._source_a = (
             self.client.outports.register("a_tx_left"),
             self.client.outports.register("a_tx_right"),
@@ -1039,7 +1063,9 @@ class JackBoundary:
             if end == len(run.capture_a):
                 run.done.set()
 
+        diagnostic_phase("jack.activate")
         self.client.activate()
+        diagnostic_phase("jack.active")
 
     def wait_for_jamulus_ports(
         self,
@@ -1048,6 +1074,7 @@ class JackBoundary:
         timeout_s: float,
         process: ManagedProcess,
     ) -> dict[str, Any]:
+        diagnostic_phase("jack.wait_ports")
         expected_client = f"Jamulus {jack_client_name}"
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
@@ -1075,6 +1102,7 @@ class JackBoundary:
         timeout_s: float = 2.0,
         poll_interval_s: float = 0.05,
     ) -> None:
+        diagnostic_phase("jack.route")
         if client_index == 0:
             sources, sinks = self._source_a, self._sink_a
         elif client_index == 1:
@@ -1177,21 +1205,26 @@ class JackBoundary:
         xrun_start = self.xrun_count
         self._run = run
         timeout_s = total_frames / SAMPLE_RATE + 5.0
+        diagnostic_phase("jack.capture")
         if not run.done.wait(timeout=timeout_s):
             raise HarnessFailure(
                 f"JACK boundary captured {run.cursor}/{total_frames} frames in "
                 f"{timeout_s:.1f}s"
             )
         self._run = None
+        diagnostic_phase("jack.captured")
         self.last_run_xruns = self.xrun_count - xrun_start
         return run.capture_a, run.capture_b, run.capture_reference
 
     def close(self) -> None:
         self._run = None
         try:
+            diagnostic_phase("jack.deactivate")
             self.client.deactivate()
         finally:
+            diagnostic_phase("jack.close")
             self.client.close()
+        diagnostic_phase("jack.closed")
 
 
 def _wait_for(
@@ -1408,6 +1441,7 @@ class JamulusJackHarness:
         return self
 
     def start(self) -> None:
+        diagnostic_phase("harness.start")
         for label, binary in (
             ("server", self.server_binary),
             ("client", self.client_binary),
@@ -1837,7 +1871,7 @@ class JamulusJackHarness:
         change, profile mismatch, missing self row, or ambiguous ordinal fails
         closed.  Display names and server-visible addresses never act as keys.
         """
-
+        diagnostic_phase("identity.certify")
         if not self.client_rpc_endpoints or (
             len(self.client_rpc_endpoints) != len(self.client_processes)
         ):
@@ -2079,6 +2113,7 @@ class JamulusJackHarness:
         bandmate_level: int,
     ) -> ReferenceFaderProof:
         """Set independent listener levels and zero the track return."""
+        diagnostic_phase("reference.faders")
         if not self.include_reference_track or len(self.client_rpc_endpoints) != 3:
             raise HarnessFailure("Reference Track client is not running")
         for label, level in (
@@ -2210,6 +2245,7 @@ class JamulusJackHarness:
 
     def set_recording(self, enabled: bool) -> dict[str, Any]:
         """Arm/disarm the real multitrack recorder and prove its state."""
+        diagnostic_phase("recording.start" if enabled else "recording.stop")
         if self.server_rpc is None:
             raise HarnessFailure("server RPC is unavailable")
         method = (
@@ -2268,7 +2304,7 @@ class JamulusJackHarness:
 
         paused = False
         try:
-            os.killpg(client.proc.pid, signal.SIGSTOP)
+            _signal_process(client.proc, signal.SIGSTOP)
             paused = True
 
             def one_client_absent() -> dict[str, Any] | None:
@@ -2294,7 +2330,7 @@ class JamulusJackHarness:
             )
         finally:
             if paused:
-                os.killpg(client.proc.pid, signal.SIGCONT)
+                _signal_process(client.proc, signal.SIGCONT)
 
         expected_names = set(self.expected_client_names)
 
@@ -2334,15 +2370,19 @@ class JamulusJackHarness:
         if self._closed:
             return
         self._closed = True
+        diagnostic_phase("cleanup.rpc")
         if self.server_rpc is not None:
             self.server_rpc.close()
             self.server_rpc = None
         if self.boundary is not None:
+            diagnostic_phase("cleanup.boundary")
             self.boundary.close()
             self.boundary = None
         for process in reversed(self.processes):
+            diagnostic_phase("cleanup.processes")
             process.stop()
 
+        diagnostic_phase("cleanup.verify")
         cleanup_errors: list[str] = []
         for process in self.processes:
             if process.proc.poll() is None:
@@ -2368,6 +2408,7 @@ class JamulusJackHarness:
         self._temp.cleanup()
         if cleanup_errors:
             raise HarnessFailure("cleanup failed: " + "; ".join(cleanup_errors))
+        diagnostic_phase("cleanup.complete")
 
     def __exit__(self, exc_type: object, _exc: object, _tb: object) -> bool:
         try:

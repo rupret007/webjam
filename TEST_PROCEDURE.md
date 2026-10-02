@@ -18,6 +18,13 @@ This procedure distinguishes automated source/package evidence from physical
 participant evidence. A passing source suite does not certify two-Mac audibility,
 hardware changes, sleep/wake, interruption recovery, or external-editor import.
 
+Workflow continuity is **Unreleased PR/test-build work** after the published
+v0.29.0 baseline. The source version remains v0.29.0; record
+the exact commit, package filename, build ID and SHA-256 for new evidence.
+No new release or tag is requested. Use the new
+[workflow continuity pilot](docs/WORKFLOW_CONTINUITY_PILOT.md) for physical
+observations; all its rows begin **NOT RUN**. Preserve historical ledgers.
+
 The dependency boundary inherited from v0.22.5 pins `cryptography` 50.0.0 for
 CVE-2026-69247, CVE-2026-69248, and CVE-2026-69249. Windows, Linux, and
 Apple-silicon macOS use exact upstream wheels. Intel macOS uses only the
@@ -47,6 +54,54 @@ Every tracked module runs in its own Python process. Modules marked
 one test; the marker is execution metadata, not an automatic skip. A restricted
 sandbox may run the unmarked modules, but the source gate is incomplete until
 every marked module also runs in an environment that permits its local socket.
+
+## Bounded Jamulus integration evidence: Unreleased
+
+The Linux real-Jamulus CI matrix runs each RPC/boundary group under an outer
+process supervisor. RPC has a 60-second budget; the audio/recording/reference
+boundary group has 240 seconds, inside the unchanged 15-minute job limit.
+The supervisor retains first-attempt evidence and fails on timeout, a child
+failure, leaked owned processes or unproved cleanup. It does not retry a test.
+
+On a Linux host with the same Jamulus/JACK binaries and integration environment
+as `.github/workflows/ci.yml`, run the boundary group with a new artifact path:
+
+```bash
+.venv/bin/python -m tests.support.jamulus_integration_supervisor \
+  --artifacts artifacts/jamulus-integration-local/boundary \
+  --timeout-seconds 240 -- \
+  .venv/bin/python -m pytest -p tests.support.jamulus_integration_diagnostics \
+  tests/test_real_jamulus_audio.py \
+  tests/test_real_jamulus_recording_pipeline.py \
+  tests/test_dual_musician_rehearsal_lab_real_jamulus.py \
+  tests/test_reference_track_real_jamulus.py -v -s
+```
+
+Use a different, nonexistent output directory for each attempt; do not replace
+the first failure. The supervisor also works with synthetic POSIX test
+processes, which prove deadline/cleanup behavior but not real JACK audio.
+
+CI uploads `jamulus-integration-<version>-<run_id>-<run_attempt>` even after a
+test failure. Inspect `result.json` (`status`, `success`, child exit, elapsed
+time and cleanup), `phase.json` (test and last bounded phase history), and
+`cleanup.json` (owned process group and before/after process state). A passing
+result requires `status=passed`, `success=true`, child exit zero and
+`all_owned_processes_stopped=true`; a timeout must remain a failure even if
+cleanup succeeds.
+
+The allowlisted evidence also includes `pytest.log` (2 MiB maximum),
+`stacks.log` (256 KiB), and up to 64 owned process-log tails (32 KiB each).
+Process-log tails omit credential-keyword lines and filesystem paths. The
+private control file, environments, RPC secrets, profiles and recordings are
+not uploaded. These diagnostics are for synthetic CI fixtures, not collection
+from a user's rehearsal or a general-purpose sanitizer for arbitrary output.
+
+At the outer deadline, the supervisor requests registered Python thread
+stacks, waits up to 0.5 seconds, then applies independently bounded process-group
+TERM/KILL cleanup (two seconds each by default). Stack capture depends on the
+pytest plugin having started; a pre-plugin hang may have no stack. Host loss
+or SIGKILL can prevent cleanup/evidence entirely. New diagnostics do not prove
+the cause of the earlier integration timeout or pass any physical-audio gate.
 
 ### Deterministic multitrack proof
 

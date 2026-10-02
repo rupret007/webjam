@@ -31,9 +31,9 @@ fallbacks, and an unfilled physical rehearsal receipt.
 > gates remain **NOT RUN**. A source checkout is not a published package.
 
 > **Source boundary:** this checkout reports unsigned v0.29.0. Publication
-> status is recorded on GitHub, not inferred from this version. Jeff authorized
-> this testing release; exact source and package
-> gates must pass before publication. Jeff retains feel and Final Build judgment.
+> status is recorded on GitHub, not inferred from this version. The v0.29.0
+> release is the published baseline. Workflow continuity is **Unreleased
+> PR/test-build work**; no new release or tag is requested. Jeff retains feel and Final Build judgment.
 > The existing Jamulus 3.12.2/3.12.3 records are approved through v0.29.0;
 > the historical signed catalog remains sealed at exact WebJam v0.22.5.
 > Its deleted release is not a working managed-update channel.
@@ -50,6 +50,20 @@ v0.29.0 adds **File → Session library…** before a room and
 **Continue this work** restores its context without starting audio or a room.
 Music moments are plain notes unless a recording position is confirmed.
 See [the saved-work walkthrough](USER_GUIDE.md#save-a-session-and-continue-later).
+
+## Unreleased: move between workflows
+
+In workflow continuity PR/test builds, **File → Return to launch** brings you
+back to the creator choices after saving and cleanup. End or leave an active
+room first; a failed save, unfinished recording or incomplete cleanup keeps
+the current work available. From launch, choose **File → New Music Project…**
+for a separate offline project.
+
+**F1** / **More → Help** adds local topic search and explicit navigation while
+the main window remains usable. It sends nothing to a model or service and
+does not perform the action it explains. See [the workflow guide](USER_GUIDE.md#return-to-launch-unreleased)
+and [the exact-build pilot](docs/WORKFLOW_CONTINUITY_PILOT.md). Physical checks
+remain **NOT RUN**; these changes are not claimed in the published v0.29.0 packages.
 
 ## At a glance
 
@@ -107,7 +121,9 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    sheet, and start only when its required sources, storage, and Shared Track
    are ready. Then wait through **Finalizing** before opening the ready take in
    **Studio**.
-8. For standalone Music, close the session and relaunch, then choose
+8. For standalone Music in this Unreleased test build, end or leave the
+   session and choose **File → Return to launch**. In published v0.29.0,
+   quit and relaunch after ending the session. Then choose
    **File → New Music Project…** on the launch screen. The live **Studio**
    action is completed-take review. Podcast & Voice also supports local
    projects. Review & Rehearsal correctly

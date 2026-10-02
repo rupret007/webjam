@@ -271,6 +271,7 @@ class ReferenceStudioApplicationController(QObject):
         self._recording_auto_stop.timeout.connect(self._stop_recording_async)
         self._latency_compensation_frames = 0
         self._closed = False
+        self._shutdown_complete = False
         self._status = self._profile_text(
             "Choose Play Along / Record, New Project, or Open Project.",
             "Choose New Recording, New Episode Project, or Open Project.",
@@ -398,6 +399,10 @@ class ReferenceStudioApplicationController(QObject):
     def _reject_recording_change(self, action: str = "changing the project") -> bool:
         """Keep the saved commit tokens stable until recording is resolved."""
 
+        # Widget disabling cannot retract an already queued editing signal.
+        # After retirement starts, autosave and document owners are closing.
+        if self._closed:
+            return True
         if self._recording_busy:
             self._status = f"Finish the protected Studio recording before {action}."
             self._refresh()
@@ -711,7 +716,33 @@ class ReferenceStudioApplicationController(QObject):
         self._refresh()
         return True
 
-    def prepare_close(self) -> bool:
+    def prepare_navigation(self) -> bool:
+        """Keep unfinished publication/recovery visible during a mode change."""
+        if self._recording_busy:
+            self._status = "Stop and finish the protected recording before returning to launch."
+            self._refresh()
+            return False
+        if self._bounce_future is not None or self._bounce_progress is not None:
+            self._status = "Wait for the bounce result before returning to launch."
+            self._refresh()
+            return False
+        if self._save_as_future is not None:
+            self._status = "Wait for Save As to finish before returning to launch."
+            self._refresh()
+            return False
+        if (self._recording_recovery_pending
+                or self.project_controller.snapshot.recovery is not None
+                or self.studio_controller.recovery_candidate is not None
+                or self.studio_controller.recovery_requires_discard):
+            self._status = (
+                "Resolve the project's recovery choice before returning to launch. "
+                "Your saved project and recovery copy remain available."
+            )
+            self._refresh()
+            return False
+        return self.prepare_close(action="Return to launch")
+
+    def prepare_close(self, *, action: str = "Quit WebJam") -> bool:
         """Synchronous quit gate; never silently discards a dirty project."""
 
         if not self.project_open:
@@ -732,17 +763,20 @@ class ReferenceStudioApplicationController(QObject):
         dirty = self.project_controller.snapshot.dirty or self.studio_controller.dirty
         if not dirty:
             return True
-        choice = self._ask_unsaved_choice("Quit WebJam")
+        choice = self._ask_unsaved_choice(action)
         if choice == "save":
             return self.save()
         return choice == "discard" and self.close_project(choice="discard")
 
     def shutdown(self) -> bool:
-        if self._closed:
+        if self._shutdown_complete:
             return True
-        if self.project_open and not self.prepare_close():
+        if not self._closed and self.project_open and not self.prepare_close():
             return False
         self._closed = True
+        # A failed release must not leave editable project controls backed by
+        # retired autosave/arrangement owners. Outer File/Help remain usable.
+        self.shell.setEnabled(False)
         self._cancel_offline_tools()
         self._tempo_guard.shutdown()
         self._cancel_media_preparation()
@@ -760,6 +794,7 @@ class ReferenceStudioApplicationController(QObject):
             # a late native audio read or done-callback can race application
             # teardown after shutdown() has reported success.
             self._executor.shutdown(wait=True, cancel_futures=True)
+        self._shutdown_complete = True
         return True
 
     # ------------------------------------------------------------------

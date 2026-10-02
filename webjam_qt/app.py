@@ -249,6 +249,151 @@ def _bounded_smoke_exit_ms(default: int = 0) -> int:
     return value if 1_000 <= value <= 60_000 else default
 
 
+def _run_workspace_callback(controller, callback) -> None:
+    """Ignore a queued bootstrap action after its destination has retired."""
+    if (getattr(controller, "_shutdown", False) is True
+            or getattr(controller, "_workspace_transition_pending", False) is True):
+        return
+    callback()
+
+
+def _create_workspace(app, settings, launch, *, operator_mode=False, smoke_autostart=False):
+    """Construct one fresh workspace after launch explicitly selects its role."""
+    reference_studio_launch = bool(
+        launch is not None and launch.selected_role == "studio"
+    )
+    library_launch = bool(launch is not None and launch.selected_role == "library")
+    if library_launch and isinstance(app, WebJamApplication):
+        # Choosing saved work retires any earlier launch invitation. Only a
+        # subsequent explicit Open Invitation may authorize a live join.
+        app.take_pending_invitation()
+        app.take_pending_invitation_error()
+    creator_profile = get_creator_profile_by_key_or_default(
+        getattr(settings, "last_creator_profile_key", "music")
+    )
+    initial_title = creator_profile.default_template
+    if reference_studio_launch and launch is not None:
+        initial_title = launch.session_name
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title=initial_title,
+        operator_mode=operator_mode,
+    )
+    controller = None
+    try:
+        window.set_creator_profile(creator_profile, locked=False)
+        remote_invitation = (
+            launch.take_remote_invitation()
+            if launch is not None
+            and launch.selected_role == "join"
+            and hasattr(launch, "take_remote_invitation")
+            else None
+        )
+        controller = ApplicationController(
+            window,
+            settings=settings,
+            session_invite=(
+                getattr(launch, "band_invite", None)
+                if launch is not None and launch.selected_role == "join"
+                else None
+            ),
+            remote_invitation=remote_invitation,
+            session_meeting_url=(
+                getattr(launch, "invitation_meeting_url", "")
+                if launch is not None and launch.selected_role == "join"
+                else ""
+            ),
+            operator_mode=operator_mode,
+            offline_reference_studio=reference_studio_launch,
+        )
+        remote_invitation = None
+        if launch is not None:
+            launch.invitation_meeting_url = ""
+        if not reference_studio_launch and not library_launch:
+            # The localhost companion belongs to live-session integrations.
+            controller.start_companion_api()
+        _apply_launch_session_context(controller, launch)
+        if library_launch:
+            try:
+                saved_workspace = controller.session_library.library.load(launch.selected_workspace_id)
+                continued = controller.session_library.continue_record(saved_workspace)
+                requested_open = getattr(launch, "selected_library_open", None)
+                if continued and requested_open:
+                    kind, reference = requested_open
+                    if kind == "bookmark":
+                        controller.session_library.open_bookmark(reference)
+                    elif kind == "take":
+                        controller.session_library.open_take(reference)
+            except (OSError, ValueError):
+                window.flash_message("Workspace could not be reopened. Use More → Session library to retry.", ms=7000)
+        window.show()
+        # Open on the display's own terms instead of a fixed 1440x900 that leaves
+        # the desktop showing around a floating window. Cmd+Shift+F re-snaps.
+        window.fit_to_screen()
+        controller.start_desktop_integrations(
+            enable_update_check=not smoke_autostart,
+        )
+        # Host/Join is authorization to begin the non-modal Jamulus-native journey.
+        # Reference Studio instead opens offline and does not start Jamulus.
+        if not library_launch:
+            startup = (
+                controller._on_launch_audio
+                if smoke_autostart
+                else (
+                    controller.begin_reference_studio_journey
+                    if reference_studio_launch
+                    else controller.begin_startup_journey
+                )
+            )
+            QTimer.singleShot(0, lambda: _run_workspace_callback(controller, startup))
+        if smoke_autostart:
+            # Frozen-build validation needs to exercise the real desktop lifecycle
+            # and then leave through Qt's ordinary quit path. A process signal
+            # only tests the bootloader and can bypass ``aboutToQuit`` entirely.
+            # Keep this hook unavailable to normal launches and bounded so a bad
+            # environment value can never close an interactive session.
+            smoke_exit_ms = _bounded_smoke_exit_ms()
+            if 1_000 <= smoke_exit_ms <= 60_000:
+                QTimer.singleShot(smoke_exit_ms, lambda: _run_workspace_callback(
+                    controller, lambda: _request_smoke_quit(window),
+                ))
+
+        return window, controller
+    except Exception:
+        if controller is None:
+            controller = getattr(window, "_workspace_construction_owner", None)
+        if controller is not None:
+            controller._workspace_transition_pending = True
+            controller._returning_to_launch = True
+            try:
+                cleaned = controller.shutdown()
+            except Exception:
+                # The factory cannot prove cleanup if the cleanup boundary
+                # itself failed. Retain the actual owner for an explicit retry.
+                controller._shutdown_cleanup_pending = True
+                cleaned = False
+            finally:
+                controller._workspace_transition_pending = False
+            if not cleaned:
+                from webjam_qt.controllers.workspace_navigation import WorkspaceCreationFailure
+
+                controller._shutdown_cleanup_pending = True
+                window.workspace_stack.setEnabled(False)
+                window.session_strip.setEnabled(False)
+                window.session_controls.setEnabled(False)
+                window.confirm_close = lambda: True
+                window.finalize_close = controller.shutdown
+                raise WorkspaceCreationFailure(window, controller) from None
+        else:
+            # Construction precedes any authorized live start. Release the
+            # already-created widget playback/waveform owners on failure.
+            window.recording_studio.shutdown()
+        window.close()
+        window.deleteLater()
+        raise
+
+
 def _run_app() -> int:
     """Build and run the application after the fatal-error boundary."""
     arguments = tuple(sys.argv)
@@ -303,9 +448,12 @@ def _run_app() -> int:
         argument_invitation = None
         launch_invite_handler = None
         launch_error_handler = None
+        launch_ingress_active = True
         if isinstance(app, WebJamApplication):
 
             def _deliver_launch_invite(invitation: Invitation) -> None:
+                if not launch_ingress_active:
+                    return
                 _deliver_current_invitation(
                     app,
                     invitation,
@@ -313,7 +461,11 @@ def _run_app() -> int:
                 )
 
             launch_invite_handler = _deliver_launch_invite
-            launch_error_handler = launch.show_ingress_error
+            def _deliver_launch_error(message) -> None:
+                if launch_ingress_active:
+                    launch.show_ingress_error(message)
+
+            launch_error_handler = _deliver_launch_error
             app.invitation_received.connect(launch_invite_handler)
             app.invitation_error.connect(launch_error_handler)
             late_invitation = app.pending_invitation()
@@ -327,7 +479,7 @@ def _run_app() -> int:
             late_error = app.take_pending_invitation_error()
             if late_error:
                 QTimer.singleShot(
-                    0, lambda message=late_error: launch.show_ingress_error(message)
+                    0, lambda message=late_error: _deliver_launch_error(message)
                 )
         if smoke_launch_only:
             # Native release runners need a clean, bounded way to prove the
@@ -336,6 +488,7 @@ def _run_app() -> int:
             # and never starts Jamulus or mutates saved settings.
             QTimer.singleShot(_bounded_smoke_exit_ms(default=5_000), launch.reject)
         result = launch.exec()
+        launch_ingress_active = False
         if isinstance(app, WebJamApplication) and launch_invite_handler is not None:
             try:
                 app.invitation_received.disconnect(launch_invite_handler)
@@ -358,133 +511,58 @@ def _run_app() -> int:
         save_settings(settings)
         settings = load_settings(settings.config_file)
 
-    reference_studio_launch = bool(
-        launch is not None and launch.selected_role == "studio"
+    from webjam_qt.controllers.workspace_navigation import (
+        WorkspaceCreationFailure, WorkspaceNavigator,
     )
-    library_launch = bool(launch is not None and launch.selected_role == "library")
-    if library_launch and isinstance(app, WebJamApplication):
-        # Choosing saved work retires any earlier launch invitation. Only a
-        # subsequent explicit Open Invitation may authorize a live join.
-        app.take_pending_invitation()
-        app.take_pending_invitation_error()
-    creator_profile = get_creator_profile_by_key_or_default(
-        getattr(settings, "last_creator_profile_key", "music")
+
+    config_file = settings.config_file
+
+    def create_next_workspace(next_launch):
+        return _create_workspace(
+            app, load_settings(config_file), next_launch, operator_mode=operator_mode,
+        )
+
+    navigator = WorkspaceNavigator(
+        app,
+        create_launch=lambda: LaunchDialog(load_settings(config_file)),
+        create_workspace=create_next_workspace,
+        invitation_mailbox=isinstance(app, WebJamApplication),
     )
-    initial_title = creator_profile.default_template
-    if reference_studio_launch and launch is not None:
-        initial_title = launch.session_name
-    window = ConductorWindow(
-        mode_entries=ApplicationController.mode_entries(),
-        initial_mode_key="music_jam",
-        initial_title=initial_title,
-        operator_mode=operator_mode,
-    )
-    window.set_creator_profile(creator_profile, locked=False)
-    remote_invitation = (
-        launch.take_remote_invitation()
-        if launch is not None
-        and launch.selected_role == "join"
-        and hasattr(launch, "take_remote_invitation")
-        else None
-    )
-    controller = ApplicationController(
-        window,
-        settings=settings,
-        session_invite=(
-            getattr(launch, "band_invite", None)
-            if launch is not None and launch.selected_role == "join"
-            else None
+    creation_failed = False
+    try:
+        window, controller = _create_workspace(
+            app, settings, launch, operator_mode=operator_mode,
+            smoke_autostart=smoke_autostart,
+        )
+    except WorkspaceCreationFailure as failure:
+        window, controller = failure.window, failure.controller
+        creation_failed = True
+        navigator._discard_pending_invitation()
+        window.show()
+        window.flash_message(
+            "The workspace could not finish opening. Choose File → Return "
+            "to launch to finish its cleanup safely.", ms=0,
+        )
+    except Exception:
+        navigator.dispose()
+        raise
+    navigator.adopt(
+        window, controller,
+        deliver_pending=not creation_failed and not (
+            launch is not None and launch.selected_role == "library"
         ),
-        remote_invitation=remote_invitation,
-        session_meeting_url=(
-            getattr(launch, "invitation_meeting_url", "")
-            if launch is not None and launch.selected_role == "join"
-            else ""
-        ),
-        operator_mode=operator_mode,
-        offline_reference_studio=reference_studio_launch,
     )
-    remote_invitation = None
     if launch is not None:
-        launch.invitation_meeting_url = ""
-    # Qt may terminate the native event loop without returning from exec() on
-    # some platform shutdown paths.  Keep the finally block below as a second,
-    # idempotent guard, but also tie cleanup to Qt's guaranteed quit signal so
-    # Jamulus and the local companion service cannot be orphaned.
-    app.aboutToQuit.connect(controller.shutdown)
-    if not reference_studio_launch and not library_launch:
-        # The localhost companion belongs to live-session integrations.
-        controller.start_companion_api()
-    _apply_launch_session_context(controller, launch)
-    if library_launch:
-        try:
-            saved_workspace = controller.session_library.library.load(launch.selected_workspace_id)
-            continued = controller.session_library.continue_record(saved_workspace)
-            requested_open = getattr(launch, "selected_library_open", None)
-            if continued and requested_open:
-                kind, reference = requested_open
-                if kind == "bookmark":
-                    controller.session_library.open_bookmark(reference)
-                elif kind == "take":
-                    controller.session_library.open_take(reference)
-        except (OSError, ValueError):
-            window.flash_message("Workspace could not be reopened. Use More → Session library to retry.", ms=7000)
-    if isinstance(app, WebJamApplication):
-
-        def _deliver_live_invite(invitation: Invitation) -> None:
-            _deliver_current_invitation(
-                app,
-                invitation,
-                controller.accept_invitation,
-            )
-
-        app.invitation_received.connect(_deliver_live_invite)
-        app.invitation_error.connect(
-            lambda message: _show_live_invitation_error(window, message)
-        )
-        late_invitation = None if library_launch else app.pending_invitation()
-        if late_invitation is not None:
-            QTimer.singleShot(
-                0,
-                lambda invitation=late_invitation: _deliver_live_invite(invitation),
-            )
-    window.show()
-    # Open on the display's own terms instead of a fixed 1440x900 that leaves
-    # the desktop showing around a floating window. Cmd+Shift+F re-snaps.
-    window.fit_to_screen()
-    controller.start_desktop_integrations(
-        enable_update_check=not smoke_autostart,
-    )
-    # Host/Join is authorization to begin the non-modal Jamulus-native journey.
-    # Reference Studio instead opens offline and does not start Jamulus.
-    if not library_launch:
-        QTimer.singleShot(
-            0,
-            controller._on_launch_audio
-            if smoke_autostart
-            else (
-                controller.begin_reference_studio_journey
-                if reference_studio_launch
-                else controller.begin_startup_journey
-            ),
-        )
-    if smoke_autostart:
-        # Frozen-build validation needs to exercise the real desktop lifecycle
-        # and then leave through Qt's ordinary quit path. A process signal
-        # only tests the bootloader and can bypass ``aboutToQuit`` entirely.
-        # Keep this hook unavailable to normal launches and bounded so a bad
-        # environment value can never close an interactive session.
-        smoke_exit_ms = _bounded_smoke_exit_ms()
-        if 1_000 <= smoke_exit_ms <= 60_000:
-            QTimer.singleShot(smoke_exit_ms, lambda: _request_smoke_quit(window))
-
+        launch.deleteLater()
+        launch = None
     previous_exception_hook = sys.excepthook
     sys.excepthook = _report_unhandled_exception
     try:
         exit_code = app.exec()
     finally:
         sys.excepthook = previous_exception_hook
-        controller.shutdown()
+        navigator.shutdown()
+        navigator.dispose()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     return exit_code
 

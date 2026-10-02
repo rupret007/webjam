@@ -201,14 +201,40 @@ jobs:
           "JACK-Client==0.5.5" "soundfile==0.12.1"
 
       - name: Run integration suite against the real binary
-        run: pytest tests/test_real_jamulus_integration.py -v
+        run: >-
+          python -m tests.support.jamulus_integration_supervisor
+          --artifacts artifacts/jamulus-integration-${{ matrix.jamulus_version }}/rpc
+          --timeout-seconds 60 --
+          python -m pytest -p tests.support.jamulus_integration_diagnostics
+          tests/test_real_jamulus_integration.py -v
 
       - name: Run Jamulus/JACK production-boundary companions
         run: >-
-          pytest tests/test_real_jamulus_audio.py
+          python -m tests.support.jamulus_integration_supervisor
+          --artifacts artifacts/jamulus-integration-${{ matrix.jamulus_version }}/boundary
+          --timeout-seconds 240 --
+          python -m pytest -p tests.support.jamulus_integration_diagnostics
+          tests/test_real_jamulus_audio.py
           tests/test_real_jamulus_recording_pipeline.py
           tests/test_dual_musician_rehearsal_lab_real_jamulus.py
           tests/test_reference_track_real_jamulus.py -v -s
+
+      - name: Retain first-attempt integration diagnostics
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jamulus-integration-${{ matrix.jamulus_version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # Only bounded supervisor projections; never fixture profiles,
+          # secrets, recordings, environments, or the private control file.
+          path: |
+            artifacts/jamulus-integration-${{ matrix.jamulus_version }}/**/result.json
+            artifacts/jamulus-integration-${{ matrix.jamulus_version }}/**/phase.json
+            artifacts/jamulus-integration-${{ matrix.jamulus_version }}/**/cleanup.json
+            artifacts/jamulus-integration-${{ matrix.jamulus_version }}/**/pytest.log
+            artifacts/jamulus-integration-${{ matrix.jamulus_version }}/**/stacks.log
+            artifacts/jamulus-integration-${{ matrix.jamulus_version }}/**/process-logs/*.log
+          if-no-files-found: warn
+          retention-days: 30
 
   # ------------------------------------------------------------------
   # Immutable official 3.12.3 platform-update inputs.
