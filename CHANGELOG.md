@@ -29,6 +29,9 @@ they do not request a new release/tag or claim new published package evidence.
 - Jamulus integration CI gains an outer deadline and bounded diagnostics so
   a blocked test can retain evidence and stop its owned process group before
   the job deadline. A timeout remains a failure, not an automatic retry.
+- Desktop dependency locks select urllib3 2.8.0, and the build bootstrap
+  selects pip 26.2, addressing newly reported dependency advisories. Their
+  archive hashes and the runtime package inventory are updated together.
 - Current guides and roadmap distinguish the shipped baseline from this work.
   The [workflow continuity pilot](docs/WORKFLOW_CONTINUITY_PILOT.md) starts all
   physical observations at **NOT RUN**, with exact package/hash fields and a
