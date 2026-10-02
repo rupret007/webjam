@@ -15,6 +15,7 @@ import tempfile
 from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from core.project_playback import ProjectPlaybackState
 from core.session_library import SessionLibrary
 from core.session_lifecycle import SessionLifecyclePhase
 from core.settings import AppSettings, load_settings, save_settings
@@ -155,6 +156,9 @@ def run_workflow_continuity_smoke() -> dict:
                 app.processEvents()
                 record = library.create("music", "Continuity smoke", notes="Keep this rehearsal draft.")
                 _require(controller.session_library.continue_record(record), "saved workspace did not open")
+                project_bundle = Path(temporary) / "Continuity project.webjam"
+                project_identity = None
+                project_tracks = ()
                 for _round in range(2):
                     live = navigator.controller
                     old_return = navigator._return_slot
@@ -194,6 +198,24 @@ def run_workflow_continuity_smoke() -> dict:
                              "local project started a Jamulus process")
                     old_return()
                     _require(navigator.controller is local, "old callback retired the replacement owner")
+                    projects = local.reference_studio_projects
+                    if _round == 0:
+                        project = projects.create_project(project_bundle, "Keep this local project")
+                        projects.project_controller.add_track("Retain this track")
+                        _require(projects.save(prepare_media=False), "local project did not save")
+                        project_identity = project.project_id
+                        project_tracks = tuple(
+                            track.name for track in projects.project_controller.snapshot.project.tracks
+                        )
+                    else:
+                        project = projects.open_project(project_bundle)
+                        _require(project.project_id == project_identity
+                                 and tuple(track.name for track in project.tracks) == project_tracks,
+                                 "fresh local owner did not reopen the same saved project")
+                    _require(projects.project_open and projects.playback.state in {
+                                 ProjectPlaybackState.EMPTY, ProjectPlaybackState.READY,
+                             },
+                             "local project navigation started playback or failed to open")
                     _help_route(app, local, offline=True)
                     local.window._return_to_launch_action.trigger()
                     _require(navigator.controller is None and navigator.launch.isVisible(),
@@ -209,6 +231,7 @@ def run_workflow_continuity_smoke() -> dict:
                 _require(library.load(record.id).notes == record.notes, "round trips lost saved notes")
                 return {"round_trips": 2, "fresh_controllers": 5, "help_routes": 4,
                         "retired_callbacks_ignored": True, "saved_notes_unchanged": True,
+                        "local_project_identity_retained": True,
                         "physical_audio": "not_run"}
             finally:
                 if navigator.controller is not None:

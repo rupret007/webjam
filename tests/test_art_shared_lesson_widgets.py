@@ -265,9 +265,10 @@ def test_lesson_context_does_not_leak_through_music_profile_or_native_status(car
 @pytest.mark.parametrize("hosting", (True, False))
 def test_lesson_actions_fit_larger_font_through_narrow_wide_roundtrip(card, qapp, hosting):
     owner, panel, events = card
-    # A larger ordinary font reproduces the Linux card's two-column overflow
-    # on macOS too. The product must fit, without changing the user's font.
-    panel.setStyleSheet('QPushButton { font-family: "Helvetica"; font-size: 13pt; }')
+    # Logical pixels give Cocoa and offscreen the same enlarged text demand.
+    # 13pt can still fit two columns on Cocoa, so it does not prove stacking.
+    # Preserve the actual narrow/wide policy and the user's requested font.
+    panel.setStyleSheet('QPushButton { font-family: "Helvetica"; font-size: 22px; }')
     panel.set_service_label("Webex")
     panel.set_meeting_configured(True)
     panel.set_app_status("installed", publisher_verified=True)
@@ -286,7 +287,7 @@ def test_lesson_actions_fit_larger_font_through_narrow_wide_roundtrip(card, qapp
         assert panel.width() == width
         assert QApplication.focusWidget() is focused
         assert tuple(panel.findChildren(QPushButton)) == buttons
-        assert panel._fallback_btn.font().pointSize() == 13
+        assert panel._fallback_btn.font().pixelSize() == 22
         visible = [button for button in buttons if button.isVisibleTo(panel)]
         visible.extend(label for label in panel.findChildren(QLabel) if label.isVisibleTo(panel))
         for widget in visible:
@@ -305,3 +306,8 @@ def test_lesson_actions_fit_larger_font_through_narrow_wide_roundtrip(card, qapp
         assert panel.width() == width
         assert QApplication.focusWidget() is focused
     assert events == []
+    QTest.keyClick(focused, Qt.Key.Key_Space)
+    assert events == ["open_meeting_requested"]
+    panel._change_link_btn.setFocus()
+    QTest.keyClick(panel._change_link_btn, Qt.Key.Key_Space)
+    assert events == ["open_meeting_requested", "change_link_requested"]

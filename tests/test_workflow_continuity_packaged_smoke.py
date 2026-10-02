@@ -21,5 +21,6 @@ def test_packaged_proof_replaces_real_controllers_and_routes_local_help():
     assert json.loads(lines[-2]) == {
         "round_trips": 2, "fresh_controllers": 5, "help_routes": 4,
         "retired_callbacks_ignored": True, "saved_notes_unchanged": True,
+        "local_project_identity_retained": True,
         "physical_audio": "not_run",
     }
