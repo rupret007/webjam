@@ -252,9 +252,16 @@ def _read_regular(path: Path) -> bytes:
             current = path.lstat()
             def identity(value):
                 return (value.st_dev, value.st_ino, value.st_size,
-                        value.st_mtime_ns, value.st_ctime_ns)
+                        value.st_mtime_ns)
+            # Windows Python can report creation time for lstat's ctime but
+            # change time for fstat's ctime. Check each API's ctime for changes
+            # without comparing those different clocks. POSIX keeps the full
+            # cross-API check, including changes that restore size and mtime.
             if not stat.S_ISREG(current.st_mode) or not (
                 identity(before) == identity(opened) == identity(after) == identity(current)
+                and before.st_ctime_ns == current.st_ctime_ns
+                and opened.st_ctime_ns == after.st_ctime_ns
+                and (os.name == "nt" or before.st_ctime_ns == opened.st_ctime_ns)
             ):
                 raise WorkspaceBackupError("Workspace backup changed while being read.")
         if len(data) > MAX_WORKSPACE_BACKUP_BYTES:
