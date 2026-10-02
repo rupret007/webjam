@@ -711,24 +711,28 @@ def _reserve_ports(kinds: list[int]) -> list[int]:
                 pass
 
 
+def _signal_process(proc: subprocess.Popen[bytes], signum: int) -> None:
+    """Signal one supervised child, or its private standalone process group."""
+    if integration_supervised():
+        # The child shares pytest's group with JACK and the other clients.
+        # Only the outer supervisor may signal that entire owned group.
+        proc.send_signal(signum)
+    else:
+        os.killpg(proc.pid, signum)
+
+
 def _stop_process(proc: subprocess.Popen[bytes], timeout_s: float = 5.0) -> None:
     if proc.poll() is not None:
         return
     try:
-        if integration_supervised():
-            proc.terminate()
-        else:
-            os.killpg(proc.pid, signal.SIGTERM)
+        _signal_process(proc, signal.SIGTERM)
     except ProcessLookupError:
         return
     try:
         proc.wait(timeout=timeout_s)
     except subprocess.TimeoutExpired:
         try:
-            if integration_supervised():
-                proc.kill()
-            else:
-                os.killpg(proc.pid, signal.SIGKILL)
+            _signal_process(proc, signal.SIGKILL)
         except ProcessLookupError:
             pass
         proc.wait(timeout=timeout_s)
@@ -2300,7 +2304,7 @@ class JamulusJackHarness:
 
         paused = False
         try:
-            os.killpg(client.proc.pid, signal.SIGSTOP)
+            _signal_process(client.proc, signal.SIGSTOP)
             paused = True
 
             def one_client_absent() -> dict[str, Any] | None:
@@ -2326,7 +2330,7 @@ class JamulusJackHarness:
             )
         finally:
             if paused:
-                os.killpg(client.proc.pid, signal.SIGCONT)
+                _signal_process(client.proc, signal.SIGCONT)
 
         expected_names = set(self.expected_client_names)
 

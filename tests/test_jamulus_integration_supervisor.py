@@ -82,6 +82,86 @@ def test_normal_cleanup_preserves_success_and_owned_log(tmp_path: Path) -> None:
     assert not (root / ".control.json").exists()
 
 
+def test_disconnect_reconnect_pauses_only_the_selected_supervised_client(tmp_path: Path) -> None:
+    unrelated = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
+                                 start_new_session=True)
+    try:
+        run, root = _run(tmp_path, """
+            import json, os, subprocess, sys, time
+            from pathlib import Path
+            from tests.support.jamulus_jack_harness import ManagedProcess, JamulusJackHarness
+
+            def test_owned_client_pause_and_resume():
+                here = Path(__file__).parent
+                children = []
+                def ticks(child):
+                    return child.tail().count('tick')
+                def state(child):
+                    return subprocess.check_output(
+                        ['ps', '-o', 'stat=', '-p', str(child.proc.pid)], text=True).strip()
+                try:
+                    child_code = chr(10).join((
+                        'import time', 'while True:',
+                        "    print('tick', flush=True)", '    time.sleep(.02)',
+                    ))
+                    for name in ('sibling', 'target'):
+                        child = ManagedProcess(name, [sys.executable, '-u', '-c', child_code],
+                            env=os.environ.copy(), log_path=here / (name + '.log'))
+                        children.append(child)
+                    (here / 'owned.json').write_text(json.dumps({'group': os.getpgrp()}))
+                    sibling, target = children
+                    assert os.getpgid(target.proc.pid) == os.getpgid(sibling.proc.pid) == os.getpgrp()
+                    deadline = time.monotonic() + 2
+                    while not all(ticks(child) for child in children):
+                        assert time.monotonic() < deadline, 'synthetic clients did not start'
+                        time.sleep(.01)
+                    harness = JamulusJackHarness.__new__(JamulusJackHarness)
+                    harness.include_reference_track = False
+                    harness.server_process = sibling
+                    harness.client_processes = children
+                    observed = {}
+                    def roster_while_paused():
+                        if not state(target).startswith('T'):
+                            return None
+                        target_ticks = ticks(target)
+                        sibling_ticks = ticks(sibling)
+                        deadline = time.monotonic() + 2
+                        while ticks(sibling) <= sibling_ticks:
+                            assert ticks(target) == target_ticks, 'selected client did not stay paused'
+                            assert time.monotonic() < deadline, 'sibling stopped with selected client'
+                            time.sleep(.01)
+                        assert ticks(target) == target_ticks, 'selected client did not stay paused'
+                        observed['paused_ticks'] = target_ticks
+                        return {'connections': 1, 'clients': [{'name': harness.CLIENT_A_NAME}]}
+                    def roster_after_resume():
+                        if state(target).startswith('T') or ticks(target) <= observed['paused_ticks']:
+                            return None
+                        observed['resumed'] = True
+                        return tuple({'name': name} for name in harness.expected_client_names)
+                    # Only roster observations are controlled. The actual
+                    # reconnect method, wait loop and process signals execute.
+                    harness._server_roster = roster_while_paused
+                    harness._connected_clients = roster_after_resume
+                    recovered = harness.exercise_disconnect_reconnect(client_index=1, timeout_s=2)
+                    assert {entry['name'] for entry in recovered} == set(harness.expected_client_names)
+                    assert observed['resumed']
+                    assert all(child.proc.poll() is None for child in children)
+                finally:
+                    for child in reversed(children):
+                        child.stop()
+        """, timeout=12)
+        assert run.returncode == 0, run.stdout + run.stderr
+        result = _result(root)
+        assert result["status"] == "passed"
+        assert result["cleanup"]["all_owned_processes_stopped"]
+        assert result["cleanup"]["signals"] == []
+        assert len(list((root / "process-logs").glob("*.log"))) == 2
+        assert unrelated.poll() is None
+    finally:
+        unrelated.kill()
+        unrelated.wait(timeout=3)
+
+
 def test_first_assertion_failure_is_retained_without_retry(tmp_path: Path) -> None:
     run, root = _run(tmp_path, """
         from pathlib import Path
