@@ -76,8 +76,17 @@ def navigation(tmp_path, monkeypatch):
         controllers.append(controller)
         return window, controller
 
+    def create_launch():
+        launch = LaunchDialog(load_settings(settings.config_file))
+        # Exercise the supported cross-platform journey even on macOS: live
+        # navigation must not depend on the Music/Podcast hosting capability.
+        launch._host_available = False
+        launch._apply_creator_profile_presentation()
+        assert not launch._host_button.isEnabled()
+        return launch
+
     navigator = WorkspaceNavigator(
-        mailbox, create_launch=lambda: LaunchDialog(load_settings(settings.config_file)),
+        mailbox, create_launch=create_launch,
         create_workspace=create_workspace, invitation_mailbox=True,
     )
     window, controller = create_workspace(None)
@@ -95,6 +104,20 @@ def navigation(tmp_path, monkeypatch):
         navigator.launch.deleteLater()
     navigator.dispose()
     qapp.processEvents()
+
+
+def _join_live(navigator, qapp):
+    launch = navigator.launch
+    assert not launch._host_button.isEnabled()
+    launch.show_join()
+    launch._invite_input.setText(create_invite_link(
+        "192.0.2.10", session_name="Navigation test",
+    ))
+    launch._join_button_primary.click()
+    qapp.processEvents()
+    assert navigator.controller is not None
+    assert not navigator.controller.settings.host_server_enabled
+    assert navigator.controller.settings.jamulus_server == "192.0.2.10"
 
 
 def test_two_round_trips_create_fresh_controllers_and_retire_callbacks(navigation, monkeypatch):
@@ -142,8 +165,7 @@ def test_two_round_trips_create_fresh_controllers_and_retire_callbacks(navigatio
         old_slot()
         assert navigator.controller is local
         assert navigator.return_to_launch()
-        navigator.launch._host()
-        qapp.processEvents()
+        _join_live(navigator, qapp)
         assert navigator.controller is not local
         assert not navigator.controller._offline_reference_studio
         assert not navigator.window._reference_studio_only
@@ -211,8 +233,7 @@ def test_offline_invite_is_not_replayed_after_return_and_old_generation_is_ignor
     assert local.window.statusBar().currentMessage() == local.window.OFFLINE_INVITATION_GUIDANCE
     assert navigator.return_to_launch()
     assert mailbox.pending_invitation() is None
-    navigator.launch._host()
-    qapp.processEvents()
+    _join_live(navigator, qapp)
     current = navigator.controller
     current.accept_invitation = Mock(return_value=True)
     mailbox._pending_invitation = invitation
@@ -414,8 +435,7 @@ def test_local_profile_is_initialized_again_on_each_route(navigation, tmp_path, 
         assert navigator.launch.selected_creator_profile_key == "music"
         navigator.launch._workspace_actions[profile].trigger()
     assert navigator.launch.selected_creator_profile_key == profile
-    navigator.launch._host()
-    qapp.processEvents()
+    _join_live(navigator, qapp)
     assert navigator.controller.creator_profile.key == profile
     assert not navigator.controller._offline_reference_studio
     assert navigator.controller.reference_studio_projects is not local.reference_studio_projects
