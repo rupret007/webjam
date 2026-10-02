@@ -15,6 +15,7 @@ import tempfile
 from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from core.network_invite import create_invite_link
 from core.project_playback import ProjectPlaybackState
 from core.session_library import SessionLibrary
 from core.session_lifecycle import SessionLifecyclePhase
@@ -191,7 +192,7 @@ def run_workflow_continuity_smoke() -> dict:
                     navigator.launch._workspace_actions["music"].trigger()
                     app.processEvents()
                     local = navigator.controller
-                    _require(local is not live and local._offline_reference_studio
+                    _require(local is not None and local is not live and local._offline_reference_studio
                              and local.window._reference_studio_only,
                              "New Music Project reused the live owner")
                     _require(not local._is_jamulus_running() and not local.bridge.hosted_server_alive(),
@@ -220,11 +221,19 @@ def run_workflow_continuity_smoke() -> dict:
                     local.window._return_to_launch_action.trigger()
                     _require(navigator.controller is None and navigator.launch.isVisible(),
                              "local Studio did not return to launch")
-                    navigator.launch._host()
+                    # Music Host is intentionally macOS-only. Join exercises
+                    # the real supported launch route on every desktop; the
+                    # startup boundary above prevents any network/audio start.
+                    navigator.launch.show_join()
+                    navigator.launch._invite_input.setText(create_invite_link(
+                        "192.0.2.10", session_name="Continuity smoke",
+                    ))
+                    navigator.launch._join_button_primary.click()
                     app.processEvents()
-                    _require(navigator.controller is not local
+                    _require(navigator.controller is not None
+                             and navigator.controller is not local
                              and not navigator.controller._offline_reference_studio,
-                             "Host did not create a fresh live owner")
+                             "Join did not create a fresh live owner")
                 _require(len({id(item) for item in controllers}) == 5, "controllers were reused")
                 _require(len(starts["live"]) == 3 and starts["companion"] == starts["live"],
                          "unexpected live startup or companion replay")
