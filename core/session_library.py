@@ -29,6 +29,7 @@ from core.notes_recovery import MAX_RECOVERY_DRAFT_BYTES
 MAX_SESSION_RECORD_BYTES = 8 * 1024 * 1024
 MAX_LIBRARY_SCAN_BYTES = 64 * 1024 * 1024
 MAX_LIBRARY_RECORDS = 1000
+MAX_IMPORT_HISTORY = 16
 _PROFILES = frozenset(profile.key for profile in CREATOR_PROFILES)
 _ID = re.compile(r"[0-9a-f]{32}\Z")
 _IMPORT_NAMESPACE = UUID("d1dbac72-a7ca-47c3-b071-b097ee73c198")
@@ -44,6 +45,13 @@ _TAKE_TEXT_FIELDS = (
     "take_id", "take_path", "path", "title", "source_identity", "run_id",
     "recording_session_id", "status",
 )
+_PROVENANCE_FIELDS = frozenset((
+    "source_workspace_id", "profile", "revision", "created_at", "updated_at",
+    "source_key", "payload_sha256",
+))
+_HISTORICAL_FIELDS = frozenset((
+    "source_workspace_id", "recording_session_id", "run_id", "validated", "status",
+))
 
 
 class SessionLibraryError(ValueError):
@@ -52,6 +60,15 @@ class SessionLibraryError(ValueError):
 
 class SessionLibraryConflict(SessionLibraryError):
     """A newer or externally changed workspace must be reloaded first."""
+
+
+class SessionLibraryImportUnconfirmed(SessionLibraryError):
+    """Creation may have published; reconcile this exact identity before retry."""
+
+    def __init__(self, workspace_id: str, expected_sha256: str) -> None:
+        super().__init__("Workspace import was not confirmed saved. Reload its intended identity before retrying.")
+        self.workspace_id = workspace_id
+        self.expected_sha256 = expected_sha256
 
 
 class _UnsafeSessionPath(SessionLibraryError):
@@ -76,6 +93,7 @@ class SessionRecord:
     rehearsal: dict = field(default_factory=dict)
     art: dict = field(default_factory=dict)
     source_key: str = ""
+    import_provenance: tuple[dict, ...] = ()
     recovered: bool = field(default=False, compare=False)
     _store_token: str | None = field(default=None, repr=False, compare=False)
 
@@ -117,6 +135,47 @@ def _timestamp(value: object) -> str:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+def _import_history(record: SessionRecord) -> None:
+    history = record.import_provenance
+    if not isinstance(history, (tuple, list)) or len(history) > MAX_IMPORT_HISTORY:
+        raise SessionLibraryError("Workspace import history is invalid or full.")
+    for hop in history:
+        if not isinstance(hop, dict) or set(hop) != _PROVENANCE_FIELDS:
+            raise SessionLibraryError("Workspace import provenance is unsupported.")
+        _identifier(hop["source_workspace_id"])
+        _profile(hop["profile"])
+        if type(hop["revision"]) is not int or not 1 <= hop["revision"] <= 2**63 - 1:
+            raise SessionLibraryError("Workspace import revision is invalid.")
+        for key in ("created_at", "updated_at"):
+            _timestamp(hop[key])
+        if datetime.fromisoformat(hop["updated_at"].replace("Z", "+00:00")) < datetime.fromisoformat(hop["created_at"].replace("Z", "+00:00")):
+            raise SessionLibraryError("Workspace import update predates creation.")
+        _text(hop["source_key"], "Workspace original import source", 512)
+        if not isinstance(hop["payload_sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", hop["payload_sha256"]):
+            raise SessionLibraryError("Workspace import checksum is invalid.")
+    if not history:
+        # Version 1 allowed arbitrary bounded link metadata. Only version 2
+        # assigns meaning to this reserved imported-history structure.
+        return
+    for reference in record.take_links:
+        if "historical_origins" not in reference:
+            continue
+        origins = reference["historical_origins"]
+        if (not isinstance(origins, list)
+                or not 1 <= len(origins) <= MAX_IMPORT_HISTORY):
+            raise SessionLibraryError("Workspace historical take origins are invalid or full.")
+        for origin in origins:
+            if (not isinstance(origin, dict) or not set(origin) <= _HISTORICAL_FIELDS
+                    or "source_workspace_id" not in origin or len(origin) < 2):
+                raise SessionLibraryError("Workspace historical take origin is unsupported.")
+            _identifier(origin["source_workspace_id"])
+            for key in ("recording_session_id", "run_id", "status"):
+                if key in origin:
+                    _text(origin[key], "Workspace historical take detail", MAX_RECOVERY_DRAFT_BYTES)
+            if "validated" in origin and type(origin["validated"]) is not bool:
+                raise SessionLibraryError("Workspace historical validation must be boolean.")
 
 
 def _json_value(value: object, *, depth: int = 0, budget: list[int] | None = None) -> None:
@@ -201,12 +260,16 @@ def _payload(record: SessionRecord) -> dict:
             _text(take_id, label, MAX_RECOVERY_DRAFT_BYTES)
     if not isinstance(record.rehearsal, dict) or not isinstance(record.art, dict):
         raise SessionLibraryError("Workspace rehearsal and Art details must be objects.")
+    _import_history(record)
     result = {
         "version": 1, "id": record.id, "profile": record.profile,
         "title": record.title, "revision": record.revision,
         "created_at": record.created_at, "updated_at": record.updated_at,
         **{name: getattr(record, name) for name in _CONTENT_FIELDS},
     }
+    if record.import_provenance:
+        result["version"] = 2
+        result["import_provenance"] = record.import_provenance
     _json_value(result)
     return result
 
@@ -226,6 +289,18 @@ def validate_session_record(record: SessionRecord) -> None:
     _encode(record)
 
 
+def encode_session_record(record: SessionRecord) -> bytes:
+    """Return a validated metadata snapshot, excluding local recovery tokens."""
+    return _encode(record)
+
+
+def decode_session_record(data: bytes) -> SessionRecord:
+    """Validate a bounded standalone snapshot without touching library files."""
+    if not isinstance(data, bytes) or len(data) > MAX_SESSION_RECORD_BYTES:
+        raise SessionLibraryError("Workspace document is invalid or too large.")
+    return _decode(data, expected_id=None)
+
+
 def _pairs(pairs: list[tuple[str, object]]) -> dict:
     result = {}
     for key, value in pairs:
@@ -239,19 +314,26 @@ def _constant(_value: str) -> None:
     raise SessionLibraryError("Workspace document contains a non-finite number.")
 
 
-def _decode(data: bytes, expected_id: str) -> SessionRecord:
+def _decode(data: bytes, expected_id: str | None) -> SessionRecord:
     try:
         value = json.loads(data.decode("utf-8"), object_pairs_hook=_pairs, parse_constant=_constant)
-        if not isinstance(value, dict) or set(value) != _FIELDS or type(value["version"]) is not int or value["version"] != 1:
+        if not isinstance(value, dict) or type(value.get("version")) is not int or value["version"] not in {1, 2}:
+            raise SessionLibraryError("Workspace document schema is unsupported.")
+        expected_fields = _FIELDS if value["version"] == 1 else _FIELDS | {"import_provenance"}
+        if set(value) != expected_fields or (value["version"] == 2 and not value["import_provenance"]):
             raise SessionLibraryError("Workspace document schema is unsupported.")
         raw = {name: content for name, content in value.items() if name != "version"}
         for name in ("decisions", "actions", "blockers", "recaps", "take_links"):
             if not isinstance(raw[name], list):
                 raise SessionLibraryError("Workspace document list is invalid.")
             raw[name] = tuple(raw[name])
+        if "import_provenance" in raw:
+            if not isinstance(raw["import_provenance"], list):
+                raise SessionLibraryError("Workspace import history must be a list.")
+            raw["import_provenance"] = tuple(raw["import_provenance"])
         record = SessionRecord(**raw)
         _payload(record)
-        if record.id != expected_id:
+        if expected_id is not None and record.id != expected_id:
             raise SessionLibraryError("Workspace filename and identity do not match.")
         return record
     except (UnicodeDecodeError, ValueError, TypeError, RecursionError) as exc:
@@ -377,6 +459,28 @@ class SessionLibrary:
         with self._locked():
             return self._create(profile, title, uuid4().hex, payload)
 
+    def create_imported(self, record: SessionRecord) -> SessionRecord:
+        """Publish a prepared new identity once, retaining exact import evidence.
+
+        Validation precedes storage. No prior workspace is adopted or replaced.
+        On an uncertain I/O outcome, the exception identifies the intended file
+        and expected bytes so callers can reconcile without creating a duplicate.
+        """
+        data = _encode(record)
+        if not record.import_provenance or record.revision != 1 or record._store_token is not None or record.recovered:
+            raise SessionLibraryError("Expected a new prepared workspace import.")
+        if any(hop["source_workspace_id"] == record.id for hop in record.import_provenance):
+            raise SessionLibraryError("Imported workspace must have a fresh local identity.")
+        with self._locked():
+            path = self._path(record.id)
+            if _read(path) is not None or _read(path.with_suffix(".json.bak")) is not None:
+                raise SessionLibraryConflict("Workspace already exists; reconcile the previous import.")
+            try:
+                atomic_write_bytes(path, data, mode=0o600)
+            except OSError as exc:
+                raise SessionLibraryImportUnconfirmed(record.id, _token(data)) from exc
+            return replace(_decode(data, record.id), _store_token=_token(data))
+
     def save(self, record: SessionRecord) -> SessionRecord:
         """Publish only if both the revision and exact previously read bytes match.
 
@@ -388,7 +492,8 @@ class SessionLibrary:
             current = self._load(record.id, record.profile)
             if record._store_token is None or record._store_token != current._store_token or record.revision != current.revision:
                 raise SessionLibraryConflict("Workspace changed since it was opened. Reload before saving.")
-            if record.created_at != current.created_at or record.source_key != current.source_key:
+            if (record.created_at != current.created_at or record.source_key != current.source_key
+                    or record.import_provenance != current.import_provenance):
                 raise SessionLibraryConflict("Workspace creation or import identity changed.")
             # A backwards wall clock must not make newly saved work sort older.
             updated = max(_now(), current.updated_at)
@@ -487,4 +592,6 @@ class SessionLibrary:
 __all__ = [
     "MAX_SESSION_RECORD_BYTES", "SessionLibrary", "SessionLibraryConflict",
     "SessionLibraryError", "SessionRecord", "validate_session_record",
+    "encode_session_record", "decode_session_record",
+    "MAX_IMPORT_HISTORY", "SessionLibraryImportUnconfirmed",
 ]

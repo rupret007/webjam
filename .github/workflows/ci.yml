@@ -985,6 +985,10 @@ jobs:
           python -c "import asyncio, sys; loop = asyncio.new_event_loop(); print(sys.version, type(loop).__name__); assert sys.platform != 'win32' or isinstance(loop, asyncio.ProactorEventLoop); loop.close()"
           python -X dev -m pytest -q -W error::ResourceWarning -W error::pytest.PytestUnraisableExceptionWarning reference_service/tests
 
+      - name: Verify workspace backup publication on this desktop
+        timeout-minutes: 3
+        run: python -X dev -m pytest -q -W error::ResourceWarning -W error::pytest.PytestUnraisableExceptionWarning tests/test_workspace_backup.py
+
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
