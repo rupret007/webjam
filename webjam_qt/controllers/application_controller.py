@@ -7166,7 +7166,8 @@ class ApplicationController(QObject):
 
     def _on_launch_audio(self) -> None:
         """Toggle handler — launches Jamulus if stopped, stops it if running."""
-        if (self._shutdown or getattr(self, "_workspace_transition_pending", False)):
+        if (getattr(self, "_shutdown", False)
+                or getattr(self, "_workspace_transition_pending", False)):
             return
         if self._shutdown_cleanup_blocks_action():
             return
