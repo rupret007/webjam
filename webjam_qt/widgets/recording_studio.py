@@ -4545,6 +4545,11 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
             return True
         if not self.prepare_close():
             return False
+        # The saved editor cannot accept new work after its persistence owner
+        # retires. A failed resource release keeps this surface visible but
+        # paused; the containing window still owns File/Help/cleanup retries.
+        self.setEnabled(False)
+        self._review_dialog.setEnabled(False)
         # Retire callbacks immediately, but retry resource cleanup until the
         # separate completion latch proves every release below succeeded.
         self._waveform_shutdown = True

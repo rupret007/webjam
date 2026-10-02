@@ -355,12 +355,17 @@ def test_communication_fits_real_notes_workspace(qapp, size, save_state):
         assert panel.room_return_button().isVisibleTo(window)
         assert window.session_strip._audio_button.isVisibleTo(window)
         compact = panel.height() < 500
-        assert panel.layout().contentsMargins().bottom() == (Space.XS if compact else Space.MD)
+        # Very short Notes panels spend outer padding on the editor and full
+        # recovery copy, independently of the profile's readout styling.
+        tight = panel.height() < 380
+        assert panel.layout().contentsMargins().bottom() == (
+            0 if tight else Space.XS if compact else Space.MD
+        )
         for readout in (panel._guidance, panel._pulse):
             assert readout.layout().contentsMargins().top() == (0 if compact else Space.SM)
             assert readout.layout().spacing() == (0 if compact else Space.XS)
         panel.set_creator_profile(get_creator_profile_by_key("music"))
-        assert panel.layout().contentsMargins().bottom() == Space.MD
+        assert panel.layout().contentsMargins().bottom() == (0 if tight else Space.MD)
         for readout in (panel._guidance, panel._pulse):
             assert readout.layout().contentsMargins().top() == Space.SM
             assert readout.layout().spacing() == Space.XS

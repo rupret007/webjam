@@ -7,7 +7,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtCore import QCoreApplication, QEvent, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from core.take_player import PlaybackError, SoundDeviceSink, StudioPlaybackPreparation, TakePlayer
@@ -190,6 +191,140 @@ def test_return_to_launch_retains_studio_owner_until_cleanup_retry(navigation, m
         allow_close = True
     assert navigator.return_to_launch()
     assert controller._shutdown and widget._shutdown_complete
+    assert navigator.controller is None and navigator.launch.isVisible()
+
+
+@pytest.mark.parametrize("failure", ["exception", "false"])
+def test_failed_retirement_cannot_accept_review_edits_after_its_final_save(
+    navigation, monkeypatch, tmp_path, failure,  # noqa: F811
+):
+    from core.take_library import load_take
+    from core.take_review import load_take_review
+    from tests.test_recording_studio import _schema2_studio_take
+
+    navigator, _mailbox, _controllers, app = navigation
+    controller = navigator.controller
+    widget = controller.window.recording_studio
+    take, _ = _schema2_studio_take(tmp_path)
+    assert widget.open_take(take)
+    controller._on_rail_view_changed("takes")
+    widget._open_take_review()
+    review = widget._review_dialog
+    review.notes.setPlainText("Keep the review before cleanup.")
+    review.favorite.setChecked(True)
+    assert review.dirty
+    original_stop = widget._player.stop
+    allow_close = False
+
+    def stop():
+        if not allow_close:
+            if failure == "exception":
+                raise RuntimeError("controlled playback close failure")
+            return False
+        return original_stop()
+
+    monkeypatch.setattr(widget._player, "stop", stop)
+    monkeypatch.setattr(QMessageBox, "information", Mock())
+    try:
+        assert not navigator.return_to_launch()
+        assert controller._shutdown_cleanup_pending
+        assert widget._waveform_shutdown and not widget._shutdown_complete
+        before = load_take_review(load_take(take))
+        review.notes.setFocus()
+        QTest.keyClicks(review.notes, "Must not become an unsaved edit")
+        QTest.mouseClick(review.favorite, Qt.MouseButton.LeftButton)
+        app.processEvents()
+        assert review.notes.toPlainText() == before.notes
+        assert review.favorite.isChecked() == before.favorite
+        assert not review.dirty
+        assert not widget.isEnabled() and not review.isEnabled()
+        # Cleanup freezes the retired editor, not its window's safe exits.
+        window = controller.window
+        assert window.session_canvas.isEnabled()
+        assert window._return_to_launch_action.isEnabled()
+        assert window._workflow_help_action.isEnabled()
+        window._workflow_help_action.trigger()
+        app.processEvents()
+        help_dialog = window._workflow_help_dialog
+        assert help_dialog.isVisible() and help_dialog.isEnabled()
+        help_dialog.close()
+    finally:
+        allow_close = True
+    controller.window._return_to_launch_action.trigger()
+    assert navigator.controller is None and navigator.launch.isVisible()
+    after = load_take_review(load_take(take))
+    assert after.notes == "Keep the review before cleanup." and after.favorite
+
+
+def test_failed_review_save_keeps_editor_and_recovery_actions_available(studio, monkeypatch, tmp_path):
+    from core.take_library import load_take
+    from core.take_review import TakeReviewError, load_take_review
+    from tests.test_recording_studio import _schema2_studio_take
+
+    take, _ = _schema2_studio_take(tmp_path / "source")
+    assert studio.open_take(take)
+    studio.show()
+    studio._open_take_review()
+    review = studio._review_dialog
+    review.notes.setPlainText("Retained draft")
+    with monkeypatch.context() as patch:
+        patch.setattr("webjam_qt.widgets.studio_take_review_workflow.save_take_review",
+                      Mock(side_effect=TakeReviewError("Save failed")))
+        assert studio.shutdown() is False
+        assert studio.isEnabled() and review.isEnabled()
+        assert review.save_button.isEnabled()
+        assert not studio._waveform_shutdown
+        review.notes.setFocus()
+        review.notes.moveCursor(review.notes.textCursor().MoveOperation.End)
+        QTest.keyClicks(review.notes, " with another thought")
+        assert review.notes.toPlainText() == "Retained draft with another thought"
+    assert studio.shutdown()
+    assert load_take_review(load_take(take)).notes == "Retained draft with another thought"
+
+
+def test_failed_local_project_retirement_blocks_ui_and_queued_metadata_edits(
+    navigation, monkeypatch, tmp_path,  # noqa: F811
+):
+    navigator, _mailbox, _controllers, app = navigation
+    assert navigator.return_to_launch()
+    navigator.launch._workspace_actions["music"].trigger()
+    app.processEvents()
+    controller = navigator.controller
+    local = controller.reference_studio_projects
+    local.create_project(tmp_path / "Keep this project", "Keep this project")
+    local.project_controller.add_track("Retained track")
+    assert local.save(prepare_media=False)
+    before = local.project_controller.snapshot.project
+    original_shutdown = local._executor.shutdown
+    allow_close = False
+
+    def shutdown(*args, **kwargs):
+        if not allow_close:
+            raise RuntimeError("controlled executor close failure")
+        return original_shutdown(*args, **kwargs)
+
+    monkeypatch.setattr(local._executor, "shutdown", shutdown)
+    monkeypatch.setattr(QMessageBox, "information", Mock())
+    monkeypatch.setattr(local, "_ask_unsaved_choice", Mock(return_value="save"))
+    try:
+        assert not navigator.return_to_launch()
+        assert local._closed and not local._shutdown_complete
+        assert local.studio_controller.is_shutdown
+        tempo = local.workspace.tempo
+        tempo.setFocus()
+        QTest.keyClick(tempo, Qt.Key.Key_Up)
+        QTest.keyClick(tempo, Qt.Key.Key_Return)
+        # A queued UI signal can arrive even after its widget is disabled.
+        local.workspace.tempo_changed.emit(before.tempo_bpm + 10)
+        app.processEvents()
+        assert local.project_controller.snapshot.project == before
+        assert not local.project_controller.snapshot.dirty
+        assert not local.shell.isEnabled() and not tempo.isEnabled()
+        assert controller.window._return_to_launch_action.isEnabled()
+        assert controller.window._workflow_help_action.isEnabled()
+    finally:
+        allow_close = True
+    assert navigator.return_to_launch()
     assert navigator.controller is None and navigator.launch.isVisible()
 
 

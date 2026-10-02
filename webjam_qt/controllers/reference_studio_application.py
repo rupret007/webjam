@@ -399,6 +399,10 @@ class ReferenceStudioApplicationController(QObject):
     def _reject_recording_change(self, action: str = "changing the project") -> bool:
         """Keep the saved commit tokens stable until recording is resolved."""
 
+        # Widget disabling cannot retract an already queued editing signal.
+        # After retirement starts, autosave and document owners are closing.
+        if self._closed:
+            return True
         if self._recording_busy:
             self._status = f"Finish the protected Studio recording before {action}."
             self._refresh()
@@ -770,6 +774,9 @@ class ReferenceStudioApplicationController(QObject):
         if not self._closed and self.project_open and not self.prepare_close():
             return False
         self._closed = True
+        # A failed release must not leave editable project controls backed by
+        # retired autosave/arrangement owners. Outer File/Help remain usable.
+        self.shell.setEnabled(False)
         self._cancel_offline_tools()
         self._tempo_guard.shutdown()
         self._cancel_media_preparation()

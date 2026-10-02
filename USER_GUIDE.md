@@ -68,8 +68,10 @@ notes, Studio edits, a take, or an unfinished local project.
 
 If interrupted-take recovery is still running, wait for its result. If WebJam
 says **Finish closing safely**, new work stays disabled while cleanup is
-pending; choose **File → Return to launch** again to retry. A workspace that
-could not finish opening may show the same cleanup guidance.
+pending. Studio and open take-review editors stop accepting changes after
+their saved work begins closing. File and Help remain available; choose
+**File → Return to launch** again to retry. A workspace that could not finish
+opening may show the same cleanup guidance.
 
 The launch screen starts a fresh workspace owner. It does not replay the
 previous invitation, reconnect, record or start playback. Choose Music or Art,

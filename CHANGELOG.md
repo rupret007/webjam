@@ -19,6 +19,9 @@ they do not request a new release/tag or claim new published package evidence.
   Interrupted-take publication keeps its owner until its result is consumed.
   Failed workspace construction preserves existing notes, and incomplete
   playback cleanup retains its resources for an explicit retry.
+  Studio and take-review editors stop accepting changes once saved work
+  begins irreversible cleanup, preventing unsaved edits during a failed-close
+  retry.
 - **F1 / More → Help** gains local topic search and deliberate navigation to
   existing workspaces. The window stays modeless so live Stop/End remains
   reachable. No model, paid API or cloud service is introduced.
