@@ -8,7 +8,7 @@ from types import SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QEvent, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QRect, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QFileDialog, QWidget
@@ -213,7 +213,11 @@ def test_recovery_and_room_navigation_fit_without_overlap(room, qapp, state, siz
     _arrange(room, state)
     window = ConductorWindow(mode_entries=[(p.key, p.label) for p in CREATOR_PROFILES], initial_mode_key="art", initial_title="Art")
     room.window = window
+    # Include the height used by File/Help on Linux and Windows, also when
+    # this fit matrix runs on macOS with its normally external menu bar.
+    window.menuBar().setNativeMenuBar(False)
     window.set_creator_profile(get_creator_profile_by_key("art"))
+    window.session_strip.set_audio_state("Leave Room")
     window.session_hud.set_state("Connected to the Art room", "Make with your own tools. Paint along is optional.", action_visible=False, ready=True)
     window.show_paint_along(room.panel)
     window.resize(*size)
@@ -227,16 +231,19 @@ def test_recovery_and_room_navigation_fit_without_overlap(room, qapp, state, siz
     panel = room.panel
     primary = panel._hide_button if state == "following" else panel._open_button
     assert (window.width(), window.height()) == size
+    _assert_room_controls_fit(window)
     assert panel._surface_holder.height() >= 40
     placeholder = panel._surface_placeholder
     assert placeholder.height() >= placeholder.heightForWidth(placeholder.width())
-    for widget in (panel._headline, panel._status, panel._surface_holder, primary, panel._more_button, panel._back_button, panel._hint):
+    for widget in (panel._headline, panel._status, panel._surface_holder, primary, panel._more_button, panel._back_button, panel._hint, panel._watch_lesson_button, panel._lesson_hint):
         assert widget.isVisible()
         assert panel.rect().contains(widget.geometry())
     assert panel._status.height() >= panel._status.heightForWidth(panel._status.width())
     assert panel._hint.height() >= panel._hint.heightForWidth(panel._hint.width())
+    assert panel._lesson_hint.height() >= panel._lesson_hint.heightForWidth(panel._lesson_hint.width())
     assert panel._surface_holder.geometry().bottom() < primary.geometry().top()
     assert primary.geometry().bottom() < panel._hint.geometry().top()
+    assert panel._hint.geometry().bottom() < panel._watch_lesson_button.geometry().top()
     assert not primary.geometry().intersects(panel._more_button.geometry())
     assert panel._back_button.geometry().bottom() < panel._headline.geometry().top()
     assert panel._headline.fontMetrics().horizontalAdvance(panel._headline.text()) <= panel._headline.contentsRect().width()
@@ -246,3 +253,61 @@ def test_recovery_and_room_navigation_fit_without_overlap(room, qapp, state, siz
         assert panel._surface_holder.geometry().bottom() < panel._position.geometry().top()
         assert panel._position.geometry().bottom() < primary.geometry().top()
     assert panel._position.isEnabled() is False
+
+
+def _assert_room_controls_fit(window):
+    menu = window.menuBar()
+    assert menu.isVisibleTo(window) and menu.height() > 0
+    assert [action.text() for action in menu.actions()] == ["&File", "&Help"]
+    for action in menu.actions():
+        assert action.isEnabled()
+        assert menu.rect().contains(menu.actionGeometry(action))
+    leave = window.session_strip._audio_button
+    assert leave.isVisibleTo(window) and leave.isEnabled()
+    assert window.rect().contains(QRect(leave.mapTo(window, QPoint()), leave.size()))
+
+
+@pytest.mark.parametrize("stretch", [100, 125])
+def test_following_survives_compact_resize_without_changing_video_or_controls(room, qapp, stretch):
+    _arrange(room, "following")
+    panel = room.panel
+    window = ConductorWindow(mode_entries=[(p.key, p.label) for p in CREATOR_PROFILES], initial_mode_key="art", initial_title="Art")
+    room.window = window
+    window.menuBar().setNativeMenuBar(False)
+    window.set_creator_profile(get_creator_profile_by_key("art"))
+    window.session_strip.set_audio_state("Leave Room")
+    window.session_hud.set_state("Connected to the Art room", "Make with your own tools. Paint along is optional.", action_visible=False, ready=True)
+    window.show_paint_along(panel)
+    window.resize(1040, 720)
+    window.show()
+    qapp.processEvents()
+    for widget in panel.findChildren(QWidget):
+        font = QFont(widget.font())
+        font.setStretch(stretch)
+        widget.setFont(font)
+    qapp.processEvents()
+    original_snapshot = room.guest.follow_snapshot
+    original_paths = list(room.player.loaded_paths)
+    labels = (panel._status, panel._hint, panel._lesson_hint, panel._hide_button, panel._back_button)
+    presentation = [(widget.text(), widget.font().toString()) for widget in labels]
+    full_surface_height = panel._surface_holder.height()
+    intents = []
+    panel.hide_requested.connect(intents.append)
+    panel.open_local_copy_requested.connect(intents.append)
+    panel.return_requested.connect(lambda: intents.append("return"))
+    for size in ((720, 560), (1040, 720)):
+        window.resize(*size)
+        qapp.processEvents()
+        _assert_room_controls_fit(window)
+        assert (window.width(), window.height()) == size
+        assert panel._surface_holder.height() >= 40
+        assert panel._surface_holder.geometry().bottom() < panel._position.geometry().top()
+        assert panel._position.geometry().bottom() < panel._hide_button.geometry().top()
+        assert panel._hide_button.geometry().bottom() < panel._hint.geometry().top()
+        assert [(widget.text(), widget.font().toString()) for widget in labels] == presentation
+        assert all(widget.isVisible() and panel.rect().contains(widget.geometry()) for widget in labels)
+        assert room.guest.follow_snapshot == original_snapshot
+        assert room.player.loaded_paths == original_paths
+        assert panel._position.isEnabled() is False
+        assert intents == []
+    assert panel._surface_holder.height() == full_surface_height

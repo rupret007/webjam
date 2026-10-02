@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from shiboken6 import isValid
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -2147,4 +2148,5 @@ def test_file_music_project_bootstraps_offline(qapp, tmp_path, profile):
         controller._on_launch_audio.assert_not_called()
         controller.start_companion_api.assert_not_called()
     finally:
-        launcher.deleteLater()
+        if isValid(launcher):
+            launcher.deleteLater()
