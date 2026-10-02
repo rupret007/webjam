@@ -384,7 +384,8 @@ def test_compact_library_keeps_actions_visible_and_art_controls_scrollable(tmp_p
     dialog.show()
     app.processEvents()
     assert dialog.width() <= 480
-    for button in (dialog.save_button, dialog.export_button, dialog.continue_button, dialog.copy_button):
+    for button in (dialog.save_button, dialog.export_button, dialog.continue_button, dialog.copy_button,
+                   dialog.backup_button, dialog.import_backup_button):
         assert button.isVisible()
         assert dialog.rect().contains(button.mapTo(dialog, button.rect().bottomRight()))
     scroll = dialog.tabs.widget(2)
@@ -408,7 +409,8 @@ def test_library_actions_and_art_buttons_fit_after_resizing_and_hidden_tab_activ
     dialog.setStyleSheet(load_stylesheet() + f"QWidget {{ font-size: {font_size}px; }}")
     dialog.show()
     actions = (dialog.new_button, dialog.copy_button, dialog.save_button,
-               dialog.export_button, dialog.continue_button,
+               dialog.export_button, dialog.backup_button, dialog.import_backup_button,
+               dialog.continue_button,
                next(button for button in dialog.findChildren(QPushButton) if button.text() == "Close"))
     for width, height in ((760, 680), (480, 500), (760, 680)):
         dialog.tabs.setCurrentIndex(0)

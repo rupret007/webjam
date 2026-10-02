@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
+from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import (
     QBoxLayout, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout, QInputDialog,
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit, QPushButton,
@@ -35,6 +36,89 @@ def workspace_summary(record) -> str:
         for recap in record.recaps:
             text += f"\n{recap.get('ended_at', '')}\n{recap.get('summary', '')}\n"
     return text.rstrip() + "\n"
+
+
+class _TitleByteLimit(QValidator):
+    """Bound new typing to the core's 512 UTF-8 byte title limit.
+
+    ``setText`` (used when loading a saved record) does not consult a
+    validator, so an imported title already within the core limit is never
+    silently truncated here even if it exceeds 512 plain characters.
+    """
+
+    def __init__(self, limit: int, parent=None) -> None:
+        super().__init__(parent)
+        self._limit = limit
+
+    def validate(self, text, pos):
+        if len(text.encode("utf-8", "surrogatepass")) > self._limit:
+            return QValidator.State.Invalid, text, pos
+        return QValidator.State.Acceptable, text, pos
+
+
+class WorkspaceBackupPreviewDialog(QDialog):
+    """Preview validated backup bytes; never touches the library until accepted."""
+
+    def __init__(self, library: SessionLibrary, preview, parent=None):
+        super().__init__(parent)
+        from core.workspace_backup import WorkspaceBackupError
+
+        self.setWindowTitle("Import backup")
+        self.setMinimumSize(420, 360)
+        record = preview.record
+        layout = QVBoxLayout(self)
+        info = QLabel(
+            f"Title: {record.title}\n"
+            f"Profile: {record.profile.replace('_', ' ')}\n"
+            f"Saved: {record.updated_at}\n"
+            + self._counts(record)
+        )
+        info.setTextFormat(Qt.TextFormat.PlainText)
+        info.setWordWrap(True)
+        info.setAccessibleName("Backup preview details")
+        layout.addWidget(info)
+        try:
+            duplicates = preview.matching_import_ids(library)
+        except WorkspaceBackupError as error:
+            duplicate_text = f"Could not check for prior imports here: {error}"
+        else:
+            duplicate_text = (f"Already imported here as {len(duplicates)} separate workspace(s)."
+                               if duplicates else "No prior import of this exact backup found here.")
+        if record.source_key:
+            duplicate_text += f"\nOriginal import source: {record.source_key}"
+        duplicate_label = QLabel(duplicate_text)
+        duplicate_label.setTextFormat(Qt.TextFormat.PlainText)
+        duplicate_label.setWordWrap(True)
+        duplicate_label.setAccessibleName("Backup source and duplicate information")
+        layout.addWidget(duplicate_label)
+        limits = QLabel("\n".join(preview.limitations))
+        limits.setTextFormat(Qt.TextFormat.PlainText)
+        limits.setWordWrap(True)
+        limits.setAccessibleName("Backup limitations")
+        layout.addWidget(limits)
+        layout.addStretch(1)
+        buttons = QHBoxLayout()
+        self.confirm_button = QPushButton("Import as new workspace")
+        self.confirm_button.clicked.connect(self.accept)
+        buttons.addWidget(self.confirm_button)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setDefault(True)
+        self.cancel_button.clicked.connect(self.reject)
+        buttons.addWidget(self.cancel_button)
+        layout.addLayout(buttons)
+
+    @staticmethod
+    def _counts(record) -> str:
+        lines = [
+            f"Notes: {'present' if record.notes.strip() else 'none'}",
+            f"Take links: {len(record.take_links)}",
+            f"Session history entries: {len(record.recaps)}",
+        ]
+        if record.profile == "music":
+            lines.append(f"Rehearsal songs: {len(record.rehearsal.get('songs', []) or [])}")
+        if record.profile == "art":
+            lines.append(f"Art references: {len(record.art.get('references', []) or [])}")
+        return "\n".join(lines) + "\n"
 
 
 class SessionLibraryDialog(QDialog):
@@ -98,7 +182,7 @@ class SessionLibraryDialog(QDialog):
         form = QFormLayout(details)
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.title = QLineEdit()
-        self.title.setMaxLength(200)
+        self.title.setValidator(_TitleByteLimit(512, self.title))
         self.title.setAccessibleName("Workspace title")
         self.notes = QPlainTextEdit()
         self.notes.setTabChangesFocus(True)
@@ -144,6 +228,12 @@ class SessionLibraryDialog(QDialog):
         self.export_button = QPushButton("Export summary…")
         self.export_button.clicked.connect(self._export)
         save_actions.addWidget(self.export_button)
+        self.backup_button = QPushButton("Back up workspace…")
+        self.backup_button.clicked.connect(self._backup)
+        save_actions.addWidget(self.backup_button)
+        self.import_backup_button = QPushButton("Import backup…")
+        self.import_backup_button.clicked.connect(self._import_backup)
+        create_buttons.addWidget(self.import_backup_button)
         self.continue_button = QPushButton("Continue this work")
         self.continue_button.clicked.connect(self._continue)
         continue_actions.addWidget(self.continue_button)
@@ -314,11 +404,15 @@ class SessionLibraryDialog(QDialog):
                     if previous is not None and getattr(self, "_takes_record_id", None) == self.record.id else None)
         self._takes_record_id = self.record.id
         self.takes.clear()
+        # An imported workspace never has a live recording in progress; its
+        # own take links must not be mistaken for a currently finalizing one.
+        imported = bool(self.record.import_provenance)
         for ref in self.record.take_links:
             path = str(ref.get("take_path", "") or "").strip()
             label = ref.get("title") or ref.get("take_id") or "Take"
             if not path:
-                suffix = " — requested or finalizing; no completed take yet"
+                suffix = (" — historical reference; no completed take here" if imported
+                          else " — requested or finalizing; no completed take yet")
             else:
                 suffix = " — missing; locate it" if not Path(path).is_dir() else ""
             item = QListWidgetItem(label + suffix)
@@ -350,9 +444,16 @@ class SessionLibraryDialog(QDialog):
             actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
             blockers=pulse.blockers, rehearsal=self.rehearsal.payload(), art=self.art.payload())
 
-    def save_current(self) -> bool:
+    def save_current(self, *, force: bool = False) -> bool:
+        """Persist editor changes; ``force`` reconciles even a clean editor.
+
+        A backup must reflect current Notes and any late take/recap facts
+        reconciled through the owning coordinator, not a stale cached record.
+        """
         self.timer.stop()
-        if not self._dirty or self.record is None:
+        if self.record is None:
+            return True
+        if not force and not self._dirty:
             return True
         try:
             edited = self._edited_record()
@@ -395,7 +496,7 @@ class SessionLibraryDialog(QDialog):
             original = deepcopy(self._base_record)
             edited = self._edited_record()
             fields = {key: getattr(edited, key) for key in ("notes", "decisions", "actions", "blockers",
-                "recaps", "take_links", "rehearsal", "art", "mode_key")}
+                "recaps", "take_links", "rehearsal", "art", "mode_key", "import_provenance")}
             record = self.library.create(edited.profile, title.strip(), **fields)
             self._dirty = False
             self.pending_records.pop(edited.id, None)
@@ -471,6 +572,46 @@ class SessionLibraryDialog(QDialog):
             self.status.setText("Summary exported. Original work is unchanged.")
         except (OSError, ValueError):
             self.status.setText("Summary was not exported. Choose a new filename in a writable folder.")
+
+    def _backup(self):
+        if self.record is None:
+            return
+        if not self.save_current(force=True):
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Back up workspace…", "workspace-backup.json",
+                                              "WebJam workspace backup (*.json)")
+        if not path:
+            return
+        from core.workspace_backup import WorkspaceBackupError, export_workspace_backup
+        try:
+            export_workspace_backup(self.record, path)
+            self.status.setText("Workspace backed up on this computer. Metadata only; "
+                                "media files are not included.")
+        except WorkspaceBackupError as error:
+            self.status.setText(f"Workspace was not backed up: {error}")
+
+    def _import_backup(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Import backup…", "", "WebJam workspace backup (*.json)")
+        if not path:
+            return
+        from core.workspace_backup import WorkspaceBackupError, import_workspace_backup, preview_workspace_backup
+        try:
+            preview = preview_workspace_backup(path)
+        except WorkspaceBackupError as error:
+            self.status.setText(f"Backup could not be opened: {error}")
+            return
+        dialog = WorkspaceBackupPreviewDialog(self.library, preview, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            record = import_workspace_backup(self.library, preview)
+        except WorkspaceBackupError as error:
+            self.status.setText(f"Backup was not imported: {error}")
+            return
+        self.search.clear()
+        self.refresh()
+        self.select_id(record.id)
+        self.status.setText("Backup imported as a new workspace. Metadata only; media files are not included.")
 
     def reject(self):
         if self.save_current():
