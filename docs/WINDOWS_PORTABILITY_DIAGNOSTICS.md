@@ -15,9 +15,18 @@ The [goal prompt](WINDOWS_PORTABILITY_RELIABILITY_GOAL.md) preserves the full sc
 Every WebJam CI run has a **Windows native diagnostic control** job, independent
 of product tests and packaging. It first exercises actual Windows process/job
 APIs, including a sleeping descendant and injected assignment/resume/query
-failures. The child starts suspended, joins an unnamed kill-on-close job, then
+failures. Two further controls let the root exit first: a child that finishes
+naturally must pass without forced termination, while a child that outlives the
+original deadline must time out and be reaped. The child starts suspended, joins an unnamed kill-on-close job, then
 resumes. Receipts distinguish the original error from cleanup errors and verify
 the owned process tree is empty. No global debugger or registry setting changes.
+
+A debugger exit event can precede complete process shutdown. After the debugger
+exits, the process owner waits for its job to empty using only the time remaining
+on the original deadline. Receipts retain the initial members, natural drain
+duration, members before cleanup and whether forced termination was needed.
+An application exit event and success marker cannot hide an unfinished tree or
+a missed deadline. See Microsoft's [debugging event lifecycle](https://learn.microsoft.com/en-us/windows/win32/debug/debugging-events).
 
 The separate CDB control runs an intentional `os.abort()` in a private process,
 requires a structurally valid dump, reopens it with CDB and requires a readable

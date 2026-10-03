@@ -110,16 +110,33 @@ def run_owned(argv: list[str], *, cwd: Path, environment: dict[str, str],
             record.update(pid=process.pid, initial_thread_id=process.tid)
             checked(assign(job, process.process))
             assigned = True
+            deadline = time.monotonic() + timeout
             checked(resume(process.thread) != 0xFFFFFFFF)
-            outcome = wait(process.process, int(timeout * 1000))
+            outcome = wait(process.process, max(0, int((deadline - time.monotonic()) * 1000)))
             if outcome not in (0, 258):
                 raise ctypes.WinError(ctypes.get_last_error())
             record["timed_out"] = outcome == 258
             code = w.DWORD()
             checked(exit_code(process.process, ctypes.byref(code)))
             record["returncode_before_cleanup"] = code.value
-            record["members_before_cleanup"] = members()
-            if record["members_before_cleanup"]:
+            remaining = members()
+            record["members_after_root_wait"] = remaining
+            drain_started = time.monotonic()
+            # A debugger's exit does not imply that its debuggee has finished
+            # kernel shutdown. Allow the owned tree to retire naturally, using
+            # only the time left on the original deadline, before killing it.
+            while remaining and not record["timed_out"]:
+                available = deadline - time.monotonic()
+                if available <= 0:
+                    record["timed_out"] = True
+                    break
+                time.sleep(min(0.05, available))
+                remaining = members()
+            record["natural_drain_seconds"] = time.monotonic() - drain_started
+            record["timed_out"] = record["timed_out"] or time.monotonic() >= deadline
+            record["members_before_cleanup"] = remaining
+            record["forced_tree_termination"] = bool(remaining)
+            if remaining:
                 checked(terminate_job(job, 1))
             deadline = time.monotonic() + 10
             remaining = members()
