@@ -257,7 +257,7 @@ class SessionStrip(QFrame):
         # combo is never shown, never laid out, and never enabled, so the
         # retired five-mode list cannot resurface as a second, contradictory
         # choice beside the profile they already made.
-        self._mode_picker = QComboBox()
+        self._mode_picker = QComboBox(self)
         self._mode_picker.setAccessibleName("Session mode")
         self._mode_picker.setMaximumWidth(140)
         for key, label in self._mode_entries:
@@ -295,7 +295,7 @@ class SessionStrip(QFrame):
         )
         self._record_button.clicked.connect(self.record_requested.emit)
 
-        self._test_button = QToolButton()
+        self._test_button = QToolButton(self)
         self._test_button.setText("Band Check ▾")
         self._test_button.setObjectName("GhostButton")
         self._test_button.setAccessibleName("Band Check and Practice Solo")
