@@ -195,6 +195,7 @@ class ConductorWindow(QMainWindow):
         controls_layout.addWidget(self.session_strip._record_elapsed)
         controls_layout.addWidget(self.session_strip._record_button)
         controls_layout.addWidget(self.session_strip._video_button)
+        controls_layout.addWidget(self.session_strip._play_along_button)
         # Song sits beside Studio: the same class of in-session surface, on
         # the bar a musician already uses, rather than inside a menu.
         controls_layout.addWidget(self.session_strip._song_button)
@@ -567,6 +568,7 @@ class ConductorWindow(QMainWindow):
                 strip._video_button,
                 # Song sits where it sits on the bar, so tabbing matches what
                 # a musician sees rather than the order things were built in.
+                strip._play_along_button,
                 strip._song_button,
                 strip._studio_button,
                 self._room_help_button,

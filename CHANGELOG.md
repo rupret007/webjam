@@ -6,6 +6,22 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+### Paint Along and Play Along — draft test-build scope
+
+- Paint Along keeps **Watch a shared lesson** reachable with an embedded
+  YouTube lesson or failed player. The host can select a canonical lesson
+  link, explicitly open its browser and reach meeting sharing controls.
+  **Remember lesson** saves the Art reference through the existing draft owner.
+- Music adds **Play along**: guided video practice through the meeting, or
+  live ensemble with Jamulus and the supported Shared Track route. Host and
+  guest actions differ; guidance distinguishes listening mute, instrument
+  send, meeting sound and delayed video.
+- Meeting edits preserve the chosen lesson, while canceled/replaced media,
+  room retirement and old queued actions cannot reuse its authority. Ordinary
+  Music updates preserve the practice helper. Compact controls and enlarged
+  text retain the lesson actions. Physical two-person sound and feel remain
+  **NOT RUN**; these changes do not publish a release.
+
 ### Workflow continuity — PR and test-build scope
 
 Source remains v0.29.0. These changes are after the published v0.29.0 baseline;

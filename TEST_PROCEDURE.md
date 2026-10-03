@@ -14,6 +14,13 @@
 
 ## Scope
 
+The current draft Paint Along / Play Along round uses the two-person pilot in
+[PAINT_PLAY_ALONG_PLAN.md](docs/PAINT_PLAY_ALONG_PLAN.md#two-person-acceptance).
+Record the exact commit and package hash. Verify one audible shared lesson,
+both faces and voices, manual pause/resume, saved reference recovery and the
+separate Jamulus ensemble path. Provider playback, physical audio and feel
+remain **NOT RUN** until observed; source click-path tests are separate proof.
+
 This procedure distinguishes automated source/package evidence from physical
 participant evidence. A passing source suite does not certify two-Mac audibility,
 hardware changes, sleep/wake, interruption recovery, or external-editor import.

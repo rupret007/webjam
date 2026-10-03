@@ -89,6 +89,40 @@ class TestSessionLibraryCoordinator(TestCase):
             self.coordinator.finish_session()
         return self.coordinator._pending[self.coordinator.current.id]
 
+    def test_remember_lesson_preserves_art_draft_and_saves_canonical_position_once(self):
+        self.owner._apply_creator_profile_key("art")
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        editor.show()
+        editor.art.brief.setPlainText("Keep these colors")
+        editor.notes.setPlainText("Do the sky first")
+        link = "https://youtu.be/M7lc1UVf-VE?t=90"
+        self.assertTrue(self.coordinator.remember_art_lesson(link))
+        self.assertTrue(self.coordinator.remember_art_lesson(link))
+        saved = self.library.load(self.coordinator.current.id)
+        self.assertEqual(saved.notes, "Do the sky first")
+        self.assertEqual(saved.art["brief"], "Keep these colors")
+        self.assertEqual(len(saved.art["references"]), 1)
+        self.assertEqual(saved.art["references"][0]["locator"],
+                         "https://www.youtube.com/watch?v=M7lc1UVf-VE&t=90s")
+
+    def test_remember_lesson_cannot_replace_another_unsavable_art_draft(self):
+        self.owner._apply_creator_profile_key("art")
+        self.assertTrue(self.coordinator.ensure_current())
+        current_id = self.coordinator.current.id
+        other = self.library.create("art", "Another painting")
+        editor = self._editor()
+        editor.show()
+        editor.select_id(other.id)
+        editor.art.brief.setPlainText("Unfinished work in another painting")
+        with patch.object(self.library, "save", side_effect=OSError("write unavailable")):
+            self.assertFalse(self.coordinator.remember_art_lesson("https://youtu.be/M7lc1UVf-VE"))
+        self.assertEqual(editor.record.id, other.id)
+        self.assertEqual(editor.art.brief.toPlainText(), "Unfinished work in another painting")
+        self.assertTrue(editor._dirty)
+        self.assertEqual(self.coordinator.current.id, current_id)
+        self.assertEqual(self.library.load(current_id).art.get("references", []), [])
+
     def test_editor_save_merges_late_pending_take_and_recap_before_publication(self):
         self.coordinator.start_session()
         self.coordinator.recording_started("late-take", "recording-session")

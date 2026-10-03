@@ -347,6 +347,13 @@ class SessionStrip(QFrame):
         )
         self._song_button.setVisible(False)
 
+        self._play_along_button = QPushButton("Play along")
+        self._play_along_button.setObjectName("GhostButton")
+        self._play_along_button.setAccessibleName("Choose how to play along")
+        self._play_along_button.setToolTip("Follow a YouTube lesson or play together with a Shared Track.")
+        self._play_along_button.clicked.connect(lambda: self.tool_requested.emit("play_along"))
+        self._play_along_button.setVisible(False)
+
         self._studio_button = QPushButton("Studio")
         self._studio_button.setObjectName("GhostButton")
         self._studio_button.setAccessibleName("Open Studio")
@@ -489,6 +496,8 @@ class SessionStrip(QFrame):
         conversation_action.triggered.connect(
             lambda: self.tool_requested.emit("conversation")
         )
+        self._play_along_action = QAction("Play along…", tools_menu)
+        self._play_along_action.triggered.connect(lambda: self.tool_requested.emit("play_along"))
         self._recording_setup_action = QAction("Recording Setup…", tools_menu)
         self._recording_setup_action.triggered.connect(
             lambda: self.tool_requested.emit("recording_setup")
@@ -560,6 +569,7 @@ class SessionStrip(QFrame):
         tools_menu.addSeparator()
         # Meeting
         tools_menu.addAction(conversation_action)
+        tools_menu.addAction(self._play_along_action)
         tools_menu.addSeparator()
         # This session
         self._session_library_action = QAction("Session library…", tools_menu)
@@ -635,6 +645,7 @@ class SessionStrip(QFrame):
         layout.addWidget(self._audio_button)
         layout.addWidget(self._invite_button)
         layout.addWidget(self._video_button)
+        layout.addWidget(self._play_along_button)
         layout.addWidget(self._shared_track_surface)
         layout.addWidget(self._art_room_chip)
         layout.addWidget(self._song_line)
@@ -931,6 +942,10 @@ class SessionStrip(QFrame):
         # and Review sessions have none, so the entry is absent there rather
         # than present and inert.
         song_tools_available = profile_key == "music"
+        self._play_along_button.setVisible(song_tools_available)
+        self._play_along_button.setEnabled(song_tools_available and self._tools_enabled)
+        self._play_along_action.setVisible(song_tools_available)
+        self._play_along_action.setEnabled(song_tools_available and self._tools_enabled)
         self._song_button.setVisible(song_tools_available)
         self._song_button.setEnabled(song_tools_available and self._tools_enabled)
         self._tools_button.setAccessibleDescription(
@@ -1152,6 +1167,8 @@ class SessionStrip(QFrame):
 
     def set_tools_enabled(self, enabled: bool) -> None:
         self._tools_enabled = bool(enabled)
+        self._play_along_button.setEnabled(self._tools_enabled and self._play_along_action.isVisible())
+        self._play_along_action.setEnabled(self._tools_enabled and self._play_along_action.isVisible())
         self._sync_audio_tools()
         self._tools_button.setEnabled(self._tools_enabled)
         self._video_button.setEnabled(self._tools_enabled)

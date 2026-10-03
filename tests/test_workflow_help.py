@@ -17,6 +17,8 @@ from webjam_qt.controllers.workflow_help import WorkflowHelpCoordinator
     ("podcast_voice", "blocked alignment", "blocked_export"),
     ("music", "checksum receipt", "export_receipts"),
     ("art", "moved relink", "art_relink"),
+    ("art", "YouTube Bob Ross", "follow_along"),
+    ("music", "play along latency", "follow_along"),
 ])
 def test_search_finds_specific_workflow_offline(profile, query, key):
     assert key in {topic.key for topic in search_topics(workflow_topics(profile), query)}
@@ -32,7 +34,8 @@ def test_search_is_literal_and_does_not_search_private_workspaces():
 
 def test_profile_and_standalone_topics_do_not_offer_incompatible_actions():
     art = workflow_topics("art")
-    assert {topic.route for topic in art} == {"library", "art"}
+    assert {topic.route for topic in art if topic.route} == {"library", "art"}
+    assert [topic.key for topic in art if not topic.route] == ["follow_along"]
     assert not {"take_review", "rehearsal_moments", "export_receipts"} & {t.key for t in art}
     offline = workflow_topics("music", offline_studio=True)
     assert {topic.route for topic in offline} == {"", "studio"}
