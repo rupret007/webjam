@@ -14067,7 +14067,7 @@ class ApplicationController(QObject):
         lesson_url = dialog.meeting_lesson_url()
         self._show_webex_conversation()
         self.window.webex_embed.set_shared_lesson_context(hosting=coordinator.hosting)
-        self.follow_along.activate(hosting=coordinator.hosting, lesson_url=lesson_url)
+        self.follow_along.activate(hosting=coordinator.hosting, lesson_url=lesson_url, resume_browser_choice=True)
         room.activate_lesson_requests(hosting=coordinator.hosting)
 
     def _run_current_host_paint_along(self, coordinator, dialog, operation) -> None:

@@ -156,3 +156,35 @@ def test_play_along_remains_reachable_in_busy_music_toolbar(room, qapp, width):
                 assert app.window.rect().contains(QRect(button.mapTo(app.window, QPoint()), button.size())), button.text()
     finally:
         strip.set_song_line("")
+
+
+@pytest.mark.parametrize("embedded", [False, True])
+def test_art_browser_choice_survives_notes_return_until_video_source_changes(
+    room, qapp, monkeypatch, external_handoffs, embedded,
+):
+    from unittest.mock import PropertyMock
+    pair = room(role="host", profile="art", configured=True)
+    app = pair.app
+    dialog = _paint_along(pair, qapp)
+    if embedded:
+        snapshot = ReferenceVideoSnapshot(
+            state=ReferenceVideoState.READY, shared=True, source_kind="youtube",
+            video_id="dQw4w9WgXcQ", identity_digest="a" * 64, duration_s=300,
+        )
+        monkeypatch.setattr(type(app._reference_video), "host_snapshot", PropertyMock(return_value=snapshot))
+        dialog.set_host_snapshot(snapshot)
+    dialog._watch_lesson_button.click()
+    panel = app.follow_along.panel
+    monkeypatch.setattr("PySide6.QtWidgets.QInputDialog.getText", lambda *a, **k: (LINK, True))
+    panel.choose_button.click()
+    assert panel.lesson_url == CANONICAL
+    app._on_rail_view_changed("notes")
+    dialog = _paint_along(pair, qapp)
+    dialog._watch_lesson_button.click()
+    assert panel.lesson_url == CANONICAL
+    panel.open_button.click()
+    assert external_handoffs[1].call_args.args[0].toString() == CANONICAL
+    dialog = _paint_along(pair, qapp)
+    dialog.withdraw_requested.emit()
+    dialog._watch_lesson_button.click()
+    assert panel.lesson_url != CANONICAL

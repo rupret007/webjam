@@ -1,7 +1,7 @@
 """Choose a music activity before choosing its sound path."""
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtCore import QEvent, Signal
+from PySide6.QtWidgets import QDialog, QFrame, QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from core.follow_along import PLAY_ALONG_CHOICES
 from webjam_qt.theme.tokens import Space
@@ -15,7 +15,15 @@ class PlayAlongDialog(QDialog):
         self.setWindowTitle("Play along")
         self.setModal(False)
         self.resize(500, 390)
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        outer.addWidget(self.scroll)
+        content = QWidget()
+        self.scroll.setWidget(content)
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(Space.LG, Space.LG, Space.LG, Space.LG)
         layout.setSpacing(Space.MD)
         title = QLabel("How do you want to play along?")
@@ -33,6 +41,7 @@ class PlayAlongDialog(QDialog):
             button.setObjectName("GhostButton")
             button.setAutoDefault(False)
             button.setAccessibleDescription(choice.description)
+            button.installEventFilter(self)
             button.clicked.connect(lambda _checked=False, key=choice.key: self.choice_requested.emit(key))
             self.buttons[choice.key] = button
             layout.addWidget(button)
@@ -47,3 +56,10 @@ class PlayAlongDialog(QDialog):
                 "The host chooses the backing track. In your Jamulus mixer, balance the WebJam Track "
                 "channel and the other musicians. Disconnect meeting audio while playing; keep its video for faces."
             )
+        for label in content.findChildren(QLabel):
+            label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.FocusIn and watched in self.buttons.values():
+            self.scroll.ensureWidgetVisible(watched, 0, Space.SM)
+        return super().eventFilter(watched, event)

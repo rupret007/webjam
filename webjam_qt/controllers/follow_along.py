@@ -13,6 +13,7 @@ class FollowAlongController:
         self._context = None
         self._choice = None
         self._sources = {}
+        self._art_browser_choice = None
         self.panel = controller.window.webex_embed.lesson_handoff
         self.panel.choose_requested.connect(self.choose_lesson)
         self.panel.open_requested.connect(self.open_lesson)
@@ -27,7 +28,8 @@ class FollowAlongController:
         video = getattr(self._c, "_reference_video", None)
         snapshot = (video.host_snapshot if video.hosting else video.follow_snapshot) if video else None
         source = (video, getattr(snapshot, "identity_digest", ""),
-                  getattr(snapshot, "source_kind", ""), getattr(snapshot, "video_id", ""))
+                  getattr(snapshot, "source_kind", ""), getattr(snapshot, "video_id", ""),
+                  getattr(getattr(self._c, "_reference_video_dialog", None), "_meeting_lesson_generation", 0))
         return (
             self._c.creator_profile.key, self._workspace(), room, getattr(room, "generation", None),
             self._c._reference_video_identity(), getattr(self._c, "_session_meeting_generation", 0),
@@ -44,13 +46,20 @@ class FollowAlongController:
             and not QApplication.activeModalWidget() and not QApplication.activePopupWidget()
         )
 
-    def activate(self, *, hosting, lesson_url=None):
+    @staticmethod
+    def _browser_owner(identity):
+        return identity[:5] + identity[7:]
+
+    def activate(self, *, hosting, lesson_url=None, resume_browser_choice=False):
         """Bind controls after the existing explicit Conversation navigation."""
         key = (self._c.creator_profile.key, self._workspace())
         # An explicit empty Art source means withdrawn/local, not "reuse the
         # last YouTube link". Only Music's separate local chooser resumes its
         # own remembered choice; guests never borrow a previous host choice.
         url = (self._sources.get(key, "") if hosting and key[0] == "music" else "") if lesson_url is None else lesson_url
+        if (resume_browser_choice and hosting and key[0] == "art" and self._art_browser_choice
+                and self._art_browser_choice[0] == self._browser_owner(self._identity())):
+            url = self._art_browser_choice[1]
         if url:
             url = parse_youtube_lesson_url(url).playback_url
         self.panel.set_context(hosting=hosting, profile=key[0], lesson_url=url)
@@ -100,6 +109,8 @@ class FollowAlongController:
         self._c._retire_shared_lesson_requests()
         self.panel.generation += 1
         self.activate(hosting=True, lesson_url=lesson.playback_url)
+        if self._c.creator_profile.key == "art":
+            self._art_browser_choice = (self._browser_owner(self._identity()), lesson.playback_url)
         room = getattr(self._c, "_room_participant", None)
         if self._c.creator_profile.key == "art" and room is not None:
             room.activate_lesson_requests(hosting=True)
@@ -128,6 +139,8 @@ class FollowAlongController:
         after = self._identity()
         if (self._context is not None and not before[1] and after[1]
                 and before[:1] + before[2:] == after[:1] + after[2:]):
+            if self._art_browser_choice == (self._browser_owner(before), url):
+                self._art_browser_choice = (self._browser_owner(after), url)
             self.panel.generation += 1
             self.activate(hosting=hosting, lesson_url=url)
 

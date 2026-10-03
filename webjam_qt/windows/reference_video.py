@@ -508,6 +508,8 @@ class ReferenceVideoDialog(QDialog):
         )
         if (accepted and url.strip() and isValid(self) and self._room_available
                 and generation == self._meeting_lesson_generation):
+            self._meeting_lesson_generation += 1
+            generation = self._meeting_lesson_generation
             self._youtube_url = url.strip()
             try:
                 candidate = parse_youtube_lesson_url(self._youtube_url).playback_url
