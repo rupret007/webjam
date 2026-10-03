@@ -124,12 +124,21 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    room** returns to the conductor without ending the room or the video.
    For embedded silent YouTube playback, the host chooses **YouTube link…**;
    guests explicitly choose **Open lesson**. For a lesson with sound through
-   a meeting, **Watch a shared lesson** reaches Conversation instead.
+   a meeting, **Watch a shared lesson** reaches Conversation. The host uses
+   **Choose YouTube…**, then **Open in browser** and the meeting's Share
+   control with computer sound. An already selected lesson carries its link
+   here, including when embedding fails. **Remember lesson** saves that link
+   in the Art project for an explicit return later.
    In a supported LAN room, guests can **Ask for a pause**
    or choose **Ready to continue**; the host acknowledges the request and
    operates the browser manually. Acknowledgement does not mean the video paused.
    Requests expire after 30 seconds; spoken requests remain available.
-6. In a profile that supports Shared Track, choose **Add Shared Track** or
+6. In Music, **Play along** offers **Set up video practice** (one shared
+   YouTube video through the meeting; listen and take turns) or **Open Shared
+   Track** (live ensemble through Jamulus, meeting audio disconnected). Guests
+   use **Open Jamulus mixer** for the ensemble path. Webex video can lag the
+   musical audio. WebJam mix mute changes your listening, not your outgoing
+   instrument. In a profile that supports Shared Track, choose **Add Shared Track** or
    drop supported reference audio on the live surface; loading does not start
    playback, and Play remains fail-closed until the isolated Jamulus route is
    proven.

@@ -202,7 +202,7 @@ def test_lesson_context_explains_the_selected_provider_without_launching(card, q
         assert service in text
     if service != "Webex":
         assert "Webex" not in text
-    assert panel._title_label.text() == "Conversation"
+    assert panel._title_label.text() == "Paint along with sound"
     assert events == []
     panel.set_shared_lesson_context(None)
     assert panel._mode_label.text() == normal
@@ -289,6 +289,15 @@ def test_lesson_actions_fit_larger_font_through_narrow_wide_roundtrip(card, qapp
     for width in (320, 760, 320):
         owner.resize(width, 1000)
         panel.set_shared_lesson_context(hosting)
+        panel.lesson_handoff.set_context(
+            hosting=hosting, profile="art", lesson_url="https://www.youtube.com/watch?v=M7lc1UVf-VE&t=86400s",
+        )
+        panel.lesson_handoff.set_status("Lesson selected. Open it when you are ready to share.")
+        if not hosting:
+            assert "silent reference" in panel.lesson_handoff.source.text()
+            assert "meeting may show another lesson" in panel.lesson_handoff.source.text()
+            assert panel.lesson_handoff.open_button.isHidden()
+            assert panel.lesson_handoff.save_button.text() == "Save reference"
         _settle(qapp)
         assert panel.width() == width
         assert QApplication.focusWidget() is focused

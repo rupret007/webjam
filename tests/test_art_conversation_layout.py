@@ -153,7 +153,7 @@ def test_art_conversation_fits_full_text_and_current_controls(card, qapp, width,
         assert "WebJam window" in mode
         assert "does not join or mute" in mode
         assert "WebJam does not play the movie." in mode
-        assert "not the movie-watch path" in mode
+        assert "Watch a shared lesson" in mode
         assert "own tools" in mode
     assert panel._status_label.accessibleDescription() == panel._status_label.text()
     assert events == []

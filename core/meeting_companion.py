@@ -498,11 +498,11 @@ def watch_together_guidance(
 
 
 def paint_along_local_note() -> str:
-    """Paint along is the silent local process-video path, not movie watch."""
+    """Keep picture-following and the audible meeting lesson understandable."""
 
     return (
-        "Paint along stays the silent local process video—each person opens "
-        "their own copy. It is not the movie-watch path."
+        "Paint along can follow a silent local file or online lesson. "
+        "Choose Watch a shared lesson to hear it together through your meeting."
     )
 
 
@@ -565,7 +565,8 @@ def art_conversation_guidance(*, meeting_service: str = "") -> str:
     meeting = service or "your meeting app"
     return (
         f"Talk and share a demonstration in {meeting} if you like. "
-        "Use your own tools. Paint along plays a separate silent local video."
+        "Use your own tools. Paint along follows a silent local file or online lesson; "
+        "Watch a shared lesson opens the path to lesson sound in your meeting."
     )
 
 

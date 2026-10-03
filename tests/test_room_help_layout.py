@@ -32,6 +32,10 @@ def qapp():
     app = QApplication.instance() or QApplication([])
     previous_stylesheet = app.styleSheet()
     previous_font = app.font()
+    previous_tab_behavior = app.styleHints().tabFocusBehavior()
+    # Exercise full control traversal explicitly. Cocoa otherwise follows the
+    # user's text/list-only Tab preference; restore the test process afterward.
+    app.styleHints().setTabFocusBehavior(Qt.TabFocusBehavior.TabFocusAllControls)
     font_ids = []
     fonts = Path(__file__).resolve().parents[1] / "webjam_qt" / "theme" / "fonts"
     for path in sorted(fonts.glob("Inter-*.ttf")):
@@ -47,6 +51,7 @@ def qapp():
     finally:
         app.setStyleSheet(previous_stylesheet)
         app.setFont(previous_font)
+        app.styleHints().setTabFocusBehavior(previous_tab_behavior)
         for font_id in font_ids:
             QFontDatabase.removeApplicationFont(font_id)
 
@@ -123,6 +128,7 @@ def _assert_readable_inside_bar(window, widgets):
         previous = rect
 
 
+@pytest.mark.parametrize("preview", [True, False])
 @pytest.mark.parametrize(
     ("phase", "status", "record_action"),
     [
@@ -132,13 +138,13 @@ def _assert_readable_inside_bar(window, widgets):
     ],
 )
 def test_themed_720px_active_music_keeps_every_action_and_receipt_readable(
-    qapp, window, phase, status, record_action
+    qapp, window, phase, status, record_action, preview
 ):
-    _active_controls(window, phase=phase)
+    _active_controls(window, phase=phase, preview=preview)
     _settle(qapp)
     strip = window.session_strip
     assert window.size() == QSize(720, 560)
-    assert window.session_controls.property("helpPreviewCompact") is True
+    assert window.session_controls.property("helpPreviewCompact") is preview
     assert strip._record_elapsed.text() == status
     assert strip._record_button.accessibleName() == record_action
     assert strip._audio_button.accessibleName() == "End Session"
@@ -149,9 +155,10 @@ def test_themed_720px_active_music_keeps_every_action_and_receipt_readable(
             strip._record_elapsed,
             strip._record_button,
             strip._video_button,
+            strip._play_along_button,
             strip._song_button,
             strip._studio_button,
-            window._room_help_button,
+            *([window._room_help_button] if preview else []),
             strip._tools_button,
             strip._audio_button,
         ],
@@ -253,14 +260,17 @@ def test_keyboard_can_reach_help_open_dialog_and_submit_once(qapp, window):
     emitted = []
     panel.submitted.connect(emitted.append)
     window.activateWindow()
+    assert QTest.qWaitForWindowActive(window, 1000)
     window.session_strip._studio_button.setFocus()
     _settle(qapp)
+    assert window.session_strip._studio_button.hasFocus()
     QTest.keyClick(window.session_strip._studio_button, Qt.Key.Key_Tab)
     _settle(qapp)
     assert window._room_help_button.hasFocus()
     QTest.keyClick(window._room_help_button, Qt.Key.Key_Space)
     _settle(qapp)
     assert window._room_help_dialog.isVisible()
+    assert QTest.qWaitForWindowActive(window._room_help_dialog, 1000)
     for _ in range(8):
         if panel._input.hasFocus():
             break

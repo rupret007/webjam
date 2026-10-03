@@ -1284,8 +1284,8 @@ def paint_along_watch_lesson_guidance() -> str:
     """
 
     return (
-        "Opens Conversation for watch-together handoff. The silent local "
-        "process video below is Paint along—each person opens their own copy."
+        "Opens Conversation to share a lesson with sound and see each other. "
+        "The video inside Paint along stays silent; the browser and meeting own the shared lesson."
     )
 
 
@@ -1293,8 +1293,7 @@ def paint_along_watch_lesson_hint() -> str:
     """Short hint beside Paint along's Watch a shared lesson action."""
 
     return (
-        "Use Conversation for shared-lesson handoff—not the silent local "
-        "Paint along file."
+        "Hear the lesson and talk together through Conversation."
     )
 
 

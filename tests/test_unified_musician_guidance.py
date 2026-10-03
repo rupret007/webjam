@@ -615,7 +615,7 @@ def test_art_idle_guidance_supports_own_tools_without_recording_claim(tmp_path):
         assert "Talk in" in hint
         assert "Share" in hint
         assert "WebJam does not play the movie." in hint
-        assert "It is not the movie-watch path." in hint
+        assert "Watch a shared lesson" in hint
         assert "screen share" not in hint
         assert "recording" not in hint.casefold()
         assert controller.creator_start.talk_only

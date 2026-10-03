@@ -545,7 +545,7 @@ def test_art_conversation_invites_demonstration_without_opening_or_muting():
         assert "Talk in" in text
         assert "does not join or mute" in text
         assert "WebJam does not play the movie." in text
-        assert "not the movie-watch path" in text
+        assert "Watch a shared lesson" in text
         assert "own tools" in text
         assert calls == []
         panel.set_creator_profile(get_creator_profile_by_key("music"))

@@ -520,7 +520,7 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
     assert WEBJAM_DOES_NOT_PLAY_MOVIE not in lesson
     assert "webex" not in lesson.lower()
     assert "movie" not in lesson.lower()
-    assert "silent local Paint along" in hint
+    assert "Hear the lesson and talk together" in hint
     assert "Conversation" in hint
     assert "webex" not in hint.lower()
     assert "movie" not in hint.lower()

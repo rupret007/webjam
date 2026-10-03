@@ -30,6 +30,11 @@ class YouTubeLesson:
         return f"https://www.youtube.com/watch?v={self.video_id}"
 
     @property
+    def playback_url(self) -> str:
+        """The explicit browser handoff, without the pasted tracking query."""
+        return self.url + (f"&t={self.start_s}s" if self.start_s else "")
+
+    @property
     def display_name(self) -> str:
         return "YouTube lesson"
 

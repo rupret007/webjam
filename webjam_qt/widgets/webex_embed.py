@@ -34,6 +34,8 @@ from core.meeting_companion import (
 )
 from core.meeting_link import is_allowed_meeting_link
 from core.lesson_request import LessonRequestIntent, LessonRequestNotice
+from core.follow_along import lesson_sound_guidance
+from webjam_qt.widgets.lesson_handoff import LessonHandoffPanel
 from webjam_qt.theme.tokens import Space
 
 LOGGER = logging.getLogger("webjam.qt.webex_embed")
@@ -279,6 +281,8 @@ class WebexEmbed(QFrame):
         text_column.addLayout(header)
         text_column.addWidget(self._mode_label)
         text_column.addWidget(self._status_label)
+        self.lesson_handoff = LessonHandoffPanel(self)
+        text_column.addWidget(self.lesson_handoff)
         self._build_lesson_request_panel(text_column)
 
         actions = self._actions_layout = QGridLayout()
@@ -462,7 +466,7 @@ class WebexEmbed(QFrame):
     def minimumSizeHint(self):
         hint = super().minimumSizeHint()
         layout = getattr(self, "_content_layout", None)
-        if layout is not None and self._creator_profile_key == "art":
+        if layout is not None and (self._creator_profile_key == "art" or self._shared_lesson_hosting is not None):
             # A wide layout must still permit its parent to reach the narrow
             # breakpoint. Otherwise its old horizontal minimum prevents the
             # resize event that would stack these same controls.
@@ -519,7 +523,7 @@ class WebexEmbed(QFrame):
             return
         self._updating_art_layout = True
         try:
-            art = self._creator_profile_key == "art"
+            art = self._creator_profile_key == "art" or self._shared_lesson_hosting is not None
             margins = layout.contentsMargins()
             available = self.width() - margins.left() - margins.right() - 2 * self.frameWidth()
             column_widths = self._action_column_widths()
@@ -993,7 +997,7 @@ class WebexEmbed(QFrame):
         self._bring_forward_btn.setEnabled(enabled)
         # Art uses conversation and work sharing directly in the meeting.
         # The Music-specific shortcut to its mute controls is not a room task.
-        show_mute = self._creator_profile_key != "art"
+        show_mute = self._creator_profile_key != "art" and self._shared_lesson_hosting is None
         self._mute_btn.setVisible(show_mute)
         self._mute_btn.setEnabled(enabled and show_mute)
         self._recheck_btn.setEnabled(not self._native_action_busy)
@@ -1037,9 +1041,11 @@ class WebexEmbed(QFrame):
             target.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def set_creator_profile(self, profile) -> None:
+        changed = self._creator_profile_key != profile.key
         self._creator_profile_key = profile.key
-        if profile.key != "art":
+        if changed:
             self._shared_lesson_hosting = None
+            self.lesson_handoff.set_context(hosting=None)
             self._clear_lesson_requests()
         self._sync_lesson_requests()
         self._render_audio_guidance()
@@ -1051,39 +1057,26 @@ class WebexEmbed(QFrame):
 
         if hosting is not None and not isinstance(hosting, bool):
             raise ValueError("Shared lesson context must be a room role or None.")
-        current = hosting if self._creator_profile_key == "art" else None
+        current = hosting if self._creator_profile_key in {"art", "music"} else None
         if current is None or current is not self._shared_lesson_hosting:
             self._clear_lesson_requests()
         self._shared_lesson_hosting = current
+        self.lesson_handoff.set_context(hosting=current, profile=self._creator_profile_key)
         self._sync_lesson_requests()
+        self._sync_native_actions()
         self._render_audio_guidance()
         self._sync_art_layout()
 
     def _render_audio_guidance(self) -> None:
         service = self._service_label
+        if self._shared_lesson_hosting is not None:
+            self._title_label.setText("Paint along with sound" if self._creator_profile_key == "art" else "Video practice")
+            self._mode_label.setText(lesson_sound_guidance(
+                profile=self._creator_profile_key, hosting=self._shared_lesson_hosting, service=service,
+            ))
+            return
         if self._creator_profile_key == "art":
             self._title_label.setText("Conversation")
-            if self._shared_lesson_hosting is not None:
-                meeting = service or "your meeting"
-                if self._shared_lesson_hosting:
-                    share = (
-                        "Webex app: Share your YouTube window with Include computer sound. "
-                        "Browser meeting: share the YouTube tab with tab audio. "
-                        if service == "Webex" else
-                        f"Share a YouTube browser window or tab with computer sound in {meeting}. "
-                    )
-                    self._mode_label.setText(
-                        share
-                        + "Keep faces visible there. Pause and resume in your browser when asked. "
-                        "YouTube player volume changes the shared lesson; your meeting's speaker volume and microphone mute are yours."
-                    )
-                else:
-                    self._mode_label.setText(
-                        f"Watch the host's shared YouTube lesson and faces in {meeting}. "
-                        "Ask the host to pause or resume when you need time; the host controls the browser. "
-                        "Use your meeting's speaker volume for what you hear and microphone mute for your voice."
-                    )
-                return
             self._mode_label.setText(
                 art_conversation_guidance(meeting_service=service)
             )

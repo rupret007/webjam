@@ -429,23 +429,61 @@ Things worth knowing:
 
 Bring your own materials or app. Choose **Watch a shared lesson** in Paint
 along to reach Conversation without choosing a local file. It works even
-when a local copy is missing or cannot play. The focused action is **Add
+when a local copy or embedded YouTube lesson cannot play. The focused action is **Add
 Link**, **Join / Open Meeting**, or the available meeting-app action. Merely
 showing these controls does not join a meeting or start a lesson.
 
-For a YouTube lesson, such as a Bob Ross mountain painting, the host opens
-the lesson in their browser and shares it through the meeting. In the Webex
+For a YouTube lesson, such as a Bob Ross mountain painting, the host chooses
+**Choose YouTube…**, pastes its video link, then chooses **Open in browser**.
+An existing embedded lesson supplies its current reference link and position;
+**Change YouTube…** selects a different browser lesson. Choosing a link starts
+nothing. Add the meeting link if needed, then **Join / Open Meeting**.
+The host shares the lesson through the meeting. In the Webex
 desktop app, share the browser window with computer sound enabled; the video
 optimization option helps motion. In the Webex web client, share the browser
 tab with tab audio enabled. Keep participant videos visible in the meeting.
 These are provider-supported paths; the complete two-person WebJam experience
 still needs physical verification. See the [shared-lesson test guide](docs/plans/webjam-shared-lesson-entry.md).
 
+**Remember lesson** adds the displayed reference link and chosen position to
+the current **Art project**, preserving its existing notes and drafts. Use
+**Open reference** there to return later. WebJam does not read playback time
+from your browser. A saved link does not start a lesson or join a room.
+For guests, **Save reference** saves the explicitly labeled silent WebJam
+reference; the host may be showing a different browser lesson in the meeting.
+
 The host pauses and resumes **the YouTube player** when either person asks.
 A guest asks in Conversation; WebJam cannot control the external browser.
 The YouTube player's volume changes the shared narration. Your meeting
 speaker volume changes what you hear; microphone mute controls your own voice.
 This does not provide separate WebJam faders for narration and each voice.
+Use headphones and ask your partner to confirm they hear both narration and
+your voice. Guests watch the host's meeting share and leave their own audible
+YouTube copy closed. Pause/ready buttons are available in supported Art LAN
+rooms; otherwise ask by voice or meeting chat.
+
+### Playing along to a song
+
+In Music, choose **Play along** (also in **More → Play along…**):
+
+- **Set up video practice** opens Conversation with a host YouTube chooser,
+  browser action and meeting controls. Share one video with sound, listen and
+  take turns. Your meeting carries the song and voices. If your instrument is
+  also connected to Jamulus, it still transmits; use your instrument/interface
+  send control to stop it. WebJam mix mute changes only what you hear.
+- **Open Shared Track** opens the host's existing live-ensemble setup. It needs
+  a local audio file and a supported, isolated host route (currently macOS
+  with the certified BlackHole setup). Guests choose **Open Jamulus mixer**
+  and balance the **WebJam Track** channel with the other musicians. Disconnect
+  Webex audio while playing and keep its video for faces. Judge musical timing
+  by the Jamulus sound; conferencing camera motion arrives later.
+
+Music video practice does not synchronize separate YouTube players or send
+their audio into Jamulus. A browser or meeting handoff confirms only that an
+open was requested; verify sharing, hearing and timing together. See the
+[Paint Along / Play Along plan and pilot](docs/PAINT_PLAY_ALONG_PLAN.md).
+
+### Silent Paint Along references
 
 For the existing **silent local-file option**, the host chooses one video file:
 

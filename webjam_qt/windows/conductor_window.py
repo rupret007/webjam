@@ -195,6 +195,7 @@ class ConductorWindow(QMainWindow):
         controls_layout.addWidget(self.session_strip._record_elapsed)
         controls_layout.addWidget(self.session_strip._record_button)
         controls_layout.addWidget(self.session_strip._video_button)
+        controls_layout.addWidget(self.session_strip._play_along_button)
         # Song sits beside Studio: the same class of in-session surface, on
         # the bar a musician already uses, rather than inside a menu.
         controls_layout.addWidget(self.session_strip._song_button)
@@ -365,10 +366,13 @@ class ConductorWindow(QMainWindow):
         """Make space for preview Help without hiding or clipping other actions."""
 
         compact = bool(getattr(self, "_room_help_enabled", False)) and self.width() < 900
+        follow_compact = self.session_strip._creator_profile_key == "music" and self.width() < 900
         bar = self.session_controls
-        if bar.property("helpPreviewCompact") == compact:
+        if (bar.property("helpPreviewCompact") == compact
+                and bar.property("followAlongCompact") == follow_compact):
             return
         bar.setProperty("helpPreviewCompact", compact)
+        bar.setProperty("followAlongCompact", follow_compact)
         layout = bar.layout()
         margin = Space.SM if compact else Space.LG
         layout.setContentsMargins(margin, Space.SM, margin, Space.SM)
@@ -567,6 +571,7 @@ class ConductorWindow(QMainWindow):
                 strip._video_button,
                 # Song sits where it sits on the bar, so tabbing matches what
                 # a musician sees rather than the order things were built in.
+                strip._play_along_button,
                 strip._song_button,
                 strip._studio_button,
                 self._room_help_button,
@@ -1130,6 +1135,7 @@ class ConductorWindow(QMainWindow):
         self.setWindowTitle(f"WebJam — {profile.label}{suffix} (v{__version__})")
         self.setAccessibleName(f"WebJam {profile.label} workspace{suffix}")
         self.session_strip.set_creator_profile(profile, locked=locked)
+        self._sync_room_help_density()
         if getattr(self, "song_overlay", None) is not None:
             # A host can impose a profile mid-session. Song has no meaning
             # outside Music, so the panel leaves with it rather than sitting

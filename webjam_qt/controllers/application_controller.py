@@ -1842,6 +1842,7 @@ class ApplicationController(QObject):
             def finish_room_ui() -> None:
                 if room is not None and room.generation != generation:
                     return
+                ApplicationController._clear_shared_lesson_context(self)
                 ApplicationController._release_reference_video(self)
                 ApplicationController._release_shared_canvas(self)
                 ApplicationController._release_room_clock(self)
@@ -4469,6 +4470,9 @@ class ApplicationController(QObject):
         self.window.webex_embed.recheck_webex_requested.connect(
             self._start_webex_app_detection
         )
+        from webjam_qt.controllers.follow_along import FollowAlongController
+
+        self.follow_along = FollowAlongController(self)
         self.window.confirm_close = self._confirm_close
         self.window.finalize_close = self.shutdown
         # Settings shortcut (Ctrl+,) and side-rail Settings button → wizard
@@ -8992,6 +8996,7 @@ class ApplicationController(QObject):
         # Retire every coordinator using the old invitation before reset can
         # advertise a replacement. A queued media tick must never sign a new
         # room snapshot with the previous invitation's key.
+        self._clear_shared_lesson_context()
         self._release_reference_video()
         self._release_shared_canvas()
         self._release_room_clock()
@@ -11593,6 +11598,9 @@ class ApplicationController(QObject):
             validated
         )
         self._session_meeting_generation = getattr(self, "_session_meeting_generation", 0) + 1
+        follow_along = getattr(self, "follow_along", None)
+        if follow_along is not None:
+            follow_along.meeting_changed()
         # Invalidate in-flight and queued handoffs even when two rooms use the
         # same URL. A launch result belongs to the room that requested it.
         self.bridge.invalidate_webex_launch()
@@ -12720,6 +12728,9 @@ class ApplicationController(QObject):
         )
         if webex_url_changed:
             self._retire_shared_lesson_requests()
+            follow_along = getattr(self, "follow_along", None)
+            if follow_along is not None:
+                follow_along.meeting_changed()
         reference_route_changed = any(
             (
                 getattr(old_settings, "host_server_enabled", False)
@@ -13284,6 +13295,8 @@ class ApplicationController(QObject):
 
         if key == "conversation":
             self._show_webex_conversation()
+        elif key == "play_along":
+            self.follow_along.show_music_choices()
         elif key == "reference_track":
             self._open_reference_track()
         elif key == "reference_video":
@@ -13738,6 +13751,12 @@ class ApplicationController(QObject):
     def _release_reference_video(self) -> None:
         """Return this computer to the no-video path and free its player."""
 
+        # Music state reads probe the optional Art coordinator. Releasing an
+        # absent video must not retire Music's independent meeting lesson.
+        if (getattr(self, "_reference_video", None) is None
+                and getattr(self, "_reference_video_dialog", None) is None):
+            return
+
         ApplicationController._clear_reference_video_notice(self)
         ApplicationController._clear_shared_lesson_context(self)
         timer = getattr(self, "_reference_video_timer", None)
@@ -13986,6 +14005,9 @@ class ApplicationController(QObject):
 
     def _clear_shared_lesson_context(self) -> None:
         ApplicationController._retire_shared_lesson_requests(self)
+        follow_along = getattr(self, "follow_along", None)
+        if follow_along is not None:
+            follow_along.retire()
         panel = getattr(getattr(self, "window", None), "webex_embed", None)
         if getattr(panel, "_shared_lesson_hosting", None) is not None:
             panel.set_shared_lesson_context(hosting=None)
@@ -14042,8 +14064,10 @@ class ApplicationController(QObject):
             or QApplication.activePopupWidget() is not None
         ):
             return
+        lesson_url = dialog.meeting_lesson_url()
         self._show_webex_conversation()
         self.window.webex_embed.set_shared_lesson_context(hosting=coordinator.hosting)
+        self.follow_along.activate(hosting=coordinator.hosting, lesson_url=lesson_url, resume_browser_choice=True)
         room.activate_lesson_requests(hosting=coordinator.hosting)
 
     def _run_current_host_paint_along(self, coordinator, dialog, operation) -> None:

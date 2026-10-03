@@ -72,6 +72,24 @@ def workflow_topics(profile: str, *, offline_studio: bool = False) -> tuple[Help
             "unsaved conflict disk full interrupted backup recovery copy retry", library_route,
             "Open Session library"),
     ]
+    if profile in {"art", "music"} and not offline_studio:
+        topics.append(HelpTopic("follow_along", "Paint along and play along with sound",
+            "<p>In Art, choose <b>Watch a shared lesson</b> in Paint along. In Music, "
+            "choose <b>Play along</b>, then <b>Set up video practice</b>. The host chooses "
+            "<b>Choose YouTube…</b>, pastes the link, then explicitly uses <b>Open in browser</b>. "
+            "Add your meeting link if needed and choose <b>Join / Open Meeting</b>.</p>"
+            "<p>In Webex, share the browser window with computer sound, or the browser tab "
+            "with tab audio. Keep faces visible and use headphones. Guests listen to the host's "
+            "shared copy. Ask the host to pause or resume the browser player. Confirm hearing "
+            "and sharing together; WebJam cannot observe the external meeting.</p>"
+            "<p>Music video practice means listening and taking turns. For live ensemble, "
+            "choose <b>Open Shared Track</b> as host or <b>Open Jamulus mixer</b> as guest. "
+            "The supported Shared Track route carries one local backing file through Jamulus. "
+            "Disconnect meeting audio while playing; its video arrives later. WebJam mix mute "
+            "changes only your listening, not your outgoing instrument.</p>"
+            "<p>In Art, <b>Remember lesson</b> saves the displayed reference link in the Art "
+            "project. Browser playback time is not tracked. Embedded Paint along stays silent.</p>",
+            "YouTube Bob Ross painting music song lesson Webex sound pause play along latency"))
     if profile == "music" and not offline_studio:
         topics.append(HelpTopic("rehearsal_moments", "Rehearsal songs and moment notes",
             "<p>In <b>Rehearsal plan</b>, add songs, key, tempo and goals. Previous / Next changes "

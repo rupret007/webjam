@@ -181,6 +181,42 @@ class SessionLibraryCoordinator(QObject):
                 self.current = saved
         return True
 
+    def remember_art_lesson(self, url):
+        """Save an explicit lesson reference through the ordinary draft owner."""
+        from core.youtube_lesson import parse_youtube_lesson_url
+
+        lesson = parse_youtube_lesson_url(url)
+        if self._profile() != "art" or self.media_operation_pending or self.studio_media_pending:
+            self._flash("Finish the current workspace operation before remembering the lesson.")
+            return False
+        if not self.ensure_current():
+            return False
+        current_id = self.current.id
+        self.show(tab="plan")
+        dialog = self.dialog
+        if dialog is None:
+            return False
+        dialog.select_id(current_id)
+        if (self._profile() != "art" or self.current is None or self.current.id != current_id
+                or dialog is not self.dialog or dialog.record is None or dialog.record.id != current_id
+                or self.media_operation_pending):
+            self._flash("Your existing workspace draft is retained. Select the current Art project and try again.")
+            return False
+        try:
+            references = dialog.art.payload()["references"]
+            if not any(ref["kind"] == "url" and ref["locator"] == lesson.playback_url for ref in references):
+                position = f" at {lesson.start_s // 60}:{lesson.start_s % 60:02d}" if lesson.start_s else ""
+                dialog.art.add_reference(lesson.playback_url, kind="url", title=f"YouTube lesson{position}")
+        except ValueError as error:
+            dialog.art.status.setText(str(error))
+            return False
+        saved = dialog.save_current()
+        dialog.art.status.setText(
+            "Lesson remembered. Open reference returns to the saved link; WebJam does not track browser playback."
+            if saved else "The lesson is in your retained draft. Use Save to retry."
+        )
+        return saved
+
     def profile_changing(self):
         if self.media_operation_pending or self.studio_media_pending:
             self._flash("Wait for the workspace operation result before changing profiles.")
