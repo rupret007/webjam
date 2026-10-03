@@ -60,13 +60,14 @@ from core.studio_sections import reorder_section
 from services.session_workspace_packaged_smoke import run_session_workspace_smoke
 from services.workflow_continuity_packaged_smoke import run_workflow_continuity_smoke
 from services.workspace_portability_smoke import run_workspace_portability_smoke
+from services.packaged_smoke_diagnostics import checkpoint, diagnostic_trace
 
 SUCCESS_MARKER = "WebJam Reference Studio frozen-runtime smoke passed"
 _SAMPLE_RATE = 48_000
 _FRAMES = 4_800
 
 
-def _write_success_marker(result_path: Path) -> None:
+def _validated_result_path(result_path: Path) -> Path:
     path = result_path.resolve()
     temporary_root = Path(tempfile.gettempdir()).resolve()
     parent = path.parent
@@ -78,6 +79,11 @@ def _write_success_marker(result_path: Path) -> None:
         or path.exists()
     ):
         raise RuntimeError("Reference Studio runtime smoke result path is invalid.")
+    return path
+
+
+def _write_success_marker(result_path: Path) -> None:
+    path = _validated_result_path(result_path)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as output:
@@ -570,16 +576,24 @@ def _exercise_reference_studio(root: Path) -> None:
 def run_frozen_reference_studio_smoke(*, result_path: Path) -> int:
     """Exercise packaged project and Qt saved-work paths without audio hardware."""
 
-    with tempfile.TemporaryDirectory(
-        prefix="webjam-reference-studio-work-"
-    ) as directory:
-        root = Path(directory)
-        _exercise_reference_studio(root)
-        _exercise_packaged_reference_track_mp3(root)
-        run_session_workspace_smoke()
-        run_workflow_continuity_smoke()
-        run_workspace_portability_smoke()
-    _write_success_marker(result_path)
+    result_path = _validated_result_path(result_path)
+    with diagnostic_trace(result_path):
+        with tempfile.TemporaryDirectory(prefix="webjam-reference-studio-work-") as directory:
+            root = Path(directory)
+            checkpoint("Reference Studio: begin")
+            _exercise_reference_studio(root)
+            checkpoint("Reference Studio: complete; MP3: begin")
+            _exercise_packaged_reference_track_mp3(root)
+            checkpoint("MP3: complete; saved workspace: begin")
+            run_session_workspace_smoke()
+            checkpoint("Saved workspace: complete; continuity: begin")
+            run_workflow_continuity_smoke()
+            checkpoint("Continuity: complete; portability: begin")
+            run_workspace_portability_smoke()
+            checkpoint("Portability: complete; temporary cleanup: begin")
+        checkpoint("Temporary cleanup: complete; success marker: begin")
+        _write_success_marker(result_path)
+        checkpoint("Success marker: complete; hook return")
     return 0
 
 

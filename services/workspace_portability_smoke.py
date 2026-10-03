@@ -38,6 +38,7 @@ from services.session_workspace_packaged_smoke import (
 from services.workflow_continuity_packaged_smoke import (
     _application, _close_workspace, _isolated_runtime, _replace,
 )
+from services.packaged_smoke_diagnostics import checkpoint
 from webjam_qt import app as app_module
 from webjam_qt.widgets import recording_studio as studio_ui
 from webjam_qt.windows.launch_dialog import LaunchDialog
@@ -108,6 +109,7 @@ def _passive_media_guard(media_root):
 
 @contextmanager
 def _workspace(app, settings_path, launch=None):
+    checkpoint("Portability: create workspace begin")
     sink = _MemorySink()
     settings = load_settings(str(settings_path))
     proof_root = settings_path.parent.parent
@@ -118,6 +120,7 @@ def _workspace(app, settings_path, launch=None):
     # source catalog, renderer and pull path remain in use.
     with _replace(studio_ui, "SoundDeviceSink", lambda: sink):
         window, controller = app_module._create_workspace(app, settings, launch)
+    checkpoint("Portability: create workspace complete")
     try:
         _require(Path(controller.repository.db_path).resolve().is_relative_to(settings_path.parent),
                  "smoke repository escaped the owned workspace root")
@@ -323,9 +326,11 @@ def _prepare_source(app, root, record_takes):
 
 
 def prepare_portability(root: Path, *, record_takes=None):
+    checkpoint("Portability: prepare source begin")
     app = _application()
     root = Path(root).resolve()
     source = _prepare_source(app, root, record_takes)
+    checkpoint("Portability: prepare source complete; destination imports begin")
     with _isolated_runtime(root / "Destination") as (library, settings_path, starts):
         settings = load_settings(str(settings_path))
         settings.takes_directory = source["takes_directory"]
@@ -341,6 +346,7 @@ def prepare_portability(root: Path, *, record_takes=None):
             music = _import(app, editor, source["packages"][0])
             art = _import(app, editor, source["packages"][1])
             duplicate = _import(app, editor, source["packages"][0])
+            checkpoint("Portability: destination imports complete")
             _require(len({music.id, art.id, duplicate.id, owner.id}) == 4, "duplicate import reused a workspace identity")
             _require(controller.session_library.current.id == owner.id, "import changed runtime ownership")
             _require(not window.recording_studio._player.is_playing and not any(starts.values()),
@@ -378,6 +384,7 @@ def prepare_portability(root: Path, *, record_takes=None):
 
 
 def _launch_saved(app, settings_path, workspace_id, *, take_id=None):
+    checkpoint("Portability: launch saved workspace begin")
     launch = LaunchDialog(load_settings(str(settings_path)))
     errors = []
 
@@ -598,6 +605,9 @@ def run_workspace_portability_smoke():
     with tempfile.TemporaryDirectory(prefix="webjam-portability-smoke-") as directory:
         root = Path(directory).resolve()
         prepare_portability(root)
+        checkpoint("Portability: prepare complete; resume begin")
         result = resume_portability(root, require_fresh_process=False)
+        checkpoint("Portability: resume complete; initial Library Open begin")
         result.update(check_portable_launch(root))
+        checkpoint("Portability: initial Library Open complete")
         return result

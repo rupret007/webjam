@@ -284,9 +284,14 @@ def run_session_workspace_smoke() -> dict:
             proof["originals_unchanged"] = True
             return proof
         finally:
-            studio.shutdown()
+            from services.packaged_smoke_diagnostics import checkpoint
+            checkpoint("Saved workspace: Studio shutdown begin")
+            _require(studio.shutdown(), "saved-work Studio did not prove cleanup")
+            checkpoint("Saved workspace: Studio shutdown complete; widget deletion begin")
             for widget in reversed(widgets):
                 widget.close()
                 widget.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            checkpoint("Saved workspace: deferred deletion complete; process events begin")
             app.processEvents()
+            checkpoint("Saved workspace: process events complete")

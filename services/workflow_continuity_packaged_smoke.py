@@ -143,11 +143,16 @@ def _isolated_runtime_paths(root: Path):
 
 
 def _close_workspace(app, window, controller):
+    from services.packaged_smoke_diagnostics import checkpoint
+    checkpoint("Workspace: controller shutdown begin")
     _require(controller.shutdown(), "temporary workspace did not prove cleanup")
+    checkpoint("Workspace: controller shutdown complete; close/delete begin")
     window.close()
     window.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    checkpoint("Workspace: deferred deletion complete; process events begin")
     app.processEvents()
+    checkpoint("Workspace: process events complete")
 
 
 def _help_route(app, controller, *, offline: bool):

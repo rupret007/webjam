@@ -12,6 +12,15 @@ from pathlib import Path
 SUCCESS_MARKER = "WebJam Reference Studio frozen-runtime smoke passed"
 
 
+def _diagnostics(directory: str) -> str:
+    path = Path(directory) / "diagnostics.log"
+    if not path.is_file():
+        return "No frozen phase diagnostics were written."
+    with path.open("rb") as stream:
+        stream.seek(max(0, path.stat().st_size - 64 * 1024))
+        return stream.read(64 * 1024).decode("utf-8", errors="replace")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", type=Path, required=True)
@@ -44,7 +53,8 @@ def main() -> int:
             )
         except subprocess.TimeoutExpired as exc:
             raise SystemExit(
-                "Frozen Reference Studio runtime smoke exceeded 60 seconds."
+                "Frozen Reference Studio runtime smoke exceeded 60 seconds.\n"
+                + _diagnostics(directory)
             ) from exc
         combined = f"{completed.stdout or ''}\n{completed.stderr or ''}"
         result = (
@@ -53,7 +63,8 @@ def main() -> int:
         if completed.returncode != 0 or result != SUCCESS_MARKER + "\n":
             raise SystemExit(
                 "Frozen Reference Studio runtime smoke failed.\n"
-                f"exit={completed.returncode}\n{combined[-4000:]}"
+                f"exit={completed.returncode}\n{combined[-4000:]}\n"
+                + _diagnostics(directory)
             )
     print(SUCCESS_MARKER)
     return 0

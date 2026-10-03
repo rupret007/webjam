@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -22,6 +24,10 @@ def test_reference_studio_packaged_smoke_exercises_complete_core_path() -> None:
         assert run_frozen_reference_studio_smoke(result_path=result) == 0
 
         assert result.read_text(encoding="utf-8") == SUCCESS_MARKER + "\n"
+        trace = (result.parent / "diagnostics.log").read_text(encoding="utf-8")
+        assert "Continuity: complete; portability: begin" in trace
+        assert "Portability: initial Library Open complete" in trace
+        assert trace.endswith("Success marker: complete; hook return\n")
 
 
 def test_reference_studio_packaged_smoke_rejects_unowned_result_path(
@@ -33,3 +39,44 @@ def test_reference_studio_packaged_smoke_rejects_unowned_result_path(
         run_frozen_reference_studio_smoke(result_path=result)
 
     assert not result.exists()
+
+
+def test_windowed_smoke_keeps_flushed_phase_after_abrupt_process_exit():
+    with tempfile.TemporaryDirectory(prefix="webjam-reference-studio-smoke-") as directory:
+        result = Path(directory) / "result.txt"
+        child = subprocess.run([
+            sys.executable, "-c",
+            "import os, sys, faulthandler\n"
+            "from pathlib import Path\n"
+            "from services.packaged_smoke_diagnostics import checkpoint, diagnostic_trace\n"
+            "sys.frozen = True\n"
+            "sys.stderr = None\n"
+            "with diagnostic_trace(Path(sys.argv[1])):\n"
+            "    assert faulthandler.is_enabled()\n"
+            "    checkpoint('Owned phase before abrupt exit')\n"
+            "    os._exit(73)\n",
+            str(result),
+        ], cwd=Path(__file__).resolve().parents[1], capture_output=True, timeout=15)
+        assert child.returncode == 73, child.stderr
+        assert not result.exists()
+        assert (result.parent / "diagnostics.log").read_text() == "Owned phase before abrupt exit\n"
+
+
+@pytest.mark.parametrize("failure", ["native_abort", "timeout"])
+def test_frozen_runner_reports_owned_phase_when_child_cannot_report(monkeypatch, tmp_path, failure):
+    from tests.support import run_frozen_reference_studio_smoke as runner
+    binary = tmp_path / "owned-binary"
+    binary.write_bytes(b"test runner boundary")
+    monkeypatch.setattr(sys, "argv", ["smoke", "--binary", str(binary)])
+
+    def child(*args, **kwargs):
+        result = Path(kwargs["env"]["WEBJAM_SMOKE_REFERENCE_STUDIO_RESULT"])
+        (result.parent / "diagnostics.log").write_text("Last completed phase\n")
+        assert kwargs["timeout"] == 60
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(args[0], 60)
+        return subprocess.CompletedProcess(args[0], 3221226505, stdout="", stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", child)
+    with pytest.raises(SystemExit, match="Last completed phase"):
+        runner.main()

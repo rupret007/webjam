@@ -1338,6 +1338,28 @@ jobs:
           tests/test_workflow_continuity_packaged_smoke.py
           tests/test_session_library_launch.py
 
+      - name: Verify complete Reference Studio workflow on this desktop
+        timeout-minutes: 5
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -X dev -m pytest -q tests/test_reference_studio_packaged_smoke.py
+
+      - name: Report native workflow crash diagnostics
+        if: failure()
+        shell: python
+        run: |
+          from pathlib import Path
+          import tempfile
+
+          root = Path(tempfile.gettempdir())
+          for path in sorted(root.glob("webjam-reference-studio-smoke-*/diagnostics.log"))[-8:]:
+              if path.is_symlink() or not path.is_file():
+                  continue
+              with path.open("rb") as stream:
+                  stream.seek(max(0, path.stat().st_size - 64 * 1024))
+                  print("Owned native workflow diagnostics:")
+                  print(stream.read(64 * 1024).decode("utf-8", errors="replace"))
+
       - name: Verify macOS PyInstaller pkg_resources compatibility
         if: startsWith(matrix.target, 'macos-')
         run: |
