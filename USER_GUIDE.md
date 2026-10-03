@@ -481,7 +481,10 @@ In Music, choose **Play along** (also in **More → Play along…**):
 - **Set up video practice** opens Conversation with a host YouTube chooser,
   browser action and meeting controls. Share one video with sound, listen and
   take turns. Your meeting carries the song and voices. If your instrument is
-  also connected to Jamulus, it still transmits; use your instrument/interface
+  not set up in Jamulus, you can still use video practice. The practice header
+  explains this while ensemble setup is pending. Setup failures and unfinished
+  cleanup remain visible. Returning to ensemble restores its setup guidance.
+  If your instrument is also connected to Jamulus, it still transmits; use your instrument/interface
   send control to stop it. WebJam mix mute changes only what you hear.
 - **Open Shared Track** opens the host's existing live-ensemble setup. It needs
   a local audio file and a supported, isolated host route (currently macOS

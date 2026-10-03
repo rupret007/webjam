@@ -49,6 +49,24 @@ class FollowAlongController:
             and not QApplication.activeModalWidget() and not QApplication.activePopupWidget()
         )
 
+    def music_practice_visible(self):
+        """Read the current presentation owner without authorizing an action."""
+        return bool(
+            self._c.creator_profile.key == "music"
+            and self._context is not None
+            and self._context == (self._identity(), self.panel.generation)
+            and self.panel.hosting is not None
+            and self.panel.isVisibleTo(self._c.window)
+        )
+
+    def _refresh_music_setup_guidance(self):
+        if (self._c.creator_profile.key == "music"
+                and getattr(self._c, "_startup_attempt", None) is not None
+                and not any(getattr(self._c, flag, False) for flag in (
+                    "_shutdown", "_shutdown_in_progress", "_shutdown_cleanup_pending",
+                ))):
+            self._c._update_session_hud()
+
     @staticmethod
     def _browser_owner(identity):
         return identity[:5] + identity[7:]
@@ -71,8 +89,10 @@ class FollowAlongController:
         if hosting and url:
             self._sources[key] = url
         self._c.window.webex_embed._sync_art_layout()
+        self._refresh_music_setup_guidance()
 
     def retire(self):
+        had_context = self._context is not None
         self._context = None
         self._suspended = None
         if self._choice is not None:
@@ -80,6 +100,8 @@ class FollowAlongController:
             self._choice = None
             choice.close()
             choice.deleteLater()
+        if had_context:
+            self._refresh_music_setup_guidance()
 
     def suspend(self):
         """Retain a local navigation choice without retaining action authority."""

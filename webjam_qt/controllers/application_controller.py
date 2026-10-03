@@ -6193,6 +6193,19 @@ class ApplicationController(QObject):
         )
         role = str(attempt.get("role", "guest"))
         phase = str(attempt.get("phase", ""))
+        practice_override = None
+        follow_along = getattr(self, "follow_along", None)
+        practice_visible = getattr(follow_along, "music_practice_visible", None)
+        if (phase in {"launching_client", "native_sound_setup", "verifying_music", "confirm_sound"}
+                and callable(practice_visible) and practice_visible()):
+            # The selected meeting practice can proceed while ensemble audio
+            # setup is pending. Keep the actual attempt and recovery facts;
+            # this changes only the next-action presentation.
+            practice_override = GuidanceDisplayOverride(
+                "Video practice in your meeting",
+                "Jamulus is not required for video practice. Listen to one shared lesson and take turns.",
+                SessionPrimaryAction.NONE,
+            )
         creator_copy = self._startup_creator_copy(self.creator_profile.key)
         enter_label = SessionPrimaryAction.ENTER_JAM.label_for(self.creator_profile)
         end_label = "End Session" if role == "host" else "Leave Jam"
@@ -6200,7 +6213,11 @@ class ApplicationController(QObject):
             end_label,
             enabled=phase != "cancelling",
         )
-        if phase == "starting_server":
+        if practice_override is not None:
+            self.window.session_hud.set_state(
+                practice_override.title, practice_override.message, action_visible=False,
+            )
+        elif phase == "starting_server":
             self.window.session_hud.set_state(
                 creator_copy["starting_title"],
                 creator_copy["starting_detail"],
@@ -6324,7 +6341,7 @@ class ApplicationController(QObject):
         self._persist_startup_attempt(attempt)
         if not isinstance(snapshot, SessionConductorSnapshot):
             return
-        override = self._startup_guidance_override(
+        override = practice_override or self._startup_guidance_override(
             attempt,
             self.creator_profile.key,
         )

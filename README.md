@@ -137,7 +137,8 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    controls in supported LAN Art rooms. Retired requests stay retired.
 6. In Music, **Play along** offers **Set up video practice** (one shared
    YouTube video through the meeting; listen and take turns) or **Open Shared
-   Track** (live ensemble through Jamulus, meeting audio disconnected). Guests
+   Track** (live ensemble through Jamulus, meeting audio disconnected). You
+   can use video practice without finishing Jamulus audio setup. Guests
    use **Open Jamulus mixer** for the ensemble path. Webex video can lag the
    musical audio. WebJam mix mute changes your listening, not your outgoing
    instrument. **Remember lesson** saves a practice link with the current

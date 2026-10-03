@@ -89,6 +89,14 @@ regression preserves drafts and verifies that no player starts. The first CI
 pass also identified a remaining old recovery-copy assertion; it now checks
 the named shared-lesson handoff and verifies that opening remains explicit.
 
+Whole-window review then found that a cold Music guest who selected video
+practice still saw the pending Jamulus setup checklist above it. The selected
+practice now supplies a short, ownership-bound header explaining the meeting
+route while preserving the actual audio attempt. Failure, cancellation and
+shutdown cleanup retain priority; leaving practice restores ensemble setup.
+Enlarged-text coverage now includes the session header for these follow-along
+views, as well as the lesson card and End/Leave action.
+
 Focused source checks and native layout/recovery checks precede the final
 commit gates. Final full-source, desktop CI, package verification, build
 handoff and replacement cleanup remain pending at this checkpoint. The

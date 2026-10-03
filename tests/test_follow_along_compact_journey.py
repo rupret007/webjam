@@ -29,7 +29,7 @@ def assert_reachable(app, root, qapp, size, *, in_room=True):
     assert QTest.qWaitForWindowActive(window, 2000)
     assert window.size().width() == size[0] and window.size().height() == size[1]
     assert window.rect().contains(QRect(root.mapTo(window, QPoint()), root.size()))
-    for label in root.findChildren(QLabel):
+    for label in root.findChildren(QLabel) + window.session_hud.findChildren(QLabel):
         if not label.isVisibleTo(window):
             continue
         required = label.heightForWidth(label.width()) if label.wordWrap() else label.minimumSizeHint().height()

@@ -36,7 +36,8 @@ def lesson_setup_steps(*, profile: str, hosting: bool, service: str = "") -> str
                  "2. Listen to that one copy; keep your own player closed.\n"
                  "3. Ask the host to pause or resume.")
     if profile == "music":
-        steps += ("\nTake turns; meeting playback is delayed. If connected to Jamulus, "
+        steps += ("\nJamulus is not required for video practice. "
+                  "Take turns; meeting playback is delayed. If connected to Jamulus, "
                   "stop your instrument at its send control. Listening mute does not stop your send.")
     return steps
 
