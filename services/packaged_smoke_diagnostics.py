@@ -1,4 +1,4 @@
-"""Flushed, owned diagnostics for a frozen smoke process with no console."""
+"""Flushed, owned diagnostics for source and frozen workflow smoke checks."""
 from contextlib import contextmanager
 from contextvars import ContextVar
 import faulthandler
@@ -31,8 +31,9 @@ def diagnostic_trace(result_path: Path):
     descriptor = os.open(parent / "diagnostics.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as output:
         token = _OUTPUT.set(output)
-        # A windowed frozen executable has no reliable stderr. Do not replace
-        # pytest's handler when this same proof runs in a source interpreter.
+        # A windowed frozen executable has no reliable stderr. Source pytest
+        # already owns faulthandler; keep that handler while forwarding Qt
+        # messages so an abort cannot lose them inside pytest's capture.
         frozen = bool(getattr(sys, "frozen", False))
         own_handler = frozen and not faulthandler.is_enabled()
         message_lock = Lock()
@@ -54,9 +55,8 @@ def diagnostic_trace(result_path: Path):
                 sys.stderr.flush()
 
         try:
-            if frozen:
-                previous_qt_handler = qInstallMessageHandler(qt_message)
-                qt_handler_installed = True
+            previous_qt_handler = qInstallMessageHandler(qt_message)
+            qt_handler_installed = True
             if own_handler:
                 faulthandler.enable(file=output, all_threads=True)
                 # CPython 3.11's watchdog reads live frames without the GIL

@@ -62,7 +62,8 @@ def test_windowed_smoke_keeps_flushed_phase_after_abrupt_process_exit():
         assert (result.parent / "diagnostics.log").read_text() == "Owned phase before abrupt exit\n"
 
 
-def test_windowed_smoke_keeps_native_worker_abort_reason():
+@pytest.mark.parametrize("frozen", [False, True])
+def test_smoke_keeps_native_worker_abort_reason(frozen):
     with tempfile.TemporaryDirectory(prefix="webjam-reference-studio-smoke-") as directory:
         result = Path(directory) / "result.txt"
         child = subprocess.run([
@@ -74,14 +75,14 @@ def test_windowed_smoke_keeps_native_worker_abort_reason():
             "from pathlib import Path\n"
             "from PySide6.QtCore import qFatal\n"
             "from services.packaged_smoke_diagnostics import checkpoint, diagnostic_trace\n"
-            "sys.frozen = True\n"
+            "sys.frozen = sys.argv[2] == 'frozen'\n"
             "sys.stderr = None\n"
             "with diagnostic_trace(Path(sys.argv[1])):\n"
             "    checkpoint('Owned phase before worker abort')\n"
             "    worker = threading.Thread(target=lambda: qFatal('Owned native worker abort'))\n"
             "    worker.start()\n"
             "    worker.join()\n",
-            str(result),
+            str(result), "frozen" if frozen else "source",
         ], cwd=Path(__file__).resolve().parents[1], capture_output=True, timeout=15)
         assert child.returncode != 0
         assert not result.exists()
@@ -91,13 +92,14 @@ def test_windowed_smoke_keeps_native_worker_abort_reason():
         assert "Qt QtFatalMsg:" in trace
 
 
-def test_windowed_smoke_forwards_and_restores_existing_qt_handler(monkeypatch):
+@pytest.mark.parametrize("frozen", [False, True])
+def test_smoke_forwards_and_restores_existing_qt_handler(monkeypatch, frozen):
     from PySide6.QtCore import qInstallMessageHandler, qWarning
     from services.packaged_smoke_diagnostics import diagnostic_trace
 
     received = []
     previous = qInstallMessageHandler(lambda _kind, _context, message: received.append(message))
-    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "frozen", frozen, raising=False)
     try:
         with tempfile.TemporaryDirectory(prefix="webjam-reference-studio-smoke-") as directory:
             result = Path(directory) / "result.txt"
