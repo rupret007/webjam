@@ -15,6 +15,9 @@ they do not request a new release/tag or claim new published package evidence.
   with metadata-only defaults or explicitly selected completed takes/local Art,
   cancellable background work and durable checksum receipts for recovery.
   Imported media remains unchecked until an explicit action.
+- Background Notes saves and late recording results leave the Library's
+  retained import draft unsaved. Explicit Save or closing still reconciles
+  that draft and any pending recording facts; later typing resumes its autosave.
 - **Verify take**, **Verify reference**, **Locate take…** and
   **Relink…** check expected content while retaining drafts and bookmarks.
   Restored Studio takes retain exact alternate-source locations through

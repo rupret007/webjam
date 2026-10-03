@@ -17,7 +17,7 @@ def test_imported_copy_cannot_steal_original_pending_recording_recovery(tmp_path
     initial = library.save(replace(record, take_links=()))
     owner = SimpleNamespace(library=library, _recording_owners={}, _pending={}, current=initial,
                             _run_id="run-1", _live_take_ids=set(), ensure_current=lambda: True)
-    def flush():
+    def flush(*, include_editor=True):
         for key, value in list(owner._pending.items()):
             saved = library.save(value)
             if owner.current.id == saved.id:
@@ -43,4 +43,4 @@ def test_imported_copy_cannot_steal_original_pending_recording_recovery(tmp_path
     assert library.load(pending.id).take_links[0]["source_identity"] == "final-source-identity"
     assert (library.root / f"{imported.id}.json").read_bytes() == preserved
     assert owner.current == imported and not owner._live_take_ids
-    owner.flush.assert_called_once()
+    owner.flush.assert_called_once_with(include_editor=False)

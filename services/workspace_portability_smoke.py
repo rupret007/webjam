@@ -10,7 +10,7 @@ from __future__ import annotations
 from contextlib import ExitStack, contextmanager
 import builtins
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import fields, replace
 import hashlib
 import io
 import json
@@ -192,8 +192,11 @@ def _import(app, editor, path):
         _wait(app, lambda: not editor.media_operation_pending, "import worker did not finish")
     added = [record for record in editor.library.list() if record.id not in before]
     _require(len(added) == 1, "import did not publish exactly one fresh workspace")
-    _require(editor._edited_record() == draft and editor._dirty,
-             "import changed selection or the current unsaved draft")
+    edited = editor._edited_record()
+    changed = [field.name for field in fields(draft) if getattr(edited, field.name) != getattr(draft, field.name)]
+    _require(edited == draft and edited._store_token == draft._store_token,
+             f"import changed the current workspace snapshot: {', '.join(changed)}")
+    _require(editor._dirty, "import consumed the current unsaved draft")
     return added[0]
 
 

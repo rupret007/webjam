@@ -95,7 +95,7 @@ class SessionLibraryCoordinator(QObject):
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(800)
-        self.timer.timeout.connect(self.flush)
+        self.timer.timeout.connect(lambda: self.flush(include_editor=False))
         studio = getattr(controller.window, "recording_studio", None)
         if studio is not None:
             studio.workspace_owner_token = self._studio_owner_token
@@ -158,14 +158,18 @@ class SessionLibraryCoordinator(QObject):
             if candidate != self.current or self.current.id in self._pending:
                 self._pending[candidate.id] = candidate
 
-    def flush(self) -> bool:
+    def flush(self, *, include_editor=True) -> bool:
         self.timer.stop()
         if self._applying:
             return True
         self._capture_current_notes()
-        if (self.dialog is not None and getattr(self.dialog, "_dirty", False)
-                and not self.dialog.save_current()):
-            return False
+        if self.dialog is not None and getattr(self.dialog, "_dirty", False):
+            # The editor owns its autosave timer. An unrelated live-Notes
+            # timer or recording completion must not consume a draft that
+            # import deliberately retained. Keep pending facts too, rather
+            # than advancing the disk token behind that editor.
+            if not include_editor or not self.dialog.save_current():
+                return False
         for key, record in tuple(self._pending.items()):
             try:
                 saved = self.library.save(record)
@@ -442,7 +446,7 @@ class SessionLibraryCoordinator(QObject):
             if not self._run_id or self._run_id == run_id:
                 self._live_take_ids.add(take.take_id)
         self._pending[owner.id] = owner
-        self.flush()
+        self.flush(include_editor=False)
 
     def current_take_status(self):
         if self.current is None:

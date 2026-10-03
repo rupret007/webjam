@@ -86,6 +86,9 @@ intended checksum. Review the title, profile, counts, prior imports and limits.
 **Cancel** leaves the open draft unchanged.
 **Import as new** creates a separate saved workspace and keeps your
 current editor and selection. Select the imported entry yourself when ready.
+An unsaved draft stays unsaved through import, including when a background
+Notes save or recording result arrives. Use **Save** when ready; further
+typing resumes the editor's autosave. Closing also attempts to save your work.
 At compact sizes or with enlarged text, scroll the Library to reach its actions.
 Tab and Shift+Tab bring focused controls into view; save and recovery status stays visible.
 

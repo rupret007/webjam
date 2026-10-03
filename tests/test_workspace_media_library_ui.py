@@ -1,6 +1,7 @@
 """Actual selected-media controls, live workers, recovery and draft retention."""
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import replace
 import os
 from pathlib import Path
@@ -47,6 +48,62 @@ def _wait(app, predicate, timeout=5):
         app.processEvents()
         time.sleep(.005)
     assert predicate(), "Workspace operation did not reach its expected state"
+
+
+@pytest.mark.parametrize("timer_owner", ["notes", "workspace"])
+def test_expired_owner_save_at_import_retirement_keeps_the_editor_draft(
+    navigation, tmp_path, art, monkeypatch, timer_owner,
+):
+    navigator, _mailbox, _controllers, app = navigation
+    controller = navigator.controller
+    coordinator = controller.session_library
+    package = _package(tmp_path, art[0])
+    coordinator.show()
+    editor = coordinator.dialog
+    editor.notes.setPlainText("Keep this unsaved while importing separate work")
+    controller._notes_save_timer.stop()
+    coordinator.timer.stop()
+    timer = controller._notes_save_timer if timer_owner == "notes" else coordinator.timer
+    draft = deepcopy(editor._edited_record())
+    base = deepcopy(editor._base_record)
+    owner = deepcopy(coordinator.current)
+    saved_path = coordinator.library.root / f"{owner.id}.json"
+    saved_bytes = saved_path.read_bytes()
+    original_end = editor.workspace_flow._end
+    retired = []
+
+    def end_with_expired_owner_save():
+        original_end()
+        if not editor.media_operation_pending:
+            # An overdue timer can be dispatched in the same event batch as
+            # the worker's final callback, before the caller resumes.
+            timer.timeout.emit()
+            retired.append(editor._dirty)
+
+    monkeypatch.setattr(editor.workspace_flow, "_end", end_with_expired_owner_save)
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *_a, **_k: (str(package.path), ""))
+    for count in (1, 2):
+        editor.import_backup_button.click()
+        _wait(app, lambda: editor.workspace_flow.prompt is not None)
+        editor.workspace_flow.prompt.confirm_button.click()
+        _wait(app, lambda: not editor.media_operation_pending)
+        assert retired == [True] * count
+        assert editor._edited_record() == draft and editor._dirty
+        assert editor._base_record == base and editor._base_record._store_token == base._store_token
+        assert coordinator.current == owner
+        assert coordinator.current._store_token == owner._store_token
+        assert saved_path.read_bytes() == saved_bytes
+        assert len(coordinator.library.list()) == 1 + count
+        assert not editor.timer.isActive()
+    editor.save_button.click()
+    assert not editor._dirty
+    assert coordinator.library.load(owner.id).notes == draft.notes
+    assert coordinator.current.notes == draft.notes
+    editor.notes.setPlainText("New typing resumes the editor's own autosave")
+    assert editor.timer.isActive()
+    editor.timer.timeout.emit()
+    assert not editor._dirty
+    assert coordinator.library.load(owner.id).notes == editor.notes.toPlainText()
 
 
 @pytest.fixture

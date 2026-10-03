@@ -836,7 +836,7 @@ class ApplicationController(QObject):
         self._notes_save_timer = QTimer(self)
         self._notes_save_timer.setSingleShot(True)
         self._notes_save_timer.setInterval(750)
-        self._notes_save_timer.timeout.connect(self._save_notes)
+        self._notes_save_timer.timeout.connect(lambda: self._save_notes(include_editor=False))
 
         # Mix save/load/restore (~/.webjam_mix.json).
         # Adapt flash_message's keyword-only ``ms=`` to MixManager's positional
@@ -16064,14 +16064,14 @@ class ApplicationController(QObject):
         """Restore session notes from disk (best-effort)."""
         self._persistence._load_notes_only()
 
-    def _save_notes(self) -> bool:
-        """Flush all local drafts and retain failed writes for visible retry."""
+    def _save_notes(self, *, include_editor=True) -> bool:
+        """Flush owned Notes; explicit saves also reconcile the Library draft."""
         timer = getattr(self, "_notes_save_timer", None)
         if timer is not None:
             timer.stop()
         notes_saved = self._persistence._save_notes_only()
         library = getattr(self, "session_library", None)
-        workspace_saved = library.flush() if library is not None else True
+        workspace_saved = library.flush(include_editor=include_editor) if library is not None else True
         return notes_saved and workspace_saved
 
     def _recheck_saved_notes(self, profile: str) -> None:

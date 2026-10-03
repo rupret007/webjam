@@ -385,6 +385,52 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertEqual(self.library.load(dialog.record.id).notes, "just typed")
         dialog.close()
 
+    def test_background_flush_retains_live_notes_conflict_and_editor_disk_token(self):
+        self.window.session_canvas.set_notes("Original Notes")
+        self.coordinator.ensure_current()
+        editor = self._editor()
+        editor.notes.setPlainText("Retained Library draft")
+        editor.timer.stop()
+        draft, base = editor._edited_record(), editor._base_record
+        path = self.library.root / f"{base.id}.json"
+        before = path.read_bytes()
+        self.window.session_canvas.set_notes("Newer live Notes")
+        self.coordinator.timer.timeout.emit()
+        self.assertEqual(self.coordinator._pending[base.id].notes, "Newer live Notes")
+        self.assertEqual(editor._edited_record(), draft)
+        self.assertEqual(editor._base_record._store_token, base._store_token)
+        self.assertTrue(editor._dirty)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse(self.coordinator.flush())
+        self.assertTrue(editor._dirty)
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_late_recording_completion_waits_for_retained_editor_save(self):
+        self.coordinator.start_session()
+        self.coordinator.recording_started("late-take", "recording-session")
+        editor = self._editor()
+        editor.notes.setPlainText("Retained Library draft")
+        editor.timer.stop()
+        draft, base = editor._edited_record(), editor._base_record
+        path = self.library.root / f"{base.id}.json"
+        before = path.read_bytes()
+        take = SimpleNamespace(take_id="late-take", session_id="recording-session",
+                               path=self.root / "take", display_name="Late completed take")
+        with patch("core.take_review.take_source_identity", return_value="a" * 64):
+            self.coordinator.recording_completed(take, validated=True)
+        self.assertEqual(editor._edited_record(), draft)
+        self.assertEqual(editor._base_record._store_token, base._store_token)
+        self.assertTrue(editor._dirty)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(self.coordinator.current.id, base.id)
+        pending = self.coordinator._pending[base.id]
+        self.assertEqual(pending.take_links[0]["status"], "complete")
+        self.assertTrue(editor.save_current())
+        saved = self.library.load(base.id)
+        self.assertEqual(saved.notes, draft.notes)
+        self.assertEqual(saved.take_links[0]["status"], "complete")
+        self.assertNotIn(base.id, self.coordinator._pending)
+
     def test_import_preview_keeps_runtime_owner_and_conflicting_editor_draft(self):
         from copy import deepcopy
         from PySide6.QtWidgets import QDialog, QFileDialog
