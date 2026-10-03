@@ -78,15 +78,17 @@ class WorkspaceBackupPreviewDialog(QDialog):
         scroll.setWidgetResizable(True)
         body = QWidget()
         layout = QVBoxLayout(body)
+        saved_display = record.updated_at.replace("T", " ").replace("+00:00", " UTC")
         info = QLabel(
             f"Title: {record.title}\n"
             f"Profile: {record.profile.replace('_', ' ')}\n"
-            f"Saved: {record.updated_at}\n"
+            f"Saved: {saved_display}\n"
             + self._counts(record)
         )
         info.setTextFormat(Qt.TextFormat.PlainText)
         info.setWordWrap(True)
         info.setAccessibleName("Backup preview details")
+        info.setAccessibleDescription(f"Saved: {record.updated_at}")
         layout.addWidget(info)
         try:
             duplicates = preview.matching_import_ids(library)
@@ -245,13 +247,19 @@ class SessionLibraryDialog(QDialog):
         self.takes.setAccessibleName("Takes linked to this workspace")
         self.takes.setMinimumHeight(100)
         take_layout.addWidget(self.takes)
-        self.verify_take_button = QPushButton("Verify selected take")
+        self.verify_take_button = QPushButton("Verify take")
+        self.verify_take_button.setAccessibleName("Verify selected take")
+        self.verify_take_button.setToolTip(self.verify_take_button.accessibleName())
         self.verify_take_button.clicked.connect(self._verify_take)
         take_layout.addWidget(self.verify_take_button)
-        self.open_take_button = QPushButton("Open selected take in Studio")
+        self.open_take_button = QPushButton("Open in Studio")
+        self.open_take_button.setAccessibleName("Open selected take in Studio")
+        self.open_take_button.setToolTip(self.open_take_button.accessibleName())
         self.open_take_button.clicked.connect(self._open_take)
         take_layout.addWidget(self.open_take_button)
-        self.relink_take_button = QPushButton("Locate moved take…")
+        self.relink_take_button = QPushButton("Locate take…")
+        self.relink_take_button.setAccessibleName("Locate moved take…")
+        self.relink_take_button.setToolTip(self.relink_take_button.accessibleName())
         self.relink_take_button.clicked.connect(self._relink_take)
         take_layout.addWidget(self.relink_take_button)
         self.takes.currentRowChanged.connect(self._update_take_actions)

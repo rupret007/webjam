@@ -30,6 +30,16 @@ from core.take_project import (
 )
 
 
+def _assert_private_storage(journal, path):
+    if os.name == "nt":
+        from tests.test_windows_recording_journal import assert_native_private_acl
+        assert_native_private_acl(journal.directory, directory=True)
+        assert_native_private_acl(path, directory=False)
+    else:
+        assert path.stat().st_mode & 0o777 == JOURNAL_FILE_MODE
+        assert journal.directory.stat().st_mode & 0o777 == 0o700
+
+
 def _take_id() -> str:
     return str(uuid.uuid4())
 
@@ -98,7 +108,7 @@ def test_create_load_update_and_remove_private_typed_journal(tmp_path: Path) -> 
 
     assert path == journal.path_for(take_id)
     assert path.parent == tmp_path / "takes" / ".webjam-recording-evidence"
-    assert path.stat().st_mode & 0o777 == JOURNAL_FILE_MODE
+    _assert_private_storage(journal, path)
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert set(payload) == {"schema_version", "take_id", "session", "plan"}
     assert payload["schema_version"] == JOURNAL_SCHEMA_VERSION
@@ -111,7 +121,6 @@ def test_create_load_update_and_remove_private_typed_journal(tmp_path: Path) -> 
     loaded = journal.load(take_id)
 
     assert loaded == JournalLoadResult(take_id, evidence, trusted=True)
-    assert journal.directory.stat().st_mode & 0o777 == 0o700
 
     updated = SessionEvidence(
         protocol_version=evidence.protocol_version,
@@ -162,8 +171,7 @@ def test_malformed_or_untrusted_journal_fails_closed_to_recovery_attention(
 ) -> None:
     journal = RecordingManifestJournal(tmp_path)
     take_id = _take_id()
-    path = journal.path_for(take_id)
-    path.parent.mkdir(parents=True, mode=0o700)
+    path = journal.create(take_id, _evidence())
     path.write_text(
         json.dumps(
             {
@@ -252,8 +260,7 @@ def test_recording_plan_fingerprint_round_trips_and_legacy_journals_load(tmp_pat
     # A literal legacy schema-v1 journal (no plan field) remains readable.
     legacy = SessionEvidence()
     assert "recording_plan_fingerprint" not in legacy.to_dict()
-    legacy_path = journal.path_for(legacy_take)
-    legacy_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    legacy_path = journal.create(legacy_take, legacy)
     legacy_path.write_text(
         json.dumps(
             {
@@ -287,7 +294,7 @@ def test_schema_v2_durably_round_trips_and_updates_the_full_private_plan(
     assert payload["plan"]["plan_fingerprint_sha256"] == (
         evidence.recording_plan_fingerprint
     )
-    assert path.stat().st_mode & 0o777 == JOURNAL_FILE_MODE
+    _assert_private_storage(journal, path)
     loaded = journal.load(take_id)
     assert loaded == JournalLoadResult(
         take_id,
@@ -374,8 +381,7 @@ def test_v2_plan_tampering_fails_closed(tmp_path: Path, tamper: str) -> None:
 def test_duplicate_fields_and_oversized_journals_fail_closed(tmp_path: Path) -> None:
     journal = RecordingManifestJournal(tmp_path)
     duplicate_take = _take_id()
-    duplicate_path = journal.path_for(duplicate_take)
-    duplicate_path.parent.mkdir(parents=True, mode=0o700)
+    duplicate_path = journal.create(duplicate_take, _evidence())
     duplicate_path.write_text(
         (
             '{"schema_version":2,"take_id":"'
@@ -392,7 +398,7 @@ def test_duplicate_fields_and_oversized_journals_fail_closed(tmp_path: Path) -> 
     assert duplicate.trusted is False
 
     oversized_take = _take_id()
-    oversized_path = journal.path_for(oversized_take)
+    oversized_path = journal.create(oversized_take, _evidence())
     oversized_path.write_bytes(b"{" + b"x" * MAX_JOURNAL_BYTES + b"}")
     os.chmod(oversized_path, JOURNAL_FILE_MODE)
     oversized = journal.load(oversized_take)
@@ -414,3 +420,56 @@ def test_writer_refuses_an_oversized_v2_plan_before_creating_a_file(
         journal.create(take_id, _evidence_for_plan(plan), plan=plan)
 
     assert not journal.path_for(take_id).exists()
+
+
+@pytest.mark.parametrize("operation", ["create", "update"])
+def test_file_flush_failure_preserves_previous_checkpoint(tmp_path, monkeypatch, operation):
+    journal = RecordingManifestJournal(tmp_path)
+    take_id = _take_id()
+    previous = _evidence()
+    if operation == "update":
+        journal.create(take_id, previous)
+    path = journal.path_for(take_id)
+    original_bytes = path.read_bytes() if path.exists() else None
+
+    def fail_flush(descriptor):
+        import stat
+        assert stat.S_ISREG(os.fstat(descriptor).st_mode)
+        raise OSError("Owned file flush failure")
+
+    monkeypatch.setattr("core.recording_manifest_journal.os.fsync", fail_flush)
+    with pytest.raises(OSError, match="Owned file flush failure"):
+        getattr(journal, operation)(take_id, SessionEvidence())
+    assert (path.read_bytes() if path.exists() else None) == original_bytes
+    assert not list(journal.directory.glob(".recording-evidence-*.tmp"))
+    if operation == "update":
+        assert journal.load(take_id).evidence == previous
+
+
+@pytest.mark.parametrize("operation", ["create", "update"])
+@pytest.mark.parametrize("published", [False, True])
+def test_publication_fault_retains_actual_checkpoint(tmp_path, monkeypatch, operation, published):
+    journal = RecordingManifestJournal(tmp_path)
+    take_id = _take_id()
+    previous = _evidence()
+    if operation == "update":
+        journal.create(take_id, previous)
+    intended = SessionEvidence(ended_utc="2026-10-03T00:00:00Z")
+    function = "link" if operation == "create" else "replace"
+    original = getattr(os, function)
+
+    def fail_publication(source, target):
+        if published:
+            original(source, target)
+        raise OSError("Owned publication failure")
+
+    monkeypatch.setattr(f"core.recording_manifest_journal.os.{function}", fail_publication)
+    with pytest.raises(RecordingManifestJournalError):
+        getattr(journal, operation)(take_id, intended)
+    assert not list(journal.directory.glob(".recording-evidence-*.tmp"))
+    recovered = RecordingManifestJournal(tmp_path).load(take_id)
+    if operation == "create" and not published:
+        assert recovered is None
+    else:
+        assert recovered.trusted
+        assert recovered.evidence == (intended if published else previous)

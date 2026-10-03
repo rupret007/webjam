@@ -15,7 +15,7 @@ they do not request a new release/tag or claim new published package evidence.
   with metadata-only defaults or explicitly selected completed takes/local Art,
   cancellable background work and durable checksum receipts for recovery.
   Imported media remains unchecked until an explicit action.
-- **Verify selected take**, **Verify reference**, **Locate moved take…** and
+- **Verify take**, **Verify reference**, **Locate take…** and
   **Relink…** check expected content while retaining drafts and bookmarks.
   Restored Studio takes retain exact alternate-source locations through
   reselection and A/B listening, including when originals share the same IDs.
@@ -29,6 +29,11 @@ they do not request a new release/tag or claim new published package evidence.
 - Compact Session library controls scroll without overlapping at enlarged text;
   save/recovery status stays visible. Packaged workflow proofs isolate their
   settings, database, startup state and logs and restore the caller's environment.
+- Windows recording checkpoints use protected current-user/SYSTEM permissions,
+  flush files before publication and recheck published evidence. Unsafe storage
+  blocks recording; Windows does not promise POSIX directory-flush durability.
+  Shorter backup/Takes captions and breakable saved timestamps keep compact
+  previews usable with wider enlarged text while preserving accessible labels.
 - The initial launch-screen Library can open an imported take or timed moment
   directly into its saved workspace. Changed media/context, cancellation and late
   drafts prevent stale activation; verified source locations transfer to the new Studio owner.

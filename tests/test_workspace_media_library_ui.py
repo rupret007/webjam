@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QPoint, QRect, Qt, QTimer
+from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QLabel, QPushButton, QScrollArea
 
@@ -542,8 +543,8 @@ def test_return_to_launch_and_shutdown_keep_worker_owner(navigation, tmp_path, a
             dialog.workspace_flow.job._poll()
 
 
-@pytest.mark.parametrize("font_size", [13, 22])
-def test_choices_and_previews_fit_compact_enlarged_text(app, art, tmp_path, font_size):
+@pytest.mark.parametrize("font_size,stretch", [(13, 100), (22, 100), (22, 125)])
+def test_choices_and_previews_fit_compact_enlarged_text(app, art, tmp_path, font_size, stretch):
     from webjam_qt.theme import load_stylesheet
     record, _ = art
     changed_art = dict(record.art)
@@ -551,6 +552,10 @@ def test_choices_and_previews_fit_compact_enlarged_text(app, art, tmp_path, font
     record = replace(record, art=changed_art)
     plan = media.plan_workspace_package(record, media.WorkspacePackageSelection(art_reference_ids=("painting",)))
     preview = _package(tmp_path, record)
+    previous_font = app.font()
+    font = QFont(previous_font)
+    font.setStretch(stretch)
+    app.setFont(font)
     dialogs = [ui.WorkspaceBackupChoicesDialog(record), ui.WorkspacePackagePlanDialog(plan),
                WorkspaceBackupPreviewDialog(SessionLibrary(tmp_path / "restored"), preview),
                ui.WorkspaceProgressDialog("Inspect selected media")]
@@ -568,8 +573,12 @@ def test_choices_and_previews_fit_compact_enlarged_text(app, art, tmp_path, font
             for label in dialog.findChildren(QLabel):
                 assert label.wordWrap()
             for scroll in dialog.findChildren(QScrollArea):
-                assert scroll.horizontalScrollBar().maximum() == 0
+                assert scroll.horizontalScrollBar().maximum() == 0, (
+                    type(dialog).__name__, font_size, stretch, scroll.viewport().size(),
+                    scroll.widget().minimumSizeHint(), scroll.horizontalScrollBar().maximum(),
+                )
     finally:
+        app.setFont(previous_font)
         for dialog in dialogs:
             if isinstance(dialog, ui.WorkspaceProgressDialog):
                 dialog.settle()

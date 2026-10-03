@@ -125,11 +125,13 @@ def test_metadata_only_art_checks_availability_but_refuses_unprovable_relink(
     assert library.load(record.id) == record and len(opened) == 1
 
 
-def test_compact_enlarged_takes_controls_remain_reachable(app, portable_takes, make_dialog, monkeypatch):
+@pytest.mark.parametrize("stretch", [100, 125])
+def test_compact_enlarged_takes_controls_remain_reachable(app, portable_takes, make_dialog, monkeypatch, stretch):
     library, record, _originals, _roots, _projects = portable_takes
     previous_font = app.font()
     font = QFont(previous_font)
     font.setPixelSize(22)
+    font.setStretch(stretch)
     app.setFont(font)
     try:
         dialog = make_dialog(library, current_id=record.id)
@@ -150,7 +152,7 @@ def test_compact_enlarged_takes_controls_remain_reachable(app, portable_takes, m
             scroll.ensureWidgetVisible(button, 0, 0)
             dialog.content_scroll.ensureWidgetVisible(button, 0, 0)
             app.processEvents()
-            assert button.width() >= button.minimumSizeHint().width()
+            assert button.width() >= button.minimumSizeHint().width(), (button.text(), button.size(), button.minimumSizeHint(), stretch)
             assert scroll.viewport().rect().contains(button.mapTo(scroll.viewport(), button.rect().topLeft()))
             assert scroll.viewport().rect().contains(button.mapTo(scroll.viewport(), button.rect().bottomRight()))
             assert scroll.horizontalScrollBar().maximum() == 0

@@ -66,8 +66,8 @@ notes, song drafts and moments, Art context, recaps and stored take/reference
 links. It does not copy audio, artwork or Studio review/edit files.
 
 To carry files too, choose **Include selected media**, check the completed takes
-or local Art files, and choose **Continue**. Saved take reviews and Studio edits
-are included by default. Review the included/excluded items, file count, size
+or local Art files, and choose **Continue**. **Take reviews** and **Studio edits**
+are checked by default. Review the included/excluded items, file count, size
 and blockers. **Change choices…** retains your selections so you can include a
 required alternate take or explicitly exclude Studio edits. Missing, changed,
 unsupported or incomplete selected files block **Create backup…**; they are
@@ -93,12 +93,12 @@ Imported links say **stored link — not checked** until an
 explicit action accesses them, including after reopening or saving a copy.
 Continuing a workspace does not start recording, play media or open another app.
 
-In **Takes**, select a link and choose **Verify selected take**. The check runs
-in the background without opening Studio. **Open selected take in Studio** checks it again
-and opens that recording without starting playback. Use **Locate moved take…**
+In **Takes**, select a link and choose **Verify take**. The check runs
+in the background without opening Studio. **Open in Studio** checks it again
+and opens that recording without starting playback. Use **Locate take…**
 to choose the same completed take at a new location; its identity and original
 content must match. Linked rehearsal moments keep their IDs and move with it.
-From the launch screen's Library, **Open selected take in Studio** or a linked
+From the launch screen's Library, **Open in Studio** or a linked
 moment's **Open in take** also continues the imported workspace directly.
 If its saved context or media changes before Studio opens, select and open it again.
 

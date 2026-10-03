@@ -49,7 +49,7 @@ or a failed/cancelled export, clears the current receipt. Byte verification does
 not prove physical listening or a successful Logic/other-editor import.
 
 Workspace **Takes** links reopen the intended recording in Studio. Use
-**Locate moved take…** when its folder moved; identity must still match. Music
+**Locate take…** when its folder moved; identity must still match. Music
 bookmarks navigate only with current verified recording evidence. Art lesson
 positions are manual notes attached to references, not recording timestamps.
 

@@ -246,16 +246,16 @@ def test_selecting_history_or_takes_never_opens_an_accidental_take(tmp_path, mak
     dialog.take_open_requested.connect(opened.append)
     dialog.select_id(record.id)
     assert dialog.takes.currentRow() == -1
-    _click(dialog, "Open selected take in Studio")
+    _click(dialog, "Open in Studio")
     assert opened == []
     dialog.tabs.setCurrentIndex(4)
     dialog.takes.setCurrentRow(1)
     app.processEvents()
     assert opened == []
-    _click(dialog, "Open selected take in Studio")
+    _click(dialog, "Open in Studio")
     assert opened == [dict(record.take_links[1])]
     dialog.select_id(art.id)
-    _click(dialog, "Open selected take in Studio")
+    _click(dialog, "Open in Studio")
     assert len(opened) == 1
 
 

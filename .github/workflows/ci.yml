@@ -1328,6 +1328,8 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: >-
           python -X dev -m pytest -q
+          tests/test_recording_manifest_journal.py
+          tests/test_windows_recording_journal.py
           tests/test_workspace_media_backup.py
           tests/test_workspace_media_library_ui.py
           tests/test_workspace_media_activation.py

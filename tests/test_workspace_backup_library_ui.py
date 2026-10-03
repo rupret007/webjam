@@ -116,7 +116,12 @@ def test_import_preview_shows_title_profile_date_counts_and_duplicate_info(tmp_p
         text = "\n".join(label.text() for label in dialog.findChildren(QLabel))
         assert record.title in text
         assert "music" in text
-        assert record.updated_at in text
+        details = next(label for label in dialog.findChildren(QLabel)
+                       if label.accessibleName() == "Backup preview details")
+        saved_display = record.updated_at.replace("T", " ").replace("+00:00", " UTC")
+        assert f"Saved: {saved_display}\n" in details.text()
+        assert details.accessibleDescription() == f"Saved: {record.updated_at}"
+        assert preview.record.updated_at == record.updated_at
         assert "Take links: 1" in text
         assert "Session history entries: 1" in text
         assert "Rehearsal songs: 1" in text
