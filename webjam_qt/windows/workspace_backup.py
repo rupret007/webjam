@@ -288,12 +288,14 @@ class WorkspaceBackupFlow(QObject):
         self._publishing = False
         self._selection = None
         self.token = None
+        self.generation = 0
         self._failure_callback = None
 
     def _begin(self):
         if self.active or self.job.pending:
             return False
         self.active = True
+        self.generation += 1
         self.token = object()
         self.closing = False
         self.owner._set_workspace_busy(True)

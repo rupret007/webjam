@@ -486,6 +486,24 @@ class SessionLibraryCoordinator(QObject):
         return {"studio": studio, "state": state, "owner": self.current.id if self.current else None,
                 "profile": self._profile()}
 
+    def open_verified_launch_reference(self, reference):
+        """Bind a consumed launch intent to this newly constructed runtime."""
+        snapshot = reference.get("_workspace_snapshot")
+        if (self.dialog is not None or not _same_snapshot(self.current, snapshot)
+                or reference.get("_studio_request") is not None
+                or reference.get("_origin_dialog") is not None):
+            self._flash("Workspace changed after launch selection. Open its take again from Session library.")
+            return
+        request = self.prepare_take_open(reference)
+        if request is None:
+            return
+        studio = request["studio"]
+        if not studio.open_prepared_take(reference.get("_verification"), workspace=snapshot,
+                expected_state=request["state"], position_seconds=reference.get("position_seconds", 0)):
+            self._flash("The recording changed after launch selection. Verify and open it again from Session library.")
+            return
+        self._c._on_rail_view_changed("takes")
+
     def _open_prepared_reference(self, reference):
         from PySide6.QtCore import QTimer
         origin = reference.get("_origin_dialog")

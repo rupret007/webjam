@@ -321,7 +321,10 @@ def _create_workspace(app, settings, launch, *, operator_mode=False, smoke_autos
                 requested_open = getattr(launch, "selected_library_open", None)
                 if continued and requested_open:
                     kind, reference = requested_open
-                    if kind == "bookmark":
+                    if reference.get("_verification") is not None:
+                        launch.selected_library_open = None
+                        controller.session_library.open_verified_launch_reference(reference)
+                    elif kind == "bookmark":
                         controller.session_library.open_bookmark(reference)
                     elif kind == "take":
                         controller.session_library.open_take(reference)

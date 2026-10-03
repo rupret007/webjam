@@ -98,6 +98,9 @@ in the background without opening Studio. **Open selected take in Studio** check
 and opens that recording without starting playback. Use **Locate moved take…**
 to choose the same completed take at a new location; its identity and original
 content must match. Linked rehearsal moments keep their IDs and move with it.
+From the launch screen's Library, **Open selected take in Studio** or a linked
+moment's **Open in take** also continues the imported workspace directly.
+If its saved context or media changes before Studio opens, select and open it again.
 
 In **Art project**, select a local file and choose **Verify reference**.
 **Open reference** checks it before opening its external app. **Relink…** locates

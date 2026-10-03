@@ -374,7 +374,7 @@ def prepare_portability(root: Path, *, record_takes=None):
             "draft_and_owner_retained": True, **source["recording"]}
 
 
-def _launch_saved(app, settings_path, workspace_id):
+def _launch_saved(app, settings_path, workspace_id, *, take_id=None):
     launch = LaunchDialog(load_settings(str(settings_path)))
     errors = []
 
@@ -385,7 +385,16 @@ def _launch_saved(app, settings_path, workspace_id):
             _require(editor is not None, "launch library is unavailable")
             editor.select_id(workspace_id)
             _require(editor.record.id == workspace_id, "launch selected a different workspace")
-            editor.continue_button.click()
+            if take_id is None:
+                editor.continue_button.click()
+            else:
+                editor.tabs.setCurrentIndex(4)
+                row = next(i for i, ref in enumerate(editor.record.take_links) if ref["take_id"] == take_id)
+                editor.takes.setCurrentRow(row)
+                editor.open_take_button.click()
+                _wait(app, lambda: not editor.media_operation_pending, "launch take verification did not finish")
+                app.processEvents()
+                _require(editor.selected_record is not None, "verified launch Open did not accept its workspace")
         except Exception as error:
             errors.append(error)
             if editor is not None:
@@ -557,8 +566,35 @@ def resume_portability(root: Path, *, require_fresh_process=True):
         QDesktopServices.unsetUrlHandler("file")
 
 
+def check_portable_launch(root):
+    """Use the initial Library Open gesture, without an intermediate Continue."""
+    root = Path(root).resolve()
+    expected = json.loads((root / "portability-expected.json").read_text(encoding="utf-8"))
+    app = _application()
+    with _isolated_runtime(root / "Destination") as (library, settings_path, starts):
+        record = library.load(expected["imported_music"]["id"])
+        reference = record.take_links[-1]
+        launch = _launch_saved(app, settings_path, record.id, take_id=reference["take_id"])
+        with _workspace(app, settings_path, launch) as (window, controller, _sink):
+            launch.deleteLater()
+            studio = window.recording_studio
+            _require(controller.session_library.current.id == record.id
+                     and studio._current.path == Path(reference["take_path"]), "launch Open changed workspace or take")
+            _require(launch.selected_library_open is None, "verified launch intent was not consumed")
+            _require(not studio._player.is_playing and not any(starts.values()), "launch Open started live work")
+            _require(len(studio._studio_source_catalog.take_ids) == 2, "launch Open lost its declared alternate")
+            for take_id in studio._studio_source_catalog.take_ids:
+                ref = next(item for item in record.take_links if item["take_id"] == take_id)
+                _require(studio._studio_source_catalog.root_for_take(take_id) == Path(ref["take_path"]),
+                         "launch Open substituted an original same-ID source")
+            _assert_hashes(root, expected["source_hashes"])
+    return {"initial_library_take_open": True}
+
+
 def run_workspace_portability_smoke():
     with tempfile.TemporaryDirectory(prefix="webjam-portability-smoke-") as directory:
         root = Path(directory).resolve()
         prepare_portability(root)
-        return resume_portability(root, require_fresh_process=False)
+        result = resume_portability(root, require_fresh_process=False)
+        result.update(check_portable_launch(root))
+        return result

@@ -6,6 +6,7 @@ import sys
 
 from services.workspace_portability_smoke import (
     SUCCESS_MARKER, prepare_portability, resume_portability, run_workspace_portability_smoke,
+    check_portable_launch,
 )
 from tests.support.controlled_recording_journey import record_completed_takes
 
@@ -22,6 +23,7 @@ if __name__ == "__main__":
             result = prepare_portability(root, record_takes=record_completed_takes)
         elif phase == "resume":
             result = resume_portability(root)
+            result.update(check_portable_launch(root))
         else:
             raise ValueError("Unknown portable-workspace phase")
     print(json.dumps(result, sort_keys=True))

@@ -29,6 +29,9 @@ they do not request a new release/tag or claim new published package evidence.
 - Compact Session library controls scroll without overlapping at enlarged text;
   save/recovery status stays visible. Packaged workflow proofs isolate their
   settings, database, startup state and logs and restore the caller's environment.
+- The initial launch-screen Library can open an imported take or timed moment
+  directly into its saved workspace. Changed media/context, cancellation and late
+  drafts prevent stale activation; verified source locations transfer to the new Studio owner.
 - **File → Return to launch** is available from live and local Studio work.
   Explicit End/Leave, successful saves, recording finalization and owned
   cleanup precede a fresh launch screen; failure retains the current work.

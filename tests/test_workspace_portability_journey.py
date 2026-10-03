@@ -32,6 +32,7 @@ def test_controlled_recordings_and_art_resume_from_portable_backups_after_restar
     assert not resumed["automatic_startup"] and resumed["physical_audio"] == "not_run"
     assert resumed["passive_media_probes"] == 0
     assert resumed["export_kind"] in {"studio_arrangement", "aligned_originals"}
+    assert resumed["initial_library_take_open"]
 
 
 def test_frozen_portability_workflow_uses_labeled_fixtures_and_same_real_controls():
@@ -50,3 +51,4 @@ def test_frozen_portability_workflow_uses_labeled_fixtures_and_same_real_control
     assert result["verified_exports"] == result["explicit_art_opens"] == 1
     assert result["art_relinked"] and result["originals_unchanged"] and result["restored_media_unchanged"]
     assert result["passive_media_probes"] == 0
+    assert result["initial_library_take_open"]

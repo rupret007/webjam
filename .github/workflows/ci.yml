@@ -1334,6 +1334,7 @@ jobs:
           tests/test_workspace_media_relink_journey.py
           tests/test_workspace_portability_journey.py
           tests/test_workflow_continuity_packaged_smoke.py
+          tests/test_session_library_launch.py
 
       - name: Verify macOS PyInstaller pkg_resources compatibility
         if: startsWith(matrix.target, 'macos-')
