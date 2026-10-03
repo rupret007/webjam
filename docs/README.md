@@ -70,8 +70,8 @@ See [the saved-work walkthrough](../USER_GUIDE.md#save-a-session-and-continue-la
   saved notes; source evidence and unperformed physical gates.
 - [Workspace backup draft plan](WORKSPACE_BACKUP_PLAN.md) and
   [under-4,000-character goal prompt](WORKSPACE_BACKUP_GOAL.md) — the next
-  sequential round after workflow continuity; metadata foundation first,
-  with interface actions and copied media still future work.
+  sequential round after workflow continuity; metadata Library actions exist,
+  with import-safety work, selected media and verified restore in progress.
 
 ## Evidence, releases, and operations
 

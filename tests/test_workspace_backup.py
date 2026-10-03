@@ -542,6 +542,8 @@ def test_import_write_failure_exposes_exact_intended_identity_for_reconciliation
     real_write = session_library.atomic_write_bytes
     attempted = []
     def fail(path, data, **kwargs):
+        if Path(path).name == ".workspace-import.pending":
+            return real_write(path, data, **kwargs)
         attempted.append((Path(path), data))
         if after_publication:
             real_write(path, data, **kwargs)

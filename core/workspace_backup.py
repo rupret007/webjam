@@ -164,6 +164,11 @@ def import_workspace_backup(library: SessionLibrary, preview: WorkspaceBackupPre
     checksum after an uncertain publication; reconcile that identity before any
     explicit retry. A successful repeat import deliberately gets a different ID.
     """
+    return library.create_imported(prepare_workspace_backup_import(preview))
+
+
+def prepare_workspace_backup_import(preview: WorkspaceBackupPreview) -> SessionRecord:
+    """Prepare detached metadata once; retries must keep this exact identity."""
     if not isinstance(preview, WorkspaceBackupPreview):
         raise WorkspaceBackupError("Import requires a validated backup preview.")
     source = preview.record
@@ -189,7 +194,7 @@ def import_workspace_backup(library: SessionLibrary, preview: WorkspaceBackupPre
     imported = replace(source, id=uuid4().hex, revision=1, created_at=now, updated_at=now,
                        take_links=tuple(references), import_provenance=(*source.import_provenance, hop),
                        recovered=False, _store_token=None)
-    return library.create_imported(imported)
+    return imported
 
 
 def _pairs(pairs: list[tuple[str, object]]) -> dict:

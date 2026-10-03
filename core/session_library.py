@@ -23,7 +23,7 @@ from uuid import UUID, uuid4, uuid5
 
 from core.component_lock import ComponentLockError, InterProcessComponentLock
 from core.creative_modes import CREATOR_PROFILES
-from core.file_io import atomic_write_bytes
+from core.file_io import atomic_write_bytes, _fsync_parent_directory
 from core.notes_recovery import MAX_RECOVERY_DRAFT_BYTES
 
 MAX_SESSION_RECORD_BYTES = 8 * 1024 * 1024
@@ -65,10 +65,11 @@ class SessionLibraryConflict(SessionLibraryError):
 class SessionLibraryImportUnconfirmed(SessionLibraryError):
     """Creation may have published; reconcile this exact identity before retry."""
 
-    def __init__(self, workspace_id: str, expected_sha256: str) -> None:
+    def __init__(self, workspace_id: str, expected_sha256: str, *, phase: str = "publication") -> None:
         super().__init__("Workspace import was not confirmed saved. Reload its intended identity before retrying.")
         self.workspace_id = workspace_id
         self.expected_sha256 = expected_sha256
+        self.phase = phase
 
 
 class _UnsafeSessionPath(SessionLibraryError):
@@ -388,6 +389,7 @@ class SessionLibrary:
     def __init__(self, root: str | Path | None = None) -> None:
         self.root = Path(root).expanduser() if root is not None else Path.home() / ".webjam_sessions"
         self.warnings: tuple[str, ...] = ()
+        self._unconfirmed_import: SessionRecord | None = None
 
     def _root_exists(self, *, create: bool = False) -> bool:
         try:
@@ -459,27 +461,133 @@ class SessionLibrary:
         with self._locked():
             return self._create(profile, title, uuid4().hex, payload)
 
-    def create_imported(self, record: SessionRecord) -> SessionRecord:
-        """Publish a prepared new identity once, retaining exact import evidence.
-
-        Validation precedes storage. No prior workspace is adopted or replaced.
-        On an uncertain I/O outcome, the exception identifies the intended file
-        and expected bytes so callers can reconcile without creating a duplicate.
-        """
+    @staticmethod
+    def _prepared_import_bytes(record: SessionRecord) -> bytes:
         data = _encode(record)
         if not record.import_provenance or record.revision != 1 or record._store_token is not None or record.recovered:
             raise SessionLibraryError("Expected a new prepared workspace import.")
         if any(hop["source_workspace_id"] == record.id for hop in record.import_provenance):
             raise SessionLibraryError("Imported workspace must have a fresh local identity.")
+        return data
+
+    def _pending_import(self) -> SessionRecord | None:
+        data = _read(self.root / ".workspace-import.pending")
+        pending = _decode(data, None) if data is not None else self._unconfirmed_import
+        if pending is not None:
+            encoded = self._prepared_import_bytes(pending)
+            if data is not None and data != encoded:
+                raise SessionLibraryError("Pending import evidence is not an exact prepared snapshot.")
+            if (self._unconfirmed_import is not None
+                    and encoded != self._prepared_import_bytes(self._unconfirmed_import)):
+                raise SessionLibraryConflict("Pending import evidence changed; preserve both snapshots before retrying.")
+            return _decode(encoded, None)
+        return pending
+
+    def pending_import(self) -> SessionRecord | None:
+        """Read one bounded, private prepared import; never list it as saved work."""
+        if not self._root_exists():
+            return (None if self._unconfirmed_import is None
+                    else _decode(self._prepared_import_bytes(self._unconfirmed_import), None))
         with self._locked():
+            return self._pending_import()
+
+    def prepare_import(self, record: SessionRecord) -> None:
+        """Durably retain the intended identity before any workspace publication.
+
+        A single journal is bounded by MAX_SESSION_RECORD_BYTES. Another import
+        cannot replace it; UI closure or process restart cannot lose a pending
+        primary publication. A failed journal write never starts publication.
+        """
+        data = self._prepared_import_bytes(record)
+        with self._locked():
+            pending = self._pending_import()
+            if pending is not None and self._prepared_import_bytes(pending) != data:
+                raise SessionLibraryConflict("Check the previous import before starting another one.")
             path = self._path(record.id)
             if _read(path) is not None or _read(path.with_suffix(".json.bak")) is not None:
                 raise SessionLibraryConflict("Workspace already exists; reconcile the previous import.")
+            self._unconfirmed_import = _decode(data, None)
             try:
-                atomic_write_bytes(path, data, mode=0o600)
+                atomic_write_bytes(self.root / ".workspace-import.pending", data, mode=0o600)
+            except OSError as exc:
+                raise SessionLibraryImportUnconfirmed(record.id, _token(data), phase="journal") from exc
+
+    def _reconcile_import(self, record: SessionRecord) -> SessionRecord | None:
+        expected = self._prepared_import_bytes(record)
+        path = self._path(record.id)
+        data = _read(path)
+        if _read(path.with_suffix(".json.bak")) is not None:
+            raise SessionLibraryConflict("The imported workspace has recovery or newer evidence; preserve it before retrying.")
+        if data is None:
+            return None
+        if data != expected:
+            raise SessionLibraryConflict("The intended imported workspace changed; it cannot be replaced or retried.")
+        return replace(_decode(data, record.id), _store_token=_token(data))
+
+    def reconcile_import(self, record: SessionRecord) -> SessionRecord | None:
+        """Prove exact identity/bytes or absence; damaged or changed files block."""
+        self._prepared_import_bytes(record)
+        with self._locked():
+            pending = self._pending_import()
+            if pending is not None and self._prepared_import_bytes(pending) != self._prepared_import_bytes(record):
+                raise SessionLibraryConflict("Pending import evidence changed; retry is blocked.")
+            return self._reconcile_import(record)
+
+    def publish_import(self, record: SessionRecord) -> SessionRecord:
+        """Publish only the journalled identity after confirming it is absent."""
+        data = self._prepared_import_bytes(record)
+        with self._locked():
+            journal = _read(self.root / ".workspace-import.pending")
+            if journal != data:
+                raise SessionLibraryConflict("Import has no matching durable preparation; prepare it before retrying.")
+            if self._reconcile_import(record) is not None:
+                raise SessionLibraryConflict("Workspace already exists; check the previous import instead of retrying.")
+            self._unconfirmed_import = _decode(data, None)
+            try:
+                atomic_write_bytes(self._path(record.id), data, mode=0o600)
             except OSError as exc:
                 raise SessionLibraryImportUnconfirmed(record.id, _token(data)) from exc
             return replace(_decode(data, record.id), _store_token=_token(data))
+
+    def acknowledge_import(self, record: SessionRecord) -> None:
+        """Resolve recovery after exact saved proof; retain one bounded receipt.
+
+        Renaming the pending journal retains identity/checksum evidence even if
+        the final directory sync fails. The last completed receipt is replaced
+        only by the next confirmed import; neither receipt is a library item.
+        """
+        data = self._prepared_import_bytes(record)
+        with self._locked():
+            if self._reconcile_import(record) is None:
+                raise SessionLibraryConflict("The intended import is absent; its recovery evidence was retained.")
+            journal_path = self.root / ".workspace-import.pending"
+            journal = _read(journal_path)
+            if journal is not None and journal != data:
+                raise SessionLibraryConflict("Pending import evidence changed; it was preserved.")
+            self._unconfirmed_import = _decode(data, None)
+            try:
+                completed_path = self.root / ".workspace-import.completed"
+                if journal is not None:
+                    previous = _read(completed_path)
+                    if previous is not None:
+                        self._prepared_import_bytes(_decode(previous, None))
+                    os.replace(journal_path, completed_path)
+                elif _read(completed_path) != data:
+                    raise SessionLibraryConflict("The completed import receipt is missing or changed; its outcome remains unresolved.")
+                # A prior attempt may have renamed the journal before this
+                # durability step failed. Rechecking the receipt and retrying
+                # the sync is required even when the pending path is absent.
+                _fsync_parent_directory(self.root)
+            except OSError as exc:
+                raise SessionLibraryImportUnconfirmed(record.id, _token(data), phase="acknowledgement") from exc
+            self._unconfirmed_import = None
+
+    def create_imported(self, record: SessionRecord) -> SessionRecord:
+        """Prepare, publish once, and acknowledge an explicit new import."""
+        self.prepare_import(record)
+        saved = self.publish_import(record)
+        self.acknowledge_import(record)
+        return saved
 
     def save(self, record: SessionRecord) -> SessionRecord:
         """Publish only if both the revision and exact previously read bytes match.

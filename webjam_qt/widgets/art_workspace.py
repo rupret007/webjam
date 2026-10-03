@@ -24,6 +24,8 @@ class ArtWorkspacePanel(QWidget):
         self._loading = False
         self._action_rows = []
         self._value = normalize_art_workspace({})
+        self._defer_reference_checks = False
+        self._reference_checks = {}
         layout = QVBoxLayout(self)
         hint = QLabel("Keep making with your own tools. References and lesson positions stay local.")
         hint.setWordWrap(True)
@@ -132,11 +134,15 @@ class ArtWorkspacePanel(QWidget):
             self._sync_action_rows()
         return super().eventFilter(watched, event)
 
-    def load_payload(self, value: dict) -> None:
+    def load_payload(self, value: dict, *, defer_reference_checks: bool = False) -> None:
         normalized = normalize_art_workspace(value)
         self._loading = True
         try:
             self._value = normalized
+            # Imported locators may be network paths. Even a passive stat can
+            # connect to a remote volume, so provenance defers all such reads.
+            self._defer_reference_checks = defer_reference_checks
+            self._reference_checks = {}
             self.brief.setPlainText(normalized["brief"])
             self.progress.setPlainText(normalized["progress"])
             self.next_steps.setPlainText(normalized["next_steps"])
@@ -161,8 +167,15 @@ class ArtWorkspacePanel(QWidget):
         self.bookmarks.blockSignals(True)
         self.references.clear()
         for ref in self._value["references"]:
-            missing = ref["kind"] == "file" and not Path(ref["locator"]).is_file()
-            item = QListWidgetItem(ref["title"] + (" — missing; Relink…" if missing else ""))
+            if self._defer_reference_checks:
+                suffix = " — stored link — not checked"
+                checked = self._reference_checks.get((ref["id"], ref["locator"]))
+                if checked is not None:
+                    suffix = " — file available; content not verified" if checked else " — missing; Relink…"
+            else:
+                missing = ref["kind"] == "file" and not Path(ref["locator"]).is_file()
+                suffix = " — missing; Relink…" if missing else ""
+            item = QListWidgetItem(ref["title"] + suffix)
             item.setData(Qt.ItemDataRole.UserRole, ref["id"])
             self.references.addItem(item)
             if ref["id"] == reference_id:
@@ -210,7 +223,15 @@ class ArtWorkspacePanel(QWidget):
 
     def _reference_status(self, _index: int) -> None:
         ref = self._selected_reference()
-        if ref and ref["kind"] == "file" and not Path(ref["locator"]).is_file():
+        if ref and self._defer_reference_checks:
+            checked = self._reference_checks.get((ref["id"], ref["locator"]))
+            if checked is False:
+                self.status.setText("This reference moved or is unavailable. Choose Relink… to locate it.")
+            elif checked is True:
+                self.status.setText("File was available when checked; its content is not verified against the original.")
+            else:
+                self.status.setText("Stored link — not checked. Choose Open reference or Relink… to access it.")
+        elif ref and ref["kind"] == "file" and not Path(ref["locator"]).is_file():
             self.status.setText("This reference moved or is unavailable. Choose Relink… to locate it.")
         else:
             self.status.setText("Open reference launches its usual app only when you choose it.")
@@ -222,7 +243,15 @@ class ArtWorkspacePanel(QWidget):
             return
         path, _ = QFileDialog.getOpenFileName(self, "Locate this project reference")
         if path:
+            if self._defer_reference_checks:
+                try:
+                    if not Path(path).is_file():
+                        raise ValueError("Choose an available local file.")
+                except (OSError, ValueError) as error:
+                    self.status.setText(f"Reference was not relinked: {error}")
+                    return
             ref["locator"] = path
+            self._reference_checks[(ref["id"], path)] = True
             self._render_lists()
             self._changed()
 
@@ -231,7 +260,14 @@ class ArtWorkspacePanel(QWidget):
         if not ref:
             return
         if ref["kind"] == "file":
-            if not Path(ref["locator"]).is_file():
+            try:
+                available = Path(ref["locator"]).is_file()
+            except (OSError, ValueError):
+                available = False
+            self._reference_checks[(ref["id"], ref["locator"])] = available
+            if self._defer_reference_checks:
+                self._render_lists()
+            if not available:
                 self._reference_status(self.references.currentRow())
                 return
             url = QUrl.fromLocalFile(ref["locator"])

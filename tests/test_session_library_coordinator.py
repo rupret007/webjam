@@ -384,3 +384,38 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertTrue(self.coordinator.flush())
         self.assertEqual(self.library.load(dialog.record.id).notes, "just typed")
         dialog.close()
+
+    def test_import_preview_keeps_runtime_owner_and_conflicting_editor_draft(self):
+        from copy import deepcopy
+        from PySide6.QtWidgets import QDialog, QFileDialog
+        from core.workspace_backup import export_workspace_backup
+        from webjam_qt.windows.session_library import WorkspaceBackupPreviewDialog
+        self.coordinator.start_session()
+        self.coordinator.recording_started("current-take", "current-recording-session")
+        current = self.coordinator.current
+        source = self.library.create("music", "Import this separate workspace")
+        backup = self.root / "backup.json"
+        export_workspace_backup(source, backup)
+        editor = self._editor()
+        editor.notes.setPlainText("Unsaved editor conflict")
+        self.library.save(replace(current, notes="External changes"))
+        owners = deepcopy(self.coordinator._recording_owners)
+        live_ids = set(self.coordinator._live_take_ids)
+        def preview(_dialog):
+            self.assertFalse(self.coordinator.flush())
+            self.assertEqual(editor.notes.toPlainText(), "Unsaved editor conflict")
+            return QDialog.DialogCode.Accepted
+        with patch.object(QFileDialog, "getOpenFileName", return_value=(str(backup), "")), \
+                patch.object(WorkspaceBackupPreviewDialog, "exec", preview):
+            editor.import_backup_button.click()
+        self.assertEqual(self.coordinator.current, current)
+        self.assertEqual(self.coordinator._recording_owners, owners)
+        self.assertEqual(self.coordinator._live_take_ids, live_ids)
+        self.assertEqual(editor.record, current)
+        self.assertTrue(editor._dirty)
+        self.assertEqual(editor.notes.toPlainText(), "Unsaved editor conflict")
+        self.assertIsNone(editor.selected_record)
+        self.assertEqual(len(self.library.list()), 3)
+        self.owner.audio.start.assert_not_called()
+        self.owner.recording.start.assert_not_called()
+        self.owner._on_rail_view_changed.assert_not_called()

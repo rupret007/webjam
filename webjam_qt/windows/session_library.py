@@ -16,7 +16,10 @@ from PySide6.QtWidgets import (
 
 from core.art_workspace import art_summary
 from core.session_intelligence import build_session_pulse
-from core.session_library import SessionLibrary, validate_session_record
+from core.session_library import (
+    SessionLibrary, SessionLibraryError, SessionLibraryImportUnconfirmed,
+    validate_session_record,
+)
 from webjam_qt.widgets.art_workspace import ArtWorkspacePanel
 from webjam_qt.widgets.rehearsal_plan import RehearsalPlanPanel
 
@@ -79,7 +82,7 @@ class WorkspaceBackupPreviewDialog(QDialog):
         layout.addWidget(info)
         try:
             duplicates = preview.matching_import_ids(library)
-        except WorkspaceBackupError as error:
+        except (WorkspaceBackupError, SessionLibraryError, OSError) as error:
             duplicate_text = f"Could not check for prior imports here: {error}"
         else:
             duplicate_text = (f"Already imported here as {len(duplicates)} separate workspace(s)."
@@ -145,6 +148,8 @@ class SessionLibraryDialog(QDialog):
         self.selected_record = None
         self._loading = False
         self._dirty = False
+        self._import_in_progress = False
+        self._retry_import = None
         self._action_rows = []
         self.setWindowTitle("Session library")
         self.resize(760, 680)
@@ -254,13 +259,14 @@ class SessionLibraryDialog(QDialog):
         self.art.changed.connect(self._changed)
         self.rehearsal.song_selected.connect(self.song_selected)
         self.rehearsal.bookmark_requested.connect(self.bookmark_requested)
-        self.rehearsal.bookmark_open_requested.connect(self.bookmark_open_requested)
+        self.rehearsal.bookmark_open_requested.connect(self._open_bookmark)
         self.search.textChanged.connect(self.refresh)
         self.history.currentRowChanged.connect(self._select)
         self.refresh()
         self._initial_current_id = ""
         if current_id:
             self.select_id(current_id)
+        self._sync_import_recovery()
 
     def _sync_action_rows(self):
         margins = self.layout().contentsMargins()
@@ -289,7 +295,7 @@ class SessionLibraryDialog(QDialog):
         scroll.setWidget(widget)
         self.tabs.addTab(scroll, label)
 
-    def refresh(self, _query=None):
+    def refresh(self, _query=None, *, select_first=True):
         read_error = ""
         try:
             records = self.library.list(query=self.search.text())
@@ -324,7 +330,7 @@ class SessionLibraryDialog(QDialog):
             if record.id == current_id:
                 self.history.setCurrentItem(item)
         self.history.blockSignals(False)
-        if self.record is None and records:
+        if select_first and self.record is None and records:
             initial_row = next((row for row, record in enumerate(records)
                                 if record.id == self._initial_current_id), 0)
             self.history.setCurrentRow(initial_row)
@@ -367,7 +373,7 @@ class SessionLibraryDialog(QDialog):
             summary = workspace_summary(record)
             self._loading = True
             self.rehearsal.load_payload(rehearsal)
-            self.art.load_payload(art)
+            self.art.load_payload(art, defer_reference_checks=bool(record.import_provenance))
             self.title.setText(record.title)
             self.notes.setPlainText(record.notes)
             self.summary.setPlainText(summary)
@@ -404,15 +410,17 @@ class SessionLibraryDialog(QDialog):
                     if previous is not None and getattr(self, "_takes_record_id", None) == self.record.id else None)
         self._takes_record_id = self.record.id
         self.takes.clear()
-        # An imported workspace never has a live recording in progress; its
-        # own take links must not be mistaken for a currently finalizing one.
+        # Imported history never owns a pending recording, but this workspace
+        # can acquire a new recording reservation after import.
         imported = bool(self.record.import_provenance)
         for ref in self.record.take_links:
             path = str(ref.get("take_path", "") or "").strip()
             label = ref.get("title") or ref.get("take_id") or "Take"
             if not path:
-                suffix = (" — historical reference; no completed take here" if imported
+                suffix = (" — historical reference; no completed take here" if imported and not ref.get("recording_session_id")
                           else " — requested or finalizing; no completed take yet")
+            elif imported:
+                suffix = " — stored link — not checked"
             else:
                 suffix = " — missing; locate it" if not Path(path).is_dir() else ""
             item = QListWidgetItem(label + suffix)
@@ -451,6 +459,8 @@ class SessionLibraryDialog(QDialog):
         reconciled through the owning coordinator, not a stale cached record.
         """
         self.timer.stop()
+        if self._import_in_progress:
+            return False
         if self.record is None:
             return True
         if not force and not self._dirty:
@@ -496,7 +506,7 @@ class SessionLibraryDialog(QDialog):
             original = deepcopy(self._base_record)
             edited = self._edited_record()
             fields = {key: getattr(edited, key) for key in ("notes", "decisions", "actions", "blockers",
-                "recaps", "take_links", "rehearsal", "art", "mode_key", "import_provenance")}
+                "recaps", "take_links", "rehearsal", "art", "mode_key", "source_key", "import_provenance")}
             record = self.library.create(edited.profile, title.strip(), **fields)
             self._dirty = False
             self.pending_records.pop(edited.id, None)
@@ -522,8 +532,22 @@ class SessionLibraryDialog(QDialog):
             # Saving may reconcile new take facts and reorder the record's
             # links. Keep the exact reference chosen before that happens.
             selected = deepcopy(self.record.take_links[row])
+            if self.record.import_provenance:
+                if not selected.get("take_id") or not selected.get("source_identity"):
+                    self.status.setText("This imported link has no complete take identity. Open the original recording separately in Studio; this link cannot identify a substitute.")
+                    return
+                selected["_imported_link"] = True
             if self.save_current():
                 self.take_open_requested.emit(selected)
+
+    def _open_bookmark(self, bookmark):
+        selected = deepcopy(bookmark)
+        if self.record is not None and self.record.import_provenance:
+            if not selected.get("take_id") or not selected.get("source_identity"):
+                self.status.setText("This imported moment has no complete take identity. Its linked recording cannot be verified.")
+                return
+            selected["_imported_link"] = True
+        self.bookmark_open_requested.emit(selected)
 
     def _relink_take(self):
         row = self.takes.currentRow()
@@ -538,9 +562,15 @@ class SessionLibraryDialog(QDialog):
         from core.take_library import load_take
         ref = self.record.take_links[row]
         try:
+            if self.record.import_provenance and (not ref.get("take_id") or not ref.get("source_identity")):
+                raise ValueError("This imported link has no complete take identity; its original cannot be proven.")
             take = load_take(Path(path))
             if take is None or not ref.get("take_id") or take.take_id != ref["take_id"]:
                 raise ValueError("Choose the original take with the same identity.")
+            if self.record.import_provenance:
+                from core.take_review import take_source_identity
+                if take_source_identity(take) != ref["source_identity"]:
+                    raise ValueError("The selected take's source changed; its original identity does not match.")
             links = [dict(item) for item in self.record.take_links]
             links[row]["take_path"] = path
             self.record = replace(self.record, take_links=tuple(links))
@@ -591,13 +621,29 @@ class SessionLibraryDialog(QDialog):
             self.status.setText(f"Workspace was not backed up: {error}")
 
     def _import_backup(self):
+        # Modal file/preview dialogs pump Qt events. Stop this editor's pending
+        # autosave and reject coordinator flushes while a preview is open.
+        self.timer.stop()
+        self._import_in_progress = True
+        try:
+            self._choose_import_backup()
+        finally:
+            self._import_in_progress = False
+            self.timer.stop()
+            if self._dirty and self.status.text() == "Saving changes…":
+                self.status.setText("Your draft is still here and remains unsaved. Use Save to retry or Save as copy.")
+
+    def _choose_import_backup(self):
+        if not self._sync_import_recovery():
+            self._check_import()
+            return
         path, _ = QFileDialog.getOpenFileName(self, "Import backup…", "", "WebJam workspace backup (*.json)")
         if not path:
             return
-        from core.workspace_backup import WorkspaceBackupError, import_workspace_backup, preview_workspace_backup
+        from core.workspace_backup import import_workspace_backup, preview_workspace_backup
         try:
             preview = preview_workspace_backup(path)
-        except WorkspaceBackupError as error:
+        except (SessionLibraryError, OSError) as error:
             self.status.setText(f"Backup could not be opened: {error}")
             return
         dialog = WorkspaceBackupPreviewDialog(self.library, preview, self)
@@ -605,13 +651,74 @@ class SessionLibraryDialog(QDialog):
             return
         try:
             record = import_workspace_backup(self.library, preview)
-        except WorkspaceBackupError as error:
-            self.status.setText(f"Backup was not imported: {error}")
+        except SessionLibraryImportUnconfirmed as error:
+            self._import_unconfirmed(error)
             return
-        self.search.clear()
-        self.refresh()
-        self.select_id(record.id)
-        self.status.setText("Backup imported as a new workspace. Metadata only; media files are not included.")
+        except (SessionLibraryError, OSError) as error:
+            self.status.setText(f"Backup was not imported: {error}")
+            self._sync_import_recovery()
+            return
+        self._import_finished(record)
+
+    def _import_finished(self, record):
+        self._retry_import = None
+        self.refresh(select_first=False)
+        self._sync_import_recovery()
+        self.status.setText("Backup imported. Draft kept. Metadata only; media files are not included.")
+
+    def _sync_import_recovery(self):
+        try:
+            pending = self.library.pending_import()
+        except (SessionLibraryError, OSError):
+            self.import_backup_button.setText("Check previous import")
+            return False
+        self.import_backup_button.setText("Import backup…" if pending is None else (
+            "Retry same import" if self._retry_import == pending else "Check previous import"))
+        if pending is None:
+            self.import_backup_button.setToolTip("")
+        return pending is None
+
+    def _import_unconfirmed(self, error):
+        self._retry_import = None
+        self.import_backup_button.setText("Check previous import")
+        self.import_backup_button.setEnabled(True)
+        self.import_backup_button.setToolTip(f"Intended workspace: {error.workspace_id}\nChecksum: {error.expected_sha256}")
+        self.status.setText("Import needs checking. Choose Check previous import. Current draft kept.")
+
+    def _check_import(self):
+        self.timer.stop()
+        try:
+            pending = self.library.pending_import()
+            if pending is None:
+                self._retry_import = None
+                self.import_backup_button.setText("Import backup…")
+                self.status.setText("No unresolved import is stored here.")
+                return
+            saved = self.library.reconcile_import(pending)
+            if saved is not None:
+                self.library.acknowledge_import(pending)
+                self.import_backup_button.setText("Check previous import")
+                self._import_finished(saved)
+                return
+            if self._retry_import == pending:
+                # A second explicit click retries the SAME prepared identity.
+                # Preparation restores a journal whose initial write failed;
+                # publication rechecks absence under the library lock.
+                self.library.prepare_import(pending)
+                saved = self.library.publish_import(pending)
+                self.library.acknowledge_import(pending)
+                self.import_backup_button.setText("Check previous import")
+                self._import_finished(saved)
+                return
+            self._retry_import = pending
+            self.import_backup_button.setText("Retry same import")
+            self.status.setText("Import was not published. Choose Retry same import. Current draft kept.")
+        except SessionLibraryImportUnconfirmed as error:
+            self._import_unconfirmed(error)
+        except (SessionLibraryError, OSError) as error:
+            self._retry_import = None
+            self.import_backup_button.setText("Check previous import")
+            self.status.setText(f"Import could not be reconciled; retry is blocked and its evidence is retained: {error}")
 
     def reject(self):
         if self.save_current():

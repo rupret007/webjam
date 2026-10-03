@@ -425,6 +425,8 @@ class SessionLibraryCoordinator(QObject):
         if not isinstance(ref.get("take_path"), str) or not ref["take_path"].strip():
             self._flash("This recording has no completed take yet. Wait for recording and finalization to finish.")
             return
+        if not self._imported_reference_can_open(ref):
+            return
         if self._profile() == "art":
             self._flash("Switch to this Music workspace before opening its take.")
             return
@@ -456,12 +458,23 @@ class SessionLibraryCoordinator(QObject):
     def open_bookmark(self, mark):
         if self._profile() == "art" or not isinstance(mark.get("take_path"), str) or not mark["take_path"].strip():
             return
+        if not self._imported_reference_can_open(mark):
+            return
         self._c._on_rail_view_changed("takes")
         opened = self._c.window.recording_studio.jump_to_bookmark(mark.get("take_path", ""),
             mark.get("position_seconds", 0), take_id=mark.get("take_id"),
             source_identity=mark.get("source_identity"))
         if opened and self.dialog:
             self.dialog.accept()
+
+    def _imported_reference_can_open(self, reference):
+        record = getattr(self.dialog, "record", None) if self.dialog else self.current
+        imported = reference.get("_imported_link") or (record is not None and record.import_provenance)
+        if imported and not all(isinstance(reference.get(key), str) and reference[key].strip()
+                                for key in ("take_id", "source_identity")):
+            self._flash("This imported link has no complete take identity. Open its original recording separately in Studio.")
+            return False
+        return True
 
     def song_selected(self, _song):
         if self.dialog and self.current and self.dialog.record.id == self.current.id:

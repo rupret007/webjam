@@ -219,3 +219,40 @@ def test_tab_leaves_art_text_editor_without_inserting_a_character(panel, app, fi
     QTest.keyClick(editor, Qt.Key.Key_Tab)
     assert not editor.hasFocus()
     assert editor.toPlainText() == "An unchanged complete draft"
+
+
+def test_imported_reference_policy_defers_network_stats_through_edits_and_explicit_open(panel, monkeypatch):
+    from pathlib import Path
+    locator = "//unavailable-network-share/private/project.kra"
+    reference = make_reference(locator, kind="file", title="Imported painting")
+    art = normalize_art_workspace({"version": 1, "references": [reference], "bookmarks": [
+        {"id": "mark", "reference_id": reference["id"], "seconds": 12, "note": "Keep"},
+    ]})
+    accesses = []
+    original_stat = Path.stat
+    permitted = False
+    def stat(path, *args, **kwargs):
+        if str(path) == locator:
+            accesses.append(str(path))
+            assert permitted, "Imported path accessed without an explicit action"
+            raise FileNotFoundError(locator)
+        return original_stat(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "stat", stat)
+    opened = []
+    monkeypatch.setattr(widget_module.QDesktopServices, "openUrl", lambda url: opened.append(url) or True)
+    panel.load_payload(art, defer_reference_checks=True)
+    panel.references.setCurrentRow(0)
+    panel.bookmarks.setCurrentRow(0)
+    panel.brief.setPlainText("New draft")
+    panel._render_lists()
+    assert accesses == [] and opened == []
+    assert "stored link — not checked" in panel.references.item(0).text()
+    permitted = True
+    _click(panel, "Open reference")
+    assert accesses == [locator] and opened == []
+    assert "Relink" in panel.status.text()
+    panel._render_lists()
+    assert accesses == [locator]  # Re-rendering only uses this explicit check's result.
+    assert panel.payload()["references"] == art["references"]
+    assert panel.payload()["bookmarks"] == art["bookmarks"]
+    assert panel.payload()["brief"] == "New draft"
