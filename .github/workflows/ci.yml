@@ -62,6 +62,8 @@ jobs:
       - name: Install diagnostic test runner
         run: >-
           python -m pip install --only-binary=:all: "pytest==8.3.5"
+      - name: Prepare native process-test output
+        run: python -c "from pathlib import Path; Path('out').mkdir(exist_ok=True)"
       - name: Prove native process ownership and startup failure cleanup
         run: python -X dev -m pytest -q tests/test_windows_diagnostic_process.py --basetemp out/windows-diagnostic-process-tests
       - name: Prove native debugger control independently of product gates
