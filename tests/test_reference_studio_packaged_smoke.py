@@ -237,8 +237,9 @@ def test_native_abort_control_requires_retained_thread_stack_and_modules(tmp_pat
     assert has_native_stack_data(path) is (damage is None)
 
 
-@pytest.mark.parametrize("change", [None, "executable", "package_marker", "source_head"])
-def test_native_diagnostics_bind_extracted_binary_to_retained_package(tmp_path, change):
+@pytest.mark.parametrize("change", [None, "executable", "package_marker", "source_head", "line_endings"])
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+def test_native_diagnostics_bind_extracted_binary_to_retained_package(tmp_path, change, newline):
     import zipfile
     from tests.support.diagnose_windows_reference_studio import package_binding
 
@@ -247,12 +248,18 @@ def test_native_diagnostics_bind_extracted_binary_to_retained_package(tmp_path, 
     (app / "_internal").mkdir(parents=True)
     binary = app / "WebJam.exe"
     binary.write_bytes(b"original")
-    (app / "_internal/webjam-build-id.txt").write_text(head + "\n")
+    # An extracted ZIP member preserves bytes, including its line endings.
+    # write_text would translate LF only in the extracted Windows fixture.
+    (app / "_internal/webjam-build-id.txt").write_bytes((head + newline).encode("utf-8"))
     package = tmp_path / "WebJam-windows-x64.zip"
+    package_head = "b" * 40 if change == "package_marker" else head
+    package_newline = newline
+    if change == "line_endings":
+        package_newline = "\r\n" if newline == "\n" else "\n"
     with zipfile.ZipFile(package, "w") as archive:
         archive.writestr("WebJam/WebJam.exe", b"original")
         archive.writestr("WebJam/_internal/webjam-build-id.txt",
-                         ("b" * 40 if change == "package_marker" else head) + "\n")
+                         (package_head + package_newline).encode("utf-8"))
     if change == "executable":
         binary.write_bytes(b"tampered")  # Same size; identity requires bytes.
     if change == "source_head":
