@@ -1,7 +1,7 @@
 """Evidence retention, identity and private full-workflow diagnostic boundaries."""
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import shutil
 import subprocess
 import sys
@@ -12,6 +12,19 @@ import zipfile
 import pytest
 
 from tests.support import diagnose_windows_reference_studio as diagnostic
+
+
+def test_quoted_dump_commands_preserve_absolute_windows_paths():
+    output = PureWindowsPath(r'D:\a\webjam\webjam\out\windows-diagnostic-control\control')
+    handlers = [line for line in diagnostic.commands(output).splitlines()
+                if line.startswith(('bu /1 ', 'sxd -c2 '))]
+    assert len(handlers) == 3
+    for line, name in zip(handlers, ('abort', 'access-violation', 'fast-fail')):
+        # Decode the C-compatible quoted-string subset, as the debugger does
+        # before running the handler. Unescaped Windows separators are lost.
+        command = json.loads(line[line.index('"'):line.rindex('"') + 1])
+        assert command.split(';', 1)[0] == (
+            f'.dump /m D:/a/webjam/webjam/out/windows-diagnostic-control/control/{name}.dmp')
 
 
 def test_standalone_control_does_not_require_or_validate_a_package(monkeypatch, tmp_path):

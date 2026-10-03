@@ -148,7 +148,10 @@ def commands(output: Path) -> str:
         raise ValueError("Native diagnostic directory needs a simple absolute path")
 
     def capture(name):
-        return f".dump /m {output / (name + '.dmp')}; kv 0n80; ~* kv 0n40; lmf; q"
+        # Breakpoint/event command strings decode C-style escapes before
+        # executing .dump. Windows accepts forward slashes without escaping.
+        dump_path = (output / (name + '.dmp')).as_posix()
+        return f".dump /m {dump_path}; kv 0n80; ~* kv 0n40; lmf; q"
 
     return (
         '.printf "WEBJAM_DEBUGGEE_PID=%d\\n", @$tpid\n'
