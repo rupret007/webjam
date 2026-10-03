@@ -103,6 +103,13 @@ pytest plugin having started; a pre-plugin hang may have no stack. Host loss
 or SIGKILL can prevent cleanup/evidence entirely. New diagnostics do not prove
 the cause of the earlier integration timeout or pass any physical-audio gate.
 
+### Windows native workflow diagnostics
+
+Use the [Windows portability diagnostic runbook](docs/WINDOWS_PORTABILITY_DIAGNOSTICS.md)
+for independent CDB/descendant-cleanup controls, retained source/frozen failure
+evidence and the explicitly requested six-per-kind matrix. Ordinary CI does not
+start that matrix; a diagnostic replay never replaces an original failed gate.
+
 ### Deterministic multitrack proof
 
 Run the joined Music/Podcast source proof once, then require 20 fresh-process

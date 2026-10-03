@@ -69,11 +69,16 @@ See [the saved-work walkthrough](../USER_GUIDE.md#save-a-session-and-continue-la
   troubleshooting text after secure peer proof, separate from Jamulus chat and
   saved notes; source evidence and unperformed physical gates.
 - [Workspace backup draft plan](WORKSPACE_BACKUP_PLAN.md) and
-  [under-4,000-character goal prompt](WORKSPACE_BACKUP_GOAL.md) — the active
-  portability validation/delivery round after workflow continuity. Metadata and
+  [under-4,000-character goal prompt](WORKSPACE_BACKUP_GOAL.md) — the
+  portability milestone after workflow continuity. Metadata and
   selected-media backup, explicit verification/relink and local restart tests exist;
   see the draft PR for exact-build evidence and the
   [portability pilot](WORKSPACE_PORTABILITY_PILOT.md) for owner observations.
+
+- [Windows portability diagnostics](WINDOWS_PORTABILITY_DIAGNOSTICS.md) and
+  [next goal prompt](WINDOWS_PORTABILITY_RELIABILITY_GOAL.md) — independent native
+  crash controls, exact package/source identity and one bounded workflow matrix.
+  Historical Windows crash causes and physical observations remain unproven.
 
 ## Evidence, releases, and operations
 

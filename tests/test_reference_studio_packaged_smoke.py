@@ -146,54 +146,26 @@ def test_native_debugger_exit_code_cannot_replace_application_proof(
 ):
     from tests.support.diagnose_windows_reference_studio import classify
 
-    record = {"debugger_returncode": exit_code, "native_dumps": dumps, "timed_out": timed_out}
+    record = {"debugger_returncode": exit_code, "debuggee_returncode": exit_code,
+              "native_dumps": dumps, "timed_out": timed_out}
     assert classify(record, marker) == expected
 
 
-@pytest.mark.parametrize("tree_kill_times_out", [False, True])
-def test_native_diagnostic_timeout_reaps_owned_debugger_tree(monkeypatch, tmp_path, tree_kill_times_out):
+def test_native_diagnostic_timeout_retains_verified_owned_job_result(monkeypatch, tmp_path):
     from tests.support import diagnose_windows_reference_studio as diagnostic
 
-    class Process:
-        pid = 1234
-        returncode = None
-        waits = []
+    def owned(argv, **kwargs):
+        assert "-g" not in argv and "-G" in argv
+        assert kwargs["timeout"] == 120
+        return {"returncode": 1, "timed_out": True, "cleanup_verified": True,
+                "members_before_cleanup": [123, 456], "members_after_cleanup": []}
 
-        def wait(self, timeout):
-            self.waits.append(timeout)
-            if self.returncode is None:
-                raise subprocess.TimeoutExpired("owned debugger", timeout)
-            return self.returncode
-
-        def poll(self):
-            return self.returncode
-
-        def kill(self):
-            self.returncode = -9
-
-    process = Process()
-    tree_kills = []
-    monkeypatch.setattr(diagnostic.subprocess, "Popen", lambda *args, **kwargs: process)
-
-    def kill_tree(argv, **kwargs):
-        tree_kills.append((argv, kwargs["timeout"]))
-        if tree_kill_times_out:
-            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
-        return subprocess.CompletedProcess(argv, 0)
-
-    monkeypatch.setattr(diagnostic.subprocess, "run", kill_tree)
-    arguments = dict(debugger=tmp_path / "cdb.exe", argv=["owned.exe"],
-                     output=tmp_path / "diagnostics", environment={}, cwd=tmp_path, timeout=120)
-    if tree_kill_times_out:
-        with pytest.raises(subprocess.TimeoutExpired):
-            diagnostic.capture(**arguments)
-    else:
-        record = diagnostic.capture(**arguments)
-        assert record["timed_out"] is True
-        assert record["native_dumps"] == []
-    assert tree_kills == [(["taskkill", "/PID", "1234", "/T", "/F"], 15)]
-    assert process.returncode == -9
-    assert process.waits == [120, 10]
+    monkeypatch.setattr(diagnostic, "run_owned", owned)
+    record = diagnostic.capture(debugger=tmp_path / "cdb.exe", argv=["owned.exe"],
+                                output=tmp_path / "diagnostics", environment={}, cwd=tmp_path, timeout=120)
+    assert record["timed_out"] and record["native_dumps"] == []
+    assert record["owned_process"]["members_before_cleanup"] == [123, 456]
+    assert record["owned_process"]["cleanup_verified"]
 
 
 def test_native_debugger_rejects_command_metacharacters_before_launch(tmp_path):
