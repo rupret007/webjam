@@ -1319,7 +1319,8 @@ jobs:
 
       - name: Install native portability test runner
         # The service tests used a separate Python 3.12 environment above.
-        run: python -m pip install --only-binary=:all: "pytest==8.3.5"
+        run: >-
+          python -m pip install --only-binary=:all: "pytest==8.3.5"
 
       - name: Verify portable workspace media and restart on this desktop
         timeout-minutes: 5
