@@ -34,8 +34,9 @@ from core.meeting_companion import (
 )
 from core.meeting_link import is_allowed_meeting_link
 from core.lesson_request import LessonRequestIntent, LessonRequestNotice
-from core.follow_along import lesson_sound_guidance
+from core.follow_along import lesson_setup_steps, lesson_sound_guidance
 from webjam_qt.widgets.lesson_handoff import LessonHandoffPanel
+from webjam_qt.widgets.scrollable_content import ScrollableContent
 from webjam_qt.theme.tokens import Space
 
 LOGGER = logging.getLogger("webjam.qt.webex_embed")
@@ -131,7 +132,7 @@ class WebexEmbed(QFrame):
         self.setObjectName("WebexEmbed")
         self.setMinimumHeight(112)
         self.setMaximumHeight(152)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._audio_mode = "talkback"
         self._creator_profile_key = "music"
         self._shared_lesson_hosting: bool | None = None
@@ -280,6 +281,18 @@ class WebexEmbed(QFrame):
         text_column.setSpacing(0)
         text_column.addLayout(header)
         text_column.addWidget(self._mode_label)
+        self._sound_tips_button = QPushButton("Sound and sharing tips")
+        self._sound_tips_button.setObjectName("GhostButton")
+        self._sound_tips_button.setCheckable(True)
+        self._sound_tips_button.setAutoDefault(False)
+        self._sound_tips_button.setAccessibleName("Sound and sharing tips")
+        self._sound_tips = QLabel()
+        self._sound_tips.setTextFormat(Qt.TextFormat.PlainText)
+        self._sound_tips.setWordWrap(True)
+        self._sound_tips.setAccessibleName("Sound and sharing guidance")
+        self._sound_tips_button.toggled.connect(self._toggle_sound_tips)
+        text_column.addWidget(self._sound_tips_button)
+        text_column.addWidget(self._sound_tips)
         text_column.addWidget(self._status_label)
         self.lesson_handoff = LessonHandoffPanel(self)
         text_column.addWidget(self.lesson_handoff)
@@ -301,7 +314,9 @@ class WebexEmbed(QFrame):
         for button, row, column in self._action_positions:
             actions.addWidget(button, row, column)
 
-        layout = self._content_layout = QHBoxLayout(self)
+        self._scroll = ScrollableContent(self)
+        content = QWidget()
+        layout = self._content_layout = QHBoxLayout(content)
         layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
         layout.setSpacing(Space.LG)
         layout.addLayout(text_column, stretch=1)
@@ -309,6 +324,12 @@ class WebexEmbed(QFrame):
             actions,
         )
         actions.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        self._scroll.setWidget(content)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self._scroll)
+        self._scroll.viewport_resized.connect(self._sync_art_layout)
+        self._scroll.content_height_changed.connect(self._fit_card_height)
         self._render_audio_guidance()
         self._render_launch_status()
         self._render_link_accessibility()
@@ -485,7 +506,18 @@ class WebexEmbed(QFrame):
                 max(text_width, action_width)
                 + margins.left() + margins.right() + 2 * self.frameWidth()
             )
+        hint.setHeight(112)
         return hint
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        hint.setHeight(self.maximumHeight())
+        return hint
+
+    def _fit_card_height(self, height):
+        expanded = self._creator_profile_key == "art" or self._shared_lesson_hosting is not None
+        self.setMaximumHeight(max(112, height + 2 * self.frameWidth()) if expanded else 152)
+        self.updateGeometry()
 
     def _action_column_widths(self) -> tuple[int, int]:
         """Measure the original grid independently of its current arrangement."""
@@ -525,7 +557,7 @@ class WebexEmbed(QFrame):
         try:
             art = self._creator_profile_key == "art" or self._shared_lesson_hosting is not None
             margins = layout.contentsMargins()
-            available = self.width() - margins.left() - margins.right() - 2 * self.frameWidth()
+            available = self._scroll.viewport().width() - margins.left() - margins.right()
             column_widths = self._action_column_widths()
             two_column_width = sum(column_widths) + (
                 self._actions_layout.horizontalSpacing() if all(column_widths) else 0
@@ -558,19 +590,8 @@ class WebexEmbed(QFrame):
             ) | Qt.AlignmentFlag.AlignVCenter
             if self._app_status_label.alignment() != alignment:
                 self._app_status_label.setAlignment(alignment)
-            if art:
-                # QLayout accounts for the current wrapped labels, visible
-                # actions and stylesheet metrics. No timer or rebuilt widget
-                # can disturb the current meeting state or keyboard focus.
-                required = layout.totalHeightForWidth(self.width())
-                height = max(112, required + 2 * self.frameWidth())
-                if self.minimumHeight() != height or self.maximumHeight() != height:
-                    self.setFixedHeight(height)
-            else:
-                if self.minimumHeight() != 112:
-                    self.setMinimumHeight(112)
-                if self.maximumHeight() != 152:
-                    self.setMaximumHeight(152)
+            self._scroll.fit_content()
+            self._fit_card_height(self._scroll._content_height)
         finally:
             self._updating_art_layout = False
 
@@ -1067,11 +1088,21 @@ class WebexEmbed(QFrame):
         self._render_audio_guidance()
         self._sync_art_layout()
 
+    def _toggle_sound_tips(self, checked):
+        self._sound_tips.setVisible(checked and self._shared_lesson_hosting is not None)
+        self._sync_art_layout()
+
     def _render_audio_guidance(self) -> None:
         service = self._service_label
+        lesson = self._shared_lesson_hosting is not None
+        self._sound_tips_button.setVisible(lesson)
+        self._sound_tips.setVisible(lesson and self._sound_tips_button.isChecked())
         if self._shared_lesson_hosting is not None:
             self._title_label.setText("Paint along with sound" if self._creator_profile_key == "art" else "Video practice")
-            self._mode_label.setText(lesson_sound_guidance(
+            self._mode_label.setText(lesson_setup_steps(
+                profile=self._creator_profile_key, hosting=self._shared_lesson_hosting, service=service,
+            ))
+            self._sound_tips.setText(lesson_sound_guidance(
                 profile=self._creator_profile_key, hosting=self._shared_lesson_hosting, service=service,
             ))
             return

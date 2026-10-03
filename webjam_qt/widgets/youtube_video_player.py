@@ -17,8 +17,20 @@ from core.reference_video import ReferenceVideoPlayerError
 from core.youtube_lesson import YouTubeLesson
 
 APP_ORIGIN = "https://com.webjam.app"
-_UNAVAILABLE = "This YouTube lesson could not play here. Try the link again or choose a local video."
-_NOT_READY = "The lesson is still loading. Try the link again when your connection is ready."
+_BROWSER_FALLBACK = " Choose Watch a shared lesson to try the browser, or choose another video."
+_UNAVAILABLE = "This YouTube lesson could not play inside WebJam." + _BROWSER_FALLBACK
+_NOT_READY = "The lesson is still loading. Check your connection, or choose Watch a shared lesson for the browser."
+
+
+def _provider_error(code):
+    # https://developers.google.com/youtube/iframe_api_reference#onError
+    if type(code) is int and code in {101, 150}:
+        return "The video owner does not allow playback inside apps." + _BROWSER_FALLBACK
+    if type(code) is int and code == 153:
+        return "YouTube could not identify WebJam's embedded player." + _BROWSER_FALLBACK
+    if type(code) is int and code == 100:
+        return "This video is unavailable or private. Choose another lesson; the browser may also be unable to play it."
+    return _UNAVAILABLE
 
 
 class YouTubeVideoPlayer:
@@ -53,7 +65,7 @@ class YouTubeVideoPlayer:
             self._fail(_UNAVAILABLE)
         if not allow_error:
             if value.get("error"):
-                self._fail(_UNAVAILABLE)
+                self._fail(_provider_error(value["error"]))
             if value.get("blocked"):
                 self._fail("The lesson did not start. Open the lesson again, then choose Play.")
             if (value.get("ready") and value.get("muted") is not True

@@ -174,7 +174,10 @@ def test_host_navigation_or_meeting_replacement_retires_old_request_and_ack(pair
     else:
         value = app._effective_meeting_url() if destination == "same_meeting" else "https://studio.webex.com/meet/other"
         app._set_session_meeting_url(value)
-    assert room._lesson_binding is None
+    if destination == "conversation":
+        assert room._lesson_binding is not None and room._lesson_binding is not binding
+    else:
+        assert room._lesson_binding is None
     assert pair.server.lesson_request_notices() == ()
     if destination in {"meeting", "same_meeting"}:
         panel = app.window.webex_embed
@@ -192,7 +195,17 @@ def test_host_navigation_or_meeting_replacement_retires_old_request_and_ack(pair
         pair.owner.client.post_lesson_request(pair.owner._enrollment, LessonRequestCommand(
             notice.context_id, notice.admission_id, notice.revision, "pause",
         ))
-    pair.enter(pair.host)
+    if destination in {"meeting", "same_meeting"}:
+        panel = app.window.webex_embed
+        button = panel.lesson_handoff.restart_button
+        assert button.isVisibleTo(app.window)
+        old_generation = panel.lesson_handoff.generation
+        QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+        fresh_binding = room._lesson_binding
+        app.follow_along.restart_requests(old_generation)
+        assert room._lesson_binding is fresh_binding
+    else:
+        pair.enter(pair.host)
     assert room._lesson_binding.context_id != notice.context_id
     pair.poll()
     assert pair.owner.lesson_request_state.view.own_receipt is None
@@ -256,7 +269,8 @@ def test_guest_meeting_edit_keeps_guidance_but_retires_only_local_pending_intent
     assert current[0].context_id == notice.context_id
     assert current[0].revision == notice.revision and current[0].intent.value == "pause"
 
-    pair.enter(pair.guest)
+    assert panel.lesson_handoff.restart_button.isVisibleTo(app.window)
+    QTest.mouseClick(panel.lesson_handoff.restart_button, Qt.MouseButton.LeftButton)
     pair.poll()
     assert room._lesson_binding is not binding
     assert pair.owner.lesson_request_state.can_submit

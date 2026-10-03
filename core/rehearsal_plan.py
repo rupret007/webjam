@@ -12,6 +12,7 @@ import math
 from uuid import uuid4
 
 from core.song_clock import MAX_TEMPO_BPM, MIN_TEMPO_BPM
+from core.youtube_lesson import parse_youtube_lesson_url
 
 PLAN_VERSION = 1
 MAX_SONGS = 200
@@ -73,7 +74,7 @@ def make_song(title: str = "New song", **values) -> dict:
     bookmarks = values.get("bookmarks", [])
     if not isinstance(bookmarks, list) or len(bookmarks) > MAX_BOOKMARKS:
         raise ValueError("A song can contain up to 500 moments.")
-    return {
+    result = {
         "id": _id(values.get("id")), "title": _text(title),
         "key": _text(values.get("key")), "tempo": _tempo(values.get("tempo")),
         "goals": _text(values.get("goals")), "notes": _text(values.get("notes")),
@@ -82,6 +83,11 @@ def make_song(title: str = "New song", **values) -> dict:
         "completed": values.get("completed") is True,
         "bookmarks": [_bookmark(item) for item in bookmarks if isinstance(item, dict)],
     }
+    # An optional reference preserves exact round trips for existing v1 plans.
+    # It is never playback state and importing it must not open a player.
+    if values.get("lesson_url"):
+        result["lesson_url"] = parse_youtube_lesson_url(values["lesson_url"]).playback_url
+    return result
 
 
 @dataclass
@@ -165,7 +171,7 @@ class RehearsalPlan:
     def template_payload(self) -> dict:
         """Reusable order/goals only; existing sessions retain their own work."""
         songs = [make_song(song["title"], key=song["key"], tempo=song["tempo"],
-                           goals=song["goals"]) for song in self.songs]
+                           goals=song["goals"], lesson_url=song.get("lesson_url")) for song in self.songs]
         return RehearsalPlan(self.title, songs, songs[0]["id"] if songs else "").payload()
 
     def append_template(self, payload: dict) -> int:

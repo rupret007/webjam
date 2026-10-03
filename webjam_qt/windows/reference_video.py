@@ -34,15 +34,15 @@ from core.reference_video import (
     ReferenceVideoSnapshot,
     ReferenceVideoState,
     paint_along_watch_lesson_guidance,
-    paint_along_watch_lesson_hint,
 )
 from core.youtube_lesson import YouTubeLesson, parse_youtube_lesson_url
 from webjam_qt.theme.tokens import Space
+from webjam_qt.widgets.scrollable_content import ScrollableContent
 
-_HOST_EMPTY_HEADLINE = "Choose a video to paint along"
-_GUEST_EMPTY_HEADLINE = "Waiting for a process video"
+_HOST_EMPTY_HEADLINE = "Or choose a silent reference"
+_GUEST_EMPTY_HEADLINE = "Optional silent reference"
 _HOST_EMPTY_STATUS = (
-    "Choose a local video file or a YouTube lesson link. The video stays silent; you control playback."
+    "Choose a local video or YouTube link below for silent playback inside WebJam. You control it."
 )
 _EMPTY_SURFACE = "Your silent process video appears here"
 _SYNC_HONESTY = (
@@ -196,7 +196,12 @@ class ReferenceVideoDialog(QDialog):
         self.setMinimumSize(720, 520)
         self.resize(1040, 720)
 
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self._scroll = ScrollableContent(self)
+        outer.addWidget(self._scroll)
+        body = QWidget()
+        layout = self._body_layout = QVBoxLayout(body)
         layout.setContentsMargins(Space.XL, Space.LG, Space.XL, Space.LG)
         layout.setSpacing(Space.MD)
 
@@ -216,7 +221,7 @@ class ReferenceVideoDialog(QDialog):
         self._role = QLabel("YOU CONTROL" if self._hosting else "YOU FOLLOW")
         self._role.setObjectName("PaintAlongRole")
         self._role.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._role.setFixedHeight(28)
+        self._role.setMinimumHeight(28)
         self._role.setAccessibleName(
             "You control the video" if self._hosting else "You follow the host"
         )
@@ -240,10 +245,10 @@ class ReferenceVideoDialog(QDialog):
         self._status.setAccessibleName("Paint along status")
         layout.addWidget(self._status)
 
-        lesson_row = QHBoxLayout()
+        lesson_row = QVBoxLayout()
         lesson_row.setSpacing(Space.SM)
         self._watch_lesson_button = QPushButton("Watch a shared lesson")
-        self._watch_lesson_button.setObjectName("GhostButton")
+        self._watch_lesson_button.setObjectName("PrimaryButton")
         self._watch_lesson_button.setMinimumHeight(36)
         self._watch_lesson_button.setAccessibleName("Watch a shared lesson")
         self._watch_lesson_button.setAccessibleDescription(
@@ -254,7 +259,11 @@ class ReferenceVideoDialog(QDialog):
         )
         self._watch_lesson_button.clicked.connect(self._watch_shared_lesson)
         lesson_row.addWidget(self._watch_lesson_button)
-        self._lesson_hint = QLabel(paint_along_watch_lesson_hint())
+        self._lesson_hint = QLabel(
+            "Choose a YouTube lesson, then share it with sound in your meeting. Paint on paper or in your own app."
+            if self._hosting else
+            "Join your meeting to see and hear the host's lesson, talk and paint together."
+        )
         self._lesson_hint.setWordWrap(True)
         self._lesson_hint.setObjectName("PaintAlongHint")
         lesson_row.addWidget(self._lesson_hint, stretch=1)
@@ -381,9 +390,8 @@ class ReferenceVideoDialog(QDialog):
         self._hint.setAccessibleDescription(_SYNC_DETAIL)
         self._hint.setToolTip(_SYNC_DETAIL)
         layout.addWidget(self._hint)
-        # Choose the Paint along source first. Meeting handoff stays a quiet
-        # secondary route below that choice, with no extra Art door.
-        layout.addLayout(lesson_row)
+        layout.insertLayout(1, lesson_row)
+        self._scroll.setWidget(body)
 
         self._hidden = False
         if self._hosting:
@@ -438,7 +446,7 @@ class ReferenceVideoDialog(QDialog):
         # An inline File/Help menu reduces the compact workspace's height.
         # Recover space between rows before any video controls or guidance
         # overlap; larger workspaces keep the original breathing room.
-        layout = self.layout()
+        layout = self._body_layout
         if layout is not None:
             layout.setSpacing(
                 Space.SM if self._embedded and self.height() < 360 else Space.MD
@@ -670,7 +678,7 @@ class ReferenceVideoDialog(QDialog):
                 if youtube else "Checking the video. You can go back to the room while it opens."
             )
         elif snapshot.error:
-            recovery = (f" Use {self._youtube_button.text()} to try a lesson link again." if youtube else
+            recovery = (" Watch a shared lesson keeps the chosen link for an explicit browser handoff." if youtube else
                         f" Use {self._share_button.text()} to open a local video again.") if not shared else ""
             self._status.setText(f"{snapshot.error}{recovery}")
         elif not shared:

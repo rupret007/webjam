@@ -237,13 +237,14 @@ def test_recovery_and_room_navigation_fit_without_overlap(room, qapp, state, siz
     assert placeholder.height() >= placeholder.heightForWidth(placeholder.width())
     for widget in (panel._headline, panel._status, panel._surface_holder, primary, panel._more_button, panel._back_button, panel._hint, panel._watch_lesson_button, panel._lesson_hint):
         assert widget.isVisible()
-        assert panel.rect().contains(widget.geometry())
+        assert panel._scroll.widget().rect().contains(widget.geometry())
     assert panel._status.height() >= panel._status.heightForWidth(panel._status.width())
     assert panel._hint.height() >= panel._hint.heightForWidth(panel._hint.width())
     assert panel._lesson_hint.height() >= panel._lesson_hint.heightForWidth(panel._lesson_hint.width())
     assert panel._surface_holder.geometry().bottom() < primary.geometry().top()
     assert primary.geometry().bottom() < panel._hint.geometry().top()
-    assert panel._hint.geometry().bottom() < panel._watch_lesson_button.geometry().top()
+    assert panel._watch_lesson_button.geometry().bottom() < panel._lesson_hint.geometry().top()
+    assert panel._lesson_hint.geometry().bottom() < panel._headline.geometry().top()
     assert not primary.geometry().intersects(panel._more_button.geometry())
     assert panel._back_button.geometry().bottom() < panel._headline.geometry().top()
     assert panel._headline.fontMetrics().horizontalAdvance(panel._headline.text()) <= panel._headline.contentsRect().width()
@@ -253,6 +254,18 @@ def test_recovery_and_room_navigation_fit_without_overlap(room, qapp, state, siz
         assert panel._surface_holder.geometry().bottom() < panel._position.geometry().top()
         assert panel._position.geometry().bottom() < primary.geometry().top()
     assert panel._position.isEnabled() is False
+    _assert_recovery_reachable(panel, (primary, panel._more_button, panel._back_button,
+                                      panel._watch_lesson_button), qapp)
+
+
+def _assert_recovery_reachable(panel, buttons, qapp):
+    for button in buttons:
+        button.setFocus(Qt.FocusReason.TabFocusReason)
+        for _ in range(4):
+            qapp.processEvents()
+        assert button.visibleRegion().contains(button.rect()), button.text()
+        viewport = panel._scroll.viewport()
+        assert viewport.rect().contains(QRect(button.mapTo(viewport, QPoint()), button.size()))
 
 
 def _assert_room_controls_fit(window):
@@ -305,7 +318,8 @@ def test_following_survives_compact_resize_without_changing_video_or_controls(ro
         assert panel._position.geometry().bottom() < panel._hide_button.geometry().top()
         assert panel._hide_button.geometry().bottom() < panel._hint.geometry().top()
         assert [(widget.text(), widget.font().toString()) for widget in labels] == presentation
-        assert all(widget.isVisible() and panel.rect().contains(widget.geometry()) for widget in labels)
+        assert all(widget.isVisible() and panel._scroll.widget().rect().contains(widget.geometry()) for widget in labels)
+        _assert_recovery_reachable(panel, (panel._hide_button, panel._back_button), qapp)
         assert room.guest.follow_snapshot == original_snapshot
         assert room.player.loaded_paths == original_paths
         assert panel._position.isEnabled() is False

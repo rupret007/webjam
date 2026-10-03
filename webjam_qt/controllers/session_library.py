@@ -126,8 +126,12 @@ class SessionLibraryCoordinator(QObject):
                 if warnings:
                     self._flash(" ".join(warnings))
             title, mode, notes = self._context()
+            first_workspace = self.current is None
             self.current = self.library.create(self._profile(), title or "Untitled workspace",
                                                notes=notes, mode_key=mode)
+            follow_along = getattr(self._c, "follow_along", None)
+            if first_workspace and follow_along is not None:
+                follow_along.workspace_created()
             return True
         except (OSError, ValueError):
             self._flash("Workspace history could not be saved. Your current Notes remain available; retry Session library.")
@@ -212,7 +216,7 @@ class SessionLibraryCoordinator(QObject):
             return False
         saved = dialog.save_current()
         dialog.art.status.setText(
-            "Lesson remembered. Open reference returns to the saved link; WebJam does not track browser playback."
+            "Lesson remembered. Use saved lesson returns to setup; WebJam does not track browser playback."
             if saved else "The lesson is in your retained draft. Use Save to retry."
         )
         return saved
@@ -226,9 +230,86 @@ class SessionLibraryCoordinator(QObject):
         self._live_take_ids.clear()
         return True
 
+    def remember_music_lesson(self, url):
+        """Use the rehearsal editor's current song and ordinary save/conflict path."""
+        from PySide6.QtWidgets import QInputDialog
+        from core.youtube_lesson import parse_youtube_lesson_url
+
+        lesson = parse_youtube_lesson_url(url)
+        if self._profile() != "music" or self.media_operation_pending or self.studio_media_pending:
+            self._flash("Finish the current workspace operation before remembering the lesson.")
+            return False
+        if not self.ensure_current():
+            return False
+        current_id = self.current.id
+        self.show(tab="plan")
+        dialog = self.dialog
+        if dialog is None:
+            return False
+        dialog.select_id(current_id)
+        binding = self._c.follow_along._identity()
+
+        def current():
+            return (self.dialog is dialog and self._profile() == "music"
+                    and self.current is not None and self.current.id == current_id
+                    and dialog.record is not None and dialog.record.id == current_id
+                    and not self.media_operation_pending and not self.studio_media_pending
+                    and binding == self._c.follow_along._identity()
+                    and not self._c._shutdown_cleanup_blocks_action())
+
+        if not current():
+            self._flash("Your draft is retained. Select the current rehearsal workspace and try again.")
+            return False
+        song_id = dialog.rehearsal._plan.active_song_id
+        title = None
+        if not song_id:
+            title, accepted = QInputDialog.getText(
+                dialog, "Remember lesson", "Name a song for this lesson:", text="YouTube practice",
+            )
+            if not accepted or not title.strip() or not current():
+                return False
+        try:
+            if not dialog.rehearsal.set_lesson_url(
+                    lesson.playback_url, expected_song_id=song_id, new_title=title):
+                return False
+        except ValueError as error:
+            dialog.rehearsal._feedback.setText(str(error))
+            return False
+        saved = dialog.save_current()
+        dialog.rehearsal._feedback.setText(
+            "Lesson remembered with this song. Use saved lesson returns to video practice."
+            if saved else "The lesson is in your retained draft. Use Save to retry."
+        )
+        return saved
+
+    def _use_saved_lesson(self, origin, request):
+        binding, workspace_id, profile, item_id, url = request
+        if (origin is not self.dialog or not origin.isVisible() or origin.record is None
+                or self.current is None or self.current.id != workspace_id
+                or origin.record.id != workspace_id or origin.record.profile != profile
+                or self._profile() != profile or self.media_operation_pending or self.studio_media_pending
+                or binding != self._c.follow_along._identity()
+                or self._c._shutdown_cleanup_blocks_action()):
+            self._flash("Continue the saved workspace first, then choose its lesson from Session library.")
+            return
+        if profile == "music":
+            song = origin.rehearsal._plan.current or {}
+            selected = (song.get("id"), song.get("lesson_url"))
+        else:
+            selected = origin.art.selected_lesson()
+        if selected != (item_id, url):
+            return
+        if self._c.follow_along.use_saved_lesson(url):
+            # Keep the same draft owner. show() reuses this retained dialog.
+            origin.hide()
+            self._c.window.activateWindow()
+        else:
+            self._flash("Return to the current room, then use this saved lesson again.")
+
     def show(self, *, tab=None):
         from webjam_qt.windows.session_library import SessionLibraryDialog
-        if self.dialog is not None and (self.dialog.isVisible() or self.media_operation_pending):
+        if self.dialog is not None:
+            self.dialog._lesson_binding = self._c.follow_along._identity() if hasattr(self._c, "follow_along") else None
             if tab == "plan":
                 self.dialog.tabs.setCurrentIndex(1 if self._profile() == "music" else 2)
             self.dialog.show()
@@ -248,6 +329,8 @@ class SessionLibraryCoordinator(QObject):
         dialog.bookmark_open_requested.connect(self.open_bookmark)
         dialog.take_open_requested.connect(self.open_take)
         dialog.song_selected.connect(self.song_selected)
+        dialog._lesson_binding = self._c.follow_along._identity() if hasattr(self._c, "follow_along") else None
+        dialog.lesson_requested.connect(lambda request: self._use_saved_lesson(dialog, request))
         if tab == "plan":
             dialog.tabs.setCurrentIndex(1 if self._profile() == "music" else 2)
         def finished(_result):

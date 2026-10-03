@@ -14,10 +14,12 @@ from PySide6.QtWidgets import (
 )
 
 from core.art_workspace import make_reference, normalize_art_workspace
+from core.youtube_lesson import YouTubeLesson, parse_youtube_lesson_url
 
 
 class ArtWorkspacePanel(QWidget):
     changed = Signal()
+    lesson_requested = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -69,6 +71,13 @@ class ArtWorkspacePanel(QWidget):
             row.addWidget(button)
         layout.addLayout(row)
         self._action_rows.append(row)
+        self.use_lesson_button = QPushButton("Use saved lesson")
+        self.use_lesson_button.setAccessibleDescription(
+            "Set up a shared lesson from this YouTube reference. The browser opens only when you choose."
+        )
+        self.use_lesson_button.setEnabled(False)
+        self.use_lesson_button.clicked.connect(self._use_lesson)
+        layout.addWidget(self.use_lesson_button)
         self.bookmarks = QListWidget()
         self.bookmarks.setAccessibleName("Saved lesson bookmarks")
         self.bookmarks.setMinimumHeight(80)
@@ -233,6 +242,7 @@ class ArtWorkspacePanel(QWidget):
 
     def _reference_status(self, _index: int) -> None:
         ref = self._selected_reference()
+        self.use_lesson_button.setEnabled(self.selected_lesson() is not None)
         self.verify_button.setEnabled(bool(ref and ref["kind"] == "file" and self.reference_action_handler is not None))
         evidence = self._reference_evidence.get((ref["id"], ref["locator"])) if ref else None
         if evidence is not None:
@@ -352,6 +362,26 @@ class ArtWorkspacePanel(QWidget):
             self._value["bookmarks"].pop(index)
             self._render_lists()
             self._changed()
+
+    def selected_lesson(self):
+        ref = self._selected_reference()
+        if ref is None or ref["kind"] != "url":
+            return None
+        try:
+            lesson = parse_youtube_lesson_url(ref["locator"])
+        except ValueError:
+            return None
+        index = self.bookmarks.currentRow()
+        if 0 <= index < len(self._value["bookmarks"]):
+            mark = self._value["bookmarks"][index]
+            if mark["reference_id"] == ref["id"]:
+                lesson = YouTubeLesson(lesson.video_id, int(mark["seconds"]))
+        return ref["id"], lesson.playback_url
+
+    def _use_lesson(self):
+        selected = self.selected_lesson()
+        if selected is not None and self.use_lesson_button.isEnabled() and self.use_lesson_button.isVisible():
+            self.lesson_requested.emit(*selected)
 
     def _bookmark_selected(self, index: int) -> None:
         if not 0 <= index < len(self._value["bookmarks"]):

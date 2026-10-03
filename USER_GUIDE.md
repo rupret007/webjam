@@ -427,7 +427,7 @@ Things worth knowing:
 
 ### Painting along to a video
 
-Bring your own materials or app. Choose **Watch a shared lesson** in Paint
+Bring your own materials or app. **Watch a shared lesson** is the first action in Paint
 along to reach Conversation without choosing a local file. It works even
 when a local copy or embedded YouTube lesson cannot play. The focused action is **Add
 Link**, **Join / Open Meeting**, or the available meeting-app action. Merely
@@ -446,11 +446,15 @@ These are provider-supported paths; the complete two-person WebJam experience
 still needs physical verification. See the [shared-lesson test guide](docs/plans/webjam-shared-lesson-entry.md).
 
 **Remember lesson** adds the displayed reference link and chosen position to
-the current **Art project**, preserving its existing notes and drafts. Use
-**Open reference** there to return later. WebJam does not read playback time
+the current **Art project**, preserving its existing notes and drafts. Select
+the YouTube reference and choose **Use saved lesson** to return to setup. Select
+a saved bookmark first to use its whole-second position; otherwise the link's
+saved starting position is retained. **Open reference** remains an explicit
+direct browser action. WebJam does not read playback time
 from your browser. A saved link does not start a lesson or join a room.
-For guests, **Save reference** saves the explicitly labeled silent WebJam
-reference; the host may be showing a different browser lesson in the meeting.
+For guests, **Save reference** saves the displayed reference link, which may
+come from WebJam's silent video or a saved project. The host may be showing a
+different browser lesson in the meeting.
 
 The host pauses and resumes **the YouTube player** when either person asks.
 A guest asks in Conversation; WebJam cannot control the external browser.
@@ -461,6 +465,14 @@ Use headphones and ask your partner to confirm they hear both narration and
 your voice. Guests watch the host's meeting share and leave their own audible
 YouTube copy closed. Pause/ready buttons are available in supported Art LAN
 rooms; otherwise ask by voice or meeting chat.
+
+The setup card shows three steps. Expand **Sound and sharing tips** for
+volume and microphone details. Use **Conversation** to return after Notes;
+your selected lesson stays available. Changing the meeting link retires old
+pause requests. In a supported LAN Art room, **Restart pause requests**
+creates fresh controls without leaving the setup. Rejoining another room
+does not revive old request authority. Small windows and larger text scroll;
+Tab reveals the focused control and End/Leave remains outside that scroll.
 
 ### Playing along to a song
 
@@ -482,6 +494,16 @@ Music video practice does not synchronize separate YouTube players or send
 their audio into Jamulus. A browser or meeting handoff confirms only that an
 open was requested; verify sharing, hearing and timing together. See the
 [Paint Along / Play Along plan and pilot](docs/PAINT_PLAY_ALONG_PLAN.md).
+
+For practice, **Remember lesson** stores the chosen link with the current
+song in **Rehearsal plan**. If the plan is empty, name a song when prompted.
+The plan also offers **Choose lesson…** / **Change lesson…**; an empty link
+removes the saved reference. **Use saved lesson** returns to video-practice
+setup. Loading a song, template or workspace opens nothing automatically.
+Lesson links survive saved-plan templates and workspace backups. In Session
+library, **Continue** a different workspace before using its lesson. A save
+failure keeps the link and other edits in the existing draft; retry **Save**
+after storage is available.
 
 ### Silent Paint Along references
 
