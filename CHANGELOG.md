@@ -21,8 +21,14 @@ they do not request a new release/tag or claim new published package evidence.
   reselection and A/B listening, including when originals share the same IDs.
   Pending actions retire after owner/profile changes, leaving Studio or edits
   followed by undo. Relink targets are rechecked before paths are saved; late
-  Library edits keep their editor open. Full recorder/restart and final packaged
-  portability evidence remain pending; physical acceptance remains **NOT RUN**.
+  Library edits keep their editor open. Local separate-process tests cover two
+  controlled recorder completions and Art through backup, import, restart and
+  deliberate playback/export. The frozen hook adds a synthetic portability journey;
+  hosted/package verification is recorded against each delivered test build.
+  Physical acceptance remains **NOT RUN**.
+- Compact Session library controls scroll without overlapping at enlarged text;
+  save/recovery status stays visible. Packaged workflow proofs isolate their
+  settings, database, startup state and logs and restore the caller's environment.
 - **File → Return to launch** is available from live and local Studio work.
   Explicit End/Leave, successful saves, recording finalization and owned
   cleanup precede a fresh launch screen; failure retains the current work.

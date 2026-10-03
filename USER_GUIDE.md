@@ -86,6 +86,8 @@ intended checksum. Review the title, profile, counts, prior imports and limits.
 **Cancel** leaves the open draft unchanged.
 **Import as new workspace** creates a separate saved workspace and keeps your
 current editor and selection. Select the imported entry yourself when ready.
+At compact sizes or with enlarged text, scroll the Library to reach its actions.
+Tab and Shift+Tab bring focused controls into view; save and recovery status stays visible.
 
 Imported links say **stored link — not checked** until an
 explicit action accesses them, including after reopening or saving a copy.
@@ -110,6 +112,9 @@ comparison again before playback. Leaving Studio, editing its arrangement,
 changing the active workspace or beginning a recording retires a pending
 comparison. Choose Listen again when ready. A new Library draft keeps its
 editor open even if an earlier take-open request has just finished.
+If the export control says **Export Aligned Originals**, the export excludes
+Studio arrangement edits. Check the confirmation and new receipt for the export
+kind and destination; an imported historical receipt is not a new export.
 
 Copying and verification run in the background with progress and **Cancel**.
 Session **Stop** and **End** remain reachable in the main window. Cancellation
@@ -127,9 +132,13 @@ without importing anything until you confirm. Private notes and stored
 locations remain literal; this is not a secret-scrubbing feature.
 
 These explicit media controls and Studio activation are in the draft source.
-Complete recorder/restart restoration tests and final native/frozen build checks
-remain [in active development](docs/WORKSPACE_BACKUP_PLAN.md). Use the identified
-test build's instructions once that full workflow is delivered.
+Local tests now cover two controlled recorder completions and Art through backup,
+import and restart in separate OS processes. The frozen-build hook also includes
+a synthetic portability journey. Delivered test builds require final-commit hosted
+and native package checks; see [draft #172](https://github.com/rupret007/webjam/pull/172)
+for current evidence and the [milestone plan](docs/WORKSPACE_BACKUP_PLAN.md) for scope. Use the
+[ten-minute portability pilot](docs/WORKSPACE_PORTABILITY_PILOT.md) with the identified
+test build when delivered. Physical sound, real-editor import and feel remain NOT RUN.
 
 ## Return to launch: Unreleased
 

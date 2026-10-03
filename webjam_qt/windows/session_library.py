@@ -9,7 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import (
-    QBoxLayout, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout, QInputDialog,
+    QApplication, QBoxLayout, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout, QInputDialog,
     QLabel, QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit, QPushButton,
     QScrollArea, QTabWidget, QVBoxLayout, QWidget,
 )
@@ -174,7 +174,17 @@ class SessionLibraryDialog(QDialog):
         self.setWindowTitle("Session library")
         self.resize(760, 680)
         self.setMinimumSize(480, 400)
-        outer = QVBoxLayout(self)
+        frame = QVBoxLayout(self)
+        self.content_scroll = QScrollArea()
+        self.content_scroll.setWidgetResizable(True)
+        self.content_scroll.setAccessibleName("Session library controls")
+        self._content = QWidget()
+        outer = QVBoxLayout(self._content)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.content_scroll.setWidget(self._content)
+        frame.addWidget(self.content_scroll)
+        self._content.installEventFilter(self)
+        self.content_scroll.viewport().installEventFilter(self)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search sessions, workspaces, and notes")
         self.search.setAccessibleName("Search session library")
@@ -202,6 +212,9 @@ class SessionLibraryDialog(QDialog):
         self._action_rows.extend((create_buttons, create_row))
         outer.addLayout(create_row)
         self.tabs = QTabWidget()
+        # At compact sizes the whole form scrolls; preserve enough editing
+        # space instead of compressing full-size controls into overlapping rows.
+        self.tabs.setMinimumHeight(200)
         outer.addWidget(self.tabs, 1)
         details = QWidget()
         form = QFormLayout(details)
@@ -248,7 +261,8 @@ class SessionLibraryDialog(QDialog):
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
         self.status.setAccessibleName("Library save status")
-        outer.addWidget(self.status)
+        # Save/recovery outcomes stay visible while the form scrolls.
+        frame.addWidget(self.status)
         row = QHBoxLayout()
         save_actions = QHBoxLayout()
         continue_actions = QHBoxLayout()
@@ -293,6 +307,7 @@ class SessionLibraryDialog(QDialog):
             self.select_id(current_id)
         self.workspace_flow = WorkspaceBackupFlow(self)
         self._sync_import_recovery()
+        QApplication.instance().focusChanged.connect(self._reveal_focus)
 
     @property
     def media_operation_pending(self):
@@ -328,8 +343,8 @@ class SessionLibraryDialog(QDialog):
         return False
 
     def _sync_action_rows(self):
-        margins = self.layout().contentsMargins()
-        width = self.width() - margins.left() - margins.right()
+        margins = self._content.layout().contentsMargins()
+        width = self.content_scroll.viewport().width() - margins.left() - margins.right()
         for row in self._action_rows:
             needed = sum(row.itemAt(index).minimumSize().width()
                          for index in range(row.count())) + row.spacing() * (row.count() - 1)
@@ -347,6 +362,22 @@ class SessionLibraryDialog(QDialog):
         if event.type() == QEvent.Type.LayoutRequest and getattr(self, "_action_rows", None):
             self._sync_action_rows()
         return result
+
+    def eventFilter(self, watched, event):
+        if watched in (self._content, self.content_scroll.viewport()) and event.type() in (QEvent.Type.Resize, QEvent.Type.LayoutRequest):
+            self._sync_action_rows()
+        return super().eventFilter(watched, event)
+
+    def _reveal_focus(self, _previous, current):
+        if current is None or current.window() is not self or not current.isVisible():
+            return
+        # Nested tab/form scroll areas must reveal the same focused control
+        # from the inside out. Scrolling does not move focus or edit the draft.
+        parent = current.parentWidget()
+        while parent is not None and parent is not self:
+            if isinstance(parent, QScrollArea):
+                parent.ensureWidgetVisible(current, 0, 0)
+            parent = parent.parentWidget()
 
     def _add_tab(self, widget, label):
         scroll = QScrollArea()

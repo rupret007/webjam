@@ -1317,6 +1317,23 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: python -m unittest tests.test_art_lan_host_portable -v
 
+      - name: Install native portability test runner
+        # The service tests used a separate Python 3.12 environment above.
+        run: python -m pip install --only-binary=:all: "pytest==8.3.5"
+
+      - name: Verify portable workspace media and restart on this desktop
+        timeout-minutes: 5
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: >-
+          python -X dev -m pytest -q
+          tests/test_workspace_media_backup.py
+          tests/test_workspace_media_library_ui.py
+          tests/test_workspace_media_activation.py
+          tests/test_workspace_media_relink_journey.py
+          tests/test_workspace_portability_journey.py
+          tests/test_workflow_continuity_packaged_smoke.py
+
       - name: Verify macOS PyInstaller pkg_resources compatibility
         if: startsWith(matrix.target, 'macos-')
         run: |

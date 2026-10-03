@@ -176,7 +176,7 @@ def test_art_verify_open_and_relink_keep_brief_bookmarks_and_expected_content(
     assert opened == [] and dialog._dirty
     panel._open()
     _wait(app, lambda: not dialog.media_operation_pending)
-    assert opened == [str(path)]
+    assert [Path(value) for value in opened] == [path]
     moved = tmp_path / "moved.png"
     path.rename(moved)
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *_a, **_k: (str(moved), ""))
@@ -188,7 +188,7 @@ def test_art_verify_open_and_relink_keep_brief_bookmarks_and_expected_content(
     assert saved.art["bookmarks"] == record.art["bookmarks"]
     assert panel.brief.toPlainText() == "Keep this unsaved brief"
     assert panel.bookmark_note.text() == "Unsubmitted lesson note"
-    assert opened == [str(path)]
+    assert [Path(value) for value in opened] == [path]
     assert original.read_bytes() == moved.read_bytes()
     bad = tmp_path / "different.png"
     bad.write_bytes(b"unrelated bytes")

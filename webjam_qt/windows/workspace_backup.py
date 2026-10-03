@@ -20,7 +20,7 @@ from core.workspace_media_backup import (
     workspace_backup_candidates,
 )
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = logging.getLogger("webjam.qt.workspace_backup")
 
 
 def _label(text, parent=None):

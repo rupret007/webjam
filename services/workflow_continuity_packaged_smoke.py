@@ -8,6 +8,7 @@ It proves no physical audio, network connection or user-attended feel.
 from __future__ import annotations
 
 from contextlib import ExitStack, contextmanager
+import logging
 import os
 from pathlib import Path
 import tempfile
@@ -47,11 +48,57 @@ def _application():
 @contextmanager
 def _isolated_runtime(root: Path):
     """Keep fixture state private and prevent external startup, not navigation."""
+    overrides = {key: value for key, value in os.environ.items()
+                 if key.startswith("WEBJAM_") or key == "MUSIC_AI_API_KEY"}
+    logger = logging.getLogger("webjam")
+    handlers = tuple(logger.handlers)
+    level, propagate = logger.level, logger.propagate
+    try:
+        for key in overrides:
+            del os.environ[key]
+        for handler in handlers:
+            logger.removeHandler(handler)
+        with _isolated_runtime_paths(root.resolve()) as runtime:
+            yield runtime
+    finally:
+        errors = []
+        try:
+            for handler in tuple(logger.handlers):
+                if handler not in handlers:
+                    logger.removeHandler(handler)
+                    try:
+                        handler.close()
+                    except Exception as error:
+                        errors.append(error)
+        finally:
+            for handler in handlers:
+                if handler not in logger.handlers:
+                    logger.addHandler(handler)
+            logger.setLevel(level)
+            logger.propagate = propagate
+            for key in tuple(os.environ):
+                if key.startswith("WEBJAM_") or key == "MUSIC_AI_API_KEY":
+                    del os.environ[key]
+            os.environ.update(overrides)
+        if errors:
+            raise errors[0]
+
+
+@contextmanager
+def _isolated_runtime_paths(root: Path):
+    from core import jamulus_profile, jamulus_rpc_client
+    import jamulus_controller
+    import webex_integration
+    from services import bridge_service
+    from storage.repository import WebJamRepository
+    from webjam_qt.controllers import application_controller
     from webjam_qt.controllers.application_controller import ApplicationController
     from webjam_qt.controllers import session_library, session_persistence
     from webjam_qt.controllers.recording_coordinator import RecordingCoordinator
 
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    readiness_store = jamulus_profile.StartupReadinessStore
+    attempt_store = jamulus_profile.StartupAttemptStore
     library = SessionLibrary(root / "Library")
     settings_path = root / "settings.json"
     if not settings_path.exists():
@@ -71,6 +118,15 @@ def _isolated_runtime(root: Path):
 
     with ExitStack() as patches:
         for owner, name, value in (
+            (application_controller, "WebJamRepository", lambda: WebJamRepository(str(root / "application.db"))),
+            (jamulus_controller, "load_settings", lambda: load_settings(str(settings_path))),
+            (webex_integration, "load_settings", lambda: load_settings(str(settings_path))),
+            (jamulus_rpc_client, "DEFAULT_SECRET_PATH", root / "client.secret"),
+            (bridge_service, "DEFAULT_SECRET_PATH", root / "client.secret"),
+            (bridge_service.BridgeService, "_runtime_home", lambda self: root),
+            (bridge_service, "default_component_store_root", lambda: root / "Components"),
+            (jamulus_profile, "StartupReadinessStore", lambda: readiness_store(home=root)),
+            (jamulus_profile, "StartupAttemptStore", lambda: attempt_store(home=root)),
             (session_persistence, "_persistence_home", lambda: root),
             (session_library, "default_session_library", lambda: library),
             (ApplicationController, "_start_routing_scan", lambda self: None),

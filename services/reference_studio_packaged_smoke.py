@@ -59,6 +59,7 @@ from core.studio_renderer import StudioRenderer
 from core.studio_sections import reorder_section
 from services.session_workspace_packaged_smoke import run_session_workspace_smoke
 from services.workflow_continuity_packaged_smoke import run_workflow_continuity_smoke
+from services.workspace_portability_smoke import run_workspace_portability_smoke
 
 SUCCESS_MARKER = "WebJam Reference Studio frozen-runtime smoke passed"
 _SAMPLE_RATE = 48_000
@@ -577,6 +578,7 @@ def run_frozen_reference_studio_smoke(*, result_path: Path) -> int:
         _exercise_packaged_reference_track_mp3(root)
         run_session_workspace_smoke()
         run_workflow_continuity_smoke()
+        run_workspace_portability_smoke()
     _write_success_marker(result_path)
     return 0
 

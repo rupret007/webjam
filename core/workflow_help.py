@@ -40,6 +40,8 @@ def workflow_topics(profile: str, *, offline_studio: bool = False) -> tuple[Help
             "Keep them together. <b>Import backup…</b> accepts metadata JSON, a package or its receipt; "
             "the receipt checks the intended package checksum. Review the preview, then confirm "
             "<b>Import as new workspace</b>. Your current draft and selection stay here.</p>"
+            "<p>With enlarged text or a compact window, scroll the Library to reach its actions. "
+            "Tab and Shift+Tab reveal focused controls; save/recovery status stays visible.</p>"
             "<p>In <b>Takes</b>, select <b>Verify selected take</b> to check without playback, "
             "<b>Open selected take in Studio</b> to check and open Studio, or <b>Locate moved take…</b> "
             "to find the same original content. In <b>Art project</b>, use <b>Verify reference</b>, "

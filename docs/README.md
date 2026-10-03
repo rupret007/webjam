@@ -69,9 +69,11 @@ See [the saved-work walkthrough](../USER_GUIDE.md#save-a-session-and-continue-la
   troubleshooting text after secure peer proof, separate from Jamulus chat and
   saved notes; source evidence and unperformed physical gates.
 - [Workspace backup draft plan](WORKSPACE_BACKUP_PLAN.md) and
-  [under-4,000-character goal prompt](WORKSPACE_BACKUP_GOAL.md) — the next
-  sequential round after workflow continuity; metadata Library actions exist,
-  with import-safety work, selected media and verified restore in progress.
+  [under-4,000-character goal prompt](WORKSPACE_BACKUP_GOAL.md) — the active
+  portability validation/delivery round after workflow continuity. Metadata and
+  selected-media backup, explicit verification/relink and local restart tests exist;
+  see the draft PR for exact-build evidence and the
+  [portability pilot](WORKSPACE_PORTABILITY_PILOT.md) for owner observations.
 
 ## Evidence, releases, and operations
 

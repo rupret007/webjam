@@ -454,7 +454,12 @@ def test_recovery_action_and_status_fit_compact_enlarged_text_layout(tmp_path, m
                        dialog.export_button, dialog.backup_button, dialog.import_backup_button,
                        dialog.continue_button,
                        next(button for button in dialog.findChildren(QPushButton) if button.text() == "Close")):
+            dialog.content_scroll.ensureWidgetVisible(button, 0, 0)
+            app.processEvents()
             assert button.width() >= button.minimumSizeHint().width()
             assert dialog.rect().contains(QRect(button.mapTo(dialog, QPoint()), button.size())), button.text()
+            viewport = dialog.content_scroll.viewport()
+            assert viewport.rect().contains(QRect(button.mapTo(viewport, QPoint()), button.size())), button.text()
+            assert dialog.content_scroll.horizontalScrollBar().maximum() == 0
         assert dialog.status.wordWrap()
         assert dialog.rect().contains(QRect(dialog.status.mapTo(dialog, QPoint()), dialog.status.size()))

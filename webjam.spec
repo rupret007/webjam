@@ -289,6 +289,7 @@ a = Analysis(
         "services.reference_studio_packaged_smoke",
         "services.session_workspace_packaged_smoke",
         "services.workflow_continuity_packaged_smoke",
+        "services.workspace_portability_smoke",
         "services.jamulus_component_packaged_smoke",
         # The conductor is imported at normal startup; the private Test Night
         # ledger and dialog are intentionally imported only when an operator

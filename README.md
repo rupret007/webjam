@@ -59,8 +59,12 @@ while retaining your current draft. Select **Verify selected take** or **Verify 
 to check stored media, then deliberately open it or locate its original content.
 Restored Studio takes retain their declared alternate sources through selection
 and A/B listening. These controls are part of the
-[active portability milestone](docs/WORKSPACE_BACKUP_PLAN.md); complete recorder/restart
-restoration testing and final build verification remain in progress. They are not included in
+[active portability milestone](docs/WORKSPACE_BACKUP_PLAN.md). Local tests exercise two
+controlled recorder completions, Art, backup/import and restart in separate processes;
+the frozen-build hook adds a synthetic portability journey. See [draft #172](https://github.com/rupret007/webjam/pull/172)
+for exact-commit hosted and native package evidence. Use the
+[ten-minute portability pilot](docs/WORKSPACE_PORTABILITY_PILOT.md) with an identified test build.
+These changes are not included in
 the published v0.29.0 packages. See
 [the backup walkthrough](USER_GUIDE.md#back-up-and-import-a-workspace-unreleased).
 

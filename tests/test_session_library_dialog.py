@@ -386,13 +386,17 @@ def test_compact_library_keeps_actions_visible_and_art_controls_scrollable(tmp_p
     assert dialog.width() <= 480
     for button in (dialog.save_button, dialog.export_button, dialog.continue_button, dialog.copy_button,
                    dialog.backup_button, dialog.import_backup_button):
+        dialog.content_scroll.ensureWidgetVisible(button, 0, 0)
+        app.processEvents()
         assert button.isVisible()
+        assert dialog.rect().contains(button.mapTo(dialog, button.rect().topLeft()))
         assert dialog.rect().contains(button.mapTo(dialog, button.rect().bottomRight()))
     scroll = dialog.tabs.widget(2)
     assert isinstance(scroll, QScrollArea)
     assert scroll.verticalScrollBar().maximum() > 0
     assert scroll.horizontalScrollBar().maximum() == 0
     scroll.ensureWidgetVisible(dialog.art.bookmark_note)
+    dialog.content_scroll.ensureWidgetVisible(dialog.art.bookmark_note, 0, 0)
     app.processEvents()
     visible_point = dialog.art.bookmark_note.mapTo(scroll.viewport(), dialog.art.bookmark_note.rect().center())
     assert scroll.viewport().rect().contains(visible_point)
@@ -418,10 +422,16 @@ def test_library_actions_and_art_buttons_fit_after_resizing_and_hidden_tab_activ
         for _ in range(6):
             app.processEvents()
         assert (dialog.width(), dialog.height()) == (width, height)
+        bounds = [QRect(button.mapTo(dialog._content, QPoint()), button.size()) for button in actions]
+        assert all(not left.intersects(right) for index, left in enumerate(bounds) for right in bounds[index + 1:])
         for button in actions:
+            dialog.content_scroll.ensureWidgetVisible(button, 0, 0)
+            app.processEvents()
             assert button.width() >= button.minimumSizeHint().width(), button.text()
-            bounds = QRect(button.mapTo(dialog, QPoint()), button.size())
-            assert dialog.rect().contains(bounds), button.text()
+            viewport = dialog.content_scroll.viewport()
+            bounds = QRect(button.mapTo(viewport, QPoint()), button.size())
+            assert viewport.rect().contains(bounds), button.text()
+            assert dialog.content_scroll.horizontalScrollBar().maximum() == 0
         dialog.tabs.setCurrentIndex(2)
         for _ in range(6):
             app.processEvents()
@@ -430,10 +440,14 @@ def test_library_actions_and_art_buttons_fit_after_resizing_and_hidden_tab_activ
         assert dialog.art.width() <= scroll.viewport().width()
         for button in dialog.art.findChildren(QPushButton):
             scroll.ensureWidgetVisible(button, 0, 0)
+            dialog.content_scroll.ensureWidgetVisible(button, 0, 0)
             app.processEvents()
             assert button.width() >= button.minimumSizeHint().width(), button.text()
             bounds = QRect(button.mapTo(scroll.viewport(), QPoint()), button.size())
             assert scroll.viewport().rect().contains(bounds), button.text()
+            viewport = dialog.content_scroll.viewport()
+            bounds = QRect(button.mapTo(viewport, QPoint()), button.size())
+            assert viewport.rect().contains(bounds), button.text()
         assert dialog.notes.toPlainText() == record.notes
         assert not dialog._dirty
         assert not dialog.isModal()
