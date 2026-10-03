@@ -122,6 +122,22 @@ def test_hidden_player_never_starts_background_playback():
     assert not any(action == "play" for action, _ in bridge.commands)
 
 
+@pytest.mark.parametrize("code, expected", [
+    (101, "does not allow"), (150, "does not allow"),
+    (153, "could not identify"), (100, "unavailable or private"), (5, "could not play"),
+])
+def test_provider_failure_explains_recovery_and_clears_player(code, expected):
+    video, bridge = player()
+    video.load(YouTubeLesson("M7lc1UVf-VE"))
+    bridge.value["error"] = code
+    with pytest.raises(ReferenceVideoPlayerError, match=expected) as failure:
+        video.position_s()
+    if code != 100:
+        assert "Watch a shared lesson" in str(failure.value)
+    assert bridge.value["state"] == -1
+    assert bridge.commands == []
+
+
 def test_close_during_metadata_wait_cannot_commit_ready():
     video, bridge = player()
     video._pump = video.close

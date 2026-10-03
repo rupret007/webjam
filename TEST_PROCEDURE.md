@@ -21,6 +21,25 @@ both faces and voices, manual pause/resume, saved reference recovery and the
 separate Jamulus ensemble path. Provider playback, physical audio and feel
 remain **NOT RUN** until observed; source click-path tests are separate proof.
 
+For the follow-along clarity round, also check:
+
+- Enter Art Paint along and find **Watch a shared lesson** before the optional
+  silent reference. Follow the host/guest steps and expand **Sound and sharing tips**.
+- Choose a lesson, visit Notes, edit the meeting link, and return through
+  **Conversation**. The lesson remains; old request controls cannot act.
+  In a supported LAN Art room, **Restart pause requests** creates fresh controls.
+- Save an Art reference/bookmark or Music song lesson, restart, continue the
+  workspace and choose **Use saved lesson**. Check the starting position,
+  retained notes and explicit browser action. Loading alone opens nothing.
+- At 720×560 and 1040×720 with 22px text, Tab through collapsed and expanded
+  setup. Every enabled action must scroll into view; End/Leave stays reachable.
+- Exercise an embedding refusal and an unavailable video separately. The
+  browser fallback keeps the chosen link but does not promise the video will play.
+
+The [assessment](docs/FOLLOW_ALONG_CLARITY_PLAN.md) records the scope. The
+identified build handoff records final software evidence separately from the
+physical pilot; draft status does not authorize publication or merging.
+
 This procedure distinguishes automated source/package evidence from physical
 participant evidence. A passing source suite does not certify two-Mac audibility,
 hardware changes, sleep/wake, interruption recovery, or external-editor import.

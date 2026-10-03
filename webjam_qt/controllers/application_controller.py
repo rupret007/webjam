@@ -2418,6 +2418,12 @@ class ApplicationController(QObject):
             # A released video panel may still have a queued Back intent. It
             # must not select a workspace for a later room or another profile.
             return
+        # Explicit Room navigation wins even when the first authenticated
+        # video snapshot is still waiting for its timer callback. Otherwise
+        # that delayed offer can immediately reopen Paint Along over Room.
+        role, session_id, _session_key = self._reference_video_identity()
+        if role and session_id:
+            self._announced_creator_start = (role, session_id)
         # Loss and unfinished cleanup still need an honest room destination.
         # This is navigation only; no transport, file or meeting action runs.
         self.window.side_rail.set_active_key("stage")
@@ -11550,7 +11556,7 @@ class ApplicationController(QObject):
     def _is_jamulus_running(self) -> bool:
         return self.bridge.jamulus_state in ("Running", "Already running")
 
-    def _show_webex_conversation(self) -> None:
+    def _show_webex_conversation(self, *, resume_lesson: bool = True) -> None:
         """Reveal Conversation controls without opening a meeting link."""
 
         if self._shutdown_cleanup_blocks_action():
@@ -11558,6 +11564,9 @@ class ApplicationController(QObject):
         self.window.side_rail.set_active_key("stage")
         self._on_rail_view_changed("stage")
         self.window.webex_embed.setVisible(True)
+        follow_along = getattr(self, "follow_along", None)
+        if resume_lesson and follow_along is not None:
+            follow_along.resume()
         self.window.webex_embed.focus_primary_action()
         self._record_webex_event("conversation-panel", "shown")
 
@@ -13329,7 +13338,7 @@ class ApplicationController(QObject):
             self.window.side_rail.set_active_key(prev)
             self._open_settings_wizard()
         elif key in _CONTENT_KEYS:
-            self._clear_shared_lesson_context()
+            self._clear_shared_lesson_context(preserve_navigation=True)
             hide_paint_along = getattr(self.window, "hide_paint_along", None)
             if callable(hide_paint_along):
                 hide_paint_along(
@@ -14003,11 +14012,14 @@ class ApplicationController(QObject):
         if callable(project):
             project()
 
-    def _clear_shared_lesson_context(self) -> None:
+    def _clear_shared_lesson_context(self, *, preserve_navigation: bool = False) -> None:
         ApplicationController._retire_shared_lesson_requests(self)
         follow_along = getattr(self, "follow_along", None)
         if follow_along is not None:
-            follow_along.retire()
+            if preserve_navigation:
+                follow_along.suspend()
+            else:
+                follow_along.retire()
         panel = getattr(getattr(self, "window", None), "webex_embed", None)
         if getattr(panel, "_shared_lesson_hosting", None) is not None:
             panel.set_shared_lesson_context(hosting=None)
@@ -14065,7 +14077,7 @@ class ApplicationController(QObject):
         ):
             return
         lesson_url = dialog.meeting_lesson_url()
-        self._show_webex_conversation()
+        self._show_webex_conversation(resume_lesson=False)
         self.window.webex_embed.set_shared_lesson_context(hosting=coordinator.hosting)
         self.follow_along.activate(hosting=coordinator.hosting, lesson_url=lesson_url, resume_browser_choice=True)
         room.activate_lesson_requests(hosting=coordinator.hosting)

@@ -112,33 +112,38 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    **Join**. **Make together** keeps people working locally and lets the host
    open one shared canvas from inside the room. Music uses **Host** / **Join**; Podcast & Voice
    and Review & Rehearsal retain their profile-specific Host/Join labels.
-3. For Music, configure interface, channels, headphones, and buffer in Jamulus. Confirm
+3. For Music ensemble playing, configure interface, channels, headphones, and buffer in Jamulus. Confirm
    the authenticated audio connection, then use the profile-specific
    **Band Check**, **Sound Check**, or **Session Check** if needed. In Art,
    use your own tools and work space; no instrument or audio-engine setup is required.
 4. Open **Conversation** only when conversation or video is wanted; use
    **Join / Open Meeting** for an explicit meeting-link handoff.
-5. In an Art **Paint along** room, the video becomes the large WebJam
-   workspace once the room exists. The host chooses **Choose process video…**;
-   each guest chooses **Open my copy…** for the same local file. **Back to
-   room** returns to the conductor without ending the room or the video.
-   For embedded silent YouTube playback, the host chooses **YouTube link…**;
-   guests explicitly choose **Open lesson**. For a lesson with sound through
-   a meeting, **Watch a shared lesson** reaches Conversation. The host uses
+5. In an Art **Paint along** room, **Watch a shared lesson** is the first
+   action for a lesson with sound. It reaches Conversation. The host uses
    **Choose YouTube…**, then **Open in browser** and the meeting's Share
    control with computer sound. An already selected lesson carries its link
    here, including when embedding fails. **Remember lesson** saves that link
-   in the Art project for an explicit return later.
+   in the Art project. In Session library, **Use saved lesson** returns to
+   setup, carrying a selected bookmark's whole-second position. **Conversation**
+   returns to setup after Notes; **Sound and sharing tips** expands extra help.
+   The optional silent reference remains below: **Choose process video…** and
+   **Open my copy…** use each person's local file; **YouTube link…** and
+   **Open lesson** use embedded silent YouTube. **Back to room** leaves the room open.
    In a supported LAN room, guests can **Ask for a pause**
    or choose **Ready to continue**; the host acknowledges the request and
    operates the browser manually. Acknowledgement does not mean the video paused.
    Requests expire after 30 seconds; spoken requests remain available.
+   After changing the meeting link, **Restart pause requests** creates fresh
+   controls in supported LAN Art rooms. Retired requests stay retired.
 6. In Music, **Play along** offers **Set up video practice** (one shared
    YouTube video through the meeting; listen and take turns) or **Open Shared
    Track** (live ensemble through Jamulus, meeting audio disconnected). Guests
    use **Open Jamulus mixer** for the ensemble path. Webex video can lag the
    musical audio. WebJam mix mute changes your listening, not your outgoing
-   instrument. In a profile that supports Shared Track, choose **Add Shared Track** or
+   instrument. **Remember lesson** saves a practice link with the current
+   rehearsal song; name a song if the plan is empty. **Use saved lesson** in
+   Rehearsal plan returns to setup without opening media.
+   In a profile that supports Shared Track, choose **Add Shared Track** or
    drop supported reference audio on the live surface; loading does not start
    playback, and Play remains fail-closed until the isolated Jamulus route is
    proven.

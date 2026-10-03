@@ -11,6 +11,7 @@ class FollowAlongController:
     def __init__(self, controller):
         self._c = controller
         self._context = None
+        self._suspended = None
         self._choice = None
         self._sources = {}
         self._art_browser_choice = None
@@ -18,6 +19,7 @@ class FollowAlongController:
         self.panel.choose_requested.connect(self.choose_lesson)
         self.panel.open_requested.connect(self.open_lesson)
         self.panel.save_requested.connect(self.save_lesson)
+        self.panel.restart_requested.connect(self.restart_requests)
 
     def _workspace(self):
         library = getattr(self._c, "session_library", None)
@@ -32,7 +34,8 @@ class FollowAlongController:
                   getattr(getattr(self._c, "_reference_video_dialog", None), "_meeting_lesson_generation", 0))
         return (
             self._c.creator_profile.key, self._workspace(), room, getattr(room, "generation", None),
-            self._c._reference_video_identity(), getattr(self._c, "_session_meeting_generation", 0),
+            self._c._reference_video_identity() if self._c.creator_profile.key == "art" else None,
+            getattr(self._c, "_session_meeting_generation", 0),
             self._c._effective_meeting_url(), source,
             self._c._reference_track_is_host() if self._c.creator_profile.key == "music" else None,
         )
@@ -64,21 +67,70 @@ class FollowAlongController:
             url = parse_youtube_lesson_url(url).playback_url
         self.panel.set_context(hosting=hosting, profile=key[0], lesson_url=url)
         self._context = (self._identity(), self.panel.generation)
+        self._suspended = None
         if hosting and url:
             self._sources[key] = url
         self._c.window.webex_embed._sync_art_layout()
 
     def retire(self):
         self._context = None
+        self._suspended = None
         if self._choice is not None:
             choice = self._choice
             self._choice = None
             choice.close()
             choice.deleteLater()
 
+    def suspend(self):
+        """Retain a local navigation choice without retaining action authority."""
+        current = self._identity()
+        saved = self._suspended
+        if self._context == (current, self.panel.generation):
+            saved = (current, self.panel.hosting, self.panel.lesson_url)
+        elif saved is not None and saved[0] != current:
+            saved = None
+        self.retire()
+        self._suspended = saved
+
+    def resume(self):
+        saved = self._suspended
+        self._suspended = None
+        if saved is None or saved[0] != self._identity():
+            return False
+        _identity, hosting, url = saved
+        self._c.window.webex_embed.set_shared_lesson_context(hosting=hosting)
+        self.activate(hosting=hosting, lesson_url=url)
+        if self._c.creator_profile.key == "art":
+            self._c._room_participant.activate_lesson_requests(hosting=hosting)
+        return True
+
+    def workspace_created(self):
+        """The Library materialized this same unsaved workspace, not a switch."""
+        current = self._identity()
+        previous = current[:1] + ("",) + current[2:]
+        active = self._context == (previous, self.panel.generation)
+        suspended = self._suspended is not None and self._suspended[0] == previous
+        if active or suspended:
+            url = self._sources.pop((current[0], ""), None)
+            if url:
+                self._sources[(current[0], current[1])] = url
+        if (self._art_browser_choice is not None
+                and self._art_browser_choice[0] == self._browser_owner(previous)):
+            self._art_browser_choice = (self._browser_owner(current), self._art_browser_choice[1])
+        if active:
+            self.panel.generation += 1
+            self.activate(hosting=self.panel.hosting, lesson_url=self.panel.lesson_url)
+        elif suspended:
+            self._suspended = (current, *self._suspended[1:])
+
     def meeting_changed(self):
         """Keep a chosen lesson after Add Link, rejecting all earlier clicks."""
         if self._context is None:
+            if self._suspended is not None:
+                previous, hosting, url = self._suspended
+                current = self._identity()
+                self._suspended = ((current, hosting, url)
+                    if self._browser_owner(previous) == self._browser_owner(current) else None)
             return
         previous, generation = self._context
         current = self._identity()
@@ -130,19 +182,55 @@ class FollowAlongController:
                 if opened else "The browser could not open the lesson. Try Open lesson in browser again."
             )
 
-    def save_lesson(self, generation):
-        if not self._allowed(generation) or self._c.creator_profile.key != "art" or not self.panel.lesson_url:
+    def restart_requests(self, generation):
+        if (not self._allowed(generation) or self._c.creator_profile.key != "art"
+                or not self.panel.restart_button.isVisibleTo(self._c.window)):
             return
-        before = self._identity()
-        url, hosting = self.panel.lesson_url, self.panel.hosting
-        self._c.session_library.remember_art_lesson(url)
-        after = self._identity()
-        if (self._context is not None and not before[1] and after[1]
-                and before[:1] + before[2:] == after[:1] + after[2:]):
-            if self._art_browser_choice == (self._browser_owner(before), url):
-                self._art_browser_choice = (self._browser_owner(after), url)
-            self.panel.generation += 1
-            self.activate(hosting=hosting, lesson_url=url)
+        self.panel.generation += 1
+        self.activate(hosting=self.panel.hosting, lesson_url=self.panel.lesson_url)
+        self._c._room_participant.activate_lesson_requests(hosting=self.panel.hosting)
+
+    def save_lesson(self, generation):
+        if not self._allowed(generation) or not self.panel.lesson_url:
+            return
+        if self._c.creator_profile.key == "art":
+            self._c.session_library.remember_art_lesson(self.panel.lesson_url)
+        elif self._c.creator_profile.key == "music":
+            self._c.session_library.remember_music_lesson(self.panel.lesson_url)
+
+    def use_saved_lesson(self, url):
+        """Populate a fresh explicit handoff; never open media or a meeting."""
+        url = parse_youtube_lesson_url(url).playback_url
+        if (self._c._shutdown_cleanup_blocks_action()
+                or QApplication.activeModalWidget() or QApplication.activePopupWidget()):
+            return False
+        profile = self._c.creator_profile.key
+        if profile == "art":
+            self._c._open_reference_video()
+            dialog = self._c._reference_video_dialog
+            coordinator = self._c._reference_video
+            if dialog is None or coordinator is None:
+                return False
+            self._c._watch_shared_lesson(coordinator, dialog)
+            if not self._allowed(self.panel.generation):
+                return False
+            hosting = coordinator.hosting
+        elif profile == "music":
+            hosting = self._c._reference_track_is_host()
+            self._c._show_webex_conversation(resume_lesson=False)
+            self._c.window.webex_embed.set_shared_lesson_context(hosting=hosting)
+        else:
+            return False
+        self._c._retire_shared_lesson_requests()
+        self.panel.generation += 1
+        self.activate(hosting=hosting, lesson_url=url)
+        if profile == "art":
+            if hosting:
+                self._art_browser_choice = (self._browser_owner(self._identity()), url)
+            self._c._room_participant.activate_lesson_requests(hosting=hosting)
+        self.panel.set_status("Saved lesson selected. Nothing has opened." if hosting else
+                              "Saved reference selected. Watch the host's shared lesson in the meeting.")
+        return True
 
     def show_music_choices(self):
         if self._c.creator_profile.key != "music" or self._c._shutdown_cleanup_blocks_action():
@@ -180,7 +268,7 @@ class FollowAlongController:
                 else:
                     self._c._bring_jamulus_forward()
             elif key == "lesson":
-                self._c._show_webex_conversation()
+                self._c._show_webex_conversation(resume_lesson=False)
                 self._c.window.webex_embed.set_shared_lesson_context(hosting=hosting)
                 self.activate(hosting=hosting)
 

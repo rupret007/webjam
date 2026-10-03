@@ -6,6 +6,22 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+### Follow-along clarity and saved lessons — draft test-build scope
+
+- Paint Along puts the lesson-with-sound route first. Host/guest setup uses
+  three steps and expandable sound tips; compact and enlarged-text views
+  scroll without clipping controls or hiding End/Leave.
+- Conversation returns to the current lesson after Notes. First workspace
+  saves and meeting-only edits preserve the choice while retiring old actions.
+- Music songs can remember a YouTube lesson; Art references and matching
+  bookmarks can explicitly return to lesson setup. Existing draft/conflict
+  handling owns saves. Templates and backups retain optional song links;
+  loading saved work never opens a browser or meeting.
+- Supported LAN Art rooms can explicitly restart retired pause requests after
+  a meeting edit. Embedding refusal and unavailable-video messages explain
+  the browser fallback without starting it. Physical sound and feel remain
+  **NOT RUN** until observed.
+
 ### Paint Along and Play Along — draft test-build scope
 
 - Paint Along keeps **Watch a shared lesson** reachable with an embedded

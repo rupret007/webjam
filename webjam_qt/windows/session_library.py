@@ -156,6 +156,7 @@ class SessionLibraryDialog(QDialog):
     bookmark_requested = Signal(str)
     bookmark_open_requested = Signal(dict)
     song_selected = Signal(dict)
+    lesson_requested = Signal(object)
 
     def __init__(self, library: SessionLibrary, parent=None, *, profile="music", current_id="", pending_records=None,
                  save_record=None, prepare_take_open=None):
@@ -323,6 +324,9 @@ class SessionLibraryDialog(QDialog):
         self.rehearsal.changed.connect(self._changed)
         self.art.changed.connect(self._changed)
         self.rehearsal.song_selected.connect(self.song_selected)
+        self._lesson_binding = None
+        self.rehearsal.lesson_requested.connect(lambda item, url: self._request_lesson("music", item, url))
+        self.art.lesson_requested.connect(lambda item, url: self._request_lesson("art", item, url))
         self.rehearsal.bookmark_requested.connect(self.bookmark_requested)
         self.rehearsal.bookmark_open_requested.connect(self._open_bookmark)
         self.search.textChanged.connect(self.refresh)
@@ -334,6 +338,17 @@ class SessionLibraryDialog(QDialog):
         self.workspace_flow = WorkspaceBackupFlow(self)
         self._sync_import_recovery()
         QApplication.instance().focusChanged.connect(self._reveal_focus)
+
+    def _request_lesson(self, profile, item, url):
+        if self._lesson_binding is None:
+            self.status.setText(
+                "Choose Continue to open this workspace first. Then open Session library "
+                "from the room and use its saved lesson."
+            )
+            self.continue_button.setFocus(Qt.FocusReason.OtherFocusReason)
+            return
+        if self.record is not None:
+            self.lesson_requested.emit((self._lesson_binding, self.record.id, profile, item, url))
 
     @property
     def media_operation_pending(self):

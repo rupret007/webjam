@@ -105,7 +105,7 @@ def test_shared_lesson_uses_existing_conversation_without_a_local_file(
 
 @pytest.mark.parametrize("role", ["host", "lan", "native"])
 @pytest.mark.parametrize("destination", ["notes", "room", "conversation", "paint_along"])
-def test_ordinary_navigation_clears_the_previous_shared_lesson_instructions(
+def test_ordinary_navigation_preserves_lesson_only_on_conversation_return(
     room, qapp, external_handoffs, role, destination,
 ):
     pair = room(role=role, profile="art", configured=True)
@@ -127,9 +127,13 @@ def test_ordinary_navigation_clears_the_previous_shared_lesson_instructions(
         app._open_reference_video()
     qapp.processEvents()
 
-    assert panel._shared_lesson_hosting is None
-    assert "YouTube" not in panel._mode_label.text()
-    assert "own tools" in panel._mode_label.text()
+    if destination == "conversation":
+        assert panel._shared_lesson_hosting is (role == "host")
+        assert "YouTube" in panel._mode_label.text()
+    else:
+        assert panel._shared_lesson_hosting is None
+        assert "YouTube" not in panel._mode_label.text()
+        assert "own tools" in panel._mode_label.text()
     assert app._reference_video_identity() == pair.identity
     assert app._room_participant.generation == pair.generation
     _assert_no_handoff(pair, external_handoffs)

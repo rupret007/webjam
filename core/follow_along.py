@@ -25,6 +25,22 @@ PLAY_ALONG_CHOICES = (
 )
 
 
+def lesson_setup_steps(*, profile: str, hosting: bool, service: str = "") -> str:
+    meeting = service or "your meeting"
+    if hosting:
+        steps = (f"1. Choose YouTube and open it in your browser.\n"
+                 f"2. Join {meeting}; share that lesson with computer sound.\n"
+                 "3. Keep faces beside the lesson. You control pause and resume.")
+    else:
+        steps = (f"1. Join {meeting} to see the host's shared YouTube lesson and faces.\n"
+                 "2. Listen to that one copy; keep your own player closed.\n"
+                 "3. Ask the host to pause or resume.")
+    if profile == "music":
+        steps += ("\nTake turns; meeting playback is delayed. If connected to Jamulus, "
+                  "stop your instrument at its send control. Listening mute does not stop your send.")
+    return steps
+
+
 def lesson_sound_guidance(*, profile: str, hosting: bool, service: str = "") -> str:
     meeting = service or "your meeting"
     if hosting:
@@ -49,7 +65,7 @@ def lesson_sound_guidance(*, profile: str, hosting: bool, service: str = "") -> 
         )
     if profile == "music":
         steps += (
-            " Take turns for video practice. Jamulus remains live: stop your instrument "
+            " Take turns for video practice. If connected to Jamulus, stop your instrument "
             "at its send control. WebJam mix mute changes only what you hear."
         )
     return steps
