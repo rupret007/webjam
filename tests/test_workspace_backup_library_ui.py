@@ -6,6 +6,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from tests.support.layout_fonts import box_font as box_font
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QLabel, QPushButton
@@ -70,7 +71,7 @@ def test_backup_exports_merged_snapshot_even_when_editor_is_clean(tmp_path, make
     assert not dialog._dirty
     destination = tmp_path / "backup.json"
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_a, **_k: (str(destination), ""))
-    _click(dialog, "Back up workspace…")
+    _click(dialog, "Back up…")
     preview = preview_workspace_backup(destination)
     assert preview.record.recaps[-1]["summary"] == "Late recap added by the coordinator"
     assert "backed up" in dialog.status.text()
@@ -89,7 +90,7 @@ def test_backup_blocked_by_conflict_does_not_export_stale_snapshot(tmp_path, mak
     asked = []
     monkeypatch.setattr(QFileDialog, "getSaveFileName",
                         lambda *_a, **_k: asked.append(True) or (str(destination), ""))
-    _click(dialog, "Back up workspace…")
+    _click(dialog, "Back up…")
     assert asked == []
     assert not destination.exists()
     assert "not saved" in dialog.status.text()
@@ -101,7 +102,7 @@ def test_backup_reports_export_failure_without_crashing(tmp_path, make_dialog, m
     existing = tmp_path / "already-there.json"
     existing.write_text("not a backup")
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_a, **_k: (str(existing), ""))
-    _click(dialog, "Back up workspace…")
+    _click(dialog, "Back up…")
     assert existing.read_text() == "not a backup"
     assert "not backed up" in dialog.status.text()
 
@@ -365,7 +366,7 @@ def test_import_uncertainty_survives_dialog_reopening_and_explicit_check_retry(
         dialog.import_backup_button.click()
     pending = library.pending_import()
     assert pending is not None
-    assert "Check previous import" in dialog.status.text()
+    assert "Check import" in dialog.status.text()
     assert dialog.record.id == current.id
     dialog.close()
     # A new store is stronger than the dialog lifetime alone: only the durable
@@ -375,7 +376,7 @@ def test_import_uncertainty_survives_dialog_reopening_and_explicit_check_retry(
     assert reopened.import_backup_button.isEnabled()
     reopened.import_backup_button.click()
     if not published:
-        assert reopened.import_backup_button.text() == "Retry same import"
+        assert reopened.import_backup_button.text() == "Retry import"
         assert len(library.list()) == 1
         reopened.import_backup_button.click()
     assert len(library.list()) == 2
@@ -435,8 +436,8 @@ def test_incomplete_imported_take_or_moment_cannot_open_substitute(tmp_path, mak
     assert "no complete take identity" in dialog.status.text()
 
 
-@pytest.mark.parametrize("font_size", [13, 22])
-def test_recovery_action_and_status_fit_compact_enlarged_text_layout(tmp_path, make_dialog, app, record, font_size):
+@pytest.mark.parametrize("font_size,stretch,full_em", [(13, 100, False), (22, 100, False), (22, 125, True)])
+def test_recovery_action_and_status_fit_compact_enlarged_text_layout(tmp_path, make_dialog, app, record, request, font_size, stretch, full_em):
     from PySide6.QtCore import QPoint, QRect
     from core.workspace_backup import prepare_workspace_backup_import
     from webjam_qt.theme import load_stylesheet
@@ -445,16 +446,23 @@ def test_recovery_action_and_status_fit_compact_enlarged_text_layout(tmp_path, m
     prepared = prepare_workspace_backup_import(export_workspace_backup(record, tmp_path / "backup.json"))
     library.prepare_import(prepared)
     dialog = make_dialog(library, current_id=current.id)
-    dialog.setStyleSheet(load_stylesheet() + f"QWidget {{ font-size: {font_size}px; }}")
+    family_name = request.getfixturevalue("box_font") if full_em else ""
+    family = f'font-family: "{family_name}";' if full_em else ""
+    dialog.setStyleSheet(load_stylesheet() + f"QWidget {{ font-size: {font_size}px; {family} }}")
     dialog.show()
     dialog.resize(480, 500)
-    for step, label in enumerate(("Check previous import", "Retry same import", "Import backup…")):
+    for step, (label, accessible) in enumerate((("Check import", "Check previous import"),
+                                               ("Retry import", "Retry same import"),
+                                               ("Import backup…", "Import backup…"))):
         if step:
             dialog.import_backup_button.click()
         for _ in range(6):
             app.processEvents()
         assert dialog.size().width() == 480 and dialog.size().height() == 500
         assert dialog.import_backup_button.text() == label
+        assert dialog.import_backup_button.accessibleName() == accessible
+        if full_em:
+            assert dialog.fontMetrics().horizontalAdvance("MW") == 56
         for button in (dialog.new_button, dialog.copy_button, dialog.save_button,
                        dialog.export_button, dialog.backup_button, dialog.import_backup_button,
                        dialog.continue_button,

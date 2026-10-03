@@ -11,7 +11,7 @@ All notable improvements and features for the WebJam creator collaboration platf
 Source remains v0.29.0. These changes are after the published v0.29.0 baseline;
 they do not request a new release/tag or claim new published package evidence.
 
-- Draft Session library builds add **Back up workspace…** and **Import backup…**
+- Draft Session library builds add **Back up…** and **Import backup…**
   with metadata-only defaults or explicitly selected completed takes/local Art,
   cancellable background work and durable checksum receipts for recovery.
   Imported media remains unchecked until an explicit action.
@@ -41,6 +41,9 @@ they do not request a new release/tag or claim new published package evidence.
   and media publication. Native tests exercise the actual import destination
   guard. Compact checks also reproduce Windows missing-font widths; the profile
   field fits the window while its popup retains full names.
+  Wider-font cases now reproduce rounded Windows glyph widths independently
+  of the platform's font engine. Library, Takes and import-recovery captions
+  fit those widths while keeping their full action names for accessibility.
 - The initial launch-screen Library can open an imported take or timed moment
   directly into its saved workspace. Changed media/context, cancellation and late
   drafts prevent stale activation; verified source locations transfer to the new Studio owner.

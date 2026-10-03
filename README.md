@@ -47,11 +47,11 @@ showing someone the door? See the [two-minute demo script](DEMO.md).
 v0.29.0 adds **File → Session library…** before a room and
 **More → Session library…** inside it. Save local notes, reuse a Music
 **Rehearsal plan**, or keep an **Art project** with references and next steps.
-**Continue this work** restores its context without starting audio or a room.
+**Continue** restores its context without starting audio or a room.
 Music moments are plain notes unless a recording position is confirmed.
 See [the saved-work walkthrough](USER_GUIDE.md#save-a-session-and-continue-later).
 
-Draft workspace-backup builds provide **Back up workspace…** and
+Draft workspace-backup builds provide **Back up…** and
 **Import backup…** in Session library. Choose metadata only, or select completed
 takes and local Art files, inspect the preview, and create a new media package
 with its checksum receipt. Background copying and import support cancellation

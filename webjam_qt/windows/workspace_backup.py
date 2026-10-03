@@ -76,7 +76,7 @@ class WorkspaceBackupChoicesDialog(QDialog):
         options.setContentsMargins(0, 0, 0, 0)
         self.candidates = []
         for candidate in workspace_backup_candidates(record):
-            check = QCheckBox("Include take" if candidate.kind == "take" else "Include Art file")
+            check = QCheckBox("Include take" if candidate.kind == "take" else "Art file")
             check.setToolTip(candidate.locator)
             check.setEnabled(candidate.selectable)
             check.setAccessibleName(f"Include {candidate.kind}: {candidate.title}")
@@ -377,7 +377,7 @@ class WorkspaceBackupFlow(QObject):
                 self.owner.status.setText("Backup publication needs checking. Keep the destination and receipt. Choose its .webjamreceipt file in Import backup to check the intended bytes before retrying.")
                 self.owner.status.setToolTip(f"Destination: {error.destination}\nSHA-256: {error.expected_sha256}\nBytes: {error.expected_size}\nReceipt: {error.publication_receipt or 'not available'}")
             elif isinstance(error, WorkspacePackageCancelled):
-                self.owner.status.setText("Operation cancelled. Draft kept. Check previous import if recovery is offered.")
+                self.owner.status.setText("Operation cancelled. Draft kept. Use Check import if recovery is offered.")
             else:
                 self.owner.status.setText(f"Workspace operation did not finish: {error}")
             try:
@@ -504,7 +504,9 @@ class WorkspaceBackupFlow(QObject):
         dialog = WorkspaceBackupPreviewDialog(self.owner.library, preview, self.owner)
         if retry:
             dialog.setWindowTitle("Resume previous import")
-            dialog.confirm_button.setText("Resume same import")
+            dialog.confirm_button.setText("Resume import")
+            dialog.confirm_button.setAccessibleName("Resume same import")
+            dialog.confirm_button.setToolTip(dialog.confirm_button.accessibleName())
 
         def chosen(result):
             if result != QDialog.DialogCode.Accepted:
@@ -545,8 +547,8 @@ class WorkspaceBackupFlow(QObject):
     def _reconciled(self, result):
         self.recovery = (result.record.id, result.state)
         self.owner._sync_import_recovery()
-        self.owner.status.setText(("Restore is incomplete. Choose original backup to resume the same import. "
-                                   if result.state == "partial" else "Stored media checked. Choose Retry same import to finish. ")
+        self.owner.status.setText(("Restore is incomplete. Use Choose backup… to select the original package and resume the same import. "
+                                   if result.state == "partial" else "Stored media checked. Choose Retry import to finish. ")
                                   + "Current draft kept.")
         self.owner.import_backup_button.setToolTip(result.detail)
         self._end()

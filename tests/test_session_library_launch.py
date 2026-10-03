@@ -479,7 +479,7 @@ def test_library_take_action_opens_only_selected_verified_take_in_existing_studi
             dialog.tabs.setCurrentIndex(4)
             dialog.takes.setCurrentRow(0)
             button = next(button for button in dialog.findChildren(QPushButton)
-                          if button.text() == "Open in Studio")
+                          if button.text() == "Open Studio")
             button.click()
             opened.append(studio._current.path)
             return dialog.result()

@@ -12,7 +12,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QPoint, QRect, Qt, QTimer
-from PySide6.QtGui import QFont, QFontDatabase
+from PySide6.QtGui import QFont
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QLabel, QPushButton, QScrollArea
 
@@ -20,6 +20,7 @@ from core.session_library import SessionLibrary
 from core import workspace_media_backup as media
 from tests.test_workspace_media_backup import art as art, _package
 from tests.test_workspace_navigation import navigation as navigation
+from tests.support.layout_fonts import box_font as box_font
 from webjam_qt.windows.session_library import SessionLibraryDialog, WorkspaceBackupPreviewDialog
 from webjam_qt.windows import workspace_backup as ui
 
@@ -27,19 +28,6 @@ from webjam_qt.windows import workspace_backup as ui
 @pytest.fixture(scope="module")
 def app():
     return QApplication.instance() or QApplication([])
-
-
-@pytest.fixture(scope="module")
-def box_font(app):
-    """Reproduce native missing-font widths without changing normal cases."""
-    font_id = QFontDatabase.addApplicationFont(str(Path(__file__).parent / "support/fonts/BoxEmProbe.ttf"))
-    assert font_id >= 0
-    families = QFontDatabase.applicationFontFamilies(font_id)
-    assert families == ["WebJam Box Em Probe"]
-    try:
-        yield families[0]
-    finally:
-        QFontDatabase.removeApplicationFont(font_id)
 
 
 def _wait(app, predicate, timeout=5):
@@ -529,15 +517,15 @@ def test_media_cancel_then_fresh_dialog_check_and_resume_same_id(
     pending = library.pending_import()
     assert pending is not None and library.pending_import_has_media()
     assert dialog.record.id == current.id and dialog.notes.toPlainText() == "Keep my draft"
-    assert dialog.import_backup_button.text() == "Check previous import"
+    assert dialog.import_backup_button.text() == "Check import"
     # The second store/owner has only durable recovery state.
     reopened = make_dialog(SessionLibrary(library.root), current_id=current.id)
     reopened.import_backup_button.click()
     _wait(app, lambda: not reopened.workspace_flow.active)
-    assert reopened.import_backup_button.text() == "Choose original backup…"
+    assert reopened.import_backup_button.text() == "Choose backup…"
     reopened.import_backup_button.click()
     _wait(app, lambda: reopened.workspace_flow.prompt is not None)
-    assert reopened.workspace_flow.prompt.confirm_button.text() == "Resume same import"
+    assert reopened.workspace_flow.prompt.confirm_button.text() == "Resume import"
     reopened.workspace_flow.prompt.confirm_button.click()
     _wait(app, lambda: not reopened.workspace_flow.active)
     assert {record.id for record in library.list()} == {current.id, pending.id}
@@ -613,8 +601,8 @@ def test_return_to_launch_and_shutdown_keep_worker_owner(navigation, tmp_path, a
             dialog.workspace_flow.job._poll()
 
 
-@pytest.mark.parametrize("font_size,stretch,full_em", [(13, 100, False), (22, 100, False), (22, 125, False), (22, 100, True)])
-def test_choices_and_previews_fit_compact_enlarged_text(app, box_font, art, tmp_path, font_size, stretch, full_em):
+@pytest.mark.parametrize("font_size,stretch,full_em", [(13, 100, False), (22, 100, False), (22, 125, False), (22, 100, True), (22, 125, True)])
+def test_choices_and_previews_fit_compact_enlarged_text(app, request, art, tmp_path, font_size, stretch, full_em):
     from webjam_qt.theme import load_stylesheet
     record, _ = art
     changed_art = dict(record.art)
@@ -624,16 +612,19 @@ def test_choices_and_previews_fit_compact_enlarged_text(app, box_font, art, tmp_
     preview = _package(tmp_path, record)
     previous_font = app.font()
     font = QFont(previous_font)
+    family_name = request.getfixturevalue("box_font") if full_em else ""
     if full_em:
-        font.setFamily(box_font)
-    font.setStretch(stretch)
+        font.setFamily(family_name)
+    # The fixed wide fixture reproduces Windows's rounded 125% advance,
+    # independently of each platform font engine's stretch implementation.
+    font.setStretch(100 if full_em else stretch)
     app.setFont(font)
     dialogs = [ui.WorkspaceBackupChoicesDialog(record), ui.WorkspacePackagePlanDialog(plan),
                WorkspaceBackupPreviewDialog(SessionLibrary(tmp_path / "restored"), preview),
                ui.WorkspaceProgressDialog("Inspect selected media")]
     try:
         for dialog in dialogs:
-            family = f'font-family: "{box_font}";' if full_em else ""
+            family = f'font-family: "{family_name}";' if full_em else ""
             dialog.setStyleSheet(load_stylesheet() + f"QWidget {{ font-size: {font_size}px; {family} }}")
             dialog.show()
             dialog.resize(480, 500)
@@ -641,7 +632,9 @@ def test_choices_and_previews_fit_compact_enlarged_text(app, box_font, art, tmp_
                 app.processEvents()
             assert dialog.width() == 480 and dialog.height() == 500
             if full_em:
-                assert dialog.fontMetrics().horizontalAdvance("MW") == 2 * font_size
+                advance = dialog.fontMetrics().horizontalAdvance("MW")
+                expected = round(2 * font_size * (14 / 11 if stretch == 125 else 1))
+                assert advance == expected
             for button in dialog.findChildren(QPushButton):
                 assert button.width() >= button.minimumSizeHint().width()
                 assert dialog.rect().contains(QRect(button.mapTo(dialog, QPoint()), button.size())), button.text()

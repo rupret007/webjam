@@ -408,7 +408,7 @@ def _launch_saved(app, settings_path, workspace_id, *, take_id=None):
     if errors:
         raise errors[0]
     _require(launch.selected_workspace_id == workspace_id and launch.selected_role == "library",
-             "Continue this work did not select saved work")
+             "Continue did not select saved work")
     return launch
 
 

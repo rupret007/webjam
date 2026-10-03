@@ -223,7 +223,7 @@ def test_failed_save_does_not_close_or_continue_with_unsaved_changes(tmp_path, m
     library.save(replace(original, notes="Other writer"))
     requested = []
     dialog.continue_requested.connect(requested.append)
-    _click(dialog, "Continue this work")
+    _click(dialog, "Continue")
     assert requested == []
     assert dialog.selected_record is None
     assert dialog._dirty
@@ -246,16 +246,16 @@ def test_selecting_history_or_takes_never_opens_an_accidental_take(tmp_path, mak
     dialog.take_open_requested.connect(opened.append)
     dialog.select_id(record.id)
     assert dialog.takes.currentRow() == -1
-    _click(dialog, "Open in Studio")
+    _click(dialog, "Open Studio")
     assert opened == []
     dialog.tabs.setCurrentIndex(4)
     dialog.takes.setCurrentRow(1)
     app.processEvents()
     assert opened == []
-    _click(dialog, "Open in Studio")
+    _click(dialog, "Open Studio")
     assert opened == [dict(record.take_links[1])]
     dialog.select_id(art.id)
-    _click(dialog, "Open in Studio")
+    _click(dialog, "Open Studio")
     assert len(opened) == 1
 
 
@@ -314,7 +314,7 @@ def test_summary_export_keeps_local_locators_private_and_never_overwrites_origin
     dialog = make_dialog(library, current_id=record.id)
     destination = tmp_path / "summary.md"
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_args, **_kwargs: (str(destination), ""))
-    _click(dialog, "Export summary…")
+    _click(dialog, "Export summary")
     summary = destination.read_text()
     assert "Light study" in summary
     assert "1:32: Soft edges" in summary
@@ -322,7 +322,7 @@ def test_summary_export_keeps_local_locators_private_and_never_overwrites_origin
     assert "Finished the first pass" in summary
     assert str(tmp_path) not in summary
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_args, **_kwargs: (str(reference_path), ""))
-    _click(dialog, "Export summary…")
+    _click(dialog, "Export summary")
     assert reference_path.read_bytes() == b"original art project"
     assert "not exported" in dialog.status.text()
 

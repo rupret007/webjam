@@ -125,19 +125,20 @@ def test_metadata_only_art_checks_availability_but_refuses_unprovable_relink(
     assert library.load(record.id) == record and len(opened) == 1
 
 
-@pytest.mark.parametrize("stretch,full_em", [(100, False), (125, False), (100, True)])
-def test_compact_enlarged_takes_controls_remain_reachable(app, box_font, portable_takes, make_dialog, monkeypatch, stretch, full_em):
+@pytest.mark.parametrize("stretch,full_em", [(100, False), (125, False), (100, True), (125, True)])
+def test_compact_enlarged_takes_controls_remain_reachable(app, request, portable_takes, make_dialog, monkeypatch, stretch, full_em):
     library, record, _originals, _roots, _projects = portable_takes
     previous_font = app.font()
     font = QFont(previous_font)
+    family_name = request.getfixturevalue("box_font") if full_em else ""
     if full_em:
-        font.setFamily(box_font)
+        font.setFamily(family_name)
     font.setPixelSize(22)
-    font.setStretch(stretch)
+    font.setStretch(100 if full_em else stretch)
     app.setFont(font)
     try:
         dialog = make_dialog(library, current_id=record.id)
-        family = f'font-family: "{box_font}";' if full_em else ""
+        family = f'font-family: "{family_name}";' if full_em else ""
         dialog.setStyleSheet(load_stylesheet() + f"QWidget {{ font-size: 22px; {family} }}")
         dialog.resize(480, 500)
         dialog.tabs.setCurrentIndex(0)
@@ -151,7 +152,8 @@ def test_compact_enlarged_takes_controls_remain_reachable(app, box_font, portabl
         assert isinstance(scroll, QScrollArea)
         assert dialog.width() == 480 and dialog.height() == 500
         if full_em:
-            assert dialog.fontMetrics().horizontalAdvance("MW") == 44
+            advance = dialog.fontMetrics().horizontalAdvance("MW")
+            assert advance == (56 if stretch == 125 else 44)
         assert scroll.viewport().height() > 0
         for button in (dialog.verify_take_button, dialog.open_take_button, dialog.relink_take_button):
             scroll.ensureWidgetVisible(button, 0, 0)

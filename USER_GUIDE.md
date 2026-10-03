@@ -19,7 +19,7 @@ or **More → Session library…** in a room. Choose the new workspace's profile
 then **New workspace…** and a title. The **Notes**, **Rehearsal plan**, **Art project**,
 **Summary**, and **Takes** tabs keep the work appropriate to that profile.
 Changes save locally; check the save status and use **Save** before leaving.
-Search finds previous work. **Continue this work** brings its saved context
+Search finds previous work. **Continue** brings its saved context
 back into the app; it does not connect a room or start recording. **Save as
 copy…** makes a separate workspace. Invitations and meeting credentials are
 not a reusable workspace template.
@@ -37,7 +37,7 @@ Type a moment note and choose **Mark moment**, or press **⌘M** on Mac /
 position produces a take bookmark; otherwise it stays a plain note. The song
 clock and room timer do not certify recording time. **Open in take** rechecks
 the saved take before navigation; a moved or changed recording needs attention.
-The **Summary** tab and **Export summary…** collect progress and next steps;
+The **Summary** tab and **Export summary** collect progress and next steps;
 ending a rehearsal retains its recap with the workspace.
 
 For Art, open **More → Session library… → Art project**. Keep a **Project brief**, **Progress**,
@@ -56,9 +56,9 @@ to save favorites and notes, audition A/B, and inspect an export receipt.
 ## Back up and import a workspace: Unreleased
 
 These controls belong to draft workspace-backup builds after v0.29.0. In
-**Session library**, select the workspace and choose **Back up workspace…**.
+**Session library**, select the workspace and choose **Back up…**.
 Resolve an unsaved draft or conflicting changes first; **Save as copy…** keeps
-a separate workspace when needed. **Export summary…** remains available for a
+a separate workspace when needed. **Export summary** remains available for a
 readable progress handoff.
 
 **Metadata only** is selected by default and writes a new JSON file containing
@@ -97,11 +97,11 @@ explicit action accesses them, including after reopening or saving a copy.
 Continuing a workspace does not start recording, play media or open another app.
 
 In **Takes**, select a link and choose **Verify take**. The check runs
-in the background without opening Studio. **Open in Studio** checks it again
+in the background without opening Studio. **Open Studio** checks it again
 and opens that recording without starting playback. Use **Locate take…**
 to choose the same completed take at a new location; its identity and original
 content must match. Linked rehearsal moments keep their IDs and move with it.
-From the launch screen's Library, **Open in Studio** or a linked
+From the launch screen's Library, **Open Studio** or a linked
 moment's **Open in take** also continues the imported workspace directly.
 If its saved context or media changes before Studio opens, select and open it again.
 
@@ -128,9 +128,9 @@ waits for the worker's actual result: a completed publication still reports
 success, and an uncertain result retains its receipt. Closing or returning to
 launch waits for that result; review it, then close or return again.
 
-If an import's outcome is uncertain, choose **Check previous import**. A checked
-complete restore offers **Retry same import**. An incomplete restore offers
-**Choose original backup…**, followed by **Resume same import**. These keep the
+If an import's outcome is uncertain, choose **Check import**. A checked
+complete restore offers **Retry import**. An incomplete restore offers
+**Choose backup…**, followed by **Resume import**. These keep the
 intended workspace identity. A changed recovery record or different package
 blocks retry and preserves its evidence. For uncertain backup publication,
 choose the retained `.webjamreceipt` in **Import backup…** to check its bytes

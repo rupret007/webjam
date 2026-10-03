@@ -264,7 +264,7 @@ class SessionLibraryDialog(QDialog):
         self.verify_take_button.setToolTip(self.verify_take_button.accessibleName())
         self.verify_take_button.clicked.connect(self._verify_take)
         take_layout.addWidget(self.verify_take_button)
-        self.open_take_button = QPushButton("Open in Studio")
+        self.open_take_button = QPushButton("Open Studio")
         self.open_take_button.setAccessibleName("Open selected take in Studio")
         self.open_take_button.setToolTip(self.open_take_button.accessibleName())
         self.open_take_button.clicked.connect(self._open_take)
@@ -289,16 +289,22 @@ class SessionLibraryDialog(QDialog):
         self.save_button = QPushButton("Save")
         self.save_button.clicked.connect(self.save_current)
         save_actions.addWidget(self.save_button)
-        self.export_button = QPushButton("Export summary…")
+        self.export_button = QPushButton("Export summary")
+        self.export_button.setAccessibleName("Export summary…")
         self.export_button.clicked.connect(self._export)
         save_actions.addWidget(self.export_button)
-        self.backup_button = QPushButton("Back up workspace…")
+        self.backup_button = QPushButton("Back up…")
+        self.backup_button.setAccessibleName("Back up workspace…")
+        self.backup_button.setToolTip(self.backup_button.accessibleName())
         self.backup_button.clicked.connect(self._backup)
         save_actions.addWidget(self.backup_button)
         self.import_backup_button = QPushButton("Import backup…")
+        self.import_backup_button.setAccessibleName("Import backup…")
         self.import_backup_button.clicked.connect(self._import_backup)
         create_buttons.addWidget(self.import_backup_button)
-        self.continue_button = QPushButton("Continue this work")
+        self.continue_button = QPushButton("Continue")
+        self.continue_button.setAccessibleName("Continue this work")
+        self.continue_button.setToolTip(self.continue_button.accessibleName())
         self.continue_button.clicked.connect(self._continue)
         continue_actions.addWidget(self.continue_button)
         close = QPushButton("Close")
@@ -819,27 +825,35 @@ class SessionLibraryDialog(QDialog):
             "Included media was restored. Select the new workspace explicitly when ready to continue."
             if media else "Metadata only; media files are not included."))
 
+    def _set_import_caption(self, action):
+        captions = {"Import backup…": "Import backup…",
+                    "Check previous import": "Check import",
+                    "Retry same import": "Retry import",
+                    "Choose original backup…": "Choose backup…"}
+        self.import_backup_button.setText(captions[action])
+        self.import_backup_button.setAccessibleName(action)
+
     def _sync_import_recovery(self):
         try:
             pending = self.library.pending_import()
         except (SessionLibraryError, OSError):
-            self.import_backup_button.setText("Check previous import")
+            self._set_import_caption("Check previous import")
             return False
-        self.import_backup_button.setText("Import backup…" if pending is None else (
+        self._set_import_caption("Import backup…" if pending is None else (
             "Retry same import" if self._retry_import == pending else "Check previous import"))
         recovery = self.workspace_flow.recovery
         if pending is not None and recovery is not None and recovery[0] == pending.id:
-            self.import_backup_button.setText("Choose original backup…" if recovery[1] == "partial" else "Retry same import")
+            self._set_import_caption("Choose original backup…" if recovery[1] == "partial" else "Retry same import")
         if pending is None:
             self.import_backup_button.setToolTip("")
         return pending is None
 
     def _import_unconfirmed(self, error):
         self._retry_import = None
-        self.import_backup_button.setText("Check previous import")
+        self._set_import_caption("Check previous import")
         self.import_backup_button.setEnabled(not self._import_in_progress)
         self.import_backup_button.setToolTip(f"Intended workspace: {error.workspace_id}\nChecksum: {error.expected_sha256}")
-        self.status.setText("Import needs checking. Choose Check previous import. Current draft kept.")
+        self.status.setText("Import needs checking. Choose Check import. Current draft kept.")
 
     def _check_import(self):
         self.timer.stop()
@@ -847,7 +861,7 @@ class SessionLibraryDialog(QDialog):
             pending = self.library.pending_import()
             if pending is None:
                 self._retry_import = None
-                self.import_backup_button.setText("Import backup…")
+                self._set_import_caption("Import backup…")
                 self.status.setText("No unresolved import is stored here.")
                 return
             if self.library.pending_import_has_media():
@@ -856,7 +870,7 @@ class SessionLibraryDialog(QDialog):
             saved = self.library.reconcile_import(pending)
             if saved is not None:
                 self.library.acknowledge_import(pending)
-                self.import_backup_button.setText("Check previous import")
+                self._set_import_caption("Check previous import")
                 self._import_finished(saved)
                 return
             if self._retry_import == pending:
@@ -866,17 +880,17 @@ class SessionLibraryDialog(QDialog):
                 self.library.prepare_import(pending)
                 saved = self.library.publish_import(pending)
                 self.library.acknowledge_import(pending)
-                self.import_backup_button.setText("Check previous import")
+                self._set_import_caption("Check previous import")
                 self._import_finished(saved)
                 return
             self._retry_import = pending
-            self.import_backup_button.setText("Retry same import")
-            self.status.setText("Import was not published. Choose Retry same import. Current draft kept.")
+            self._set_import_caption("Retry same import")
+            self.status.setText("Import was not published. Choose Retry import. Current draft kept.")
         except SessionLibraryImportUnconfirmed as error:
             self._import_unconfirmed(error)
         except (SessionLibraryError, OSError) as error:
             self._retry_import = None
-            self.import_backup_button.setText("Check previous import")
+            self._set_import_caption("Check previous import")
             self.status.setText(f"Import could not be reconciled; retry is blocked and its evidence is retained: {error}")
 
     def reject(self):

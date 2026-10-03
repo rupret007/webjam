@@ -788,7 +788,7 @@ class ConductorWindow(QMainWindow):
             "<br><br><b>Continue your work</b><br>"
             "Open <b>More → Session library…</b>, or <b>File → Session library…</b> "
             "at launch. Search saved workspaces, read <b>Summary</b>, and choose "
-            "<b>Continue this work</b>. Restoring notes does not start a room or recording."
+            "<b>Continue</b>. Restoring notes does not start a room or recording."
             " Use <b>File → Return to launch…</b> to choose another workflow after "
             "unfinished work and session cleanup are resolved."
         )
