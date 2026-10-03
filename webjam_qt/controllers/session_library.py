@@ -96,6 +96,15 @@ class SessionLibraryCoordinator(QObject):
         self.timer.setSingleShot(True)
         self.timer.setInterval(800)
         self.timer.timeout.connect(self.flush)
+        studio = getattr(controller.window, "recording_studio", None)
+        if studio is not None:
+            studio.workspace_owner_token = self._studio_owner_token
+
+    def _studio_owner_token(self):
+        # Saved comparisons can belong to another browsed workspace; bind
+        # the active runtime owner at dispatch rather than the slot's origin.
+        return (id(self), str(self.library.root), self.current.id if self.current else None,
+                self._profile(), self._run_id)
 
     def _flash(self, text):
         self._c.window.flash_message(text, ms=7000)
@@ -169,7 +178,7 @@ class SessionLibraryCoordinator(QObject):
         return True
 
     def profile_changing(self):
-        if self.media_operation_pending:
+        if self.media_operation_pending or self.studio_media_pending:
             self._flash("Wait for the workspace operation result before changing profiles.")
             return False
         self.flush()
@@ -191,7 +200,7 @@ class SessionLibraryCoordinator(QObject):
         self.flush()
         dialog = SessionLibraryDialog(self.library, self._c.window,
             profile=self._profile(), current_id=self.current.id, pending_records=self._pending,
-            save_record=self.save_editor_record)
+            save_record=self.save_editor_record, prepare_take_open=self.prepare_take_open)
         self.dialog = dialog
         dialog.record_saved.connect(self._record_saved)
         dialog.copy_saved.connect(self._copy_saved)
@@ -218,6 +227,11 @@ class SessionLibraryCoordinator(QObject):
     @property
     def media_operation_pending(self):
         return bool(self.dialog is not None and self.dialog.media_operation_pending)
+
+    @property
+    def studio_media_pending(self):
+        studio = getattr(self._c.window, "recording_studio", None)
+        return bool(getattr(studio, "media_open_pending", False))
 
     def prepare_close(self):
         return self.dialog is None or self.dialog.prepare_close()
@@ -285,7 +299,7 @@ class SessionLibraryCoordinator(QObject):
                     or self._c._is_jamulus_running())
 
     def continue_record(self, record) -> bool:
-        if self.media_operation_pending:
+        if self.media_operation_pending or self.studio_media_pending:
             self._flash("Wait for the workspace operation result before continuing another workspace.")
             return False
         if self.current is not None and self.current.id == record.id:
@@ -437,6 +451,9 @@ class SessionLibraryCoordinator(QObject):
         return ("Ready" if refs[-1].get("validated") else "Needs attention") if refs else None
 
     def open_take(self, ref):
+        if ref.get("_verification") is not None:
+            self._open_prepared_reference(ref)
+            return
         if not isinstance(ref.get("take_path"), str) or not ref["take_path"].strip():
             self._flash("This recording has no completed take yet. Wait for recording and finalization to finish.")
             return
@@ -453,6 +470,52 @@ class SessionLibraryCoordinator(QObject):
                 self.dialog.accept()
         else:
             self._flash("The linked take is missing or changed. Locate the same take in Session library.")
+
+    def prepare_take_open(self, _reference):
+        recording = getattr(self._c, "recording", None)
+        if (self._profile() == "art" or getattr(self._c, "_shutdown", False)
+                or getattr(self._c, "_shutdown_in_progress", False)
+                or getattr(recording, "is_recording_active", False) or getattr(recording, "take_in_progress", False)):
+            self._flash("Finish the current recording and use a Music workspace before opening this take.")
+            return None
+        studio = self._c.window.recording_studio
+        state = studio.prepare_workspace_open()
+        if state is None:
+            self._flash("Finish the Studio operation or save its draft before opening this take.")
+            return None
+        return {"studio": studio, "state": state, "owner": self.current.id if self.current else None,
+                "profile": self._profile()}
+
+    def _open_prepared_reference(self, reference):
+        from PySide6.QtCore import QTimer
+        origin = reference.get("_origin_dialog")
+        request = reference.get("_studio_request")
+        snapshot = reference.get("_workspace_snapshot")
+        recording = getattr(self._c, "recording", None)
+        if (origin is None or self.dialog is not origin or not request or snapshot is None
+                or origin.record is None or origin.record.id != snapshot.id
+                or request["owner"] != (self.current.id if self.current else None)
+                or request["profile"] != self._profile()
+                or getattr(self._c, "_shutdown", False) or getattr(self._c, "_shutdown_in_progress", False)
+                or getattr(recording, "is_recording_active", False) or getattr(recording, "take_in_progress", False)):
+            self._flash("Workspace ownership changed while checking the take. Open it again when ready.")
+            return
+        studio = self._c.window.recording_studio
+        if request["studio"] is not studio or not studio.open_prepared_take(
+                reference["_verification"], workspace=snapshot, expected_state=request["state"],
+                position_seconds=reference.get("position_seconds", 0)):
+            origin.status.setText("Studio or the recording changed during verification. Open the selected take again.")
+            return
+        self._c._on_rail_view_changed("takes")
+
+        def close_origin():
+            if (self.dialog is origin and not origin.media_operation_pending
+                    and not origin._dirty and _same_snapshot(origin.record, snapshot)
+                    and origin._edited_record() == snapshot):
+                origin.accept()
+        # The flow gate remains held through activation. Close only its exact
+        # originating dialog after the terminal callback has returned.
+        QTimer.singleShot(0, close_origin)
 
     def mark_moment(self, note):
         if self.dialog is None:

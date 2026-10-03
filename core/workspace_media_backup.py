@@ -1085,6 +1085,12 @@ class WorkspaceMediaVerification:
     def dependency_map(self):
         return {take.take_id: (Path(take.path), deepcopy(take)) for take in self._dependencies}
 
+    @property
+    def take_source_identities(self):
+        manifests = {source.root: source.sha256 for source in self._receipts if source.role == "manifest"}
+        return {take.take_id: manifests[str(take.path)] for take in (self._take, *self._dependencies)
+                if take is not None}
+
     def assert_current(self):
         """Cheap activation gate; actual Studio renderers retain content checks."""
         for source in self._receipts:

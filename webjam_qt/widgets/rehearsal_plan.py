@@ -357,6 +357,16 @@ class RehearsalPlanPanel(QFrame):
             self._bookmarks.addItem(item)
         self._sync_bookmark_actions()
 
+    def relink_take(self, take_id, source_identity, locator):
+        """Update only matching locations, retaining every open song/moment draft."""
+        for song in self._plan.songs:
+            for bookmark in song["bookmarks"]:
+                if bookmark.get("take_id") == take_id and bookmark.get("source_identity") == source_identity:
+                    bookmark["take_path"] = locator
+        # Titles/positions do not change, so leave the current selection and
+        # editing widgets alone instead of rebuilding this panel.
+        self.changed.emit()
+
     def _selected_bookmark(self) -> dict | None:
         song, row = self._plan.current, self._bookmarks.currentRow()
         return song["bookmarks"][row] if song and 0 <= row < len(song["bookmarks"]) else None

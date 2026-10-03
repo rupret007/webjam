@@ -55,9 +55,12 @@ Draft workspace-backup builds provide **Back up workspace…** and
 **Import backup…** in Session library. Choose metadata only, or select completed
 takes and local Art files, inspect the preview, and create a new media package
 with its checksum receipt. Background copying and import support cancellation
-while retaining your current draft. These controls are part of the
-[active portability milestone](docs/WORKSPACE_BACKUP_PLAN.md); Studio integration
-and complete restoration testing remain in progress. They are not included in
+while retaining your current draft. Select **Verify selected take** or **Verify reference**
+to check stored media, then deliberately open it or locate its original content.
+Restored Studio takes retain their declared alternate sources through selection
+and A/B listening. These controls are part of the
+[active portability milestone](docs/WORKSPACE_BACKUP_PLAN.md); complete recorder/restart
+restoration testing and final build verification remain in progress. They are not included in
 the published v0.29.0 packages. See
 [the backup walkthrough](USER_GUIDE.md#back-up-and-import-a-workspace-unreleased).
 

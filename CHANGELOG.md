@@ -11,6 +11,18 @@ All notable improvements and features for the WebJam creator collaboration platf
 Source remains v0.29.0. These changes are after the published v0.29.0 baseline;
 they do not request a new release/tag or claim new published package evidence.
 
+- Draft Session library builds add **Back up workspace…** and **Import backup…**
+  with metadata-only defaults or explicitly selected completed takes/local Art,
+  cancellable background work and durable checksum receipts for recovery.
+  Imported media remains unchecked until an explicit action.
+- **Verify selected take**, **Verify reference**, **Locate moved take…** and
+  **Relink…** check expected content while retaining drafts and bookmarks.
+  Restored Studio takes retain exact alternate-source locations through
+  reselection and A/B listening, including when originals share the same IDs.
+  Pending actions retire after owner/profile changes, leaving Studio or edits
+  followed by undo. Relink targets are rechecked before paths are saved; late
+  Library edits keep their editor open. Full recorder/restart and final packaged
+  portability evidence remain pending; physical acceptance remains **NOT RUN**.
 - **File → Return to launch** is available from live and local Studio work.
   Explicit End/Leave, successful saves, recording finalization and owned
   cleanup precede a fresh launch screen; failure retains the current work.

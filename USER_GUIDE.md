@@ -91,6 +91,26 @@ Imported links say **stored link — not checked** until an
 explicit action accesses them, including after reopening or saving a copy.
 Continuing a workspace does not start recording, play media or open another app.
 
+In **Takes**, select a link and choose **Verify selected take**. The check runs
+in the background without opening Studio. **Open selected take in Studio** checks it again
+and opens that recording without starting playback. Use **Locate moved take…**
+to choose the same completed take at a new location; its identity and original
+content must match. Linked rehearsal moments keep their IDs and move with it.
+
+In **Art project**, select a local file and choose **Verify reference**.
+**Open reference** checks it before opening its external app. **Relink…** locates
+the same content while preserving the brief and bookmarks. A metadata-only file
+without an original checksum can be checked for availability, but cannot be
+proven to be the original or relinked as matching content.
+
+“Content matched when checked” describes that check, not a permanent guarantee.
+Restored Studio arrangements use their declared source locations even if the
+original copies are still on this computer. **Listen A/B** checks a restored
+comparison again before playback. Leaving Studio, editing its arrangement,
+changing the active workspace or beginning a recording retires a pending
+comparison. Choose Listen again when ready. A new Library draft keeps its
+editor open even if an earlier take-open request has just finished.
+
 Copying and verification run in the background with progress and **Cancel**.
 Session **Stop** and **End** remain reachable in the main window. Cancellation
 waits for the worker's actual result: a completed publication still reports
@@ -106,9 +126,10 @@ choose the retained `.webjamreceipt` in **Import backup…** to check its bytes
 without importing anything until you confirm. Private notes and stored
 locations remain literal; this is not a secret-scrubbing feature.
 
-Explicit media Verify/Relink, Studio activation and complete recorder/restart
-restoration tests are still [in active development](docs/WORKSPACE_BACKUP_PLAN.md).
-Use the identified test build's instructions once that full workflow is delivered.
+These explicit media controls and Studio activation are in the draft source.
+Complete recorder/restart restoration tests and final native/frozen build checks
+remain [in active development](docs/WORKSPACE_BACKUP_PLAN.md). Use the identified
+test build's instructions once that full workflow is delivered.
 
 ## Return to launch: Unreleased
 

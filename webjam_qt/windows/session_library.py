@@ -150,13 +150,16 @@ class SessionLibraryDialog(QDialog):
     song_selected = Signal(dict)
 
     def __init__(self, library: SessionLibrary, parent=None, *, profile="music", current_id="", pending_records=None,
-                 save_record=None):
+                 save_record=None, prepare_take_open=None):
         super().__init__(parent)
         self.library = library
         # The coordinator remains the owner of its recovery map. Only the
         # success signals may settle that map; this dialog edits a snapshot.
         self.pending_records = deepcopy(dict(pending_records or {}))
         self._save_record = save_record
+        self._prepare_take_open = prepare_take_open
+        from webjam_qt.controllers.workspace_media import LibraryMediaActions
+        self.media_actions = LibraryMediaActions(self)
         self._base_record = None
         self._initial_current_id = current_id
         self.default_profile = profile
@@ -217,6 +220,7 @@ class SessionLibraryDialog(QDialog):
         self.rehearsal = RehearsalPlanPanel()
         self.tabs.addTab(self.rehearsal, "Rehearsal plan")
         self.art = ArtWorkspacePanel()
+        self.art.reference_action_handler = self.media_actions.art_action
         self._add_tab(self.art, "Art project")
         self.summary = QPlainTextEdit()
         self.summary.setReadOnly(True)
@@ -226,7 +230,11 @@ class SessionLibraryDialog(QDialog):
         take_layout = QVBoxLayout(take_page)
         self.takes = QListWidget()
         self.takes.setAccessibleName("Takes linked to this workspace")
+        self.takes.setMinimumHeight(100)
         take_layout.addWidget(self.takes)
+        self.verify_take_button = QPushButton("Verify selected take")
+        self.verify_take_button.clicked.connect(self._verify_take)
+        take_layout.addWidget(self.verify_take_button)
         self.open_take_button = QPushButton("Open selected take in Studio")
         self.open_take_button.clicked.connect(self._open_take)
         take_layout.addWidget(self.open_take_button)
@@ -235,7 +243,7 @@ class SessionLibraryDialog(QDialog):
         take_layout.addWidget(self.relink_take_button)
         self.takes.currentRowChanged.connect(self._update_take_actions)
         self._update_take_actions()
-        self.tabs.addTab(take_page, "Takes")
+        self._add_tab(take_page, "Takes")
         self.status = QLabel()
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
@@ -469,7 +477,10 @@ class SessionLibraryDialog(QDialog):
         for ref in self.record.take_links:
             path = str(ref.get("take_path", "") or "").strip()
             label = ref.get("title") or ref.get("take_id") or "Take"
-            if not path:
+            checked = self.media_actions.take_status(ref)
+            if checked is not None and path:
+                suffix = " — " + checked
+            elif not path:
                 suffix = (" — historical reference; no completed take here" if imported and not ref.get("recording_session_id")
                           else " — requested or finalizing; no completed take yet")
             elif imported:
@@ -490,6 +501,7 @@ class SessionLibraryDialog(QDialog):
                          and str(self.record.take_links[row].get("take_path", "") or "").strip())
         self.open_take_button.setEnabled(available)
         self.relink_take_button.setEnabled(available)
+        self.verify_take_button.setEnabled(available)
 
     def _changed(self, *_args):
         if not self._loading and self.record is not None:
@@ -506,14 +518,16 @@ class SessionLibraryDialog(QDialog):
             actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
             blockers=pulse.blockers, rehearsal=self.rehearsal.payload(), art=self.art.payload())
 
-    def save_current(self, *, force: bool = False) -> bool:
+    def save_current(self, *, force: bool = False, _operation_token=None) -> bool:
         """Persist editor changes; ``force`` reconciles even a clean editor.
 
         A backup must reflect current Notes and any late take/recap facts
         reconciled through the owning coordinator, not a stale cached record.
         """
         self.timer.stop()
-        if self._import_in_progress:
+        if self._import_in_progress and not (
+                _operation_token is not None and _operation_token is self.workspace_flow.token
+                and not self.workspace_flow.job.pending):
             return False
         if self.record is None:
             return True
@@ -591,8 +605,15 @@ class SessionLibraryDialog(QDialog):
                     self.status.setText("This imported link has no complete take identity. Open the original recording separately in Studio; this link cannot identify a substitute.")
                     return
                 selected["_imported_link"] = True
+                self.media_actions.take_action("open", selected)
+                return
             if self.save_current():
                 self.take_open_requested.emit(selected)
+
+    def _verify_take(self):
+        row = self.takes.currentRow()
+        if self.record and 0 <= row < len(self.record.take_links):
+            self.media_actions.take_action("verify", self.record.take_links[row])
 
     def _open_bookmark(self, bookmark):
         if self._import_in_progress:
@@ -603,6 +624,8 @@ class SessionLibraryDialog(QDialog):
                 self.status.setText("This imported moment has no complete take identity. Its linked recording cannot be verified.")
                 return
             selected["_imported_link"] = True
+            self.media_actions.take_action("open", selected, position=selected.get("position_seconds", 0))
+            return
         self.bookmark_open_requested.emit(selected)
 
     def _relink_take(self):
@@ -613,6 +636,9 @@ class SessionLibraryDialog(QDialog):
             return
         if not str(self.record.take_links[row].get("take_path", "") or "").strip():
             self.status.setText("This recording has no completed take yet. Wait for it to finish before opening or locating it.")
+            return
+        if self.record.import_provenance:
+            self.media_actions.take_action("relink", self.record.take_links[row])
             return
         path = QFileDialog.getExistingDirectory(self, "Locate the same take")
         if not path:

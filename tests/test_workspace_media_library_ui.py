@@ -370,7 +370,8 @@ def test_uncertain_export_outcome_survives_requested_close(app, art, make_dialog
         release.set()
 
 
-def test_worker_start_failure_releases_controls(app, art, make_dialog, tmp_path, monkeypatch):
+@pytest.mark.parametrize("failure", ["thread", "progress_constructor", "progress_show"])
+def test_worker_start_failure_releases_controls(app, art, make_dialog, tmp_path, monkeypatch, failure):
     record, _ = art
     dialog = make_dialog(SessionLibrary(tmp_path / "original"), current_id=record.id)
     class RefusedThread:
@@ -378,11 +379,59 @@ def test_worker_start_failure_releases_controls(app, art, make_dialog, tmp_path,
             pass
         def start(self):
             raise RuntimeError("worker unavailable")
-    monkeypatch.setattr(ui, "Thread", RefusedThread)
+    if failure == "thread":
+        monkeypatch.setattr(ui, "Thread", RefusedThread)
+    else:
+        def unavailable(*_args, **_kwargs):
+            raise RuntimeError("progress unavailable")
+        if failure == "progress_constructor":
+            monkeypatch.setattr(ui, "WorkspaceProgressDialog", unavailable)
+        else:
+            monkeypatch.setattr(ui.WorkspaceProgressDialog, "show", unavailable)
     _choose_media(app, dialog)
     assert not dialog.media_operation_pending
     assert dialog.backup_button.isEnabled()
-    assert "worker unavailable" in dialog.status.text()
+    assert "unavailable" in dialog.status.text()
+    assert dialog.workspace_flow.token is None and dialog.workspace_flow._completion is None
+
+
+@pytest.mark.parametrize("failure", ["completion", "failure_callback", "recovery_refresh"])
+def test_terminal_reporting_failure_always_releases_media_operation(
+    app, art, make_dialog, tmp_path, monkeypatch, failure,
+):
+    record, _ = art
+    dialog = make_dialog(SessionLibrary(tmp_path / "original"), current_id=record.id)
+    dialog.notes.setPlainText("Keep my draft after a reporting failure")
+    before = dialog._edited_record()
+    flow = dialog.workspace_flow
+    callbacks = []
+
+    def work(_report, _cancel):
+        if failure != "completion":
+            raise ValueError("original failure")
+        return None
+
+    def complete(_result, token):
+        assert token is flow.token and flow.active
+        raise ValueError("original failure")
+
+    def failed(error):
+        callbacks.append((str(error), flow.active, flow.token is not None))
+        if failure == "failure_callback":
+            raise RuntimeError("failure evidence unavailable")
+
+    if failure == "recovery_refresh":
+        def refresh():
+            raise RuntimeError("recovery unavailable")
+        monkeypatch.setattr(dialog, "_sync_import_recovery", refresh)
+    flow.execute("Explicit action", work, complete, failed=failed)
+    _wait(app, lambda: not flow.job.pending)
+    assert callbacks == [("original failure", True, True)]
+    assert not dialog.media_operation_pending
+    assert flow.token is None and flow._completion is None
+    assert dialog.backup_button.isEnabled()
+    assert dialog._dirty and dialog._edited_record() == before
+    assert "original failure" in dialog.status.text()
 
 
 def test_media_cancel_then_fresh_dialog_check_and_resume_same_id(

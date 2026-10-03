@@ -1195,9 +1195,15 @@ class ApplicationController(QObject):
 
     def _prepare_workspace_close(self) -> bool:
         library = getattr(self, "session_library", None)
-        if not bool(getattr(library, "media_operation_pending", False)):
+        studio = getattr(self.window, "recording_studio", None)
+        library_pending = bool(getattr(library, "media_operation_pending", False))
+        studio_pending = bool(getattr(studio, "media_open_pending", False))
+        if not library_pending and not studio_pending:
             return True
-        library.prepare_close()
+        if library_pending:
+            library.prepare_close()
+        if studio_pending:
+            studio.prepare_close()
         self.window.flash_message(
             "Workspace media work is finishing. Its cancellation was requested; wait for the result, then return to launch or quit again.", ms=0,
         )

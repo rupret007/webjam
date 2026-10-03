@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import logging
 from threading import Event, Lock, Thread
 
 from PySide6.QtCore import QObject, QTimer, Qt, Signal
@@ -18,6 +19,8 @@ from core.workspace_media_backup import (
     reconcile_workspace_package_import,
     workspace_backup_candidates,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _label(text, parent=None):
@@ -284,11 +287,14 @@ class WorkspaceBackupFlow(QObject):
         self._completion = None
         self._publishing = False
         self._selection = None
+        self.token = None
+        self._failure_callback = None
 
     def _begin(self):
         if self.active or self.job.pending:
             return False
         self.active = True
+        self.token = object()
         self.closing = False
         self.owner._set_workspace_busy(True)
         return True
@@ -298,6 +304,8 @@ class WorkspaceBackupFlow(QObject):
             return
         self.active = False
         self._completion = None
+        self._failure_callback = None
+        self.token = None
         self.owner._set_workspace_busy(False)
         # Show the terminal outcome before a second explicit Close. In
         # particular, never delete the only visible uncertainty receipt.
@@ -316,10 +324,10 @@ class WorkspaceBackupFlow(QObject):
             return False
         self._completion = complete
         self._publishing = publishing
-        self.progress_dialog = WorkspaceProgressDialog(title, self.owner)
-        self.progress_dialog.cancel_requested.connect(self.job.cancel)
-        self.progress_dialog.show()
         try:
+            self.progress_dialog = WorkspaceProgressDialog(title, self.owner)
+            self.progress_dialog.cancel_requested.connect(self.job.cancel)
+            self.progress_dialog.show()
             self.job.start(function)
         except Exception as error:
             self._finished(None, error)
@@ -350,17 +358,49 @@ class WorkspaceBackupFlow(QObject):
             self._failed(error)
 
     def _failed(self, error):
-        if isinstance(error, SessionLibraryImportUnconfirmed):
-            self.owner._import_unconfirmed(error)
-        elif isinstance(error, WorkspacePackagePublicationUnconfirmed):
-            self.owner.status.setText("Backup publication needs checking. Keep the destination and receipt. Choose its .webjamreceipt file in Import backup to check the intended bytes before retrying.")
-            self.owner.status.setToolTip(f"Destination: {error.destination}\nSHA-256: {error.expected_sha256}\nBytes: {error.expected_size}\nReceipt: {error.publication_receipt or 'not available'}")
-        elif isinstance(error, WorkspacePackageCancelled):
-            self.owner.status.setText("Operation cancelled. Draft kept. Check previous import if recovery is offered.")
-        else:
-            self.owner.status.setText(f"Workspace operation did not finish: {error}")
-        self.owner._sync_import_recovery()
-        self._end()
+        try:
+            if self._failure_callback is not None:
+                try:
+                    self._failure_callback(error)
+                except Exception:
+                    LOGGER.exception("Could not update workspace media failure evidence")
+            if isinstance(error, SessionLibraryImportUnconfirmed):
+                self.owner._import_unconfirmed(error)
+            elif isinstance(error, WorkspacePackagePublicationUnconfirmed):
+                self.owner.status.setText("Backup publication needs checking. Keep the destination and receipt. Choose its .webjamreceipt file in Import backup to check the intended bytes before retrying.")
+                self.owner.status.setToolTip(f"Destination: {error.destination}\nSHA-256: {error.expected_sha256}\nBytes: {error.expected_size}\nReceipt: {error.publication_receipt or 'not available'}")
+            elif isinstance(error, WorkspacePackageCancelled):
+                self.owner.status.setText("Operation cancelled. Draft kept. Check previous import if recovery is offered.")
+            else:
+                self.owner.status.setText(f"Workspace operation did not finish: {error}")
+            try:
+                self.owner._sync_import_recovery()
+            except Exception:
+                LOGGER.exception("Could not refresh workspace import recovery")
+        finally:
+            self._end()
+
+    def execute(self, title, function, complete, *, failed=None, prepare=None):
+        """One explicit media action shares the backup flow's lifetime gate."""
+        if not self._begin():
+            return False
+        token = self.token
+        self._failure_callback = failed
+
+        def finished(result):
+            complete(result, token)
+            self._end()
+
+        try:
+            if prepare is not None and (not prepare() or self.closing):
+                self.owner.status.setText("Operation cancelled. Draft kept.")
+                self._end()
+                return False
+        except Exception as error:
+            self._failed(error)
+            return False
+        self._run(title, function, finished)
+        return True
 
     def _show(self, prompt, complete):
         if self.closing:
