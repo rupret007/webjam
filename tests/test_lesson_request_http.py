@@ -320,7 +320,7 @@ def response_handler(status, body):
 
 @pytest.mark.parametrize("status,body", [
     (401, b"not JSON"), (401, b"x" * (65536 + 1)), (404, b"<html>missing</html>"),
-])
+], ids=["auth-non-json", "auth-oversized-body", "old-host-html"])
 def test_terminal_auth_and_old_host_fallback_do_not_depend_on_response_body(peer, monkeypatch, status, body):
     server, client, enrollment, *_ = peer
     command = admitted(peer)

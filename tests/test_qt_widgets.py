@@ -1285,8 +1285,12 @@ class TestConductorWindow(unittest.TestCase):
 
     def test_conversation_actions_fit_supported_compact_window(self):
         from services.webex_app import WebexAppState
+        from webjam_qt.theme import load_stylesheet
 
         w = self._window()
+        # Native macOS buttons include transparent margins outside their
+        # layout cells. Measure the actual shipped theme's control geometry.
+        w.setStyleSheet(load_stylesheet())
         w.resize(720, 560)
         w.webex_embed.set_meeting_configured(True)
         w.webex_embed.set_app_status(
@@ -1298,6 +1302,7 @@ class TestConductorWindow(unittest.TestCase):
         w.show()
         _qapp().processEvents()
         try:
+            content = w.webex_embed._scroll.widget()
             actions = (
                 w.webex_embed.bring_forward_button(),
                 w.webex_embed.mute_button(),
@@ -1310,11 +1315,11 @@ class TestConductorWindow(unittest.TestCase):
                     self.assertGreaterEqual(action.geometry().left(), 0)
                     self.assertLess(
                         action.geometry().right(),
-                        w.webex_embed.width(),
+                        content.width(),
                     )
                     self.assertLess(
                         action.geometry().bottom(),
-                        w.webex_embed.height(),
+                        content.height(),
                     )
             for index, first in enumerate(actions):
                 for second in actions[index + 1 :]:
@@ -1344,11 +1349,11 @@ class TestConductorWindow(unittest.TestCase):
                     self.assertGreaterEqual(action.geometry().left(), 0)
                     self.assertLess(
                         action.geometry().right(),
-                        w.webex_embed.width(),
+                        content.width(),
                     )
                     self.assertLess(
                         action.geometry().bottom(),
-                        w.webex_embed.height(),
+                        content.height(),
                     )
             self.assertFalse(
                 recovery_actions[0].geometry().intersects(
@@ -1363,6 +1368,7 @@ class TestConductorWindow(unittest.TestCase):
             w.close()
 
     def test_production_styled_conversation_and_lobby_fit_supported_sizes(self):
+        from PySide6.QtCore import QPoint, QRect, Qt
         from services.webex_app import WebexAppState
         from webjam_qt.session_state import SessionUiState
         from webjam_qt.theme import load_stylesheet
@@ -1410,16 +1416,17 @@ class TestConductorWindow(unittest.TestCase):
                             )
                             if action.isVisibleTo(w)
                         ]
+                        content = w.webex_embed._scroll.widget()
                         for action in visible_actions:
-                            self.assertGreaterEqual(action.geometry().left(), 0)
-                            self.assertLess(
-                                action.geometry().right(),
-                                w.webex_embed.width(),
-                            )
-                            self.assertLess(
-                                action.geometry().bottom(),
-                                w.webex_embed.height(),
-                            )
+                            bounds = QRect(action.mapTo(content, QPoint()), action.size())
+                            self.assertTrue(content.rect().contains(bounds))
+                            if action.isEnabled():
+                                action.setFocus(Qt.FocusReason.TabFocusReason)
+                                _qapp().processEvents()
+                                self.assertTrue(action.hasFocus(), action.text())
+                                self.assertTrue(
+                                    action.visibleRegion().contains(action.rect()), action.text(),
+                                )
                         for index, first in enumerate(visible_actions):
                             for second in visible_actions[index + 1 :]:
                                 self.assertFalse(
@@ -1644,7 +1651,7 @@ class TestConductorWindow(unittest.TestCase):
                             "— Art", "Make together", "Paint along", "<b>More</b>",
                             "Shared Canvas…", "Choose process video…",
                             "YouTube link…", "Open my copy…", "Open lesson",
-                            "silent", "local files are not transferred", "Conversation",
+                            "silent", "Local files are not transferred", "Conversation",
                             "Back to room", "Notes", "End Room", "Leave Room",
                         ):
                             self.assertIn(token, body)
