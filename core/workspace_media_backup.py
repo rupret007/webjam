@@ -657,6 +657,14 @@ def _validate_manifest(data):
                     ref["source_identity"] = manifests[0]["sha256"]
     # Validate relationships with the same pure schema used by local storage.
     encode_session_record(replace(preview.record, take_links=tuple(refs), media_provenance=tuple(proofs)))
+    expected_art = {p["reference_id"]: p["files"][0] for p in preview.record.media_provenance if p["kind"] == "art"}
+    for proof in proofs:
+        if proof["kind"] == "art" and proof["reference_id"] in expected_art:
+            expected, supplied = expected_art[proof["reference_id"]], proof["files"][0]
+            # Relinking may change the restored filename, but a re-export
+            # cannot silently replace the reference's durable content identity.
+            if any(expected[key] != supplied[key] for key in ("sha256", "size_bytes")):
+                raise WorkspaceBackupError("Art content differs from its stored identity.")
     files = _inventory(value)
     if files:
         file_inventory(files)

@@ -15,6 +15,8 @@ they do not request a new release/tag or claim new published package evidence.
   with metadata-only defaults or explicitly selected completed takes/local Art,
   cancellable background work and durable checksum receipts for recovery.
   Imported media remains unchecked until an explicit action.
+  Repackaged Art must match its saved content checksum and size; changing a
+  relinked file's name or extension keeps that identity intact.
 - Background Notes saves and late recording results leave the Library's
   retained import draft unsaved. Explicit Save or closing still reconciles
   that draft and any pending recording facts; later typing resumes its autosave.

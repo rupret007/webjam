@@ -110,6 +110,9 @@ In **Art project**, select a local file and choose **Verify reference**.
 the same content while preserving the brief and bookmarks. A metadata-only file
 without an original checksum can be checked for availability, but cannot be
 proven to be the original or relinked as matching content.
+When you back up imported Art again, its content must still match the saved
+checksum and size. Import rejects a package that contradicts that saved proof;
+relinking the same bytes under a new filename or extension remains supported.
 
 “Content matched when checked” describes that check, not a permanent guarantee.
 Restored Studio arrangements use their declared source locations even if the

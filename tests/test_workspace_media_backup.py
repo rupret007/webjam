@@ -122,6 +122,53 @@ def test_changed_art_cannot_be_relinked_or_rebacked_as_same_content(tmp_path, ar
         media.export_workspace_package(plan, tmp_path / "bad.webjambackup")
 
 
+@pytest.mark.parametrize("changed", ["same_size", "different_size"])
+def test_repackaged_art_cannot_replace_saved_content_identity(tmp_path, art, changed):
+    record, original = art
+    original_bytes = original.read_bytes()
+    imported = media.import_workspace_package(SessionLibrary(tmp_path / "first"), _package(tmp_path, record))
+    preview = _package(tmp_path, imported, name="repacked.webjambackup")
+    with zipfile.ZipFile(preview.path) as archive:
+        files = {item.filename: archive.read(item) for item in archive.infolist()}
+    manifest = json.loads(files["workspace.json"])
+    asset = manifest["assets"][0]
+    content = asset["prefix"] + "/" + asset["files"][0]["path"]
+    replacement = b"x" * (len(original_bytes) + (changed == "different_size"))
+    files[content] = replacement
+    asset["files"][0].update(sha256=_digest(replacement), size_bytes=len(replacement))
+    # Keep the embedded workspace and its expected content proof unchanged;
+    # only the selected bytes and their self-consistent inventory are replaced.
+    files["workspace.json"] = json.dumps(manifest).encode()
+    altered = tmp_path / "altered.webjambackup"
+    with zipfile.ZipFile(altered, "w", compression=zipfile.ZIP_STORED) as archive:
+        for name, data in files.items():
+            archive.writestr(media._zip_info(name), data)
+    destination = SessionLibrary(tmp_path / "destination")
+    with pytest.raises(media.WorkspaceBackupError, match="Art content differs from its stored identity"):
+        media.preview_workspace_package(altered)
+    assert not destination.list() and destination.pending_import() is None
+    assert not (destination.root / "media").exists()
+    assert original.read_bytes() == original_bytes
+    assert Path(imported.art["references"][0]["locator"]).read_bytes() == original_bytes
+
+
+def test_relinked_art_with_new_suffix_can_be_repackaged_as_same_content(tmp_path, art):
+    record, original = art
+    imported = media.import_workspace_package(SessionLibrary(tmp_path / "first"), _package(tmp_path, record))
+    replacement = tmp_path / "renamed.artwork"
+    shutil.copyfile(original, replacement)
+    verification = media.verify_workspace_media(imported, "art", "painting", locator=replacement)
+    relinked = media.relink_workspace_media(imported, verification)
+    preview = _package(tmp_path, relinked, name="relinked.webjambackup")
+    restored = media.import_workspace_package(SessionLibrary(tmp_path / "second"), preview)
+    before, after = imported.media_provenance[0]["files"][0], restored.media_provenance[0]["files"][0]
+    assert before["path"] == "content.png" and after["path"] == "content.artwork"
+    assert before["sha256"] == after["sha256"] == _digest(original.read_bytes())
+    assert before["size_bytes"] == after["size_bytes"] == original.stat().st_size
+    assert restored.art["bookmarks"] == imported.art["bookmarks"]
+    assert media.verify_workspace_media(restored, "art", "painting").matches_expected_content
+
+
 def test_verified_art_relink_updates_only_locator_and_preserves_bookmarks(tmp_path, art):
     record, _ = art
     imported = media.import_workspace_package(SessionLibrary(tmp_path / "library"), _package(tmp_path, record))
