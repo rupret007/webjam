@@ -8,6 +8,10 @@ Head `f3ddd58` has metadata-only backup/import, immutable preview, fresh IDs, v2
 
 That evidence does not cover the full portable-media milestone. Inspection found that import changes Library selection, imported paths are still probed during passive rendering, some import persistence errors escape the UI handler, and Save as copy drops the original source key. The earlier “core only / CI pending” description is stale. Physical acceptance remains NOT RUN.
 
+Local checkpoint `7554980` addresses those starting import-safety findings. Its frozen source passed 261 tests with one Windows-only skip across 11 relevant modules, plus Ruff, compilation and diff checks. Coverage includes separate-process recovery, six journal/publication/acknowledgement failure boundaries, retained conflicting drafts, no passive imported-link access and compact 480×500 layouts at 13/22px. The local receipt is `build/workspace-portability/import-safety-validation.json`; these results do not claim media-package, final-head CI or physical acceptance. Selected-media implementation is in progress on the same lane.
+
+The selected-media core now has local validation: 284 tests passed, one skipped, and eight subtests passed across the media package, metadata backup, import recovery, Session library, take library and take review suites. Ruff and diff checks passed. The receipt is `build/workspace-portability/media-core-validation.json`; it records the working tree based on `7554980`, not final-head CI. Coverage includes source stability, safe archive inventories, durable media recovery, fresh-process crash/resume, storage faults, exact content proofs and take/Art round trips. Library choices, asynchronous progress, prepared Studio activation and the complete recorder-to-restored-workspace journey remain pending.
+
 ## Ordered implementation
 
 1. **Import safety.** Retain current selection, search, editor/drafts and runtime owner through import/cancel. Introduce a bounded private prepared-import journal and exact-ID/stored-byte-checksum reconciliation. Retry the same prepared identity only after confirmed absence; ambiguous or conflicting storage blocks duplicate retries. Survive dialog and process restart. Imported take/Art links stay “stored link - not checked” until deliberate verification/open/relink; copy/restart retain the policy. Distinguish newly recorded pending takes from historical imported reservations.
@@ -33,12 +37,12 @@ Reject duplicate/colliding member names, traversal, drive/absolute paths, unsafe
 
 | Requirement | Required proof | Current state |
 | --- | --- | --- |
-| Draft/selection/owner preservation | Actual dialog/coordinator tests: dirty and conflicting drafts, canceled preview, successful import, late recording completion, zero automatic media/runtime actions | In progress |
-| Restart-safe uncertain import | Fault injection before/after journal and record/media publication; fresh-process reconciliation of same ID/hash; conflict refusal | In progress |
-| Passive imported-link policy | Forbidden filesystem/network calls during render/continue/restart/copy, plus deliberate verification/relink routes | In progress |
+| Draft/selection/owner preservation | Actual dialog/coordinator tests: dirty and conflicting drafts, canceled preview, successful import, late recording completion, zero automatic media/runtime actions | Metadata slice passed at `7554980`; asynchronous media flow pending |
+| Restart-safe uncertain import | Fault injection before/after journal and record/media publication; fresh-process reconciliation of same ID/hash; conflict refusal | Metadata slice passed at `7554980`; media core checks passed locally; UI recovery pending |
+| Passive imported-link policy | Forbidden filesystem/network calls during render/continue/restart/copy, plus deliberate verification/relink routes | Passive metadata-link checks passed at `7554980`; content-proof core checks passed locally; explicit UI routes pending |
 | Metadata and selected-media choices | Actual dialogs, estimated/count/exclusion previews, metadata-only default, cancellation/progress, keyboard/compact/enlarged text | Pending |
-| v1/v2/v3 compatibility and identity | Independent old-byte fixtures, strict new schema, preserved provenance/IDs and expected content across save/copy/re-export | Pending |
-| Package integrity and failure behavior | Hostile/oversized/archive-race inputs, changed sources, disk-full, cancellation and exclusive publication; unchanged originals/manifests | Pending |
+| v1/v2/v3 compatibility and identity | Independent old-byte fixtures, strict new schema, preserved provenance/IDs and expected content across save/copy/re-export | Core checks passed locally; full UI/restart journey pending |
+| Package integrity and failure behavior | Hostile/oversized/archive-race inputs, changed sources, disk-full, cancellation and exclusive publication; unchanged originals/manifests | Core checks passed locally; native platform gates pending |
 | Music restoration | Two distinct takes through production controlled recorder/finalizer; selected-media backup/import in another root; fresh-process Continue, explicit A/B audition, independent reviews/edits and verified export | Pending |
 | Art restoration | Actual saved project/reference/bookmark; backup/import elsewhere; fresh-process resume and deliberate verification/relink/open; unchanged originals | Pending |
 | Frozen and hosted gates | Exact-head full source suite, real Jamulus 3.12.2 and 3.12.3, four native desktop/frozen checks including portable-workspace journey | Starting-head green; final head pending |

@@ -62,6 +62,10 @@ class SessionLibraryConflict(SessionLibraryError):
     """A newer or externally changed workspace must be reloaded first."""
 
 
+class SessionLibraryMediaImportRequired(SessionLibraryError):
+    """A media import requires cancellable package reconciliation, not metadata retry."""
+
+
 class SessionLibraryImportUnconfirmed(SessionLibraryError):
     """Creation may have published; reconcile this exact identity before retry."""
 
@@ -95,6 +99,7 @@ class SessionRecord:
     art: dict = field(default_factory=dict)
     source_key: str = ""
     import_provenance: tuple[dict, ...] = ()
+    media_provenance: tuple[dict, ...] = ()
     recovered: bool = field(default=False, compare=False)
     _store_token: str | None = field(default=None, repr=False, compare=False)
 
@@ -262,6 +267,11 @@ def _payload(record: SessionRecord) -> dict:
     if not isinstance(record.rehearsal, dict) or not isinstance(record.art, dict):
         raise SessionLibraryError("Workspace rehearsal and Art details must be objects.")
     _import_history(record)
+    from core.workspace_media_schema import media_provenance
+    try:
+        media_provenance(record)
+    except ValueError as exc:
+        raise SessionLibraryError(str(exc)) from exc
     result = {
         "version": 1, "id": record.id, "profile": record.profile,
         "title": record.title, "revision": record.revision,
@@ -271,6 +281,10 @@ def _payload(record: SessionRecord) -> dict:
     if record.import_provenance:
         result["version"] = 2
         result["import_provenance"] = record.import_provenance
+    if record.media_provenance:
+        result["version"] = 3
+        result["import_provenance"] = record.import_provenance
+        result["media_provenance"] = record.media_provenance
     _json_value(result)
     return result
 
@@ -318,10 +332,13 @@ def _constant(_value: str) -> None:
 def _decode(data: bytes, expected_id: str | None) -> SessionRecord:
     try:
         value = json.loads(data.decode("utf-8"), object_pairs_hook=_pairs, parse_constant=_constant)
-        if not isinstance(value, dict) or type(value.get("version")) is not int or value["version"] not in {1, 2}:
+        if not isinstance(value, dict) or type(value.get("version")) is not int or value["version"] not in {1, 2, 3}:
             raise SessionLibraryError("Workspace document schema is unsupported.")
         expected_fields = _FIELDS if value["version"] == 1 else _FIELDS | {"import_provenance"}
-        if set(value) != expected_fields or (value["version"] == 2 and not value["import_provenance"]):
+        if value["version"] == 3:
+            expected_fields |= {"media_provenance"}
+        if (set(value) != expected_fields or (value["version"] == 2 and not value["import_provenance"])
+                or (value["version"] == 3 and not value["media_provenance"])):
             raise SessionLibraryError("Workspace document schema is unsupported.")
         raw = {name: content for name, content in value.items() if name != "version"}
         for name in ("decisions", "actions", "blockers", "recaps", "take_links"):
@@ -332,6 +349,10 @@ def _decode(data: bytes, expected_id: str | None) -> SessionRecord:
             if not isinstance(raw["import_provenance"], list):
                 raise SessionLibraryError("Workspace import history must be a list.")
             raw["import_provenance"] = tuple(raw["import_provenance"])
+        if "media_provenance" in raw:
+            if not isinstance(raw["media_provenance"], list):
+                raise SessionLibraryError("Workspace media proof must be a list.")
+            raw["media_provenance"] = tuple(raw["media_provenance"])
         record = SessionRecord(**raw)
         _payload(record)
         if expected_id is not None and record.id != expected_id:
@@ -344,13 +365,15 @@ def _decode(data: bytes, expected_id: str | None) -> SessionRecord:
 
 
 def _read(path: Path) -> bytes | None:
+    maximum = (24 * 1024**2 if path.name in {".workspace-import.pending", ".workspace-import.completed"}
+               else MAX_SESSION_RECORD_BYTES)
     try:
         before = path.lstat()
     except FileNotFoundError:
         return None
     if not stat.S_ISREG(before.st_mode):
         raise _UnsafeSessionPath("Workspace storage must use regular files without symbolic links.")
-    if before.st_size > MAX_SESSION_RECORD_BYTES:
+    if before.st_size > maximum:
         raise SessionLibraryError("Workspace file is too large.")
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_BINARY", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -365,8 +388,8 @@ def _read(path: Path) -> bytes | None:
             raise _UnsafeSessionPath("Workspace changed while being read.")
         with os.fdopen(descriptor, "rb") as handle:
             descriptor = -1
-            data = handle.read(MAX_SESSION_RECORD_BYTES + 1)
-        if len(data) > MAX_SESSION_RECORD_BYTES:
+            data = handle.read(maximum + 1)
+        if len(data) > maximum:
             raise SessionLibraryError("Workspace file is too large.")
         return data
     finally:
@@ -390,6 +413,7 @@ class SessionLibrary:
         self.root = Path(root).expanduser() if root is not None else Path.home() / ".webjam_sessions"
         self.warnings: tuple[str, ...] = ()
         self._unconfirmed_import: SessionRecord | None = None
+        self._unconfirmed_media_import: bytes | None = None
 
     def _root_exists(self, *, create: bool = False) -> bool:
         try:
@@ -472,16 +496,52 @@ class SessionLibrary:
 
     def _pending_import(self) -> SessionRecord | None:
         data = _read(self.root / ".workspace-import.pending")
-        pending = _decode(data, None) if data is not None else self._unconfirmed_import
+        if data is not None and self._unconfirmed_media_import is not None:
+            from core.workspace_media_backup import same_media_import_transaction
+            if not same_media_import_transaction(self._unconfirmed_media_import, data):
+                raise SessionLibraryConflict("Pending media context changed; preserve both snapshots before retrying.")
+        if data is None and self._unconfirmed_media_import is not None:
+            data = self._unconfirmed_media_import
+        pending = self._journal_record(data) if data is not None else self._unconfirmed_import
         if pending is not None:
             encoded = self._prepared_import_bytes(pending)
-            if data is not None and data != encoded:
+            if data is not None and not self._is_media_journal(data) and data != encoded:
                 raise SessionLibraryError("Pending import evidence is not an exact prepared snapshot.")
             if (self._unconfirmed_import is not None
                     and encoded != self._prepared_import_bytes(self._unconfirmed_import)):
                 raise SessionLibraryConflict("Pending import evidence changed; preserve both snapshots before retrying.")
             return _decode(encoded, None)
         return pending
+
+    @staticmethod
+    def _is_media_journal(data: bytes | None) -> bool:
+        if data is None:
+            return False
+        try:
+            value = json.loads(data, object_pairs_hook=_pairs, parse_constant=_constant)
+            return isinstance(value, dict) and value.get("format") == "webjam.media-import"
+        except (ValueError, TypeError, RecursionError) as exc:
+            raise SessionLibraryError("Import journal could not be decoded.") from exc
+
+    @classmethod
+    def _journal_record(cls, data: bytes) -> SessionRecord:
+        if cls._is_media_journal(data):
+            from core.workspace_media_backup import decode_media_import_journal
+            return decode_media_import_journal(data)[0]
+        return _decode(data, None)
+
+    def pending_import_has_media(self) -> bool:
+        """Inspect only bounded journal metadata; callers dispatch to a worker."""
+        if not self._root_exists():
+            return self._unconfirmed_media_import is not None
+        with self._locked():
+            data = _read(self.root / ".workspace-import.pending")
+            self._pending_import()
+            return self._unconfirmed_media_import is not None or self._is_media_journal(data)
+
+    def _require_metadata_journal(self) -> None:
+        if self._unconfirmed_media_import is not None or self._is_media_journal(_read(self.root / ".workspace-import.pending")):
+            raise SessionLibraryMediaImportRequired("This import contains media. Verify its package recovery before retrying.")
 
     def pending_import(self) -> SessionRecord | None:
         """Read one bounded, private prepared import; never list it as saved work."""
@@ -500,6 +560,7 @@ class SessionLibrary:
         """
         data = self._prepared_import_bytes(record)
         with self._locked():
+            self._require_metadata_journal()
             pending = self._pending_import()
             if pending is not None and self._prepared_import_bytes(pending) != data:
                 raise SessionLibraryConflict("Check the previous import before starting another one.")
@@ -528,6 +589,7 @@ class SessionLibrary:
         """Prove exact identity/bytes or absence; damaged or changed files block."""
         self._prepared_import_bytes(record)
         with self._locked():
+            self._require_metadata_journal()
             pending = self._pending_import()
             if pending is not None and self._prepared_import_bytes(pending) != self._prepared_import_bytes(record):
                 raise SessionLibraryConflict("Pending import evidence changed; retry is blocked.")
@@ -537,6 +599,7 @@ class SessionLibrary:
         """Publish only the journalled identity after confirming it is absent."""
         data = self._prepared_import_bytes(record)
         with self._locked():
+            self._require_metadata_journal()
             journal = _read(self.root / ".workspace-import.pending")
             if journal != data:
                 raise SessionLibraryConflict("Import has no matching durable preparation; prepare it before retrying.")
@@ -544,10 +607,15 @@ class SessionLibrary:
                 raise SessionLibraryConflict("Workspace already exists; check the previous import instead of retrying.")
             self._unconfirmed_import = _decode(data, None)
             try:
-                atomic_write_bytes(self._path(record.id), data, mode=0o600)
+                self._publish_import_file(self._path(record.id), data)
             except OSError as exc:
                 raise SessionLibraryImportUnconfirmed(record.id, _token(data)) from exc
             return replace(_decode(data, record.id), _store_token=_token(data))
+
+    def _publish_import_file(self, path: Path, data: bytes) -> None:
+        """Create a complete new primary exclusively, even against outside writers."""
+        from core.workspace_media_backup import _publish_new_import_primary
+        _publish_new_import_primary(path, data)
 
     def acknowledge_import(self, record: SessionRecord) -> None:
         """Resolve recovery after exact saved proof; retain one bounded receipt.
@@ -558,6 +626,7 @@ class SessionLibrary:
         """
         data = self._prepared_import_bytes(record)
         with self._locked():
+            self._require_metadata_journal()
             if self._reconcile_import(record) is None:
                 raise SessionLibraryConflict("The intended import is absent; its recovery evidence was retained.")
             journal_path = self.root / ".workspace-import.pending"
@@ -570,7 +639,7 @@ class SessionLibrary:
                 if journal is not None:
                     previous = _read(completed_path)
                     if previous is not None:
-                        self._prepared_import_bytes(_decode(previous, None))
+                        self._prepared_import_bytes(self._journal_record(previous))
                     os.replace(journal_path, completed_path)
                 elif _read(completed_path) != data:
                     raise SessionLibraryConflict("The completed import receipt is missing or changed; its outcome remains unresolved.")
@@ -601,7 +670,8 @@ class SessionLibrary:
             if record._store_token is None or record._store_token != current._store_token or record.revision != current.revision:
                 raise SessionLibraryConflict("Workspace changed since it was opened. Reload before saving.")
             if (record.created_at != current.created_at or record.source_key != current.source_key
-                    or record.import_provenance != current.import_provenance):
+                    or record.import_provenance != current.import_provenance
+                    or record.media_provenance != current.media_provenance):
                 raise SessionLibraryConflict("Workspace creation or import identity changed.")
             # A backwards wall clock must not make newly saved work sort older.
             updated = max(_now(), current.updated_at)
@@ -701,5 +771,5 @@ __all__ = [
     "MAX_SESSION_RECORD_BYTES", "SessionLibrary", "SessionLibraryConflict",
     "SessionLibraryError", "SessionRecord", "validate_session_record",
     "encode_session_record", "decode_session_record",
-    "MAX_IMPORT_HISTORY", "SessionLibraryImportUnconfirmed",
+    "MAX_IMPORT_HISTORY", "SessionLibraryImportUnconfirmed", "SessionLibraryMediaImportRequired",
 ]

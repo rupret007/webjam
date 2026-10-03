@@ -51,6 +51,15 @@ v0.29.0 adds **File → Session library…** before a room and
 Music moments are plain notes unless a recording position is confirmed.
 See [the saved-work walkthrough](USER_GUIDE.md#save-a-session-and-continue-later).
 
+Draft workspace-backup builds also provide **Back up workspace…** and
+**Import backup…** in Session library. The current controls save metadata to a
+new JSON file, preview it, and import a separate workspace while retaining the
+open draft. Referenced media stays at its stored location until you explicitly
+open or locate it. Selected-media packaging and verified restoration are the
+[active portability milestone](docs/WORKSPACE_BACKUP_PLAN.md); they are not
+claimed in the published v0.29.0 packages. See
+[the backup walkthrough](USER_GUIDE.md#back-up-and-import-a-workspace-unreleased).
+
 ## Unreleased: move between workflows
 
 In workflow continuity PR/test builds, **File → Return to launch** brings you

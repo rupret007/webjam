@@ -28,7 +28,7 @@ def _merge_editor_changes(base, edited, latest):
     """Merge only disjoint known edits; competing content stays with its owners."""
     if (base is None or any(getattr(base, key) != getattr(edited, key)
                            or getattr(base, key) != getattr(latest, key)
-                           for key in ("id", "profile", "created_at", "source_key"))):
+                           for key in ("id", "profile", "created_at", "source_key", "import_provenance", "media_provenance"))):
         raise SessionLibraryConflict("The workspace editor no longer matches its original snapshot.")
     changes = {}
     for name in _EDITABLE_FIELDS:

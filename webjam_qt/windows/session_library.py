@@ -506,7 +506,7 @@ class SessionLibraryDialog(QDialog):
             original = deepcopy(self._base_record)
             edited = self._edited_record()
             fields = {key: getattr(edited, key) for key in ("notes", "decisions", "actions", "blockers",
-                "recaps", "take_links", "rehearsal", "art", "mode_key", "source_key", "import_provenance")}
+                "recaps", "take_links", "rehearsal", "art", "mode_key", "source_key", "import_provenance", "media_provenance")}
             record = self.library.create(edited.profile, title.strip(), **fields)
             self._dirty = False
             self.pending_records.pop(edited.id, None)

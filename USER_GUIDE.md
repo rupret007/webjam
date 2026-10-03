@@ -53,6 +53,36 @@ For completed Music or Podcast & Voice takes, follow
 [Review and compare completed takes](#review-and-compare-completed-takes)
 to save favorites and notes, audition A/B, and inspect an export receipt.
 
+## Back up and import a workspace: Unreleased
+
+These controls belong to draft workspace-backup builds after v0.29.0. In
+**Session library**, select the workspace and choose **Back up workspace…**.
+The current controls save its metadata to a new JSON filename. Resolve an
+unsaved draft or conflicting changes first; **Save as copy…** keeps a separate
+workspace when needed. **Export summary…** remains available for a readable
+progress handoff.
+
+Choose **Import backup…**, select the JSON file, and review the title, profile,
+counts, prior imports and limits. **Cancel** leaves the open draft unchanged.
+**Import as new workspace** creates a separate saved workspace and keeps your
+current editor and selection. Select the imported entry yourself when ready.
+
+Metadata backups contain notes, song drafts and moments, Art context, recaps
+and stored take/reference links. They do not include audio, artwork or Studio
+review/edit files. Imported links say **stored link — not checked** until an
+explicit action accesses them, including after reopening or saving a copy.
+Continuing a workspace does not start recording, play media or open another app.
+
+If an import's outcome is uncertain, choose **Check previous import**. When
+absence is confirmed, **Retry same import** keeps the intended workspace
+identity. A changed or damaged recovery record blocks retry and preserves its
+evidence. Private notes and stored locations remain literal in a backup; this
+is not a secret-scrubbing feature.
+
+Selected-media choices, content verification and portable restoration are
+[in active development](docs/WORKSPACE_BACKUP_PLAN.md). Use the identified test
+build's instructions once that full workflow is delivered.
+
 ## Return to launch: Unreleased
 
 This section and the searchable Help below describe the workflow continuity

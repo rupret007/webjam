@@ -24,6 +24,7 @@ def test_failure_boundaries_retain_exact_evidence_and_retry_same_identity(tmp_pa
     prepared = prepare_workspace_backup_import(preview)
     expected = encode_session_record(prepared)
     real_write = store.atomic_write_bytes
+    real_primary = library._publish_import_file
     real_replace = store.os.replace
     real_sync = store._fsync_parent_directory
     def write(path, data, **kwargs):
@@ -32,6 +33,12 @@ def test_failure_boundaries_retain_exact_evidence_and_retry_same_identity(tmp_pa
             raise OSError("disk full before publication")
         real_write(path, data, **kwargs)
         if phase == f"{kind}-after":
+            raise OSError("directory sync failed after publication")
+    def primary(path, data):
+        if phase == "primary-before":
+            raise OSError("disk full before publication")
+        real_primary(path, data)
+        if phase == "primary-after":
             raise OSError("directory sync failed after publication")
     def rename(source, target):
         if phase == "ack-before" and Path(target).name == ".workspace-import.completed":
@@ -43,6 +50,7 @@ def test_failure_boundaries_retain_exact_evidence_and_retry_same_identity(tmp_pa
         real_sync(path)
     with monkeypatch.context() as faults:
         faults.setattr(store, "atomic_write_bytes", write)
+        faults.setattr(library, "_publish_import_file", primary)
         faults.setattr(store.os, "replace", rename)
         faults.setattr(store, "_fsync_parent_directory", sync)
         with pytest.raises(SessionLibraryImportUnconfirmed) as caught:

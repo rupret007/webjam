@@ -335,7 +335,6 @@ def test_import_preview_preserves_conflicting_draft_search_selection_and_signals
 def test_import_uncertainty_survives_dialog_reopening_and_explicit_check_retry(
     tmp_path, make_dialog, monkeypatch, record, published,
 ):
-    from core import session_library as store
     library = SessionLibrary(tmp_path / "dest")
     current = library.create("music", "Current owner")
     destination = tmp_path / "backup.json"
@@ -343,15 +342,13 @@ def test_import_uncertainty_survives_dialog_reopening_and_explicit_check_retry(
     dialog = make_dialog(library, current_id=current.id)
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *_a, **_k: (str(destination), ""))
     monkeypatch.setattr(WorkspaceBackupPreviewDialog, "exec", lambda _self: QDialog.DialogCode.Accepted)
-    real_write = store.atomic_write_bytes
+    real_write = library._publish_import_file
     def fail_primary(path, data, **kwargs):
-        if Path(path).name == ".workspace-import.pending":
-            return real_write(path, data, **kwargs)
         if published:
             real_write(path, data, **kwargs)
         raise OSError("disk full")
     with monkeypatch.context() as fault:
-        fault.setattr(store, "atomic_write_bytes", fail_primary)
+        fault.setattr(library, "_publish_import_file", fail_primary)
         dialog.import_backup_button.click()
     pending = library.pending_import()
     assert pending is not None

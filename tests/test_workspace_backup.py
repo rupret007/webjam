@@ -12,7 +12,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from core import session_library
 from core import workspace_backup as backup
 from core.art_workspace import normalize_art_workspace
 from core.rehearsal_plan import RehearsalPlan, make_song, make_bookmark
@@ -539,16 +538,14 @@ def test_prior_import_check_reports_incomplete_library_scan_instead_of_false_abs
 def test_import_write_failure_exposes_exact_intended_identity_for_reconciliation(tmp_path, record, monkeypatch, after_publication):
     library = SessionLibrary(tmp_path / "destination")
     preview = export_workspace_backup(record, tmp_path / "backup.json")
-    real_write = session_library.atomic_write_bytes
+    real_write = library._publish_import_file
     attempted = []
     def fail(path, data, **kwargs):
-        if Path(path).name == ".workspace-import.pending":
-            return real_write(path, data, **kwargs)
         attempted.append((Path(path), data))
         if after_publication:
             real_write(path, data, **kwargs)
         raise OSError("private error detail")
-    monkeypatch.setattr(session_library, "atomic_write_bytes", fail)
+    monkeypatch.setattr(library, "_publish_import_file", fail)
     with pytest.raises(SessionLibraryImportUnconfirmed) as caught:
         import_workspace_backup(library, preview)
     error = caught.value
