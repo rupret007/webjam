@@ -15,7 +15,7 @@ from core.workspace_backup import export_workspace_backup, import_workspace_back
 from core import workspace_media_backup as media
 from tests.test_workspace_media_activation import portable_takes as portable_takes
 from tests.test_workspace_media_backup import art as art
-from tests.test_workspace_media_library_ui import app as app, make_dialog as make_dialog, _wait
+from tests.test_workspace_media_library_ui import app as app, box_font as box_font, make_dialog as make_dialog, _wait
 from webjam_qt.theme import load_stylesheet
 from webjam_qt.widgets import art_workspace as art_ui
 
@@ -125,17 +125,20 @@ def test_metadata_only_art_checks_availability_but_refuses_unprovable_relink(
     assert library.load(record.id) == record and len(opened) == 1
 
 
-@pytest.mark.parametrize("stretch", [100, 125])
-def test_compact_enlarged_takes_controls_remain_reachable(app, portable_takes, make_dialog, monkeypatch, stretch):
+@pytest.mark.parametrize("stretch,full_em", [(100, False), (125, False), (100, True)])
+def test_compact_enlarged_takes_controls_remain_reachable(app, box_font, portable_takes, make_dialog, monkeypatch, stretch, full_em):
     library, record, _originals, _roots, _projects = portable_takes
     previous_font = app.font()
     font = QFont(previous_font)
+    if full_em:
+        font.setFamily(box_font)
     font.setPixelSize(22)
     font.setStretch(stretch)
     app.setFont(font)
     try:
         dialog = make_dialog(library, current_id=record.id)
-        dialog.setStyleSheet(load_stylesheet() + "QWidget { font-size: 22px; }")
+        family = f'font-family: "{box_font}";' if full_em else ""
+        dialog.setStyleSheet(load_stylesheet() + f"QWidget {{ font-size: 22px; {family} }}")
         dialog.resize(480, 500)
         dialog.tabs.setCurrentIndex(0)
         app.processEvents()
@@ -147,6 +150,8 @@ def test_compact_enlarged_takes_controls_remain_reachable(app, portable_takes, m
         scroll = dialog.tabs.currentWidget()
         assert isinstance(scroll, QScrollArea)
         assert dialog.width() == 480 and dialog.height() == 500
+        if full_em:
+            assert dialog.fontMetrics().horizontalAdvance("MW") == 44
         assert scroll.viewport().height() > 0
         for button in (dialog.verify_take_button, dialog.open_take_button, dialog.relink_take_button):
             scroll.ensureWidgetVisible(button, 0, 0)

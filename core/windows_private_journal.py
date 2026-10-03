@@ -166,8 +166,9 @@ class _Api:
         return visible.st_dev, visible.st_ino
 
     def open(self, path, *, directory=False, create=False):
-        # READ_CONTROL + FILE_READ_ATTRIBUTES, plus content access for files.
-        access = 0x20000 | 0x80 | (0 if directory else 0x80000000)
+        # FILE_LIST_DIRECTORY makes the directory open participate in sharing
+        # checks. Metadata-only access does not pin against rename/deletion.
+        access = 0x20000 | 0x80 | (0x1 if directory else 0x80000000)
         if create:
             access |= 0x40000000
         flags = 0x00200000 | (0x02000000 if directory else 0x80)

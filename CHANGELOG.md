@@ -34,6 +34,10 @@ they do not request a new release/tag or claim new published package evidence.
   blocks recording; Windows does not promise POSIX directory-flush durability.
   Shorter backup/Takes captions and breakable saved timestamps keep compact
   previews usable with wider enlarged text while preserving accessible labels.
+  Directory guards request the access needed to prevent renames during journal
+  and media publication. Native tests exercise the actual import destination
+  guard. Compact checks also reproduce Windows missing-font widths; the profile
+  field fits the window while its popup retains full names.
 - The initial launch-screen Library can open an imported take or timed moment
   directly into its saved workspace. Changed media/context, cancellation and late
   drafts prevent stale activation; verified source locations transfer to the new Studio owner.

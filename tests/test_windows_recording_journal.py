@@ -17,6 +17,13 @@ from core.take_project import RecoveryStatus, SessionEvidence
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Native Windows ACL and handle contract")
 
 
+def _powershell_environment(**values):
+    # pwsh -> Python -> Windows PowerShell otherwise retains the incompatible
+    # PowerShell7 module path. Let Windows PowerShell5 rebuild its own path.
+    return {**{key: value for key, value in os.environ.items()
+               if key.lower() != "psmodulepath"}, **values}
+
+
 def assert_native_private_acl(path, *, directory):
     # Inspect independently of the ctypes implementation, including elevated
     # runners whose default owner would otherwise be Administrators.
@@ -34,9 +41,10 @@ def assert_native_private_acl(path, *, directory):
           user=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value;
           protected=$acl.AreAccessRulesProtected; rules=$rules} | ConvertTo-Json -Depth 4 -Compress
         """],
-        env={**os.environ, "WEBJAM_TEST_JOURNAL_PATH": str(path)},
-        capture_output=True, text=True, check=True, timeout=30,
+        env=_powershell_environment(WEBJAM_TEST_JOURNAL_PATH=str(path)),
+        capture_output=True, text=True, timeout=30,
     )
+    assert result.returncode == 0, result.stderr
     facts = json.loads(result.stdout)
     assert facts["owner"] == facts["user"]
     assert facts["protected"] is True
@@ -143,16 +151,21 @@ def test_publication_rechecks_private_exact_evidence(tmp_path, monkeypatch, oper
     assert not list(journal.directory.glob(".recording-evidence-*.tmp"))
 
 
-def test_directory_guard_blocks_rename_and_releases_handle(tmp_path):
+@pytest.mark.parametrize("guard", ["journal", "workspace_media"])
+def test_directory_guard_blocks_rename_and_releases_handle(tmp_path, guard):
     from core.windows_private_journal import private_directory
+    from core.workspace_media_backup import _pin_windows_directory
 
     directory, moved = tmp_path / "private", tmp_path / "moved"
     with private_directory(directory, create=True):
+        pass
+    pin = private_directory if guard == "journal" else _pin_windows_directory
+    with pin(directory):
         with pytest.raises(OSError):
             directory.rename(moved)
         assert directory.is_dir() and not moved.exists()
     directory.rename(moved)
-    with private_directory(moved):
+    with pin(moved):
         pass
 
 
@@ -200,8 +213,8 @@ def test_junction_directory_never_mutates_its_target(tmp_path):
         $ErrorActionPreference = 'Stop'
         New-Item -ItemType Junction -Path $env:WEBJAM_TEST_JOURNAL_LINK -Target $env:WEBJAM_TEST_JOURNAL_TARGET | Out-Null
         """],
-        env={**os.environ, "WEBJAM_TEST_JOURNAL_LINK": str(redirected.directory),
-             "WEBJAM_TEST_JOURNAL_TARGET": str(original.directory)},
+        env=_powershell_environment(WEBJAM_TEST_JOURNAL_LINK=str(redirected.directory),
+                                    WEBJAM_TEST_JOURNAL_TARGET=str(original.directory)),
         capture_output=True, check=True, timeout=30,
     )
     try:

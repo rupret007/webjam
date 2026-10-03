@@ -65,7 +65,7 @@ readable progress handoff.
 notes, song drafts and moments, Art context, recaps and stored take/reference
 links. It does not copy audio, artwork or Studio review/edit files.
 
-To carry files too, choose **Include selected media**, check the completed takes
+To carry files too, choose **Selected media**, check the completed takes
 or local Art files, and choose **Continue**. **Take reviews** and **Studio edits**
 are checked by default. Review the included/excluded items, file count, size
 and blockers. **Change choices…** retains your selections so you can include a
@@ -84,7 +84,7 @@ Choose **Import backup…** and select a JSON backup, media package, or its
 `.webjamreceipt` file. A receipt checks the package beside it against the
 intended checksum. Review the title, profile, counts, prior imports and limits.
 **Cancel** leaves the open draft unchanged.
-**Import as new workspace** creates a separate saved workspace and keeps your
+**Import as new** creates a separate saved workspace and keeps your
 current editor and selection. Select the imported entry yourself when ready.
 At compact sizes or with enlarged text, scroll the Library to reach its actions.
 Tab and Shift+Tab bring focused controls into view; save and recovery status stays visible.

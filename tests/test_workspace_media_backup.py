@@ -383,7 +383,6 @@ def test_disk_full_mid_copy_retains_journal_and_removes_only_owned_partial(tmp_p
     assert media.import_workspace_package(library, preview, retry=True).id == pending.id
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX directory-descriptor attack; Windows denies rename while pinned")
 def test_destination_parent_swap_never_writes_through_symlink(tmp_path, art, monkeypatch):
     record, _ = art
     preview = _package(tmp_path, record)
@@ -392,17 +391,40 @@ def test_destination_parent_swap_never_writes_through_symlink(tmp_path, art, mon
     outside.mkdir()
     original = media._at_open
     swapped = []
-    def swap(parent, directory, name, flags, mode=0o600):
-        if name.startswith(".webjam-part-") and not swapped:
-            moved = directory.with_name(directory.name + "-owned-moved")
+
+    def swap_directory(directory):
+        moved = directory.with_name(directory.name + "-owned-moved")
+        if os.name == "nt":
+            # Exercise the actual import guard, not just its utility:
+            # Windows must deny the swap while the pathname is in use.
+            with pytest.raises(OSError):
+                directory.rename(moved)
+            swapped.append(directory)
+        else:
             directory.rename(moved)
             directory.symlink_to(outside, target_is_directory=True)
             swapped.append(moved)
+
+    def swap(parent, directory, name, flags, mode=0o600):
+        if name.startswith(".webjam-part-") and not swapped:
+            swap_directory(directory)
         return original(parent, directory, name, flags, mode)
-    monkeypatch.setattr(media, "_at_open", swap)
-    with pytest.raises(media.WorkspaceBackupError):
-        media.import_workspace_package(library, preview)
-    assert swapped and not list(outside.iterdir()) and not library.list()
+    if os.name == "nt":
+        # Windows uses a native staging handle instead of _at_open for members.
+        original_stage = media._new_stage
+        def swap_before_native_stage(directory):
+            if not swapped:
+                swap_directory(directory)
+            return original_stage(directory)
+        monkeypatch.setattr(media, "_new_stage", swap_before_native_stage)
+        restored = media.import_workspace_package(library, preview)
+        assert library.load(restored.id) == restored
+    else:
+        monkeypatch.setattr(media, "_at_open", swap)
+        with pytest.raises(media.WorkspaceBackupError):
+            media.import_workspace_package(library, preview)
+        assert not library.list()
+    assert swapped and not list(outside.iterdir())
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX unlink race; Windows stage handles use explicit delete sharing")

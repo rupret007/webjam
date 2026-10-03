@@ -166,9 +166,11 @@ def _pin_windows_directory(path):
     close = kernel.CloseHandle
     close.argtypes = (wintypes.HANDLE,)
     close.restype = wintypes.BOOL
-    # FILE_READ_ATTRIBUTES, read/write sharing (deliberately NO delete share),
+    # FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES: metadata-only access does
+    # not participate in the sharing check that must prevent parent swaps.
+    # Read/write sharing (deliberately NO delete share),
     # OPEN_EXISTING, BACKUP_SEMANTICS | OPEN_REPARSE_POINT.
-    handle = create(str(path), 0x80, 3, None, 3, 0x02000000 | 0x00200000, None)
+    handle = create(str(path), 0x81, 3, None, 3, 0x02000000 | 0x00200000, None)
     if handle == ctypes.c_void_p(-1).value:
         raise ctypes.WinError(ctypes.get_last_error())
     try:

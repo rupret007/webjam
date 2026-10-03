@@ -11,7 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QPoint, QRect, Qt, QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QLabel, QPushButton, QScrollArea
 
@@ -26,6 +26,19 @@ from webjam_qt.windows import workspace_backup as ui
 @pytest.fixture(scope="module")
 def app():
     return QApplication.instance() or QApplication([])
+
+
+@pytest.fixture(scope="module")
+def box_font(app):
+    """Reproduce native missing-font widths without changing normal cases."""
+    font_id = QFontDatabase.addApplicationFont(str(Path(__file__).parent / "support/fonts/BoxEmProbe.ttf"))
+    assert font_id >= 0
+    families = QFontDatabase.applicationFontFamilies(font_id)
+    assert families == ["WebJam Box Em Probe"]
+    try:
+        yield families[0]
+    finally:
+        QFontDatabase.removeApplicationFont(font_id)
 
 
 def _wait(app, predicate, timeout=5):
@@ -543,8 +556,8 @@ def test_return_to_launch_and_shutdown_keep_worker_owner(navigation, tmp_path, a
             dialog.workspace_flow.job._poll()
 
 
-@pytest.mark.parametrize("font_size,stretch", [(13, 100), (22, 100), (22, 125)])
-def test_choices_and_previews_fit_compact_enlarged_text(app, art, tmp_path, font_size, stretch):
+@pytest.mark.parametrize("font_size,stretch,full_em", [(13, 100, False), (22, 100, False), (22, 125, False), (22, 100, True)])
+def test_choices_and_previews_fit_compact_enlarged_text(app, box_font, art, tmp_path, font_size, stretch, full_em):
     from webjam_qt.theme import load_stylesheet
     record, _ = art
     changed_art = dict(record.art)
@@ -554,6 +567,8 @@ def test_choices_and_previews_fit_compact_enlarged_text(app, art, tmp_path, font
     preview = _package(tmp_path, record)
     previous_font = app.font()
     font = QFont(previous_font)
+    if full_em:
+        font.setFamily(box_font)
     font.setStretch(stretch)
     app.setFont(font)
     dialogs = [ui.WorkspaceBackupChoicesDialog(record), ui.WorkspacePackagePlanDialog(plan),
@@ -561,12 +576,15 @@ def test_choices_and_previews_fit_compact_enlarged_text(app, art, tmp_path, font
                ui.WorkspaceProgressDialog("Inspect selected media")]
     try:
         for dialog in dialogs:
-            dialog.setStyleSheet(load_stylesheet() + f"QWidget {{ font-size: {font_size}px; }}")
+            family = f'font-family: "{box_font}";' if full_em else ""
+            dialog.setStyleSheet(load_stylesheet() + f"QWidget {{ font-size: {font_size}px; {family} }}")
             dialog.show()
             dialog.resize(480, 500)
             for _ in range(5):
                 app.processEvents()
             assert dialog.width() == 480 and dialog.height() == 500
+            if full_em:
+                assert dialog.fontMetrics().horizontalAdvance("MW") == 2 * font_size
             for button in dialog.findChildren(QPushButton):
                 assert button.width() >= button.minimumSizeHint().width()
                 assert dialog.rect().contains(QRect(button.mapTo(dialog, QPoint()), button.size())), button.text()
@@ -574,7 +592,7 @@ def test_choices_and_previews_fit_compact_enlarged_text(app, art, tmp_path, font
                 assert label.wordWrap()
             for scroll in dialog.findChildren(QScrollArea):
                 assert scroll.horizontalScrollBar().maximum() == 0, (
-                    type(dialog).__name__, font_size, stretch, scroll.viewport().size(),
+                    type(dialog).__name__, font_size, stretch, full_em, scroll.viewport().size(),
                     scroll.widget().minimumSizeHint(), scroll.horizontalScrollBar().maximum(),
                 )
     finally:

@@ -90,6 +90,10 @@ class WorkspaceBackupPreviewDialog(QDialog):
         info.setAccessibleName("Backup preview details")
         info.setAccessibleDescription(f"Saved: {record.updated_at}")
         layout.addWidget(info)
+        effect = QLabel("Import creates a separate workspace. Your current draft and selection stay here.")
+        effect.setWordWrap(True)
+        effect.setTextFormat(Qt.TextFormat.PlainText)
+        layout.addWidget(effect)
         try:
             duplicates = preview.matching_import_ids(library)
         except (WorkspaceBackupError, SessionLibraryError, OSError) as error:
@@ -119,7 +123,9 @@ class WorkspaceBackupPreviewDialog(QDialog):
         scroll.setWidget(body)
         outer.addWidget(scroll, 1)
         buttons = QVBoxLayout()
-        self.confirm_button = QPushButton("Import as new workspace")
+        self.confirm_button = QPushButton("Import as new")
+        self.confirm_button.setAccessibleName("Import as new workspace")
+        self.confirm_button.setToolTip(self.confirm_button.accessibleName())
         self.confirm_button.clicked.connect(self.accept)
         buttons.addWidget(self.confirm_button)
         self.cancel_button = QPushButton("Cancel")
@@ -197,11 +203,17 @@ class SessionLibraryDialog(QDialog):
         outer.addWidget(self.history)
         create_row = QHBoxLayout()
         self.profile = QComboBox()
+        # The popup keeps full profile names; the field can fit the available
+        # width instead of forcing the form to fit its longest option.
+        self.profile.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.profile.setMinimumContentsLength(12)
         for label, key in (("Music", "music"), ("Art", "art"),
                            ("Podcast & Voice", "podcast_voice"), ("Review & Rehearsal", "review_rehearsal")):
             self.profile.addItem(label, key)
         self.profile.setAccessibleName("New workspace profile")
         self.profile.setCurrentIndex(max(0, self.profile.findData(profile)))
+        self.profile.setToolTip(self.profile.currentText())
+        self.profile.currentTextChanged.connect(self.profile.setToolTip)
         create_row.addWidget(self.profile)
         create_buttons = QHBoxLayout()
         self.new_button = QPushButton("New workspace…")
