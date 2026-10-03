@@ -81,6 +81,14 @@ bookmark ownership, cold-joined Music and real composed keyboard navigation.
 Old recovery-layout assertions now measure scroll content and focused actions
 inside the viewport while retaining the no-playback/transport-change checks.
 
+The first full-source pass also exposed a delayed native video notification
+that could replace an explicit Notes-to-Room return. Returning now consumes
+that room's automatic presentation before navigation; the offered video remains
+available through its deliberate entry. A deterministic deferred-timer
+regression preserves drafts and verifies that no player starts. The first CI
+pass also identified a remaining old recovery-copy assertion; it now checks
+the named shared-lesson handoff and verifies that opening remains explicit.
+
 Focused source checks and native layout/recovery checks precede the final
 commit gates. Final full-source, desktop CI, package verification, build
 handoff and replacement cleanup remain pending at this checkpoint. The

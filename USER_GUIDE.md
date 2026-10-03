@@ -443,7 +443,7 @@ desktop app, share the browser window with computer sound enabled; the video
 optimization option helps motion. In the Webex web client, share the browser
 tab with tab audio enabled. Keep participant videos visible in the meeting.
 These are provider-supported paths; the complete two-person WebJam experience
-still needs physical verification. See the [shared-lesson test guide](docs/plans/webjam-shared-lesson-entry.md).
+still needs physical verification. See the [two-person pilot](docs/PAINT_PLAY_ALONG_PLAN.md#two-person-acceptance).
 
 **Remember lesson** adds the displayed reference link and chosen position to
 the current **Art project**, preserving its existing notes and drafts. Select
@@ -505,6 +505,11 @@ library, **Continue** a different workspace before using its lesson. A save
 failure keeps the link and other edits in the existing draft; retry **Save**
 after storage is available.
 
+For either Music or Art at launch, choose **Continue** on the saved workspace,
+reopen **Session library** from the room, then choose **Use saved lesson**.
+The launch-time Library explains this sequence because live lesson setup is
+available only after continuing into a room.
+
 ### Silent Paint Along references
 
 For the existing **silent local-file option**, the host chooses one video file:
@@ -518,7 +523,7 @@ For the existing **silent local-file option**, the host chooses one video file:
    have the right to play. WebJam does not ship, bundle, download, or fetch any
    video, and it will not open anything from a streaming service.
 3. If Room shows **Paint along is starting**, choose **Open Paint along**.
-   Before the host shares, the panel shows **Waiting for a process video**.
+   Before the host shares, the panel shows **Optional silent reference**.
    If you already have the video, choose **Open my copy…**. **Your copy is
    open** means it is waiting locally: WebJam still needs to check it against
    the host's offer before following. No picture or playback starts early.

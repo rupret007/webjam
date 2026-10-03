@@ -2418,6 +2418,12 @@ class ApplicationController(QObject):
             # A released video panel may still have a queued Back intent. It
             # must not select a workspace for a later room or another profile.
             return
+        # Explicit Room navigation wins even when the first authenticated
+        # video snapshot is still waiting for its timer callback. Otherwise
+        # that delayed offer can immediately reopen Paint Along over Room.
+        role, session_id, _session_key = self._reference_video_identity()
+        if role and session_id:
+            self._announced_creator_start = (role, session_id)
         # Loss and unfinished cleanup still need an honest room destination.
         # This is navigation only; no transport, file or meeting action runs.
         self.window.side_rail.set_active_key("stage")
