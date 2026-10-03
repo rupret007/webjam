@@ -178,7 +178,9 @@ def test_art_browser_choice_survives_notes_return_until_video_source_changes(
     monkeypatch.setattr("PySide6.QtWidgets.QInputDialog.getText", lambda *a, **k: (LINK, True))
     panel.choose_button.click()
     assert panel.lesson_url == CANONICAL
-    app._on_rail_view_changed("notes")
+    app.window.side_rail.trigger("canvas")
+    qapp.processEvents()
+    assert app.window.session_canvas.isVisibleTo(app.window)
     dialog = _paint_along(pair, qapp)
     dialog._watch_lesson_button.click()
     assert panel.lesson_url == CANONICAL

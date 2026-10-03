@@ -317,6 +317,7 @@ def test_every_live_more_menu_action_emits_an_explicit_semantic_command() -> Non
         "tool:audio_settings",
         "tool:diagnostics",
         "tool:conversation",
+        "tool:play_along",
         "tool:session_library",
         "tool:rehearsal_plan",
         "tool:recording_setup",
