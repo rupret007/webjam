@@ -17,10 +17,18 @@ from core.workspace_backup import (
     preview_workspace_backup,
 )
 from webjam_qt.windows.session_library import SessionLibraryDialog, WorkspaceBackupPreviewDialog
+from webjam_qt.windows.workspace_backup import WorkspaceBackupChoicesDialog
 
 from tests import test_workspace_backup as backup_tests
 
 record = backup_tests.record
+
+
+@pytest.fixture(autouse=True)
+def metadata_choice(monkeypatch):
+    # This suite retains its metadata-only contract. Selected-media tests drive
+    # the actual new choices/progress/preview controls in their own module.
+    monkeypatch.setattr(WorkspaceBackupChoicesDialog, "exec", lambda _self: QDialog.DialogCode.Accepted)
 
 
 @pytest.fixture(scope="module")

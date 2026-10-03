@@ -57,31 +57,58 @@ to save favorites and notes, audition A/B, and inspect an export receipt.
 
 These controls belong to draft workspace-backup builds after v0.29.0. In
 **Session library**, select the workspace and choose **Back up workspace…**.
-The current controls save its metadata to a new JSON filename. Resolve an
-unsaved draft or conflicting changes first; **Save as copy…** keeps a separate
-workspace when needed. **Export summary…** remains available for a readable
-progress handoff.
+Resolve an unsaved draft or conflicting changes first; **Save as copy…** keeps
+a separate workspace when needed. **Export summary…** remains available for a
+readable progress handoff.
 
-Choose **Import backup…**, select the JSON file, and review the title, profile,
-counts, prior imports and limits. **Cancel** leaves the open draft unchanged.
+**Metadata only** is selected by default and writes a new JSON file containing
+notes, song drafts and moments, Art context, recaps and stored take/reference
+links. It does not copy audio, artwork or Studio review/edit files.
+
+To carry files too, choose **Include selected media**, check the completed takes
+or local Art files, and choose **Continue**. Saved take reviews and Studio edits
+are included by default. Review the included/excluded items, file count, size
+and blockers. **Change choices…** retains your selections so you can include a
+required alternate take or explicitly exclude Studio edits. Missing, changed,
+unsupported or incomplete selected files block **Create backup…**; they are
+never silently omitted. Web links remain links and are not downloaded.
+
+**Create backup…** needs a new `.webjambackup` filename. Keep the package and its
+small `.webjamreceipt` checksum receipt together. The receipt records the
+intended package bytes before publication, including if the process stops
+unexpectedly. Packages allow up to 4,096 entries and 64 GiB, with bounded
+metadata. Only selected, declared media and supported review/edit files are
+copied; unrelated files and application credentials are not added.
+
+Choose **Import backup…** and select a JSON backup, media package, or its
+`.webjamreceipt` file. A receipt checks the package beside it against the
+intended checksum. Review the title, profile, counts, prior imports and limits.
+**Cancel** leaves the open draft unchanged.
 **Import as new workspace** creates a separate saved workspace and keeps your
 current editor and selection. Select the imported entry yourself when ready.
 
-Metadata backups contain notes, song drafts and moments, Art context, recaps
-and stored take/reference links. They do not include audio, artwork or Studio
-review/edit files. Imported links say **stored link — not checked** until an
+Imported links say **stored link — not checked** until an
 explicit action accesses them, including after reopening or saving a copy.
 Continuing a workspace does not start recording, play media or open another app.
 
-If an import's outcome is uncertain, choose **Check previous import**. When
-absence is confirmed, **Retry same import** keeps the intended workspace
-identity. A changed or damaged recovery record blocks retry and preserves its
-evidence. Private notes and stored locations remain literal in a backup; this
-is not a secret-scrubbing feature.
+Copying and verification run in the background with progress and **Cancel**.
+Session **Stop** and **End** remain reachable in the main window. Cancellation
+waits for the worker's actual result: a completed publication still reports
+success, and an uncertain result retains its receipt. Closing or returning to
+launch waits for that result; review it, then close or return again.
 
-Selected-media choices, content verification and portable restoration are
-[in active development](docs/WORKSPACE_BACKUP_PLAN.md). Use the identified test
-build's instructions once that full workflow is delivered.
+If an import's outcome is uncertain, choose **Check previous import**. A checked
+complete restore offers **Retry same import**. An incomplete restore offers
+**Choose original backup…**, followed by **Resume same import**. These keep the
+intended workspace identity. A changed recovery record or different package
+blocks retry and preserves its evidence. For uncertain backup publication,
+choose the retained `.webjamreceipt` in **Import backup…** to check its bytes
+without importing anything until you confirm. Private notes and stored
+locations remain literal; this is not a secret-scrubbing feature.
+
+Explicit media Verify/Relink, Studio activation and complete recorder/restart
+restoration tests are still [in active development](docs/WORKSPACE_BACKUP_PLAN.md).
+Use the identified test build's instructions once that full workflow is delivered.
 
 ## Return to launch: Unreleased
 

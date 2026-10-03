@@ -22,6 +22,9 @@ from core.session_library import (
 )
 from webjam_qt.widgets.art_workspace import ArtWorkspacePanel
 from webjam_qt.widgets.rehearsal_plan import RehearsalPlanPanel
+from webjam_qt.windows.workspace_backup import (
+    WorkspaceBackupChoicesDialog, WorkspaceBackupFlow, package_contents,
+)
 
 
 def workspace_summary(record) -> str:
@@ -67,9 +70,14 @@ class WorkspaceBackupPreviewDialog(QDialog):
         from core.workspace_backup import WorkspaceBackupError
 
         self.setWindowTitle("Import backup")
-        self.setMinimumSize(420, 360)
+        self.resize(560, 520)
+        self.setMinimumSize(360, 300)
         record = preview.record
-        layout = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        body = QWidget()
+        layout = QVBoxLayout(body)
         info = QLabel(
             f"Title: {record.title}\n"
             f"Profile: {record.profile.replace('_', ' ')}\n"
@@ -99,8 +107,16 @@ class WorkspaceBackupPreviewDialog(QDialog):
         limits.setWordWrap(True)
         limits.setAccessibleName("Backup limitations")
         layout.addWidget(limits)
+        if hasattr(preview, "included"):
+            contents = QPlainTextEdit(package_contents(preview))
+            contents.setReadOnly(True)
+            contents.setTabChangesFocus(True)
+            contents.setAccessibleName("Included and excluded backup media")
+            layout.addWidget(contents)
         layout.addStretch(1)
-        buttons = QHBoxLayout()
+        scroll.setWidget(body)
+        outer.addWidget(scroll, 1)
+        buttons = QVBoxLayout()
         self.confirm_button = QPushButton("Import as new workspace")
         self.confirm_button.clicked.connect(self.accept)
         buttons.addWidget(self.confirm_button)
@@ -108,7 +124,7 @@ class WorkspaceBackupPreviewDialog(QDialog):
         self.cancel_button.setDefault(True)
         self.cancel_button.clicked.connect(self.reject)
         buttons.addWidget(self.cancel_button)
-        layout.addLayout(buttons)
+        outer.addLayout(buttons)
 
     @staticmethod
     def _counts(record) -> str:
@@ -149,6 +165,7 @@ class SessionLibraryDialog(QDialog):
         self._loading = False
         self._dirty = False
         self._import_in_progress = False
+        self._busy_controls = None
         self._retry_import = None
         self._action_rows = []
         self.setWindowTitle("Session library")
@@ -266,7 +283,41 @@ class SessionLibraryDialog(QDialog):
         self._initial_current_id = ""
         if current_id:
             self.select_id(current_id)
+        self.workspace_flow = WorkspaceBackupFlow(self)
         self._sync_import_recovery()
+
+    @property
+    def media_operation_pending(self):
+        # The whole flow owns the window, including result handling and the
+        # accepted-preview interval between worker stages.
+        flow = getattr(self, "workspace_flow", None)
+        return self._import_in_progress or bool(flow and (flow.active or flow.job.pending))
+
+    def _set_workspace_busy(self, busy):
+        self.timer.stop()
+        if busy:
+            if self._busy_controls is None:
+                controls = (self.search, self.history, self.profile, self.tabs,
+                            self.new_button, self.copy_button, self.save_button,
+                            self.export_button, self.backup_button,
+                            self.import_backup_button, self.continue_button)
+                self._busy_controls = {widget: widget.isEnabled() for widget in controls}
+            for widget in self._busy_controls:
+                widget.setEnabled(False)
+        elif self._busy_controls is not None:
+            for widget, enabled in self._busy_controls.items():
+                widget.setEnabled(enabled)
+            self._busy_controls = None
+        self._import_in_progress = busy
+        if not busy and self._dirty and self.status.text() == "Saving changes…":
+            self.status.setText("Your draft is still here and remains unsaved. Use Save to retry or Save as copy.")
+
+    def prepare_close(self):
+        if not self.media_operation_pending:
+            return True
+        if self.workspace_flow.active:
+            self.workspace_flow.request_close()
+        return False
 
     def _sync_action_rows(self):
         margins = self.layout().contentsMargins()
@@ -334,8 +385,8 @@ class SessionLibraryDialog(QDialog):
             initial_row = next((row for row, record in enumerate(records)
                                 if record.id == self._initial_current_id), 0)
             self.history.setCurrentRow(initial_row)
-        self.tabs.setEnabled(self.record is not None)
-        self.continue_button.setEnabled(self.record is not None)
+        self.tabs.setEnabled(self.record is not None and not self._import_in_progress)
+        self.continue_button.setEnabled(self.record is not None and not self._import_in_progress)
         if read_error:
             self.status.setText(read_error + " Retained drafts are still available; retry saving or save a separate copy.")
         elif self.library.warnings:
@@ -350,6 +401,8 @@ class SessionLibraryDialog(QDialog):
                 return
 
     def _select(self, row):
+        if self._import_in_progress:
+            return
         item = self.history.item(row)
         if item is None or self._loading:
             return
@@ -442,7 +495,8 @@ class SessionLibraryDialog(QDialog):
         if not self._loading and self.record is not None:
             self._dirty = True
             self.status.setText("Saving changes…")
-            self.timer.start()
+            if not self._import_in_progress:
+                self.timer.start()
 
     def _edited_record(self):
         pulse = build_session_pulse(creator_profile_key=self.record.profile,
@@ -496,7 +550,7 @@ class SessionLibraryDialog(QDialog):
                 self.status.setText(f"Workspace could not be saved: {error}")
 
     def _copy(self):
-        if self.record is None:
+        if self.record is None or self._import_in_progress:
             return
         title, accepted = QInputDialog.getText(self, "Save a separate workspace", "Name",
                                              text=self.title.text() + " copy")
@@ -541,6 +595,8 @@ class SessionLibraryDialog(QDialog):
                 self.take_open_requested.emit(selected)
 
     def _open_bookmark(self, bookmark):
+        if self._import_in_progress:
+            return
         selected = deepcopy(bookmark)
         if self.record is not None and self.record.import_provenance:
             if not selected.get("take_id") or not selected.get("source_identity"):
@@ -550,6 +606,8 @@ class SessionLibraryDialog(QDialog):
         self.bookmark_open_requested.emit(selected)
 
     def _relink_take(self):
+        if self._import_in_progress:
+            return
         row = self.takes.currentRow()
         if not self.record or not 0 <= row < len(self.record.take_links):
             return
@@ -604,41 +662,57 @@ class SessionLibraryDialog(QDialog):
             self.status.setText("Summary was not exported. Choose a new filename in a writable folder.")
 
     def _backup(self):
-        if self.record is None:
+        if self.record is None or self._import_in_progress:
             return
         if not self.save_current(force=True):
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Back up workspace…", "workspace-backup.json",
-                                              "WebJam workspace backup (*.json)")
-        if not path:
-            return
         from core.workspace_backup import WorkspaceBackupError, export_workspace_backup
+        snapshot = deepcopy(self.record)
+        self._set_workspace_busy(True)
         try:
-            export_workspace_backup(self.record, path)
+            choices = WorkspaceBackupChoicesDialog(snapshot, self)
+            try:
+                if choices.exec() != QDialog.DialogCode.Accepted:
+                    return
+                if choices.selected_media.isChecked():
+                    self.workspace_flow.backup(snapshot, choices.selection())
+                    return
+            finally:
+                choices.deleteLater()
+            path, _ = QFileDialog.getSaveFileName(self, "Back up workspace…", "workspace-backup.json",
+                                                  "WebJam workspace backup (*.json)")
+            if not path:
+                return
+            export_workspace_backup(snapshot, path)
             self.status.setText("Workspace backed up on this computer. Metadata only; "
                                 "media files are not included.")
         except WorkspaceBackupError as error:
             self.status.setText(f"Workspace was not backed up: {error}")
+        finally:
+            if not self.workspace_flow.active:
+                self._set_workspace_busy(False)
 
     def _import_backup(self):
         # Modal file/preview dialogs pump Qt events. Stop this editor's pending
         # autosave and reject coordinator flushes while a preview is open.
-        self.timer.stop()
-        self._import_in_progress = True
+        if self._import_in_progress:
+            return
+        self._set_workspace_busy(True)
         try:
             self._choose_import_backup()
         finally:
-            self._import_in_progress = False
-            self.timer.stop()
-            if self._dirty and self.status.text() == "Saving changes…":
-                self.status.setText("Your draft is still here and remains unsaved. Use Save to retry or Save as copy.")
+            if not self.workspace_flow.active:
+                self._set_workspace_busy(False)
 
     def _choose_import_backup(self):
         if not self._sync_import_recovery():
             self._check_import()
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Import backup…", "", "WebJam workspace backup (*.json)")
+        path, _ = QFileDialog.getOpenFileName(self, "Import backup…", "", "WebJam workspace backups (*.json *.webjambackup *.webjamreceipt)")
         if not path:
+            return
+        if Path(path).suffix.lower() in {".webjambackup", ".webjamreceipt"}:
+            self.workspace_flow.import_path(path)
             return
         from core.workspace_backup import import_workspace_backup, preview_workspace_backup
         try:
@@ -660,11 +734,13 @@ class SessionLibraryDialog(QDialog):
             return
         self._import_finished(record)
 
-    def _import_finished(self, record):
+    def _import_finished(self, record, *, media=False):
         self._retry_import = None
         self.refresh(select_first=False)
         self._sync_import_recovery()
-        self.status.setText("Backup imported. Draft kept. Metadata only; media files are not included.")
+        self.status.setText("Backup imported. Draft kept. " + (
+            "Included media was restored. Select the new workspace explicitly when ready to continue."
+            if media else "Metadata only; media files are not included."))
 
     def _sync_import_recovery(self):
         try:
@@ -674,6 +750,9 @@ class SessionLibraryDialog(QDialog):
             return False
         self.import_backup_button.setText("Import backup…" if pending is None else (
             "Retry same import" if self._retry_import == pending else "Check previous import"))
+        recovery = self.workspace_flow.recovery
+        if pending is not None and recovery is not None and recovery[0] == pending.id:
+            self.import_backup_button.setText("Choose original backup…" if recovery[1] == "partial" else "Retry same import")
         if pending is None:
             self.import_backup_button.setToolTip("")
         return pending is None
@@ -681,7 +760,7 @@ class SessionLibraryDialog(QDialog):
     def _import_unconfirmed(self, error):
         self._retry_import = None
         self.import_backup_button.setText("Check previous import")
-        self.import_backup_button.setEnabled(True)
+        self.import_backup_button.setEnabled(not self._import_in_progress)
         self.import_backup_button.setToolTip(f"Intended workspace: {error.workspace_id}\nChecksum: {error.expected_sha256}")
         self.status.setText("Import needs checking. Choose Check previous import. Current draft kept.")
 
@@ -693,6 +772,9 @@ class SessionLibraryDialog(QDialog):
                 self._retry_import = None
                 self.import_backup_button.setText("Import backup…")
                 self.status.setText("No unresolved import is stored here.")
+                return
+            if self.library.pending_import_has_media():
+                self.workspace_flow.recover(pending)
                 return
             saved = self.library.reconcile_import(pending)
             if saved is not None:
@@ -721,11 +803,19 @@ class SessionLibraryDialog(QDialog):
             self.status.setText(f"Import could not be reconciled; retry is blocked and its evidence is retained: {error}")
 
     def reject(self):
-        if self.save_current():
+        if self.prepare_close() and self.save_current():
             super().reject()
 
+    def accept(self):
+        if self.prepare_close():
+            super().accept()
+
+    def done(self, result):
+        if self.prepare_close():
+            super().done(result)
+
     def closeEvent(self, event):
-        if self.save_current():
+        if self.prepare_close() and self.save_current():
             event.accept()
         else:
             event.ignore()

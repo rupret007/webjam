@@ -1040,6 +1040,8 @@ class ApplicationController(QObject):
         """Refuse navigation until the session owner has completed End/Leave."""
         if self._shutdown or self._shutdown_cleanup_pending:
             return True
+        if not ApplicationController._prepare_workspace_close(self):
+            return False
         if self.recording.workspace_transition_pending:
             self.window.flash_message(
                 "Interrupted-take recovery is still finishing. Wait for its "
@@ -1191,9 +1193,21 @@ class ApplicationController(QObject):
                 "An unexpected cleanup step did not complete safely.",
             )
 
+    def _prepare_workspace_close(self) -> bool:
+        library = getattr(self, "session_library", None)
+        if not bool(getattr(library, "media_operation_pending", False)):
+            return True
+        library.prepare_close()
+        self.window.flash_message(
+            "Workspace media work is finishing. Its cancellation was requested; wait for the result, then return to launch or quit again.", ms=0,
+        )
+        return False
+
     def _shutdown_once(self) -> bool:
         if self._shutdown:
             return True  # closeEvent + app.py both call this; run teardown once
+        if not ApplicationController._prepare_workspace_close(self):
+            return False
         if bool(getattr(getattr(self, "recording", None), "workspace_transition_pending", False)):
             self.window.flash_message(
                 "Interrupted-take recovery is still finishing. Keep this workspace "
@@ -2483,7 +2497,8 @@ class ApplicationController(QObject):
             return
         library = getattr(self, "session_library", None)
         if canonical != active_key and library is not None:
-            library.profile_changing()
+            if library.profile_changing() is False:
+                return
         with ApplicationController._defer_session_pulse_refresh(self):
             if canonical != active_key:
                 self._chat_profile_generation = (
@@ -2817,6 +2832,8 @@ class ApplicationController(QObject):
         # A subsequent native close must not ask again using stale snapshots.
         if bool(getattr(self, "_shutdown", False)):
             return True
+        if not ApplicationController._prepare_workspace_close(self):
+            return False
         if bool(getattr(self, "_workspace_transition_pending", False)):
             return False
         # A prior finalize_close attempt already obtained the user's approval

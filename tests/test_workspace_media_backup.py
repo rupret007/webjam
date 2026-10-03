@@ -673,3 +673,114 @@ def test_unsupported_or_changed_archives_rejected_before_import_writes(tmp_path,
     with pytest.raises(media.WorkspaceBackupError):
         media.preview_workspace_package(bad)
     assert not (tmp_path / "destination").exists()
+
+
+def test_publication_receipt_checks_exact_package_after_moving_both_files(tmp_path, art):
+    record, original = art
+    before = original.read_bytes()
+    plan = media.plan_workspace_package(record, media.WorkspacePackageSelection(art_reference_ids=("painting",)))
+    receipt = media.export_workspace_package(plan, tmp_path / "portable.webjambackup")
+    assert receipt.publication_receipt.is_file()
+    evidence = json.loads(receipt.publication_receipt.read_bytes())
+    assert evidence["sha256"] == receipt.sha256
+    assert evidence["size_bytes"] == receipt.size_bytes
+    moved = tmp_path / "different-private-root"
+    moved.mkdir()
+    package = Path(shutil.move(receipt.path, moved / receipt.path.name))
+    proof = Path(shutil.move(receipt.publication_receipt, moved / receipt.publication_receipt.name))
+    preview = media.preview_workspace_package_receipt(proof)
+    assert preview.path == package and preview.package_sha256 == receipt.sha256
+    assert original.read_bytes() == before
+    evidence["sha256"] = "0" * 64
+    proof.write_text(json.dumps(evidence))
+    with pytest.raises(media.WorkspaceBackupError, match="differs from its publication receipt"):
+        media.preview_workspace_package_receipt(proof)
+
+
+def test_hard_crash_after_package_link_retains_durable_publication_receipt(tmp_path, art):
+    record, original = art
+    metadata = tmp_path / "source-record.json"
+    metadata.write_bytes(encode_session_record(record))
+    destination = tmp_path / "crashed.webjambackup"
+    script = r'''
+import os, sys
+from pathlib import Path
+from core.session_library import decode_session_record
+from core import workspace_media_backup as media
+record = decode_session_record(Path(sys.argv[1]).read_bytes())
+plan = media.plan_workspace_package(record, media.WorkspacePackageSelection(art_reference_ids=("painting",)))
+link = media._at_link
+def crash(*args, **kwargs):
+    link(*args, **kwargs)
+    os._exit(77)
+media._at_link = crash
+media.export_workspace_package(plan, sys.argv[2])
+'''
+    before = original.read_bytes()
+    child = subprocess.run([sys.executable, "-c", script, str(metadata), str(destination)],
+                           capture_output=True, timeout=20)
+    assert child.returncode == 77, child.stderr.decode()
+    proofs = list(tmp_path.glob("*.webjamreceipt"))
+    assert len(proofs) == 1
+    # No return value or in-memory exception survived the process exit.
+    preview = media.preview_workspace_package_receipt(proofs[0])
+    assert preview.path == destination
+    assert preview.package_sha256 == _digest(destination.read_bytes())
+    assert original.read_bytes() == before
+
+
+@pytest.mark.parametrize("field,value", [
+    ("destination", "../outside.webjambackup"), ("destination", "/outside.webjambackup"),
+    ("destination", "nested/inside.webjambackup"), ("size_bytes", True), ("version", True),
+])
+def test_publication_receipt_rejects_unsafe_targets_before_package_access(tmp_path, monkeypatch, field, value):
+    data = {"format": "webjam.backup-publication", "version": 1,
+            "destination": "backup.webjambackup", "sha256": "0" * 64, "size_bytes": 100}
+    data[field] = value
+    proof = tmp_path / "proof.webjamreceipt"
+    proof.write_text(json.dumps(data))
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("Unsafe receipt reached package access")
+    monkeypatch.setattr(media, "preview_workspace_package", forbidden)
+    with pytest.raises(media.WorkspaceBackupError):
+        media.preview_workspace_package_receipt(proof)
+
+
+@pytest.mark.parametrize("replacement", [False, True])
+def test_changed_publication_receipt_after_link_is_uncertain_not_success(tmp_path, art, monkeypatch, replacement):
+    record, _ = art
+    plan = media.plan_workspace_package(record, media.WorkspacePackageSelection(art_reference_ids=("painting",)))
+    destination = tmp_path / "package.webjambackup"
+    link = media._at_link
+    altered = []
+    prevented = []
+    def change(*args, **kwargs):
+        result = link(*args, **kwargs)
+        proof = next(tmp_path.glob("*.webjamreceipt"))
+        if replacement:
+            substitute = tmp_path / "substitute.json"
+            substitute.write_bytes(b"{}")
+            try:
+                os.replace(substitute, proof)
+            except PermissionError:
+                # Windows may deny replacement while the original receipt
+                # descriptor is pinned. That prevention also preserves proof.
+                assert os.name == "nt"
+                prevented.append(proof)
+                return result
+        else:
+            proof.write_bytes(b"{}")
+        altered.append(proof)
+        return result
+    monkeypatch.setattr(media, "_at_link", change)
+    try:
+        media.export_workspace_package(plan, destination)
+    except media.WorkspacePackagePublicationUnconfirmed as error:
+        caught = error
+    else:
+        assert prevented and not altered
+        assert media.preview_workspace_package_receipt(prevented[0]).package_sha256 == _digest(destination.read_bytes())
+        return
+    assert caught.publication_receipt == altered[0]
+    assert altered[0].read_bytes() == b"{}"
+    assert caught.expected_sha256 == _digest(destination.read_bytes())

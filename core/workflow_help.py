@@ -31,6 +31,24 @@ def workflow_topics(profile: str, *, offline_studio: bool = False) -> tuple[Help
             "A saved session workspace and a local audio project are separate.</p>",
             "recent history restart reopen notes search session workspace", library_route,
             "Open Session library"),
+        HelpTopic("workspace_backup", "Back up or import a workspace",
+            "<p>In draft backup builds, open <b>Session library</b> and choose <b>Back up workspace…</b>. "
+            "Resolve unsaved changes first. <b>Metadata only</b> saves notes, plans and stored links. "
+            "Choose <b>Include selected media</b> to add completed takes and local Art files, then "
+            "review the contents, size and blockers. <b>Change choices…</b> keeps your selections.</p>"
+            "<p><b>Create backup…</b> writes a new .webjambackup package and a small .webjamreceipt. "
+            "Keep them together. <b>Import backup…</b> accepts metadata JSON, a package or its receipt; "
+            "the receipt checks the intended package checksum. Review the preview, then confirm "
+            "<b>Import as new workspace</b>. Your current draft and selection stay here.</p>"
+            "<p>Progress and <b>Cancel</b> remain available during copying and verification. Stop and End "
+            "stay reachable in the main window. Close or Return to launch waits for the result; "
+            "review it, then try again. A late cancellation may still report successful publication.</p>"
+            "<p>Use <b>Check previous import</b>, then <b>Retry same import</b> or "
+            "<b>Choose original backup…</b> and <b>Resume same import</b> as offered. "
+            "Never discard an uncertain publication's receipt. Imported history does not start new "
+            "recording, playback or another app. Private text stays literal.</p>",
+            "portable selected media package backup restore import checksum cancel recovery", library_route,
+            "Open Session library"),
         HelpTopic("draft_recovery", "Keep a draft when saving fails",
             "<p>Read the save message in the editor where you were working. A failed save is "
             "not a saved draft. Keep that editor open and retry <b>Save</b> when storage is available.</p>"

@@ -169,15 +169,20 @@ class SessionLibraryCoordinator(QObject):
         return True
 
     def profile_changing(self):
+        if self.media_operation_pending:
+            self._flash("Wait for the workspace operation result before changing profiles.")
+            return False
         self.flush()
         self.current = None
         self._live_take_ids.clear()
+        return True
 
     def show(self, *, tab=None):
         from webjam_qt.windows.session_library import SessionLibraryDialog
-        if self.dialog is not None and self.dialog.isVisible():
+        if self.dialog is not None and (self.dialog.isVisible() or self.media_operation_pending):
             if tab == "plan":
                 self.dialog.tabs.setCurrentIndex(1 if self._profile() == "music" else 2)
+            self.dialog.show()
             self.dialog.raise_()
             self.dialog.activateWindow()
             return
@@ -209,6 +214,13 @@ class SessionLibraryCoordinator(QObject):
         dialog.finished.connect(finished)
         dialog.setModal(False)
         dialog.show()
+
+    @property
+    def media_operation_pending(self):
+        return bool(self.dialog is not None and self.dialog.media_operation_pending)
+
+    def prepare_close(self):
+        return self.dialog is None or self.dialog.prepare_close()
 
     def save_editor_record(self, base, edited):
         """Reconcile the editor before writing, including late take/recap facts.
@@ -273,6 +285,9 @@ class SessionLibraryCoordinator(QObject):
                     or self._c._is_jamulus_running())
 
     def continue_record(self, record) -> bool:
+        if self.media_operation_pending:
+            self._flash("Wait for the workspace operation result before continuing another workspace.")
+            return False
         if self.current is not None and self.current.id == record.id:
             self._c._on_rail_view_changed("canvas")
             return True

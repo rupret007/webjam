@@ -54,11 +54,12 @@ class WorkspacePackageCancelled(WorkspaceBackupError):
 class WorkspacePackagePublicationUnconfirmed(WorkspaceBackupError):
     """A backup destination may exist; inspect these intended bytes before retry."""
 
-    def __init__(self, destination, expected_sha256, expected_size):
+    def __init__(self, destination, expected_sha256, expected_size, publication_receipt=None):
         super().__init__("Backup publication is uncertain. A destination may exist; check its exact checksum before retrying.")
         self.destination = Path(destination)
         self.expected_sha256 = expected_sha256
         self.expected_size = expected_size
+        self.publication_receipt = publication_receipt
 
 
 def _domain_errors(function):
@@ -681,6 +682,36 @@ class WorkspacePackageReceipt:
     sha256: str
     size_bytes: int
     file_count: int
+    publication_receipt: Path | None = None
+
+
+def _publication_receipt(parent, destination, checksum, size):
+    """Durable intended bytes BEFORE publication, discoverable after a crash."""
+    path = destination.parent / ("backup-receipt-" + uuid4().hex + ".webjamreceipt")
+    data = _canonical({"format": "webjam.backup-publication", "version": 1,
+                       "destination": destination.name, "sha256": checksum, "size_bytes": size})
+    fd = _at_open(parent, path.parent, path.name, os.O_RDWR | os.O_CREAT | os.O_EXCL)
+    try:
+        with _duplicate_stream(fd, "w+b") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        _sync_bound(parent, path.parent)
+        with _source_bound(parent, path.parent, path.name) as (reader, _):
+            if reader.read(len(data) + 1) != data:
+                raise WorkspaceBackupError("Backup publication receipt changed; preserve its evidence.")
+        info = os.fstat(fd)
+        return path, fd, data, (_identity(info), info.st_ctime_ns)
+    except BaseException:
+        os.close(fd)
+        # Never remove an uncertain receipt, even if its own sync failed.
+        raise
+
+
+def _confirm_publication_receipt(parent, path, data, expected):
+    with _source_bound(parent, path.parent, path.name, expected) as (reader, _):
+        if reader.read(len(data) + 1) != data:
+            raise WorkspaceBackupError("Backup publication receipt changed; preserve the package and receipt.")
 
 
 def _hash_open(stream, work, path):
@@ -724,6 +755,7 @@ def _export_bound_package(plan, destination, parent, progress, cancel_check):
         fd = _at_open(parent, destination.parent, stage.name, os.O_RDWR | os.O_CREAT | os.O_EXCL)
     owned = None
     publication_attempted = False
+    receipt_path, receipt_fd = None, None
     checksum, size = "", 0
     try:
         with _duplicate_stream(fd, "w+b") as stream:
@@ -754,21 +786,29 @@ def _export_bound_package(plan, destination, parent, progress, cancel_check):
             work.check()
             if not _same_inode(stage, owned) or _directory(destination.parent) != parent_identity:
                 raise WorkspaceBackupError("Backup staging or destination changed before publication.")
+            receipt_path, receipt_fd, receipt_bytes, receipt_identity = _publication_receipt(parent, destination, checksum, size)
+            work.check()
+            if not _same_inode(stage, owned) or _directory(destination.parent) != parent_identity:
+                raise WorkspaceBackupError("Backup destination changed before publication; keep its receipt.")
+            _confirm_publication_receipt(parent, receipt_path, receipt_bytes, receipt_identity)
             publication_attempted = True
             _at_link(parent, destination.parent, stage.name, destination.name)
             if not _same_inode(destination, owned) or not _same_inode(stage, owned):
                 raise WorkspaceBackupError("Published backup identity is uncertain; retain the file and inspect it.")
+            _confirm_publication_receipt(parent, receipt_path, receipt_bytes, receipt_identity)
             with _source(destination) as (published, _):
                 observed, observed_size = _hash_open(published, _Work("Confirm published backup", progress=progress, cancel_check=cancel_check), destination)
             work.check()
             if observed != checksum or observed_size != size:
                 raise WorkspaceBackupError("Published backup bytes changed; its outcome is uncertain. Preserve it before retrying.")
+            _confirm_publication_receipt(parent, receipt_path, receipt_bytes, receipt_identity)
             _at_unlink(parent, destination.parent, stage.name)
             _sync_bound(parent, destination.parent)
-        return WorkspacePackageReceipt(destination, checksum, size, plan.file_count + 1)
+            _confirm_publication_receipt(parent, receipt_path, receipt_bytes, receipt_identity)
+        return WorkspacePackageReceipt(destination, checksum, size, plan.file_count + 1, receipt_path)
     except (OSError, ValueError) as exc:
         if publication_attempted:
-            raise WorkspacePackagePublicationUnconfirmed(destination, checksum, size) from exc
+            raise WorkspacePackagePublicationUnconfirmed(destination, checksum, size, receipt_path) from exc
         if isinstance(exc, WorkspaceBackupError):
             raise
         raise WorkspaceBackupError("Backup did not reach publication; its source files remain unchanged.") from exc
@@ -778,6 +818,8 @@ def _export_bound_package(plan, destination, parent, progress, cancel_check):
                 _at_unlink(parent, destination.parent, stage.name)
         finally:
             os.close(fd)
+            if receipt_fd is not None:
+                os.close(receipt_fd)
 
 
 def _archive_entries(archive):
@@ -981,6 +1023,29 @@ def preview_workspace_package(path, *, progress=None, cancel_check=None):
         return WorkspacePackagePreview(_canonical(manifest), path, checksum, size, (_identity(before), before.st_ctime_ns))
     except (OSError, zipfile.BadZipFile, RuntimeError, KeyError, TypeError, AttributeError, struct.error) as exc:
         raise WorkspaceBackupError("Package could not be verified safely.") from exc
+
+
+@_domain_errors
+def preview_workspace_package_receipt(path, *, progress=None, cancel_check=None):
+    """Explicitly check a sibling package against retained publication intent."""
+    path = Path(path).expanduser().absolute()
+    work = _Work("Check backup receipt", progress=progress, cancel_check=cancel_check)
+    value = _json(_read_small(path, 4096, work))
+    if (not isinstance(value, dict)
+            or set(value) != {"format", "version", "destination", "sha256", "size_bytes"}
+            or value["format"] != "webjam.backup-publication"
+            or type(value["version"]) is not int or value["version"] != 1
+            or type(value["size_bytes"]) is not int
+            or not 0 < value["size_bytes"] <= MAX_PACKAGE_BYTES + MAX_PACKAGE_METADATA_BYTES):
+        raise WorkspaceBackupError("Backup publication receipt is unsupported.")
+    name = relative_path(value["destination"])
+    if "/" in name:
+        raise WorkspaceBackupError("Backup publication receipt must identify a sibling file.")
+    checksum = digest(value["sha256"])
+    preview = preview_workspace_package(path.parent / name, progress=progress, cancel_check=cancel_check)
+    if preview.package_sha256 != checksum or preview.package_size != value["size_bytes"]:
+        raise WorkspaceBackupError("The backup differs from its publication receipt. Keep both files before retrying.")
+    return preview
 
 
 def _load_verified_take(root, take_id, manifest_sha256, work):
@@ -1387,9 +1452,11 @@ class WorkspacePackageRecovery:
 
 
 @_domain_errors
-def reconcile_workspace_package_import(library, *, retry=False, progress=None, cancel_check=None):
+def reconcile_workspace_package_import(library, *, retry=False, expected_record=None, progress=None, cancel_check=None):
     """Check without writes by default; explicit retry publishes the SAME ID."""
     journal, record, context, journal_path = _pending(library)
+    if expected_record is not None and encode_session_record(expected_record) != encode_session_record(record):
+        raise SessionLibraryConflict("The intended import changed. Check its current recovery evidence before retrying.")
     if retry:
         _restore_missing_journal(library, journal, record, journal_path)
     work = _Work("Check restored package", sum(f["size_bytes"] for f in context["files"]), progress, cancel_check)
@@ -1510,13 +1577,15 @@ def _extract(library, preview, journal, record, context, work):
 
 
 @_domain_errors
-def import_workspace_package(library, preview, *, retry=False, progress=None, cancel_check=None):
+def import_workspace_package(library, preview, *, retry=False, expected_record=None, progress=None, cancel_check=None):
     """Restore selected bytes and publish once; explicit retries keep one ID."""
     if not isinstance(preview, WorkspacePackagePreview):
         raise WorkspaceBackupError("Import requires a verified package preview.")
     if not retry:
-        prepare_workspace_package_import(library, preview)
+        expected_record = prepare_workspace_package_import(library, preview)
     journal, record, context, journal_path = _pending(library)
+    if expected_record is not None and encode_session_record(expected_record) != encode_session_record(record):
+        raise SessionLibraryConflict("The intended import changed. Check its current recovery evidence before retrying.")
     if (context["package_sha256"] != preview.package_sha256
             or context["manifest_sha256"] != hashlib.sha256(preview._manifest_bytes).hexdigest()):
         raise WorkspaceBackupError("Resume requires the exact original package preview.")
@@ -1526,6 +1595,7 @@ def import_workspace_package(library, preview, *, retry=False, progress=None, ca
             _restore_missing_journal(library, journal, record, journal_path)
         if journal_path.name == ".workspace-import.pending":
             _extract(library, preview, journal, record, context, work)
-        return reconcile_workspace_package_import(library, retry=True, progress=progress, cancel_check=cancel_check)
+        return reconcile_workspace_package_import(library, retry=True, expected_record=record,
+                                                   progress=progress, cancel_check=cancel_check)
     except (OSError, zipfile.BadZipFile, RuntimeError, KeyError) as exc:
         raise WorkspaceBackupError("Package restore did not finish. Its exact recovery evidence and owned files were retained.") from exc
