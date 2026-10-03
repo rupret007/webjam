@@ -47,9 +47,26 @@ showing someone the door? See the [two-minute demo script](DEMO.md).
 v0.29.0 adds **File → Session library…** before a room and
 **More → Session library…** inside it. Save local notes, reuse a Music
 **Rehearsal plan**, or keep an **Art project** with references and next steps.
-**Continue this work** restores its context without starting audio or a room.
+**Continue** restores its context without starting audio or a room.
 Music moments are plain notes unless a recording position is confirmed.
 See [the saved-work walkthrough](USER_GUIDE.md#save-a-session-and-continue-later).
+
+Draft workspace-backup builds provide **Back up…** and
+**Import backup…** in Session library. Choose metadata only, or select completed
+takes and local Art files, inspect the preview, and create a new media package
+with its checksum receipt. Background copying and import support cancellation
+while retaining your current draft. Select **Verify take** or **Verify reference**
+to check stored media, then deliberately open it or locate its original content.
+Restored Studio takes retain their declared alternate sources through selection
+and A/B listening. These controls are part of the
+[active portability milestone](docs/WORKSPACE_BACKUP_PLAN.md). Local tests exercise two
+controlled recorder completions, Art, backup/import and restart in separate processes;
+the frozen-build hook adds a synthetic portability journey. See [draft #172](https://github.com/rupret007/webjam/pull/172)
+for exact-commit hosted and native package evidence. Use the
+[ten-minute portability pilot](docs/WORKSPACE_PORTABILITY_PILOT.md) with an identified test build.
+These changes are not included in
+the published v0.29.0 packages. See
+[the backup walkthrough](USER_GUIDE.md#back-up-and-import-a-workspace-unreleased).
 
 ## Unreleased: move between workflows
 

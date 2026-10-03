@@ -836,7 +836,7 @@ class ApplicationController(QObject):
         self._notes_save_timer = QTimer(self)
         self._notes_save_timer.setSingleShot(True)
         self._notes_save_timer.setInterval(750)
-        self._notes_save_timer.timeout.connect(self._save_notes)
+        self._notes_save_timer.timeout.connect(lambda: self._save_notes(include_editor=False))
 
         # Mix save/load/restore (~/.webjam_mix.json).
         # Adapt flash_message's keyword-only ``ms=`` to MixManager's positional
@@ -1040,6 +1040,8 @@ class ApplicationController(QObject):
         """Refuse navigation until the session owner has completed End/Leave."""
         if self._shutdown or self._shutdown_cleanup_pending:
             return True
+        if not ApplicationController._prepare_workspace_close(self):
+            return False
         if self.recording.workspace_transition_pending:
             self.window.flash_message(
                 "Interrupted-take recovery is still finishing. Wait for its "
@@ -1191,9 +1193,27 @@ class ApplicationController(QObject):
                 "An unexpected cleanup step did not complete safely.",
             )
 
+    def _prepare_workspace_close(self) -> bool:
+        library = getattr(self, "session_library", None)
+        studio = getattr(self.window, "recording_studio", None)
+        library_pending = bool(getattr(library, "media_operation_pending", False))
+        studio_pending = bool(getattr(studio, "media_open_pending", False))
+        if not library_pending and not studio_pending:
+            return True
+        if library_pending:
+            library.prepare_close()
+        if studio_pending:
+            studio.prepare_close()
+        self.window.flash_message(
+            "Workspace media work is finishing. Its cancellation was requested; wait for the result, then return to launch or quit again.", ms=0,
+        )
+        return False
+
     def _shutdown_once(self) -> bool:
         if self._shutdown:
             return True  # closeEvent + app.py both call this; run teardown once
+        if not ApplicationController._prepare_workspace_close(self):
+            return False
         if bool(getattr(getattr(self, "recording", None), "workspace_transition_pending", False)):
             self.window.flash_message(
                 "Interrupted-take recovery is still finishing. Keep this workspace "
@@ -2483,7 +2503,8 @@ class ApplicationController(QObject):
             return
         library = getattr(self, "session_library", None)
         if canonical != active_key and library is not None:
-            library.profile_changing()
+            if library.profile_changing() is False:
+                return
         with ApplicationController._defer_session_pulse_refresh(self):
             if canonical != active_key:
                 self._chat_profile_generation = (
@@ -2817,6 +2838,8 @@ class ApplicationController(QObject):
         # A subsequent native close must not ask again using stale snapshots.
         if bool(getattr(self, "_shutdown", False)):
             return True
+        if not ApplicationController._prepare_workspace_close(self):
+            return False
         if bool(getattr(self, "_workspace_transition_pending", False)):
             return False
         # A prior finalize_close attempt already obtained the user's approval
@@ -16041,14 +16064,14 @@ class ApplicationController(QObject):
         """Restore session notes from disk (best-effort)."""
         self._persistence._load_notes_only()
 
-    def _save_notes(self) -> bool:
-        """Flush all local drafts and retain failed writes for visible retry."""
+    def _save_notes(self, *, include_editor=True) -> bool:
+        """Flush owned Notes; explicit saves also reconcile the Library draft."""
         timer = getattr(self, "_notes_save_timer", None)
         if timer is not None:
             timer.stop()
         notes_saved = self._persistence._save_notes_only()
         library = getattr(self, "session_library", None)
-        workspace_saved = library.flush() if library is not None else True
+        workspace_saved = library.flush(include_editor=include_editor) if library is not None else True
         return notes_saved and workspace_saved
 
     def _recheck_saved_notes(self, profile: str) -> None:

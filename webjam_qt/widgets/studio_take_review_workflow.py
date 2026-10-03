@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 
@@ -15,6 +16,95 @@ from core.take_review import (
 
 
 class StudioTakeReviewWorkflowMixin:
+    def _workspace_open_state(self):
+        owner = self.workspace_owner_token() if self.workspace_owner_token is not None else None
+        return (self._guidance_take_revision, self._studio_controller.generation,
+                self._studio_controller.edit_revision, self._workspace_open_revision, owner,
+                self._review_dialog.notes.toPlainText(), self._review_dialog.favorite.isChecked(),
+                self._review_dialog.dirty, self._phase_name)
+
+    def _invalidate_workspace_open(self):
+        self._workspace_open_revision += 1
+        job = getattr(self, "_workspace_review_job", None)
+        if job is not None:
+            job.cancel()
+
+    def _workspace_context_for_path(self, path):
+        lexical = Path(path).expanduser().absolute()
+        return (self._workspace_media_contexts_by_path.get(lexical)
+                or self._workspace_media_contexts_by_path.get(lexical.resolve()))
+
+    def _workspace_media_blocked(self):
+        return self._workspace_media_context is not None and bool(self._studio_state_error)
+
+    def _workspace_open_allowed(self):
+        return not (self._waveform_shutdown or self._shutdown_complete or self._exporting or self._recording
+                    or self._phase_name not in {"idle", "complete", "needs_attention", "error"})
+
+    def prepare_workspace_open(self):
+        """Capture current ownership only after the old take's drafts save."""
+        if (not self._workspace_open_allowed() or self.media_open_pending
+                or not self._flush_take_review() or not self._flush_studio_state()):
+            return None
+        return self._workspace_open_state()
+
+    @property
+    def media_open_pending(self):
+        job = getattr(self, "_workspace_review_job", None)
+        return bool(getattr(self, "_workspace_review_active", False) or (job and job.pending))
+
+    def open_prepared_take(self, verification, *, workspace=None, position_seconds=0.0,
+                           expected_state=None, expected_view_revision=None):
+        """Activate worker-validated media through the existing Studio gates."""
+        from core.workspace_media_backup import WorkspaceMediaVerification
+        if not isinstance(verification, WorkspaceMediaVerification) or verification.kind != "take":
+            return False
+        if (not self._workspace_open_allowed()
+                or (expected_state is not None and expected_state != self._workspace_open_state())
+                or (expected_view_revision is not None and expected_view_revision != self._guidance_take_revision)):
+            self._hint.setText("Studio changed while checking the recording. Open it again when ready.")
+            return False
+        try:
+            position = float(position_seconds)
+            fresh = verification.take
+            if (not math.isfinite(position) or position < 0 or fresh is None
+                    or position > fresh.duration_s or fresh.take_id != verification.reference_id
+                    or not fresh.tracks or fresh.review_only or fresh.validation_status != "complete"):
+                return False
+            # Receipt stats catch replacement between the worker and activation.
+            # Audio hashing stays in the worker and existing playback/export validators.
+            verification.assert_current()
+            if not self._flush_take_review() or not self._flush_studio_state():
+                return False
+            requested = Path(fresh.path).resolve()
+            sources = verification.dependency_map
+            sources[fresh.take_id] = (requested, fresh)
+            context = {"primary": fresh.take_id, "path": requested, "sources": sources,
+                       "identities": verification.take_source_identities,
+                       "workspace": deepcopy(workspace)}
+            row = next((i for i, take in enumerate(self._takes) if Path(take.path).resolve() == requested), None)
+            self._take_list.blockSignals(True)
+            try:
+                if row is None:
+                    row = len(self._takes)
+                    self._takes.append(fresh)
+                    self._take_list.addItem(self._take_library_item(fresh))
+                    self._library.setVisible(True)
+                else:
+                    self._takes[row] = fresh
+                self._take_list.setCurrentRow(row)
+            finally:
+                self._take_list.blockSignals(False)
+            self._on_take_selected(row, workspace_media=context)
+            if (self._current is not fresh or self._studio_state_error or not self._play_btn.isEnabled()
+                    or take_source_identity(fresh) != verification.sha256):
+                return False
+            self._player.seek(position)
+            return True
+        except (OSError, ValueError, PlaybackError):
+            self._hint.setText("This recording changed or could not be opened safely. Verify its original media again.")
+            return False
+
     def _schedule_studio_autosave(self, generation):
         self._review_dialog.set_receipt()
         super()._schedule_studio_autosave(generation)
@@ -102,6 +192,7 @@ class StudioTakeReviewWorkflowMixin:
         if self._exporting or self._recording or not self._flush_take_review():
             return False
         try:
+            workspace_media = self._workspace_context_for_path(path)
             requested = Path(path).expanduser().resolve()
             fresh = load_take(requested)
         except (OSError, ValueError):
@@ -132,7 +223,7 @@ class StudioTakeReviewWorkflowMixin:
         self._take_list.blockSignals(False)
         self._refresh_review_labels()
         try:
-            self._on_take_selected(row)
+            self._on_take_selected(row, workspace_media=workspace_media)
         except PlaybackError:
             self._hint.setText("This recording could not be prepared safely. Restore its media and reopen it.")
             return False
@@ -171,6 +262,14 @@ class StudioTakeReviewWorkflowMixin:
             self._review_dialog.status.setText("Choose an available recording before setting A or B.")
             return
         self._review_slots[slot] = reference
+        contexts = getattr(self, "_workspace_review_slots", None)
+        if contexts is None:
+            contexts = self._workspace_review_slots = {}
+        context = getattr(self, "_workspace_media_context", None)
+        if context is not None and context["workspace"] is not None:
+            contexts[slot] = deepcopy(context["workspace"])
+        else:
+            contexts.pop(slot, None)
         listen, label = self._review_dialog.slots[slot]
         listen.setEnabled(True)
         label.setText(self._current.display_name)
@@ -179,12 +278,64 @@ class StudioTakeReviewWorkflowMixin:
         reference = self._review_slots.get(slot)
         if reference is None:
             return
+        workspace = getattr(self, "_workspace_review_slots", {}).get(slot)
+        if workspace is not None:
+            self._audition_workspace_slot(slot, reference, workspace)
+            return
         if not self.jump_to_bookmark(reference["take_path"], 0.0,
                                      reference["take_id"], reference["source_identity"]):
             self._review_dialog.status.setText("This comparison recording changed or is unavailable. Reopen it and set A or B again.")
             return
         self._toggle_play()
         self._review_dialog.status.setText(f"Comparison {slot} selected. Studio shows playback or recovery status; arrangement edits are unchanged.")
+
+    def _audition_workspace_slot(self, slot, reference, workspace):
+        from core.workspace_media_backup import verify_workspace_media
+        from webjam_qt.windows.workspace_backup import WorkspaceJob, WorkspaceProgressDialog
+        expected = self.prepare_workspace_open()
+        if expected is None:
+            self._review_dialog.status.setText("Finish the current recording, export or draft save before comparing takes.")
+            return
+        reference, workspace = deepcopy(reference), deepcopy(workspace)
+        linked = [r for r in workspace.take_links if r.get("take_id") == reference.get("take_id")]
+        if not linked or any(any(r.get(k) != reference.get(k) for k in ("take_id", "take_path", "source_identity")) for r in linked):
+            self._review_dialog.status.setText("The comparison link changed. Reopen the workspace and set A or B again.")
+            return
+        job = WorkspaceJob(self)
+        progress = WorkspaceProgressDialog(f"Verify comparison {slot}", self)
+        self._workspace_review_job = job
+        self._workspace_review_active = True
+        job.progress.connect(progress.update_progress)
+        progress.cancel_requested.connect(job.cancel)
+
+        def finished(verification, error):
+            try:
+                progress.settle()
+                progress.deleteLater()
+                if error is not None or job.cancellation_requested:
+                    self._review_dialog.status.setText("Comparison was not opened. Its verification was cancelled or the recording is missing or changed.")
+                    return
+                if (self._review_slots.get(slot) != reference
+                        or getattr(self, "_workspace_review_slots", {}).get(slot) != workspace):
+                    self._review_dialog.status.setText("Comparison changed during verification. Choose Listen again.")
+                    return
+                if not self.open_prepared_take(verification, workspace=workspace, expected_state=expected):
+                    self._review_dialog.status.setText("Studio or the comparison recording changed. Reopen it and set A or B again.")
+                    return
+                self._toggle_play()
+                self._review_dialog.status.setText(f"Comparison {slot} selected. Studio shows playback or recovery status; arrangement edits are unchanged.")
+            finally:
+                self._workspace_review_active = False
+                self._workspace_review_job = None
+                job.deleteLater()
+
+        job.finished.connect(finished)
+        progress.show()
+        try:
+            job.start(lambda report, cancel: verify_workspace_media(
+                workspace, "take", reference["take_id"], progress=report, cancel_check=cancel))
+        except Exception as error:
+            finished(None, error)
 
     def _export_reviewed_take(self):
         if self._flush_take_review():

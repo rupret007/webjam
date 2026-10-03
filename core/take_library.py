@@ -843,7 +843,7 @@ def _privacy_safe_recording_rpp(
     return "".join(lines), unknown_file
 
 
-def _streaming_file_identity(path: Path) -> tuple[int, str]:
+def _streaming_file_identity(path: Path, *, cancel_check=None, progress=None) -> tuple[int, str]:
     digest = hashlib.sha256()
     size = 0
     descriptor: int | None = None
@@ -864,8 +864,12 @@ def _streaming_file_identity(path: Path) -> tuple[int, str]:
         with os.fdopen(descriptor, "rb") as source:
             descriptor = None
             while chunk := source.read(1024 * 1024):
+                if cancel_check is not None:
+                    cancel_check()
                 size += len(chunk)
                 digest.update(chunk)
+                if progress is not None:
+                    progress(path, len(chunk))
             finished = os.fstat(source.fileno())
         if (
             finished.st_dev,
@@ -2674,7 +2678,7 @@ def write_take_manifest(
 
 
 def _audio_file_evidence(
-    path: Path, *, inspect_signal: bool = True
+    path: Path, *, inspect_signal: bool = True, cancel_check=None, progress=None
 ) -> dict[str, object]:
     """Return exact, streaming evidence without retaining source handles."""
     frame_count = 0
@@ -2685,7 +2689,8 @@ def _audio_file_evidence(
         # Hash through a no-follow descriptor before any codec probe. Besides
         # binding the exact bytes, this prevents a take-local symlink or special
         # file from being opened as audio evidence.
-        size, checksum = _streaming_file_identity(path)
+        size, checksum = (_streaming_file_identity(path, cancel_check=cancel_check, progress=progress)
+                          if cancel_check is not None or progress is not None else _streaming_file_identity(path))
     except OSError:
         return {
             "frame_count": 0,
@@ -2894,7 +2899,7 @@ def _manifest_creator_profile_key(
     return canonical, ""
 
 
-def load_take(take_dir: Path) -> TakeInfo | None:
+def load_take(take_dir: Path, *, cancel_check=None, progress=None) -> TakeInfo | None:
     """Build a TakeInfo from a single take folder.
 
     A completed manifest is the take's expected-media inventory, not merely a
@@ -2906,6 +2911,8 @@ def load_take(take_dir: Path) -> TakeInfo | None:
     empty legacy manifests remain invisible.
     """
     take_dir = Path(take_dir)
+    if cancel_check is not None:
+        cancel_check()
     if not take_dir.is_dir():
         return None
 
@@ -3162,9 +3169,10 @@ def load_take(take_dir: Path) -> TakeInfo | None:
                 else:
                     changed = False
                     if schema_v2:
-                        observed = _audio_file_evidence(
-                            segment_path, inspect_signal=False
-                        )
+                        observed = (_audio_file_evidence(segment_path, inspect_signal=False,
+                                                        cancel_check=cancel_check, progress=progress)
+                                    if cancel_check is not None or progress is not None
+                                    else _audio_file_evidence(segment_path, inspect_signal=False))
                         declared_hash = str(raw_segment.get("sha256") or "")
                         declared_format = (
                             str(raw_segment.get("sample_format") or "").strip().upper()

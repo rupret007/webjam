@@ -299,6 +299,11 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
         self._current: TakeInfo | None = None
         self._review_take = None
         self._review_slots = {}
+        self._workspace_media_context = None
+        self._workspace_media_contexts_by_path = {}
+        self._workspace_open_revision = 0
+        self.workspace_owner_token = None
+        self._workspace_review_slots = {}
         self._review_dialog = StudioTakeReviewDialog(self, self._flush_take_review)
         self._review_dialog.save_requested.connect(self._flush_take_review)
         self._review_dialog.assign_requested.connect(self._assign_review_slot)
@@ -1968,6 +1973,8 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
 
         if not isinstance(profile, CreatorProfile):
             raise TypeError("profile must be a CreatorProfile")
+        if profile != self._live_creator_profile:
+            self._invalidate_workspace_open()
         self._live_creator_profile = profile
         if not self._viewing_live:
             return
@@ -2100,6 +2107,8 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
     def set_recording_phase(self, phase: str, detail: str = "") -> None:
         phase = str(phase or "idle")
         previous_phase = self._phase_name
+        if phase != previous_phase:
+            self._invalidate_workspace_open()
         self._phase_name = phase
         if self._exporting and phase in {
             "preflight",
@@ -2976,6 +2985,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
         self._cancel_studio_waveforms(clear=True)
         changed_take = self._current is not None or not self._viewing_live
         self._current = None
+        self._workspace_media_context = None
         self._review_take = None
         self._review_dialog.apply_review("Choose a completed take", None)
         self._review_dialog.set_receipt()
@@ -2999,7 +3009,9 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
         self._apply_creator_profile_presentation(self._live_creator_profile)
         if changed_take:
             self._guidance_take_revision += 1
-        self._take_list.clearSelection()
+        self._take_list.blockSignals(True)
+        self._take_list.setCurrentRow(-1)
+        self._take_list.blockSignals(False)
         self._populate_live_lanes()
         self._emit_guidance_changed()
 
@@ -3144,6 +3156,8 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
 
     def _can_send_to_logic(self) -> tuple[bool, str]:
         """Check if the current take can be exported to Logic."""
+        if self._workspace_media_blocked():
+            return False, "Verify the restored recording and its declared sources before exporting."
         if self._recording:
             return False, "Stop recording before sending to Logic."
         if self._exporting:
@@ -3436,7 +3450,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
             )
         self._refresh_export_button()
 
-    def _on_take_selected(self, row: int) -> None:
+    def _on_take_selected(self, row: int, *, workspace_media=None) -> None:
         if not self._flush_take_review():
             if self._current in self._takes:
                 self._take_list.blockSignals(True)
@@ -3481,6 +3495,14 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
         self._cancel_playback_preparation(restore_controls=False)
         self._viewing_live = False
         take = self._takes[row]
+        path = Path(take.path).expanduser().absolute()
+        # Portable bindings survive Live and ordinary row/reload selection.
+        # A changed source must fail the existing catalog identity checks,
+        # never silently resolve an original copy with the same take ID.
+        if workspace_media is not None:
+            self._workspace_media_contexts_by_path[path] = workspace_media
+            self._workspace_media_contexts_by_path[path.resolve()] = workspace_media
+        self._workspace_media_context = self._workspace_context_for_path(path)
         self._current = take
         self._apply_creator_profile_presentation(
             get_creator_profile_by_key(take.creator_profile_key)
@@ -3551,7 +3573,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
             getattr(track, "media_status", "available") not in blocked_statuses
             and float(getattr(track, "duration_s", 0.0) or 0.0) > 0.0
             for track in take.tracks
-        )
+        ) and not self._workspace_media_blocked()
         self._play_btn.setEnabled(playable)
         self._stop_btn.setEnabled(playable)
         self._scrub.setEnabled(playable)
@@ -4222,6 +4244,9 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
     def _toggle_play(self) -> None:
         if self._current is None:
             return
+        if self._workspace_media_blocked():
+            self._hint.setText(self._studio_state_error)
+            return
         if self._playback_preparing:
             return
         if self._player.is_playing:
@@ -4538,6 +4563,12 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
 
         if self._waveform_shutdown:
             return True
+        if self.media_open_pending:
+            job = getattr(self, "_workspace_review_job", None)
+            if job is not None:
+                job.cancel()
+            self._hint.setText("Comparison verification is finishing. Wait for its result, then close again.")
+            return False
         return self._flush_take_review() and self._flush_studio_state()
 
     def shutdown(self) -> bool:
@@ -4592,6 +4623,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
         window.  A stack switch emits a hide event, so this is the lifecycle
         boundary that must stop the output stream and close source readers.
         """
+        self._invalidate_workspace_open()
         self._flush_studio_state()
         self._stop_playback()
         super().hideEvent(event)

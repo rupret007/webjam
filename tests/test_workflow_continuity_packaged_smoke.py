@@ -8,6 +8,17 @@ import sys
 from services.workflow_continuity_packaged_smoke import SUCCESS_MARKER
 
 
+def test_smoke_isolates_settings_database_environment_and_log_handlers():
+    result = subprocess.run(
+        [sys.executable, "-m", "tests.support.run_smoke_isolation"],
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+        capture_output=True, text=True, timeout=45,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.strip().endswith("WebJam smoke ownership and cleanup passed")
+
+
 def test_packaged_proof_replaces_real_controllers_and_routes_local_help():
     result = subprocess.run(
         [sys.executable, "-m", "tests.support.run_workflow_continuity_smoke"],

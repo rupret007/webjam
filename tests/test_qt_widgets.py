@@ -206,6 +206,33 @@ class TestSessionStrip(unittest.TestCase):
         s = self._strip()
         self.assertIsNotNone(s)
 
+    def test_hidden_controls_are_destroyed_with_the_strip(self):
+        from PySide6.QtCore import QCoreApplication, QEvent
+        from shiboken6 import isValid
+
+        strip = self._strip()
+        controls = {
+            "mode picker": strip._mode_picker,
+            "Band Check button": strip._test_button,
+            "Band Check menu": strip._test_button.menu(),
+            "Band Check action": strip._ready_action,
+            "Practice Solo action": strip._practice_action,
+        }
+        try:
+            strip.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            self.assertFalse(isValid(strip))
+            # Keep Python references alive: native ownership must reclaim the
+            # entire hidden control tree without relying on cyclic GC.
+            self.assertEqual(
+                [name for name, control in controls.items() if isValid(control)], []
+            )
+        finally:
+            for widget in (strip, controls["mode picker"], controls["Band Check button"]):
+                if isValid(widget):
+                    widget.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
     def test_fixed_height(self):
         from webjam_qt.widgets.session_strip import SessionStrip
         s = self._strip()
@@ -695,8 +722,9 @@ class TestSessionStrip(unittest.TestCase):
 
     def test_long_live_states_remain_readable_at_supported_width(self):
         s = self._strip()
+        s.set_recording_available(True)
         s.set_recording_phase("validating", detail="WAITING FOR SERVER FILES…")
-        s.set_audio_state("Stop Audio")
+        s.set_audio_state("Try End Session")
         s.set_video_state("Open Again")
         s.resize(1100, s.STRIP_HEIGHT)
         s.show()
@@ -704,19 +732,17 @@ class TestSessionStrip(unittest.TestCase):
 
         buttons = [
             s._record_button,
-            s._test_button,
             s._audio_button,
             s._video_button,
         ]
         self.assertLessEqual(s.minimumSizeHint().width(), 1100)
         for button in buttons:
+            self.assertTrue(button.isVisibleTo(s))
             self.assertGreaterEqual(button.width(), button.sizeHint().width())
-        self.assertGreaterEqual(
-            s._mode_picker.width(),
-            s._mode_picker.fontMetrics().horizontalAdvance(
-                s._mode_picker.currentText()
-            ) + 40,
-        )
+        # Retired controls stay hidden; their unused default geometry does
+        # not represent text that a musician must be able to read.
+        self.assertTrue(s._mode_picker.isHidden())
+        self.assertTrue(s._test_button.isHidden())
         s.close()
 
     def test_cleanup_retry_action_is_visible_and_named(self):

@@ -985,6 +985,10 @@ jobs:
           python -c "import asyncio, sys; loop = asyncio.new_event_loop(); print(sys.version, type(loop).__name__); assert sys.platform != 'win32' or isinstance(loop, asyncio.ProactorEventLoop); loop.close()"
           python -X dev -m pytest -q -W error::ResourceWarning -W error::pytest.PytestUnraisableExceptionWarning reference_service/tests
 
+      - name: Verify workspace backup publication on this desktop
+        timeout-minutes: 3
+        run: python -X dev -m pytest -q -W error::ResourceWarning -W error::pytest.PytestUnraisableExceptionWarning tests/test_workspace_backup.py
+
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
@@ -1312,6 +1316,52 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m unittest tests.test_art_lan_host_portable -v
+
+      - name: Install native portability test runner
+        # The service tests used a separate Python 3.12 environment above.
+        run: >-
+          python -m pip install --only-binary=:all: "pytest==8.3.5"
+
+      - name: Verify portable workspace media and restart on this desktop
+        timeout-minutes: 5
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: >-
+          python -X dev -m pytest -q
+          tests/test_recording_manifest_journal.py
+          tests/test_windows_recording_journal.py
+          tests/test_workspace_media_backup.py
+          tests/test_workspace_media_library_ui.py
+          tests/test_workspace_media_activation.py
+          tests/test_workspace_media_relink_journey.py
+          tests/test_workspace_portability_journey.py
+          tests/test_workflow_continuity_packaged_smoke.py
+          tests/test_session_library_launch.py
+
+      - name: Verify complete Reference Studio workflow on this desktop
+        timeout-minutes: 5
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: >-
+          python -X dev -m pytest -q
+          tests/test_reference_studio_packaged_smoke.py
+          tests/test_qt_widgets.py::TestSessionStrip::test_hidden_controls_are_destroyed_with_the_strip
+
+      - name: Report native workflow crash diagnostics
+        if: failure()
+        shell: python
+        run: |
+          from pathlib import Path
+          import tempfile
+
+          root = Path(tempfile.gettempdir())
+          for path in sorted(root.glob("webjam-reference-studio-smoke-*/diagnostics.log"))[-8:]:
+              if path.is_symlink() or not path.is_file():
+                  continue
+              with path.open("rb") as stream:
+                  stream.seek(max(0, path.stat().st_size - 64 * 1024))
+                  print("Owned native workflow diagnostics:")
+                  print(stream.read(64 * 1024).decode("utf-8", errors="replace"))
 
       - name: Verify macOS PyInstaller pkg_resources compatibility
         if: startsWith(matrix.target, 'macos-')
@@ -2008,6 +2058,7 @@ jobs:
           }
 
       - name: Verify frozen Windows package
+        id: frozen_windows
         if: matrix.target == 'windows-x64'
         shell: pwsh
         run: |
@@ -2083,6 +2134,29 @@ jobs:
             $residue | ForEach-Object { taskkill /PID $_.ProcessId /T /F 2>$null | Out-Null }
             throw "Frozen package left owned processes running after launch smoke"
           }
+
+      - name: Capture native Windows workflow failure
+        if: failure() && steps.frozen_windows.outcome == 'failure'
+        timeout-minutes: 4
+        shell: pwsh
+        run: |
+          $app = Join-Path $env:RUNNER_TEMP "WebJam Windows Fresh With Spaces\WebJam\WebJam.exe"
+          python -m tests.support.diagnose_windows_reference_studio `
+            --binary $app `
+            --package "out\WebJam-windows-x64.zip" `
+            --output "out\windows-native-diagnostics" `
+            --source-head (git rev-parse HEAD).Trim()
+
+      - name: Retain failed Windows package and native diagnostics
+        if: failure() && steps.frozen_windows.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: webjam-windows-native-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            out/windows-native-diagnostics/
+            out/WebJam-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Build, install, launch, and uninstall Windows setup
         if: matrix.target == 'windows-x64'

@@ -19,7 +19,7 @@ or **More → Session library…** in a room. Choose the new workspace's profile
 then **New workspace…** and a title. The **Notes**, **Rehearsal plan**, **Art project**,
 **Summary**, and **Takes** tabs keep the work appropriate to that profile.
 Changes save locally; check the save status and use **Save** before leaving.
-Search finds previous work. **Continue this work** brings its saved context
+Search finds previous work. **Continue** brings its saved context
 back into the app; it does not connect a room or start recording. **Save as
 copy…** makes a separate workspace. Invitations and meeting credentials are
 not a reusable workspace template.
@@ -37,7 +37,7 @@ Type a moment note and choose **Mark moment**, or press **⌘M** on Mac /
 position produces a take bookmark; otherwise it stays a plain note. The song
 clock and room timer do not certify recording time. **Open in take** rechecks
 the saved take before navigation; a moved or changed recording needs attention.
-The **Summary** tab and **Export summary…** collect progress and next steps;
+The **Summary** tab and **Export summary** collect progress and next steps;
 ending a rehearsal retains its recap with the workspace.
 
 For Art, open **More → Session library… → Art project**. Keep a **Project brief**, **Progress**,
@@ -52,6 +52,102 @@ or turn WebJam into a drawing application.
 For completed Music or Podcast & Voice takes, follow
 [Review and compare completed takes](#review-and-compare-completed-takes)
 to save favorites and notes, audition A/B, and inspect an export receipt.
+
+## Back up and import a workspace: Unreleased
+
+These controls belong to draft workspace-backup builds after v0.29.0. In
+**Session library**, select the workspace and choose **Back up…**.
+Resolve an unsaved draft or conflicting changes first; **Save as copy…** keeps
+a separate workspace when needed. **Export summary** remains available for a
+readable progress handoff.
+
+**Metadata only** is selected by default and writes a new JSON file containing
+notes, song drafts and moments, Art context, recaps and stored take/reference
+links. It does not copy audio, artwork or Studio review/edit files.
+
+To carry files too, choose **Selected media**, check the completed takes
+or local Art files, and choose **Continue**. **Take reviews** and **Studio edits**
+are checked by default. Review the included/excluded items, file count, size
+and blockers. **Change choices…** retains your selections so you can include a
+required alternate take or explicitly exclude Studio edits. Missing, changed,
+unsupported or incomplete selected files block **Create backup…**; they are
+never silently omitted. Web links remain links and are not downloaded.
+
+**Create backup…** needs a new `.webjambackup` filename. Keep the package and its
+small `.webjamreceipt` checksum receipt together. The receipt records the
+intended package bytes before publication, including if the process stops
+unexpectedly. Packages allow up to 4,096 entries and 64 GiB, with bounded
+metadata. Only selected, declared media and supported review/edit files are
+copied; unrelated files and application credentials are not added.
+
+Choose **Import backup…** and select a JSON backup, media package, or its
+`.webjamreceipt` file. A receipt checks the package beside it against the
+intended checksum. Review the title, profile, counts, prior imports and limits.
+**Cancel** leaves the open draft unchanged.
+**Import as new** creates a separate saved workspace and keeps your
+current editor and selection. Select the imported entry yourself when ready.
+An unsaved draft stays unsaved through import, including when a background
+Notes save or recording result arrives. Use **Save** when ready; further
+typing resumes the editor's autosave. Closing also attempts to save your work.
+At compact sizes or with enlarged text, scroll the Library to reach its actions.
+Tab and Shift+Tab bring focused controls into view; save and recovery status stays visible.
+
+Imported links say **stored link — not checked** until an
+explicit action accesses them, including after reopening or saving a copy.
+Continuing a workspace does not start recording, play media or open another app.
+
+In **Takes**, select a link and choose **Verify take**. The check runs
+in the background without opening Studio. **Open Studio** checks it again
+and opens that recording without starting playback. Use **Locate take…**
+to choose the same completed take at a new location; its identity and original
+content must match. Linked rehearsal moments keep their IDs and move with it.
+From the launch screen's Library, **Open Studio** or a linked
+moment's **Open in take** also continues the imported workspace directly.
+If its saved context or media changes before Studio opens, select and open it again.
+
+In **Art project**, select a local file and choose **Verify reference**.
+**Open reference** checks it before opening its external app. **Relink…** locates
+the same content while preserving the brief and bookmarks. A metadata-only file
+without an original checksum can be checked for availability, but cannot be
+proven to be the original or relinked as matching content.
+When you back up imported Art again, its content must still match the saved
+checksum and size. Import rejects a package that contradicts that saved proof;
+relinking the same bytes under a new filename or extension remains supported.
+
+“Content matched when checked” describes that check, not a permanent guarantee.
+Restored Studio arrangements use their declared source locations even if the
+original copies are still on this computer. **Listen A/B** checks a restored
+comparison again before playback. Leaving Studio, editing its arrangement,
+changing the active workspace or beginning a recording retires a pending
+comparison. Choose Listen again when ready. A new Library draft keeps its
+editor open even if an earlier take-open request has just finished.
+If the export control says **Export Aligned Originals**, the export excludes
+Studio arrangement edits. Check the confirmation and new receipt for the export
+kind and destination; an imported historical receipt is not a new export.
+
+Copying and verification run in the background with progress and **Cancel**.
+Session **Stop** and **End** remain reachable in the main window. Cancellation
+waits for the worker's actual result: a completed publication still reports
+success, and an uncertain result retains its receipt. Closing or returning to
+launch waits for that result; review it, then close or return again.
+
+If an import's outcome is uncertain, choose **Check import**. A checked
+complete restore offers **Retry import**. An incomplete restore offers
+**Choose backup…**, followed by **Resume import**. These keep the
+intended workspace identity. A changed recovery record or different package
+blocks retry and preserves its evidence. For uncertain backup publication,
+choose the retained `.webjamreceipt` in **Import backup…** to check its bytes
+without importing anything until you confirm. Private notes and stored
+locations remain literal; this is not a secret-scrubbing feature.
+
+These explicit media controls and Studio activation are in the draft source.
+Local tests now cover two controlled recorder completions and Art through backup,
+import and restart in separate OS processes. The frozen-build hook also includes
+a synthetic portability journey. Delivered test builds require final-commit hosted
+and native package checks; see [draft #172](https://github.com/rupret007/webjam/pull/172)
+for current evidence and the [milestone plan](docs/WORKSPACE_BACKUP_PLAN.md) for scope. Use the
+[ten-minute portability pilot](docs/WORKSPACE_PORTABILITY_PILOT.md) with the identified
+test build when delivered. Physical sound, real-editor import and feel remain NOT RUN.
 
 ## Return to launch: Unreleased
 

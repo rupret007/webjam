@@ -23,7 +23,7 @@ next action; a second artist is needed to demonstrate joining and making togethe
 v0.29.0 adds **File → Session library…** before a room and
 **More → Session library…** inside it. Save local notes, reuse a Music
 **Rehearsal plan**, or keep an **Art project** with references and next steps.
-**Continue this work** restores its context without starting audio or a room.
+**Continue** restores its context without starting audio or a room.
 Music moments are plain notes unless a recording position is confirmed.
 See [the saved-work walkthrough](USER_GUIDE.md#save-a-session-and-continue-later).
 

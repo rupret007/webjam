@@ -24,12 +24,40 @@ def workflow_topics(profile: str, *, offline_studio: bool = False) -> tuple[Help
         HelpTopic("saved_work", "Find and continue saved work",
             "<p>Open <b>Session library…</b> from the launch File menu or the room's More menu. "
             "Search by a workspace's title or notes and choose its profile. Read its Summary "
-            "or choose <b>Continue this work</b> to restore its local context.</p>"
+            "or choose <b>Continue</b> to restore its local context.</p>"
             "<p>Finish or leave an active room before changing workspaces. Continuing saved work "
             "does not join a room, start recording, play a take, or open an Art reference.</p>"
             "<p>Standalone Music projects use their own <b>Open Project…</b> and recent-project list. "
             "A saved session workspace and a local audio project are separate.</p>",
             "recent history restart reopen notes search session workspace", library_route,
+            "Open Session library"),
+        HelpTopic("workspace_backup", "Back up or import a workspace",
+            "<p>In draft backup builds, open <b>Session library</b> and choose <b>Back up…</b>. "
+            "Resolve unsaved changes first. <b>Metadata only</b> saves notes, plans and stored links. "
+            "Choose <b>Selected media</b> to add completed takes and local Art files, then "
+            "review the contents, size and blockers. <b>Change choices…</b> keeps your selections.</p>"
+            "<p><b>Create backup…</b> writes a new .webjambackup package and a small .webjamreceipt. "
+            "Keep them together. <b>Import backup…</b> accepts metadata JSON, a package or its receipt; "
+            "the receipt checks the intended package checksum. Review the preview, then confirm "
+            "<b>Import as new</b>. Your current draft and selection stay here.</p>"
+            "<p>With enlarged text or a compact window, scroll the Library to reach its actions. "
+            "Tab and Shift+Tab reveal focused controls; save/recovery status stays visible.</p>"
+            "<p>In <b>Takes</b>, select <b>Verify take</b> to check without playback, "
+            "<b>Open Studio</b> to check and open Studio, or <b>Locate take…</b> "
+            "to find the same original content. In <b>Art project</b>, use <b>Verify reference</b>, "
+            "<b>Open reference</b> or <b>Relink…</b>. An imported Art file with no original "
+            "checksum cannot be proven to match its original. Checks describe that moment only.</p>"
+            "<p>Restored Studio takes keep their declared alternate sources. <b>Listen A/B</b> "
+            "checks a restored comparison before playback. Leaving Studio, editing the arrangement "
+            "or changing the active workspace retires a pending comparison; choose Listen again.</p>"
+            "<p>Progress and <b>Cancel</b> remain available during copying and verification. Stop and End "
+            "stay reachable in the main window. Close or Return to launch waits for the result; "
+            "review it, then try again. A late cancellation may still report successful publication.</p>"
+            "<p>Use <b>Check import</b>, then <b>Retry import</b> or "
+            "<b>Choose backup…</b> and <b>Resume import</b> as offered. "
+            "Never discard an uncertain publication's receipt. Imported history does not start new "
+            "recording, playback or another app. Private text stays literal.</p>",
+            "portable selected media package backup restore import checksum cancel recovery verify", library_route,
             "Open Session library"),
         HelpTopic("draft_recovery", "Keep a draft when saving fails",
             "<p>Read the save message in the editor where you were working. A failed save is "
@@ -66,7 +94,7 @@ def workflow_topics(profile: str, *, offline_studio: bool = False) -> tuple[Help
             "you request it. Restoring the workspace or selecting a bookmark opens nothing.</p>"
             "<p>Lesson positions are entered by you, not measured video timecode. Select a bookmark, "
             "open the reference explicitly, and return to that position in your player. "
-            "Export summary… includes progress and next steps without local file paths.</p>"
+            "Export summary includes progress and next steps without local file paths.</p>"
             "<p>Keep making in your own tools or on paper. Art workspaces do not create audio takes.</p>",
             "art moved missing file relink lesson position bookmark reference progress summary",
             "" if offline_studio else "art", "Open Art project"))

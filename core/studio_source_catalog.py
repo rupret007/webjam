@@ -464,6 +464,13 @@ class StudioSourceCatalog:
     def take_ids(self) -> tuple[str, ...]:
         return tuple(self._takes)
 
+    def manifest_sha256_for_take(self, take_id: str) -> str:
+        """Exact manifest bytes accepted when this source catalog was loaded."""
+        try:
+            return self._takes[take_id].manifest_receipt.sha256
+        except KeyError as exc:
+            raise StudioSourceCatalogError("Take is absent from this source catalog.") from exc
+
     def project_for_take(self, take_id: str) -> TakeProject:
         """Return the immutable manifest project for one cataloged take."""
 

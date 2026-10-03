@@ -325,25 +325,42 @@ class StudioArrangementWorkflowMixin:
             }
         )
         roots: list[Path] = []
+        context = getattr(self, "_workspace_media_context", None)
+        if context is not None:
+            if (context["primary"] != project.take_id
+                    or Path(context["path"]).resolve() != take_path.resolve()):
+                raise StudioSourceCatalogError("Verified workspace source context no longer matches this take.")
         for source_take_id in source_take_ids:
-            matches = [
+            if context is not None:
+                declared = context["sources"].get(source_take_id)
+                if declared is None:
+                    raise StudioSourceCatalogError("A Studio dependency has not been verified in this workspace.")
+                matches = [declared[1]]
+            else:
+                matches = [
                 item
                 for item in self._takes
                 if str(getattr(item, "take_id", "") or "") == source_take_id
                 and str(getattr(item, "session_id", "") or "") == project.session_id
                 and int(getattr(item, "project_samplerate", 0) or 0)
                 == project.project_sample_rate
-            ]
-            if len(matches) != 1:
+                ]
+            if (len(matches) != 1
+                    or matches[0].session_id != project.session_id
+                    or matches[0].project_samplerate != project.project_sample_rate):
                 raise StudioSourceCatalogError(
                     "A referenced repeated take is missing or ambiguous in the Takes library."
                 )
             roots.append(matches[0].path)
-        return StudioSourceCatalog.load(
+        catalog = StudioSourceCatalog.load(
             project,
             take_path,
             additional_take_roots=tuple(roots),
         )
+        if context is not None and any(catalog.manifest_sha256_for_take(key) != context["identities"].get(key)
+                                       for key in catalog.take_ids):
+            raise StudioSourceCatalogError("A verified workspace source manifest changed before activation.")
+        return catalog
 
     def _refresh_studio_source_catalog(self) -> bool:
         """Match the trusted catalog to the current document's source inventory."""
@@ -365,7 +382,12 @@ class StudioArrangementWorkflowMixin:
             ),
         )
         current = self._studio_source_catalog
-        if current is not None and current.take_ids == desired_take_ids:
+        context = getattr(self, "_workspace_media_context", None)
+        matching_roots = (context is None or (current is not None and all(
+            key in context["sources"] and current.root_for_take(key) == Path(context["sources"][key][0]).resolve()
+            and current.manifest_sha256_for_take(key) == context["identities"].get(key)
+            for key in desired_take_ids if key in current.take_ids)))
+        if current is not None and current.take_ids == desired_take_ids and matching_roots:
             return True
         try:
             self._studio_source_catalog = self._source_catalog_for_document(
@@ -413,7 +435,9 @@ class StudioArrangementWorkflowMixin:
             if item.track_id == destination_id and not item.deleted
         }
         values: list[tuple[Path, TakeProject, object]] = []
-        for take in self._takes:
+        context = getattr(self, "_workspace_media_context", None)
+        candidates = self._takes if context is None else [value[1] for value in context["sources"].values()]
+        for take in candidates:
             try:
                 path = take.path.expanduser().resolve()
             except (OSError, RuntimeError):
@@ -634,13 +658,15 @@ class StudioArrangementWorkflowMixin:
         selected_lane = bool(self._studio_arrange.selected_lane_id)
         has_other_take = False
         if studio_visible and self._studio_project is not None:
+            context = getattr(self, "_workspace_media_context", None)
+            candidates = self._takes if context is None else [value[1] for value in context["sources"].values()]
             has_other_take = any(
                 str(getattr(item, "session_id", "") or "")
                 == self._studio_project.session_id
                 and int(getattr(item, "project_samplerate", 0) or 0)
                 == self._studio_project.project_sample_rate
                 and item.path.expanduser().resolve() != self._studio_state_take_path
-                for item in self._takes
+                for item in candidates
             )
         self._add_take_lane_btn.setEnabled(selected_track and has_other_take)
         self._audition_take_lane_btn.setEnabled(selected_lane)
@@ -1051,6 +1077,11 @@ class StudioArrangementWorkflowMixin:
                 "Saved Studio choices couldn't be used. Default review settings are "
                 "shown; the recorded take is safe."
             )
+            if self._workspace_media_context is not None:
+                self._studio_state_error = (
+                    "The restored recording or its declared sources could not be verified. "
+                    "Open Session library and verify their original media before playback or export."
+                )
             return
         self._studio_state = document
         self._studio_project = project

@@ -80,7 +80,7 @@ class _ReferenceReceiver(QObject):
         self.urls.append(url.toLocalFile())
 
 
-def _take(root: Path, name: str, frequency: float) -> Path:
+def _take(root: Path, name: str, frequency: float, *, session_id=None) -> Path:
     directory = root / name
     media = directory / "media" / "source.wav"
     media.parent.mkdir(parents=True)
@@ -100,7 +100,7 @@ def _take(root: Path, name: str, frequency: float) -> Path:
         order=0, segments=(segment,), alignment=AlignmentState(confidence=1.0, method="server-origin"),
     )
     write_take_project(directory, TakeProject(
-        session_id=new_project_id(), take_id=new_project_id(), session_title="Packaged smoke",
+        session_id=session_id or new_project_id(), take_id=new_project_id(), session_title="Packaged smoke",
         take_name=name, status=ProjectStatus.COMPLETE, project_sample_rate=_RATE,
         participants=(), tracks=(track,),
     ))
@@ -187,6 +187,8 @@ def _art(library, root, widgets):
         reopened.art.bookmarks.setCurrentRow(0)
         _require(reopened.art.position.value() == 12.5, "manual lesson position changed")
         _click(reopened.art, "Open reference")
+        _wait(QApplication.instance(), lambda: not reopened.media_operation_pending,
+              "explicit reference verification did not finish")
         _require([Path(url).resolve() for url in receiver.urls] == [reference],
                  "explicit reference action selected the wrong file")
         continued = []
@@ -282,9 +284,14 @@ def run_session_workspace_smoke() -> dict:
             proof["originals_unchanged"] = True
             return proof
         finally:
-            studio.shutdown()
+            from services.packaged_smoke_diagnostics import checkpoint
+            checkpoint("Saved workspace: Studio shutdown begin")
+            _require(studio.shutdown(), "saved-work Studio did not prove cleanup")
+            checkpoint("Saved workspace: Studio shutdown complete; widget deletion begin")
             for widget in reversed(widgets):
                 widget.close()
                 widget.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            checkpoint("Saved workspace: deferred deletion complete; process events begin")
             app.processEvents()
+            checkpoint("Saved workspace: process events complete")
