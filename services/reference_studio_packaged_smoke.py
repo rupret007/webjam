@@ -61,6 +61,7 @@ from services.session_workspace_packaged_smoke import run_session_workspace_smok
 from services.workflow_continuity_packaged_smoke import run_workflow_continuity_smoke
 from services.workspace_portability_smoke import run_workspace_portability_smoke
 from services.packaged_smoke_diagnostics import checkpoint, diagnostic_trace
+from services.packaged_smoke_gc_probe import worker_gc_probe
 
 SUCCESS_MARKER = "WebJam Reference Studio frozen-runtime smoke passed"
 _SAMPLE_RATE = 48_000
@@ -577,7 +578,7 @@ def run_frozen_reference_studio_smoke(*, result_path: Path) -> int:
     """Exercise packaged project and Qt saved-work paths without audio hardware."""
 
     result_path = _validated_result_path(result_path)
-    with diagnostic_trace(result_path):
+    with diagnostic_trace(result_path), worker_gc_probe(result_path):
         with tempfile.TemporaryDirectory(prefix="webjam-reference-studio-work-") as directory:
             root = Path(directory)
             checkpoint("Reference Studio: begin")

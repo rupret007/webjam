@@ -59,7 +59,7 @@ while retaining your current draft. Select **Verify take** or **Verify reference
 to check stored media, then deliberately open it or locate its original content.
 Restored Studio takes retain their declared alternate sources through selection
 and A/B listening. These controls are part of the
-[active portability milestone](docs/WORKSPACE_BACKUP_PLAN.md). Local tests exercise two
+[portability milestone](docs/WORKSPACE_BACKUP_PLAN.md). Local tests exercise two
 controlled recorder completions, Art, backup/import and restart in separate processes;
 the frozen-build hook adds a synthetic portability journey. See [draft #172](https://github.com/rupret007/webjam/pull/172)
 for exact-commit hosted and native package evidence. Use the
@@ -946,4 +946,5 @@ promote a package or claim audibility.
 - [Webex companion guidance](WEBEX_AUDIO_MODES.md)
 - [Jamulus component catalog release runbook](docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md)
 - [Test procedure](TEST_PROCEDURE.md)
+- [Windows portability diagnostic controls and bounded matrix](docs/WINDOWS_PORTABILITY_DIAGNOSTICS.md)
 - [Architecture](ARCHITECTURE.md)
