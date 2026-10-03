@@ -66,7 +66,13 @@ while not Path('child.pid').exists():
     assert child_pid in record['members_after_root_wait']
     assert record['timed_out'] is (not finishes)
     assert record['forced_tree_termination'] is (not finishes)
-    assert record['members_before_cleanup'] == ([] if finishes else [child_pid])
+    if finishes:
+        assert record['members_before_cleanup'] == []
+    else:
+        # Windows may include auxiliary processes in this privately owned job.
+        # Require the known child and account for the already-observed members.
+        assert child_pid in record['members_before_cleanup']
+        assert set(record['members_before_cleanup']) <= set(record['members_after_root_wait'])
     assert record['natural_drain_seconds'] > 0
     assert (tmp_path/'finished').exists() is finishes
     assert record['cleanup_verified'] and record['members_after_cleanup'] == []
