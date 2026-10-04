@@ -17,6 +17,9 @@ All notable improvements and features for the WebJam creator collaboration platf
   startup failure. Room invitation readiness and audio failure remain truthful.
 - First-test instructions and a pilot record distinguish software checks from
   unobserved sound, sharing, cameras, reconnects and ensemble latency.
+- Service shutdown verification classifies connection-establishment deadlines
+  only after deliberate Close begins. Pre-close and send/receive deadlines,
+  established replies, resource retirement and diagnostics remain strict.
 
 ### Follow-along clarity and saved lessons — draft test-build scope
 
