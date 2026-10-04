@@ -1101,6 +1101,7 @@ class WebexEmbed(QFrame):
             self._title_label.setText("Paint along with sound" if self._creator_profile_key == "art" else "Video practice")
             self._mode_label.setText(lesson_setup_steps(
                 profile=self._creator_profile_key, hosting=self._shared_lesson_hosting, service=service,
+                meeting_configured=self._meeting_configured,
             ))
             self._sound_tips.setText(lesson_sound_guidance(
                 profile=self._creator_profile_key, hosting=self._shared_lesson_hosting, service=service,

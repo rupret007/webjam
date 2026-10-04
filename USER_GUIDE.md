@@ -438,6 +438,11 @@ For a YouTube lesson, such as a Bob Ross mountain painting, the host chooses
 An existing embedded lesson supplies its current reference link and position;
 **Change YouTube…** selects a different browser lesson. Choosing a link starts
 nothing. Add the meeting link if needed, then **Join / Open Meeting**.
+The room invitation includes only the meeting link available when it was
+copied. If the host adds or changes that link later, use **Copy Link** to send
+it separately. Guests choose **Add Link** or **Change Link** in Conversation;
+they keep their current room. A copied meeting link can also open directly in
+the browser or meeting app. It is not an invitation for WebJam's Join field.
 The host shares the lesson through the meeting. In the Webex
 desktop app, share the browser window with computer sound enabled; the video
 optimization option helps motion. In the Webex web client, share the browser
@@ -486,6 +491,11 @@ In Music, choose **Play along** (also in **More → Play along…**):
   cleanup remain visible. Returning to ensemble restores its setup guidance.
   If your instrument is also connected to Jamulus, it still transmits; use your instrument/interface
   send control to stop it. WebJam mix mute changes only what you hear.
+  If ensemble setup fails, its recovery stays visible while the explicit
+  meeting controls remain available. **Copy Link** shares the meeting with
+  people who can open it directly in their browser or meeting app; they do
+  not need a WebJam room for meeting video practice. A WebJam room invitation
+  still requires an available room and is a separate action.
 - **Open Shared Track** opens the host's existing live-ensemble setup. It needs
   a local audio file and a supported, isolated host route (currently macOS
   with the certified BlackHole setup). Guests choose **Open Jamulus mixer**
@@ -508,10 +518,15 @@ library, **Continue** a different workspace before using its lesson. A save
 failure keeps the link and other edits in the existing draft; retry **Save**
 after storage is available.
 
-For either Music or Art at launch, choose **Continue** on the saved workspace,
-reopen **Session library** from the room, then choose **Use saved lesson**.
+For either Music or Art at launch, choose **Continue** on the saved workspace.
+This restores local work; it does not rejoin an old room. In Art, choose
+**Start Session** next. With saved host settings this hosts a room; with saved
+guest settings it opens **Join**, where you paste the host's current invitation.
+Once the room is open, reopen **Session library** and choose **Use saved lesson**.
+This keeps the continued workspace and its reference. Music video practice
+can reuse its saved lesson without starting Jamulus.
 The launch-time Library explains this sequence because live lesson setup is
-available only after continuing into a room.
+available only after continuing into the workspace.
 
 ### Silent Paint Along references
 

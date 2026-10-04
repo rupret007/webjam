@@ -118,6 +118,10 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    use your own tools and work space; no instrument or audio-engine setup is required.
 4. Open **Conversation** only when conversation or video is wanted; use
    **Join / Open Meeting** for an explicit meeting-link handoff.
+   If the host adds or changes a meeting after copying the room invite,
+   use **Copy Link** to send it separately. Guests use **Add Link** or
+   **Change Link** in Conversation without leaving the room. Meeting links
+   open in a browser/meeting app; they are not WebJam room invitations.
 5. In an Art **Paint along** room, **Watch a shared lesson** is the first
    action for a lesson with sound. It reaches Conversation. The host uses
    **Choose YouTube…**, then **Open in browser** and the meeting's Share
@@ -126,6 +130,9 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    in the Art project. In Session library, **Use saved lesson** returns to
    setup, carrying a selected bookmark's whole-second position. **Conversation**
    returns to setup after Notes; **Sound and sharing tips** expands extra help.
+   After restarting, **Continue** restores the workspace locally. In Art,
+   choose **Start Session** next; if Join opens, paste the host's current
+   invitation. Once the room is open, reopen Session library to use the lesson.
    The optional silent reference remains below: **Choose process video…** and
    **Open my copy…** use each person's local file; **YouTube link…** and
    **Open lesson** use embedded silent YouTube. **Back to room** leaves the room open.
@@ -138,7 +145,9 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
 6. In Music, **Play along** offers **Set up video practice** (one shared
    YouTube video through the meeting; listen and take turns) or **Open Shared
    Track** (live ensemble through Jamulus, meeting audio disconnected). You
-   can use video practice without finishing Jamulus audio setup. Guests
+   can use video practice without finishing Jamulus audio setup. Guests can
+   open the host's copied meeting link directly, even without a WebJam room.
+   This does not establish a Jamulus ensemble connection. Guests
    use **Open Jamulus mixer** for the ensemble path. Webex video can lag the
    musical audio. WebJam mix mute changes your listening, not your outgoing
    instrument. **Remember lesson** saves a practice link with the current
@@ -161,6 +170,11 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    projects. Review & Rehearsal correctly
    keeps standalone projects unavailable in Preview; Art intentionally has no
    recording or standalone-project path.
+
+For a first two-person try, use the [short test guide](docs/FOLLOW_ALONG_FIRST_TEST.md)
+and [pilot record](docs/FOLLOW_ALONG_PILOT_RECORD.md). The default Art room
+invitation uses the same Wi-Fi/local network. Physical sound, sharing,
+cameras, reconnects and ensemble latency need separate observations.
 
 ## Creator profiles
 

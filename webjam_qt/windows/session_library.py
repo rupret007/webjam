@@ -342,13 +342,29 @@ class SessionLibraryDialog(QDialog):
     def _request_lesson(self, profile, item, url):
         if self._lesson_binding is None:
             self.status.setText(
-                "Choose Continue to open this workspace first. Then open Session library "
+                "Choose Continue to open this workspace first. For Art, start or join a room next. "
+                "Then open Session library "
                 "from the room and use its saved lesson."
             )
             self.continue_button.setFocus(Qt.FocusReason.OtherFocusReason)
             return
         if self.record is not None:
             self.lesson_requested.emit((self._lesson_binding, self.record.id, profile, item, url))
+
+    def show_art_lesson_feedback(self, message):
+        """Reveal action feedback without replacing the separate save status."""
+        self.art.status.setText(message)
+        record = self.record
+
+        def reveal():
+            if self.record is record and self.art.status.text() == message:
+                self.art.layout().activate()
+                self.art.adjustSize()
+                self._reveal_focus(None, self.art.status)
+
+        # Word wrapping changes the form's geometry. Reveal after that layout,
+        # and cancel with this dialog if it is destroyed before the next turn.
+        QTimer.singleShot(0, self, reveal)
 
     @property
     def media_operation_pending(self):

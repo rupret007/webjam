@@ -299,6 +299,25 @@ class SessionLibraryCoordinator(QObject):
             selected = origin.art.selected_lesson()
         if selected != (item_id, url):
             return
+        if profile == "art" and not all(self._c._reference_video_identity()):
+            from core.session_conductor import ArtRoomState
+
+            room = self._c._room_participant
+            if room.state is ArtRoomState.NONE and not self._c._completed_art_room_role():
+                next_step = (
+                    "Close Session library and choose Start Session to host."
+                    if self._c.settings.host_server_enabled else
+                    "Close Session library, choose Start Session and paste the host's invitation."
+                )
+            else:
+                next_step = "Close Session library and finish the room's connection or recovery steps."
+            message = (
+                f"{next_step} Then reopen Session library and choose Use saved lesson. "
+                "Your saved reference and edits stay here."
+            )
+            origin.show_art_lesson_feedback(message)
+            self._flash(message)
+            return
         if self._c.follow_along.use_saved_lesson(url):
             # Keep the same draft owner. show() reuses this retained dialog.
             origin.hide()

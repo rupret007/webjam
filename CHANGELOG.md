@@ -6,6 +6,18 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+### Follow-along pilot readiness — draft test-build scope
+
+- Lesson setup explains how a host shares a meeting link added after the room
+  invitation. Guests can add or change it without leaving their room; a meeting
+  link opens in the meeting app/browser and is distinct from a WebJam invite.
+- Saved Art reopened locally explains the existing Start Session/Join path
+  before lesson reuse, preserving the workspace and save/recovery status.
+- Music practice documents its explicit meeting-only path after ensemble
+  startup failure. Room invitation readiness and audio failure remain truthful.
+- First-test instructions and a pilot record distinguish software checks from
+  unobserved sound, sharing, cameras, reconnects and ensemble latency.
+
 ### Follow-along clarity and saved lessons — draft test-build scope
 
 - Paint Along puts the lesson-with-sound route first. Host/guest setup uses

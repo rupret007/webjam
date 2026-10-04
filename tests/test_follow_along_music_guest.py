@@ -125,3 +125,37 @@ def test_retiring_practice_cannot_overwrite_shutdown_cleanup(copied_room, qapp, 
         finally:
             app._shutdown_cleanup_pending = False
     copied_room(ROOM, inspect)
+
+
+def test_failed_music_guest_can_share_and_open_its_meeting_without_restarting_audio(copied_room, qapp, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    from webjam_qt.windows.launch_dialog import LaunchDialog
+
+    def inspect(pair):
+        app = pair.app
+        app.window.show()
+        app._fail_startup_journey(app._startup_attempt["generation"], "component_open_failed")
+        app.window.session_strip._play_along_button.click()
+        app.follow_along._choice.buttons["lesson"].click()
+        qapp.processEvents()
+        panel = app.window.webex_embed
+        launches = pair.launch.call_count
+        assert panel.lesson_handoff.hosting is False
+        panel._copy_link_btn.click()
+        QApplication.clipboard().setText.assert_called_with(ROOM)
+        assert "not a WebJam room invitation" in panel._sound_tips.text()
+        opener = Mock(return_value=True)
+        monkeypatch.setattr(app.bridge, "launch_webex", opener)
+        panel._fallback_btn.click()
+        opener.assert_called_once_with(manual=True, meeting_url=ROOM)
+        assert app._startup_attempt["phase"] == "failed"
+        assert pair.launch.call_count == launches
+        assert not app.audio.connected
+        direct = LaunchDialog(app.settings)
+        try:
+            direct.show_join()
+            assert not direct.accept_invite(ROOM)
+        finally:
+            direct.close()
+            direct.deleteLater()
+    copied_room(ROOM, inspect)

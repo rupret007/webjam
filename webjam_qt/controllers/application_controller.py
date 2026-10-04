@@ -11693,7 +11693,11 @@ class ApplicationController(QObject):
             )
             return
         QApplication.clipboard().setText(url)
-        self.window.flash_message("Meeting link copied.", ms=4000)
+        self.window.flash_message(
+            "Meeting link copied. Guests can open it in their browser or meeting app, "
+            "or use Add Link or Change Link in Conversation. It is not a WebJam room invitation.",
+            ms=7000,
+        )
 
     def _on_join_video(self) -> None:
         """Open the configured meeting externally without claiming join state."""

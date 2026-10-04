@@ -21,6 +21,26 @@ both faces and voices, manual pause/resume, saved reference recovery and the
 separate Jamulus ensemble path. Provider playback, physical audio and feel
 remain **NOT RUN** until observed; source click-path tests are separate proof.
 
+Use the [short first-test guide](docs/FOLLOW_ALONG_FIRST_TEST.md) and copy the
+[pilot record](docs/FOLLOW_ALONG_PILOT_RECORD.md) for this identified build.
+The default Art room invitation requires the same Wi-Fi/local network.
+Observe the first attempt without coaching before offering the click guide;
+record time to the first shared lesson and any assistance separately.
+
+For pilot readiness, also check these explicit recovery paths:
+
+- Copy a room invitation before adding its meeting. After the guest joins,
+  host **Copy Link** → guest **Add Link** reaches the same meeting while
+  preserving the existing room. A later change uses **Change Link**. Nothing
+  opens until the explicit meeting action. A meeting URL is not a WebJam invite.
+- Continue saved Art after restart, try **Use saved lesson** before a room
+  exists, and read the recovery. Close Library, choose **Start Session**, and
+  if Join opens, paste the host's current invitation. Reopen the saved lesson
+  after connection; the same workspace, reference and edits remain.
+- Fail native Music startup deliberately in controlled software tests. Video
+  practice still permits explicit meeting Add/Copy/Open while the actual audio
+  failure remains visible. This does not create a shareable WebJam room.
+
 For the follow-along clarity round, also check:
 
 - Enter Art Paint along and find **Watch a shared lesson** before the optional
