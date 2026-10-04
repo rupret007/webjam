@@ -37,7 +37,7 @@ def lesson_setup_steps(*, profile: str, hosting: bool, service: str = "",
                  "You control pause and resume.")
     elif not meeting_configured:
         steps = ("1. Ask the host for the meeting link, then use Add Link.\n"
-                 "2. Join the meeting and listen to the host's shared copy; keep your own player closed.\n"
+                 "2. Join the meeting and listen to the host's shared YouTube lesson; keep your own player closed.\n"
                  "3. Keep faces visible and ask the host to pause or resume.")
     else:
         steps = (f"1. Join {meeting} to see the host's shared YouTube lesson and faces.\n"
