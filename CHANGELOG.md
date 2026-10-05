@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Document real-session acceptance gaps for follow-along (`docs/FOLLOW_ALONG_SESSION_GAPS.md`)
+  and add offscreen regressions for multi-guest pause rows, End-then-Start stale
+  lesson context, and guest reconnect admission. Unacknowledged pause requests
+  rotate admission after presence TTL on re-read.
+
 ### Follow-along pilot readiness — draft test-build scope
 
 - Lesson setup explains how a host shares a meeting link added after the room

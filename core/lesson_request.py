@@ -260,7 +260,12 @@ class LessonRequestStore:
                     return LessonRequestView("unavailable", reason="capacity")
                 entry = _Admission(secrets.token_hex(16), read_at)
                 self._admissions[participant_id] = entry
-            entry.last_read = max(entry.last_read, read_at)
+            elif (now - entry.last_read >= PRESENCE_TTL_S and entry.revision
+                  and not entry.acknowledged and now < entry.deadline):
+                entry = _Admission(secrets.token_hex(16), read_at)
+                self._admissions[participant_id] = entry
+            else:
+                entry.last_read = max(entry.last_read, read_at)
             return self._view(entry, now)
 
     def _receipt(self, entry: _Admission, now: float) -> LessonRequestReceipt | None:

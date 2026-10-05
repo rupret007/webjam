@@ -45,6 +45,11 @@ Try Host/Join before reading the click guide. Keep assisted attempts separate.
 | Meeting added after room invite reaches guest via Copy Link / Add Link | NOT RUN | Room stays connected: |
 | Changed meeting link uses Change Link without leaving room | NOT RUN | |
 | Late guest receives usable setup and hears one shared lesson | NOT RUN | |
+| Three-person session (host + 2 guests) | NOT RUN | Automated: `test_follow_along_multi_participant.py` (offscreen LAN) |
+| Late guest joins after host chose lesson | NOT RUN | Automated: `test_late_guest_gets_current_lesson_without_host_rechoosing` |
+| Guest drop/rejoin mid-lesson | NOT RUN | Automated: `test_follow_along_reconnect.py` |
+| Second session same day (End then Start, same app) | NOT RUN | Automated: `test_follow_along_repeated_session.py` (host path) |
+| App restart mid-lesson | NOT RUN | |
 | Connection loss/reconnect preserves work and gives useful recovery | NOT RUN | |
 | Rejected invitation can be replaced through Paste new invite | NOT RUN | |
 | Failed embedding can use Open in browser deliberately | NOT RUN | |
