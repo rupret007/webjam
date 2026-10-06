@@ -1715,11 +1715,7 @@ class SessionStrip(QFrame):
 
     def _sync_subtitle(self) -> None:
         if hasattr(self, "_creator_profile_label"):
-            if self._creator_profile_key == "art":
-                # Art is Preview in the registry. Live chrome must not say
-                # Preview or Ready: painters already chose the Art door.
-                status = "Host profile" if self._creator_profile_locked else ""
-            elif self._creator_profile_preview:
+            if self._creator_profile_preview:
                 status = (
                     "Preview · Host profile"
                     if self._creator_profile_locked
@@ -1729,12 +1725,9 @@ class SessionStrip(QFrame):
                 status = "Host profile" if self._creator_profile_locked else "Ready"
             self._subtitle.setText(
                 f"{self._creator_profile_label} · {status}"
-                if status
-                else self._creator_profile_label
             )
-            spoken = status or self._creator_profile_label
             self._subtitle.setAccessibleName(
-                f"Creator profile: {self._creator_profile_label}; {spoken}"
+                f"Creator profile: {self._creator_profile_label}; {status}"
             )
             return
         label = self._mode_picker.currentText()

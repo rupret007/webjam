@@ -1141,11 +1141,7 @@ class ConductorWindow(QMainWindow):
         self._creator_profile = profile
         if profile.key != "art":
             self.art_room_overview.clear_room_connections()
-        suffix = (
-            " · Preview"
-            if profile.is_preview and profile.key != "art"
-            else ""
-        )
+        suffix = " · Preview" if profile.is_preview else ""
         self.setWindowTitle(f"WebJam — {profile.label}{suffix} (v{__version__})")
         self.setAccessibleName(f"WebJam {profile.label} workspace{suffix}")
         self.session_strip.set_creator_profile(profile, locked=locked)

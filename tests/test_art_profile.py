@@ -184,7 +184,7 @@ def test_art_launch_copy_does_not_claim_live_or_ga_while_preview(profile):
     assert "rooms are live" not in spoken
     assert "generally available" not in spoken
     assert not re.search(r"\bga\b", spoken)
-    # First-screen copy still cannot say Preview; live Art chrome dropped it too.
+    # First-screen copy still cannot say Preview; the in-session chip does.
     assert not re.search(r"\bpreview\b", spoken)
     assert copy.local == "Standalone Art Unavailable"
     assert copy.local_description == "Standalone art projects are not on this door."
