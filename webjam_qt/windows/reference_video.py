@@ -215,6 +215,9 @@ class ReferenceVideoDialog(QDialog):
         self._back_button = QPushButton("Back to room")
         self._back_button.setObjectName("QuietButton")
         self._back_button.setAccessibleName("Back to room")
+        self._back_button.setAccessibleDescription(
+            "Return to the current room without changing the video."
+        )
         self._back_button.clicked.connect(self.return_requested.emit)
         self._back_button.setVisible(False)
         header.addWidget(self._back_button)
@@ -309,10 +312,12 @@ class ReferenceVideoDialog(QDialog):
                 "Choose process video…",
                 "Choose one local process video to share with the room.",
                 self._choose_shared_video,
+                object_name="GhostButton",
             )
             self._youtube_button = self._add_button(
                 controls, "YouTube link…", "Use a YouTube video link for a silent lesson.",
                 self._choose_youtube_lesson,
+                object_name="GhostButton",
             )
             self._play_button = self._add_button(
                 controls,
@@ -339,6 +344,7 @@ class ReferenceVideoDialog(QDialog):
                 "Hide video",
                 "Ignore the video and keep working. You stay in the room.",
                 self._toggle_hidden,
+                object_name="GhostButton",
             )
         self._return_button = self._add_button(
             controls,
@@ -401,9 +407,11 @@ class ReferenceVideoDialog(QDialog):
 
     # -- construction helpers ------------------------------------------
 
-    def _add_button(self, row, text: str, description: str, slot) -> QPushButton:
+    def _add_button(
+        self, row, text: str, description: str, slot, *, object_name: str = "PrimaryButton",
+    ) -> QPushButton:
         button = QPushButton(text)
-        button.setObjectName("PrimaryButton")
+        button.setObjectName(object_name)
         button.setMinimumWidth(152)
         button.setAccessibleName(text)
         button.setAccessibleDescription(description)

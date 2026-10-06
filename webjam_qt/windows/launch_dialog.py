@@ -17,7 +17,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QSize, QTimer, Qt
+from PySide6.QtCore import QEvent, QSize, QTimer, Qt
 from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeyEvent, QKeySequence, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -259,16 +259,23 @@ class ProfileCard(QCommandLinkButton):
         self.setAccessibleName(title)
         self.setAccessibleDescription(summary)
 
-    def setFocusPolicy(self, policy: Qt.FocusPolicy) -> None:
-        # Qt's setTabOrder and command-link style polish can drop TabFocus on
-        # the second Art/Music card. These doors must stay keyboard reachable.
-        super().setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-
     def event(self, event):
+        # Offscreen: the unchecked Music command-link loses TabFocus during
+        # QDialog.show() polish (ClickFocus|0x8). That write is C++ style
+        # polish, not QWidget.setFocusPolicy, so a Python override of
+        # setFocusPolicy never sees it. A 0-ms timer in showEvent is also too
+        # early: Qt can fire it, then polish again. Restore only after the
+        # events that actually follow polish, and only when TabFocus is gone.
         result = super().event(event)
         if getattr(self, "_restoring_tab_focus", False):
             return result
-        if self.focusPolicy() != Qt.FocusPolicy.StrongFocus:
+        if event.type() in (
+            QEvent.Type.Show,
+            QEvent.Type.Paint,
+            QEvent.Type.Polish,
+            QEvent.Type.StyleChange,
+            QEvent.Type.PolishRequest,
+        ) and not (self.focusPolicy() & Qt.FocusPolicy.TabFocus):
             self._restoring_tab_focus = True
             try:
                 super().setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -603,6 +610,8 @@ class LaunchDialog(QDialog):
         self.setTabOrder(previous, self._host_button)
         self.setTabOrder(self._host_button, self._join_button)
         self.setTabOrder(self._join_button, self._studio_button)
+        self.setTabOrder(self._invite_input, self._join_button_primary)
+        self.setTabOrder(self._join_button_primary, self._join_back_button)
         self._keep_door_cards_tabbable()
 
         if initial_invitation is not None and initial_invite_url:
@@ -1012,10 +1021,15 @@ class LaunchDialog(QDialog):
         layout.addWidget(self._join_button_primary)
         layout.addStretch(2)
 
-        back = QPushButton("Back")
-        back.setObjectName("GhostButton")
-        back.clicked.connect(self.show_choices)
-        layout.addWidget(back, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._join_back_button = QPushButton("Back")
+        self._join_back_button.setObjectName("GhostButton")
+        self._join_back_button.setAccessibleName("Back")
+        self._join_back_button.setAccessibleDescription(
+            "Return to Host and Join without using the pasted invite."
+        )
+        self._join_back_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._join_back_button.clicked.connect(self.show_choices)
+        layout.addWidget(self._join_back_button, 0, Qt.AlignmentFlag.AlignHCenter)
         self._apply_creator_profile_presentation()
         self._on_invite_text_changed()
         return page
@@ -1124,7 +1138,10 @@ class LaunchDialog(QDialog):
         self._keep_door_cards_tabbable()
         if hasattr(self, "_join_title"):
             self._join_title.setText(copy.join_title)
+            self._join_title.setAccessibleName(copy.join_title)
             self._join_subtitle.setText(copy.join_subtitle)
+            self._join_subtitle.setAccessibleName("How to join")
+            self._join_subtitle.setAccessibleDescription(copy.join_subtitle)
             self._join_button_primary.setText(copy.join)
             self._join_button_primary.setAccessibleName(copy.join)
             self._join_button_primary.setAccessibleDescription(copy.join_description)
