@@ -265,11 +265,16 @@ class ArtRoomOverviewWidget(QScrollArea):
             overview.conversation_action_label.replace("&", "&&")
         )
         self._conversation_button.setAccessibleName(overview.conversation_action_label)
-        self._conversation_button.setToolTip(
+        conversation_tip = (
             "Optional. Show Conversation controls to talk and show your work."
             if overview.conversation_action_label == "Conversation"
             else "Optional. Show Conversation controls and add a meeting link "
             "so the room can talk and show work."
+        )
+        self._conversation_button.setToolTip(conversation_tip)
+        self._conversation_button.setAccessibleDescription(
+            f"{conversation_tip} Opening the panel does not open a meeting "
+            "or change its audio."
         )
         self._conversation_button.setEnabled(overview.conversation_enabled)
         secondary_description = (

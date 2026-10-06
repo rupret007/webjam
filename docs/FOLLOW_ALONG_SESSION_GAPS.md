@@ -35,9 +35,9 @@ remain **NOT RUN** unless recorded in
 
 | Scenario | Covered by tests | Not covered | Green tests cannot prove |
 | --- | --- | --- | --- |
-| Small window / larger text | `test_lesson_helper_fits_and_scrolls_with_expanded_sound_tips`; `test_initial_art_entry_keeps_both_routes_readable`; `test_connected_music_guest_can_reach_setup_and_leave` | Screen reader on follow-along surfaces in a 3-person call | VoiceOver/NVDA reading order in live Webex |
-| Keyboard | Journey tests use `QTest.keyClick` on primary buttons; lesson request widgets space/enter | Full tab order with multiple host notice rows | User can operate without mouse under stress |
-| Accessible names on pause rows | `test_host_acknowledges_exact_request_and_same_names_remain_separate` | — | Names match real participants |
+| Small window / larger text | `test_lesson_helper_fits_and_scrolls_with_expanded_sound_tips`; `test_initial_art_entry_keeps_both_routes_readable`; `test_connected_music_guest_can_reach_setup_and_leave`; `test_live_door_fits_800x600_with_larger_text`; `test_guest_lesson_controls_fit_with_larger_text` | Screen reader on follow-along surfaces in a 3-person call | VoiceOver/NVDA reading order in live Webex |
+| Keyboard | Journey tests use `QTest.keyClick` on primary buttons; lesson request widgets space/enter; `test_art_and_music_doors_are_both_tab_and_arrow_reachable` (Art/Music arrows, start-card Down); guest pause Space in `test_guest_lesson_buttons_have_names_descriptions_and_keyboard` | Full tab order with multiple host notice rows | User can operate without mouse under stress |
+| Accessible names on pause rows | `test_host_acknowledges_exact_request_and_same_names_remain_separate`; `test_host_pause_rows_expose_names_and_status`; handoff descriptions in `test_lesson_handoff_actions_keep_accessible_descriptions` | — | Names match real participants |
 
 ## (e) Audio path guidance
 
@@ -52,6 +52,8 @@ remain **NOT RUN** unless recorded in
 - `tests/test_follow_along_multi_participant.py` — host + two guests + late join; isolated acks; presence expiry.
 - `tests/test_follow_along_repeated_session.py` — End then host Start; stale request context; saved lesson reuse.
 - `tests/test_follow_along_reconnect.py` — guest loss/reconnect; fresh admission; no false ack.
+- `tests/test_launch_keyboard_compact.py` — Art/Music arrow keys, Tab to Host/Join, 800×600 with 20px text, accessible names on door controls.
+- `tests/test_follow_along_surface_a11y.py` — guest pause keyboard, host-row names/status, lesson-handoff descriptions, compact lesson controls, missing-file next action.
 
 ## Production note
 

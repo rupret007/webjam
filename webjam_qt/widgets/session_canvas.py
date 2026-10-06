@@ -408,7 +408,11 @@ class SessionCanvas(QFrame):
 
         if not isinstance(profile, CreatorProfile):
             raise TypeError("profile must be a CreatorProfile")
-        preview = " · Preview" if profile.is_preview else ""
+        preview = (
+            " · Preview"
+            if profile.is_preview and profile.key != "art"
+            else ""
+        )
         self._header.setText(f"{profile.label} Notes{preview}")
         self.setAccessibleName(f"{profile.label} local notes")
         if profile.key == "art":

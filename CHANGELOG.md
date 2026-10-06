@@ -6,6 +6,12 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Launch Art/Music doors stay keyboard-reachable (arrows plus restored Tab
+  focus after Qt polish). Follow-along pause rows, lesson handoff, and missing
+  local-video recovery keep accessible names. Art live chrome no longer says
+  Preview. Compact 800×600 / larger-text regressions cover the live door and
+  lesson controls. Physical audio, cameras, and feel remain **NOT RUN**.
+
 - Document real-session acceptance gaps for follow-along (`docs/FOLLOW_ALONG_SESSION_GAPS.md`)
   and add offscreen regressions for multi-guest pause rows, End-then-Start stale
   lesson context, and guest reconnect admission. Unacknowledged pause requests

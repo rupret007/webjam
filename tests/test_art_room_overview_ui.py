@@ -148,8 +148,9 @@ def test_art_body_replaces_empty_mixer_and_preserves_music_cards(window, qapp):
     spoken = window.art_room_overview.accessibleDescription()
     assert "Connected to the host" in spoken
     assert "0 artists" not in spoken and "mixer" not in spoken
-    assert "Preview" in window.windowTitle()
-    assert "Preview" in window.session_strip._subtitle.text()
+    assert "Preview" not in window.windowTitle()
+    assert "Preview" not in window.session_strip._subtitle.text()
+    assert window.session_strip._subtitle.text() == "Art"
 
     window.set_creator_profile(get_creator_profile_by_key("music"))
     _settle(qapp)

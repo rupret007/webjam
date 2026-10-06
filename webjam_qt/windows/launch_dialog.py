@@ -255,8 +255,54 @@ class ProfileCard(QCommandLinkButton):
         self.setIconSize(QSize(0, 0))
         self.setMinimumHeight(54)
         self.setMaximumHeight(64)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName(title)
         self.setAccessibleDescription(summary)
+
+    def setFocusPolicy(self, policy: Qt.FocusPolicy) -> None:
+        # Qt's setTabOrder and command-link style polish can drop TabFocus on
+        # the second Art/Music card. These doors must stay keyboard reachable.
+        super().setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def event(self, event):
+        result = super().event(event)
+        if getattr(self, "_restoring_tab_focus", False):
+            return result
+        if self.focusPolicy() != Qt.FocusPolicy.StrongFocus:
+            self._restoring_tab_focus = True
+            try:
+                super().setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            finally:
+                self._restoring_tab_focus = False
+        return result
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Art and Music are equal doors; arrows move between them."""
+
+        group = self.group()
+        if group is not None and event.key() in (
+            Qt.Key.Key_Right,
+            Qt.Key.Key_Down,
+            Qt.Key.Key_Left,
+            Qt.Key.Key_Up,
+        ):
+            buttons = [
+                button
+                for button in group.buttons()
+                if button.isVisible() and button.isEnabled()
+            ]
+            if self in buttons and len(buttons) > 1:
+                step = (
+                    1
+                    if event.key() in (Qt.Key.Key_Right, Qt.Key.Key_Down)
+                    else -1
+                )
+                other = buttons[(buttons.index(self) + step) % len(buttons)]
+                other.setChecked(True)
+                other.setFocus(Qt.FocusReason.TabFocusReason)
+                event.accept()
+                return
+        super().keyPressEvent(event)
 
 
 class StartCard(QCommandLinkButton):
@@ -322,6 +368,7 @@ class StartCard(QCommandLinkButton):
         # Sixty-four pixels still leaves both cards and Host / Join inside the
         # supported 760x600 screen floor.
         self.setFixedHeight(_START_CARD_HEIGHT)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName(start.label)
         self.setAccessibleDescription(f"{start.summary} {start.detail}")
         self.setToolTip(start.detail)
@@ -556,6 +603,7 @@ class LaunchDialog(QDialog):
         self.setTabOrder(previous, self._host_button)
         self.setTabOrder(self._host_button, self._join_button)
         self.setTabOrder(self._join_button, self._studio_button)
+        self._keep_door_cards_tabbable()
 
         if initial_invitation is not None and initial_invite_url:
             raise ValueError("provide one initial invitation")
@@ -1073,6 +1121,7 @@ class LaunchDialog(QDialog):
             )
             if art_door:
                 self._refresh_start_presentation()
+        self._keep_door_cards_tabbable()
         if hasattr(self, "_join_title"):
             self._join_title.setText(copy.join_title)
             self._join_subtitle.setText(copy.join_subtitle)
@@ -1091,6 +1140,20 @@ class LaunchDialog(QDialog):
         helper = str(text or "").strip()
         self._choice_helper.setText(helper)
         self._choice_helper.setVisible(bool(helper))
+
+    def _keep_door_cards_tabbable(self) -> None:
+        """Restore Tab focus after setTabOrder, which can drop it on command-links."""
+
+        for card in getattr(self, "_profile_cards", {}).values():
+            card.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        for cards in getattr(self, "_start_cards", {}).values():
+            for card in cards:
+                card.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._keep_door_cards_tabbable()
+        QTimer.singleShot(0, self, self._keep_door_cards_tabbable)
 
     def _build_menu(self, root: QVBoxLayout) -> None:
         self._menu_bar = QMenuBar(self)

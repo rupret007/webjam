@@ -1127,15 +1127,15 @@ class TestConductorWindow(unittest.TestCase):
         art = get_creator_profile_by_key_or_default("art")
         w.set_creator_profile(art, locked=True)
         self.assertIn("Art", w.windowTitle())
-        self.assertIn("Preview", w.windowTitle())
+        self.assertNotIn("Preview", w.windowTitle())
         self.assertEqual(
             w.session_strip._subtitle.text(),
-            "Art · Preview · Host profile",
+            "Art · Host profile",
         )
-        self.assertEqual(w.session_canvas._header.text(), "Art Notes · Preview")
+        self.assertEqual(w.session_canvas._header.text(), "Art Notes")
         self.assertIn("what you're making", w.session_canvas._notes.placeholderText())
         self.assertNotIn("chord progressions", w.session_canvas._notes.placeholderText())
-        self.assertIn("Preview", w.session_canvas._header.text())
+        self.assertNotIn("Preview", w.session_canvas._header.text())
         self.assertNotIn("Jamulus", w.session_canvas._chat_input.placeholderText())
         self.assertEqual(
             w.session_canvas.accessibleDescription(),
