@@ -93,6 +93,7 @@ class StudioProjectController:
         self._conflicted = False
         self._recovery_notice = ""
         self._generation = 0
+        self._edit_revision = 0
         self._task_token = StudioCancellationToken(self._generation)
         self._task_token._cancel()
         self._shutdown = False
@@ -162,6 +163,12 @@ class StudioProjectController:
     def generation(self) -> int:
         with self._lock:
             return self._generation
+
+    @property
+    def edit_revision(self) -> int:
+        """Retire pending UI actions even after an edit is undone."""
+        with self._lock:
+            return self._edit_revision
 
     @property
     def task_token(self) -> StudioCancellationToken:
@@ -381,6 +388,7 @@ class StudioProjectController:
         return after
 
     def _document_changed_locked(self) -> tuple[AutosaveRequest, int] | None:
+        self._edit_revision += 1
         self._reconcile_selection_locked()
         self._refresh_dirty_locked()
         return self._arm_autosave_locked()

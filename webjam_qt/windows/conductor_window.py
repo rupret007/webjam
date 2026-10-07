@@ -195,6 +195,7 @@ class ConductorWindow(QMainWindow):
         controls_layout.addWidget(self.session_strip._record_elapsed)
         controls_layout.addWidget(self.session_strip._record_button)
         controls_layout.addWidget(self.session_strip._video_button)
+        controls_layout.addWidget(self.session_strip._play_along_button)
         # Song sits beside Studio: the same class of in-session surface, on
         # the bar a musician already uses, rather than inside a menu.
         controls_layout.addWidget(self.session_strip._song_button)
@@ -365,10 +366,13 @@ class ConductorWindow(QMainWindow):
         """Make space for preview Help without hiding or clipping other actions."""
 
         compact = bool(getattr(self, "_room_help_enabled", False)) and self.width() < 900
+        follow_compact = self.session_strip._creator_profile_key == "music" and self.width() < 900
         bar = self.session_controls
-        if bar.property("helpPreviewCompact") == compact:
+        if (bar.property("helpPreviewCompact") == compact
+                and bar.property("followAlongCompact") == follow_compact):
             return
         bar.setProperty("helpPreviewCompact", compact)
+        bar.setProperty("followAlongCompact", follow_compact)
         layout = bar.layout()
         margin = Space.SM if compact else Space.LG
         layout.setContentsMargins(margin, Space.SM, margin, Space.SM)
@@ -567,6 +571,7 @@ class ConductorWindow(QMainWindow):
                 strip._video_button,
                 # Song sits where it sits on the bar, so tabbing matches what
                 # a musician sees rather than the order things were built in.
+                strip._play_along_button,
                 strip._song_button,
                 strip._studio_button,
                 self._room_help_button,
@@ -652,17 +657,20 @@ class ConductorWindow(QMainWindow):
                 "<b>2.</b> The host uses <b>Copy Invite</b>. In the room, "
                 "<b>More</b> opens <b>Paint along…</b>; the host can also "
                 "choose the optional <b>Shared Canvas…</b> handoff.<br>"
-                "<b>3.</b> For Paint along, the host chooses "
-                "<b>Choose process video…</b> or <b>YouTube link…</b>. Guests "
-                "choose <b>Open my copy…</b> for the same local file, or "
-                "<b>Open lesson</b> for YouTube. Video stays silent and follows "
-                "the host; local files are not transferred.<br>"
+                "<b>3.</b> For a lesson with sound, choose <b>Watch a shared lesson</b>. "
+                "The host chooses <b>Choose YouTube…</b>, then <b>Open in browser</b>. "
+                "If the meeting was added after the room invite, the host uses <b>Copy Link</b>; "
+                "guests use <b>Add Link</b> in Conversation without leaving the room. "
+                "Join the meeting and share that lesson with computer sound. Guests listen "
+                "to that one copy and ask the host to pause or resume.<br>"
                 "<b>4.</b> Paint in your usual app or on paper. "
                 "<b>Set Up Conversation</b> or <b>Conversation</b> shows "
                 "optional external meeting controls; <b>Join / Open Meeting</b> "
                 "opens the configured link.<br>"
-                "<b>5.</b> Use <b>Back to room</b> to return from Paint along. "
-                "<b>Notes</b> stay on this computer.<br>"
+                "<b>5.</b> The optional silent reference uses <b>Choose process video…</b> "
+                "or <b>YouTube link…</b>. Guests use <b>Open my copy…</b> or <b>Open lesson</b>. "
+                "Local files are not transferred. <b>Back to room</b> keeps the room open; "
+                "<b>Conversation</b> returns to your lesson setup after Notes.<br>"
                 "<b>6.</b> The host chooses <b>End Room</b>; guests choose "
                 "<b>Leave Room</b>.<br><br>"
                 "F11 — Toggle full screen<br>"
@@ -759,8 +767,15 @@ class ConductorWindow(QMainWindow):
                 "<i>Host. Share. Join. Play.</i><br><br>"
                 "<b>1.</b> At launch, choose <b>Music</b>, then <b>Host</b> "
                 "or <b>Join</b>.<br>"
-                "<b>2.</b> The host presses <b>Copy Invite</b> and sends the link.<br>"
-                "<b>3.</b> Play. Each musician tile shows real connection and level truth.<br>"
+                "<b>2.</b> For a WebJam room, the host presses <b>Copy Invite</b> and sends the link. "
+                "For video practice, continue to <b>Play along</b> even if audio setup needs attention.<br>"
+                "<b>3.</b> Choose <b>Play along</b>: <b>Set up video practice</b> uses one "
+                "YouTube presentation in your meeting with conversation and turn-taking. "
+                "Use <b>Copy Link</b> for the meeting; guests open it in their browser or meeting app. "
+                "This practice works without a WebJam room or completed Jamulus setup. "
+                "<b>Open Shared Track</b> uses a supported local backing file and Jamulus "
+                "for ensemble playing; disconnect meeting audio and keep Webex for faces. "
+                "Each musician tile shows real connection and level truth.<br>"
                 "<b>4.</b> The host presses <b>Record Session</b> for synchronized tracks.<br>"
                 "<b>5.</b> Choose <b>Studio</b> to review completed session "
                 "takes. For a standalone Music project, end or leave the "
@@ -788,7 +803,7 @@ class ConductorWindow(QMainWindow):
             "<br><br><b>Continue your work</b><br>"
             "Open <b>More → Session library…</b>, or <b>File → Session library…</b> "
             "at launch. Search saved workspaces, read <b>Summary</b>, and choose "
-            "<b>Continue this work</b>. Restoring notes does not start a room or recording."
+            "<b>Continue</b>. Restoring notes does not start a room or recording."
             " Use <b>File → Return to launch…</b> to choose another workflow after "
             "unfinished work and session cleanup are resolved."
         )
@@ -1130,6 +1145,7 @@ class ConductorWindow(QMainWindow):
         self.setWindowTitle(f"WebJam — {profile.label}{suffix} (v{__version__})")
         self.setAccessibleName(f"WebJam {profile.label} workspace{suffix}")
         self.session_strip.set_creator_profile(profile, locked=locked)
+        self._sync_room_help_density()
         if getattr(self, "song_overlay", None) is not None:
             # A host can impose a profile mid-session. Song has no meaning
             # outside Music, so the panel leaves with it rather than sitting

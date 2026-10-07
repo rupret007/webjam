@@ -6,11 +6,96 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+### Follow-along pilot readiness — draft test-build scope
+
+- Lesson setup explains how a host shares a meeting link added after the room
+  invitation. Guests can add or change it without leaving their room; a meeting
+  link opens in the meeting app/browser and is distinct from a WebJam invite.
+- Saved Art reopened locally explains the existing Start Session/Join path
+  before lesson reuse, preserving the workspace and save/recovery status.
+- Music practice documents its explicit meeting-only path after ensemble
+  startup failure. Room invitation readiness and audio failure remain truthful.
+- First-test instructions and a pilot record distinguish software checks from
+  unobserved sound, sharing, cameras, reconnects and ensemble latency.
+- Service shutdown verification classifies connection-establishment deadlines
+  only after deliberate Close begins. Pre-close and send/receive deadlines,
+  established replies, resource retirement and diagnostics remain strict.
+
+### Follow-along clarity and saved lessons — draft test-build scope
+
+- Paint Along puts the lesson-with-sound route first. Host/guest setup uses
+  three steps and expandable sound tips; compact and enlarged-text views
+  scroll without clipping controls or hiding End/Leave.
+- Conversation returns to the current lesson after Notes. First workspace
+  saves and meeting-only edits preserve the choice while retiring old actions.
+- Music songs can remember a YouTube lesson; Art references and matching
+  bookmarks can explicitly return to lesson setup. Existing draft/conflict
+  handling owns saves. Templates and backups retain optional song links;
+  loading saved work never opens a browser or meeting.
+- Supported LAN Art rooms can explicitly restart retired pause requests after
+  a meeting edit. Embedding refusal and unavailable-video messages explain
+  the browser fallback without starting it. Physical sound and feel remain
+  **NOT RUN** until observed.
+
+### Paint Along and Play Along — draft test-build scope
+
+- Paint Along keeps **Watch a shared lesson** reachable with an embedded
+  YouTube lesson or failed player. The host can select a canonical lesson
+  link, explicitly open its browser and reach meeting sharing controls.
+  **Remember lesson** saves the Art reference through the existing draft owner.
+- Music adds **Play along**: guided video practice through the meeting, or
+  live ensemble with Jamulus and the supported Shared Track route. Host and
+  guest actions differ; guidance distinguishes listening mute, instrument
+  send, meeting sound and delayed video.
+- Meeting edits preserve the chosen lesson, while canceled/replaced media,
+  room retirement and old queued actions cannot reuse its authority. Ordinary
+  Music updates preserve the practice helper. Compact controls and enlarged
+  text retain the lesson actions. Physical two-person sound and feel remain
+  **NOT RUN**; these changes do not publish a release.
+
 ### Workflow continuity — PR and test-build scope
 
 Source remains v0.29.0. These changes are after the published v0.29.0 baseline;
 they do not request a new release/tag or claim new published package evidence.
 
+- Draft Session library builds add **Back up…** and **Import backup…**
+  with metadata-only defaults or explicitly selected completed takes/local Art,
+  cancellable background work and durable checksum receipts for recovery.
+  Imported media remains unchecked until an explicit action.
+  Repackaged Art must match its saved content checksum and size; changing a
+  relinked file's name or extension keeps that identity intact.
+- Background Notes saves and late recording results leave the Library's
+  retained import draft unsaved. Explicit Save or closing still reconciles
+  that draft and any pending recording facts; later typing resumes its autosave.
+- **Verify take**, **Verify reference**, **Locate take…** and
+  **Relink…** check expected content while retaining drafts and bookmarks.
+  Restored Studio takes retain exact alternate-source locations through
+  reselection and A/B listening, including when originals share the same IDs.
+  Pending actions retire after owner/profile changes, leaving Studio or edits
+  followed by undo. Relink targets are rechecked before paths are saved; late
+  Library edits keep their editor open. Local separate-process tests cover two
+  controlled recorder completions and Art through backup, import, restart and
+  deliberate playback/export. The frozen hook adds a synthetic portability journey;
+  hosted/package verification is recorded against each delivered test build.
+  Physical acceptance remains **NOT RUN**.
+- Compact Session library controls scroll without overlapping at enlarged text;
+  save/recovery status stays visible. Packaged workflow proofs isolate their
+  settings, database, startup state and logs and restore the caller's environment.
+- Windows recording checkpoints use protected current-user/SYSTEM permissions,
+  flush files before publication and recheck published evidence. Unsafe storage
+  blocks recording; Windows does not promise POSIX directory-flush durability.
+  Shorter backup/Takes captions and breakable saved timestamps keep compact
+  previews usable with wider enlarged text while preserving accessible labels.
+  Directory guards request the access needed to prevent renames during journal
+  and media publication. Native tests exercise the actual import destination
+  guard. Compact checks also reproduce Windows missing-font widths; the profile
+  field fits the window while its popup retains full names.
+  Wider-font cases now reproduce rounded Windows glyph widths independently
+  of the platform's font engine. Library, Takes and import-recovery captions
+  fit those widths while keeping their full action names for accessibility.
+- The initial launch-screen Library can open an imported take or timed moment
+  directly into its saved workspace. Changed media/context, cancellation and late
+  drafts prevent stale activation; verified source locations transfer to the new Studio owner.
 - **File → Return to launch** is available from live and local Studio work.
   Explicit End/Leave, successful saves, recording finalization and owned
   cleanup precede a fresh launch screen; failure retains the current work.

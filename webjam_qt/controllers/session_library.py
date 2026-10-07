@@ -28,7 +28,7 @@ def _merge_editor_changes(base, edited, latest):
     """Merge only disjoint known edits; competing content stays with its owners."""
     if (base is None or any(getattr(base, key) != getattr(edited, key)
                            or getattr(base, key) != getattr(latest, key)
-                           for key in ("id", "profile", "created_at", "source_key"))):
+                           for key in ("id", "profile", "created_at", "source_key", "import_provenance", "media_provenance"))):
         raise SessionLibraryConflict("The workspace editor no longer matches its original snapshot.")
     changes = {}
     for name in _EDITABLE_FIELDS:
@@ -95,7 +95,16 @@ class SessionLibraryCoordinator(QObject):
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(800)
-        self.timer.timeout.connect(self.flush)
+        self.timer.timeout.connect(lambda: self.flush(include_editor=False))
+        studio = getattr(controller.window, "recording_studio", None)
+        if studio is not None:
+            studio.workspace_owner_token = self._studio_owner_token
+
+    def _studio_owner_token(self):
+        # Saved comparisons can belong to another browsed workspace; bind
+        # the active runtime owner at dispatch rather than the slot's origin.
+        return (id(self), str(self.library.root), self.current.id if self.current else None,
+                self._profile(), self._run_id)
 
     def _flash(self, text):
         self._c.window.flash_message(text, ms=7000)
@@ -117,8 +126,12 @@ class SessionLibraryCoordinator(QObject):
                 if warnings:
                     self._flash(" ".join(warnings))
             title, mode, notes = self._context()
+            first_workspace = self.current is None
             self.current = self.library.create(self._profile(), title or "Untitled workspace",
                                                notes=notes, mode_key=mode)
+            follow_along = getattr(self._c, "follow_along", None)
+            if first_workspace and follow_along is not None:
+                follow_along.workspace_created()
             return True
         except (OSError, ValueError):
             self._flash("Workspace history could not be saved. Your current Notes remain available; retry Session library.")
@@ -149,14 +162,18 @@ class SessionLibraryCoordinator(QObject):
             if candidate != self.current or self.current.id in self._pending:
                 self._pending[candidate.id] = candidate
 
-    def flush(self) -> bool:
+    def flush(self, *, include_editor=True) -> bool:
         self.timer.stop()
         if self._applying:
             return True
         self._capture_current_notes()
-        if (self.dialog is not None and getattr(self.dialog, "_dirty", False)
-                and not self.dialog.save_current()):
-            return False
+        if self.dialog is not None and getattr(self.dialog, "_dirty", False):
+            # The editor owns its autosave timer. An unrelated live-Notes
+            # timer or recording completion must not consume a draft that
+            # import deliberately retained. Keep pending facts too, rather
+            # than advancing the disk token behind that editor.
+            if not include_editor or not self.dialog.save_current():
+                return False
         for key, record in tuple(self._pending.items()):
             try:
                 saved = self.library.save(record)
@@ -168,16 +185,153 @@ class SessionLibraryCoordinator(QObject):
                 self.current = saved
         return True
 
+    def remember_art_lesson(self, url):
+        """Save an explicit lesson reference through the ordinary draft owner."""
+        from core.youtube_lesson import parse_youtube_lesson_url
+
+        lesson = parse_youtube_lesson_url(url)
+        if self._profile() != "art" or self.media_operation_pending or self.studio_media_pending:
+            self._flash("Finish the current workspace operation before remembering the lesson.")
+            return False
+        if not self.ensure_current():
+            return False
+        current_id = self.current.id
+        self.show(tab="plan")
+        dialog = self.dialog
+        if dialog is None:
+            return False
+        dialog.select_id(current_id)
+        if (self._profile() != "art" or self.current is None or self.current.id != current_id
+                or dialog is not self.dialog or dialog.record is None or dialog.record.id != current_id
+                or self.media_operation_pending):
+            self._flash("Your existing workspace draft is retained. Select the current Art project and try again.")
+            return False
+        try:
+            references = dialog.art.payload()["references"]
+            if not any(ref["kind"] == "url" and ref["locator"] == lesson.playback_url for ref in references):
+                position = f" at {lesson.start_s // 60}:{lesson.start_s % 60:02d}" if lesson.start_s else ""
+                dialog.art.add_reference(lesson.playback_url, kind="url", title=f"YouTube lesson{position}")
+        except ValueError as error:
+            dialog.art.status.setText(str(error))
+            return False
+        saved = dialog.save_current()
+        dialog.art.status.setText(
+            "Lesson remembered. Use saved lesson returns to setup; WebJam does not track browser playback."
+            if saved else "The lesson is in your retained draft. Use Save to retry."
+        )
+        return saved
+
     def profile_changing(self):
+        if self.media_operation_pending or self.studio_media_pending:
+            self._flash("Wait for the workspace operation result before changing profiles.")
+            return False
         self.flush()
         self.current = None
         self._live_take_ids.clear()
+        return True
+
+    def remember_music_lesson(self, url):
+        """Use the rehearsal editor's current song and ordinary save/conflict path."""
+        from PySide6.QtWidgets import QInputDialog
+        from core.youtube_lesson import parse_youtube_lesson_url
+
+        lesson = parse_youtube_lesson_url(url)
+        if self._profile() != "music" or self.media_operation_pending or self.studio_media_pending:
+            self._flash("Finish the current workspace operation before remembering the lesson.")
+            return False
+        if not self.ensure_current():
+            return False
+        current_id = self.current.id
+        self.show(tab="plan")
+        dialog = self.dialog
+        if dialog is None:
+            return False
+        dialog.select_id(current_id)
+        binding = self._c.follow_along._identity()
+
+        def current():
+            return (self.dialog is dialog and self._profile() == "music"
+                    and self.current is not None and self.current.id == current_id
+                    and dialog.record is not None and dialog.record.id == current_id
+                    and not self.media_operation_pending and not self.studio_media_pending
+                    and binding == self._c.follow_along._identity()
+                    and not self._c._shutdown_cleanup_blocks_action())
+
+        if not current():
+            self._flash("Your draft is retained. Select the current rehearsal workspace and try again.")
+            return False
+        song_id = dialog.rehearsal._plan.active_song_id
+        title = None
+        if not song_id:
+            title, accepted = QInputDialog.getText(
+                dialog, "Remember lesson", "Name a song for this lesson:", text="YouTube practice",
+            )
+            if not accepted or not title.strip() or not current():
+                return False
+        try:
+            if not dialog.rehearsal.set_lesson_url(
+                    lesson.playback_url, expected_song_id=song_id, new_title=title):
+                return False
+        except ValueError as error:
+            dialog.rehearsal._feedback.setText(str(error))
+            return False
+        saved = dialog.save_current()
+        dialog.rehearsal._feedback.setText(
+            "Lesson remembered with this song. Use saved lesson returns to video practice."
+            if saved else "The lesson is in your retained draft. Use Save to retry."
+        )
+        return saved
+
+    def _use_saved_lesson(self, origin, request):
+        binding, workspace_id, profile, item_id, url = request
+        if (origin is not self.dialog or not origin.isVisible() or origin.record is None
+                or self.current is None or self.current.id != workspace_id
+                or origin.record.id != workspace_id or origin.record.profile != profile
+                or self._profile() != profile or self.media_operation_pending or self.studio_media_pending
+                or binding != self._c.follow_along._identity()
+                or self._c._shutdown_cleanup_blocks_action()):
+            self._flash("Continue the saved workspace first, then choose its lesson from Session library.")
+            return
+        if profile == "music":
+            song = origin.rehearsal._plan.current or {}
+            selected = (song.get("id"), song.get("lesson_url"))
+        else:
+            selected = origin.art.selected_lesson()
+        if selected != (item_id, url):
+            return
+        if profile == "art" and not all(self._c._reference_video_identity()):
+            from core.session_conductor import ArtRoomState
+
+            room = self._c._room_participant
+            if room.state is ArtRoomState.NONE and not self._c._completed_art_room_role():
+                next_step = (
+                    "Close Session library and choose Start Session to host."
+                    if self._c.settings.host_server_enabled else
+                    "Close Session library, choose Start Session and paste the host's invitation."
+                )
+            else:
+                next_step = "Close Session library and finish the room's connection or recovery steps."
+            message = (
+                f"{next_step} Then reopen Session library and choose Use saved lesson. "
+                "Your saved reference and edits stay here."
+            )
+            origin.show_art_lesson_feedback(message)
+            self._flash(message)
+            return
+        if self._c.follow_along.use_saved_lesson(url):
+            # Keep the same draft owner. show() reuses this retained dialog.
+            origin.hide()
+            self._c.window.activateWindow()
+        else:
+            self._flash("Return to the current room, then use this saved lesson again.")
 
     def show(self, *, tab=None):
         from webjam_qt.windows.session_library import SessionLibraryDialog
-        if self.dialog is not None and self.dialog.isVisible():
+        if self.dialog is not None:
+            self.dialog._lesson_binding = self._c.follow_along._identity() if hasattr(self._c, "follow_along") else None
             if tab == "plan":
                 self.dialog.tabs.setCurrentIndex(1 if self._profile() == "music" else 2)
+            self.dialog.show()
             self.dialog.raise_()
             self.dialog.activateWindow()
             return
@@ -186,7 +340,7 @@ class SessionLibraryCoordinator(QObject):
         self.flush()
         dialog = SessionLibraryDialog(self.library, self._c.window,
             profile=self._profile(), current_id=self.current.id, pending_records=self._pending,
-            save_record=self.save_editor_record)
+            save_record=self.save_editor_record, prepare_take_open=self.prepare_take_open)
         self.dialog = dialog
         dialog.record_saved.connect(self._record_saved)
         dialog.copy_saved.connect(self._copy_saved)
@@ -194,6 +348,8 @@ class SessionLibraryCoordinator(QObject):
         dialog.bookmark_open_requested.connect(self.open_bookmark)
         dialog.take_open_requested.connect(self.open_take)
         dialog.song_selected.connect(self.song_selected)
+        dialog._lesson_binding = self._c.follow_along._identity() if hasattr(self._c, "follow_along") else None
+        dialog.lesson_requested.connect(lambda request: self._use_saved_lesson(dialog, request))
         if tab == "plan":
             dialog.tabs.setCurrentIndex(1 if self._profile() == "music" else 2)
         def finished(_result):
@@ -209,6 +365,18 @@ class SessionLibraryCoordinator(QObject):
         dialog.finished.connect(finished)
         dialog.setModal(False)
         dialog.show()
+
+    @property
+    def media_operation_pending(self):
+        return bool(self.dialog is not None and self.dialog.media_operation_pending)
+
+    @property
+    def studio_media_pending(self):
+        studio = getattr(self._c.window, "recording_studio", None)
+        return bool(getattr(studio, "media_open_pending", False))
+
+    def prepare_close(self):
+        return self.dialog is None or self.dialog.prepare_close()
 
     def save_editor_record(self, base, edited):
         """Reconcile the editor before writing, including late take/recap facts.
@@ -273,6 +441,9 @@ class SessionLibraryCoordinator(QObject):
                     or self._c._is_jamulus_running())
 
     def continue_record(self, record) -> bool:
+        if self.media_operation_pending or self.studio_media_pending:
+            self._flash("Wait for the workspace operation result before continuing another workspace.")
+            return False
         if self.current is not None and self.current.id == record.id:
             self._c._on_rail_view_changed("canvas")
             return True
@@ -413,7 +584,7 @@ class SessionLibraryCoordinator(QObject):
             if not self._run_id or self._run_id == run_id:
                 self._live_take_ids.add(take.take_id)
         self._pending[owner.id] = owner
-        self.flush()
+        self.flush(include_editor=False)
 
     def current_take_status(self):
         if self.current is None:
@@ -422,8 +593,13 @@ class SessionLibraryCoordinator(QObject):
         return ("Ready" if refs[-1].get("validated") else "Needs attention") if refs else None
 
     def open_take(self, ref):
+        if ref.get("_verification") is not None:
+            self._open_prepared_reference(ref)
+            return
         if not isinstance(ref.get("take_path"), str) or not ref["take_path"].strip():
             self._flash("This recording has no completed take yet. Wait for recording and finalization to finish.")
+            return
+        if not self._imported_reference_can_open(ref):
             return
         if self._profile() == "art":
             self._flash("Switch to this Music workspace before opening its take.")
@@ -436,6 +612,70 @@ class SessionLibraryCoordinator(QObject):
                 self.dialog.accept()
         else:
             self._flash("The linked take is missing or changed. Locate the same take in Session library.")
+
+    def prepare_take_open(self, _reference):
+        recording = getattr(self._c, "recording", None)
+        if (self._profile() == "art" or getattr(self._c, "_shutdown", False)
+                or getattr(self._c, "_shutdown_in_progress", False)
+                or getattr(recording, "is_recording_active", False) or getattr(recording, "take_in_progress", False)):
+            self._flash("Finish the current recording and use a Music workspace before opening this take.")
+            return None
+        studio = self._c.window.recording_studio
+        state = studio.prepare_workspace_open()
+        if state is None:
+            self._flash("Finish the Studio operation or save its draft before opening this take.")
+            return None
+        return {"studio": studio, "state": state, "owner": self.current.id if self.current else None,
+                "profile": self._profile()}
+
+    def open_verified_launch_reference(self, reference):
+        """Bind a consumed launch intent to this newly constructed runtime."""
+        snapshot = reference.get("_workspace_snapshot")
+        if (self.dialog is not None or not _same_snapshot(self.current, snapshot)
+                or reference.get("_studio_request") is not None
+                or reference.get("_origin_dialog") is not None):
+            self._flash("Workspace changed after launch selection. Open its take again from Session library.")
+            return
+        request = self.prepare_take_open(reference)
+        if request is None:
+            return
+        studio = request["studio"]
+        if not studio.open_prepared_take(reference.get("_verification"), workspace=snapshot,
+                expected_state=request["state"], position_seconds=reference.get("position_seconds", 0)):
+            self._flash("The recording changed after launch selection. Verify and open it again from Session library.")
+            return
+        self._c._on_rail_view_changed("takes")
+
+    def _open_prepared_reference(self, reference):
+        from PySide6.QtCore import QTimer
+        origin = reference.get("_origin_dialog")
+        request = reference.get("_studio_request")
+        snapshot = reference.get("_workspace_snapshot")
+        recording = getattr(self._c, "recording", None)
+        if (origin is None or self.dialog is not origin or not request or snapshot is None
+                or origin.record is None or origin.record.id != snapshot.id
+                or request["owner"] != (self.current.id if self.current else None)
+                or request["profile"] != self._profile()
+                or getattr(self._c, "_shutdown", False) or getattr(self._c, "_shutdown_in_progress", False)
+                or getattr(recording, "is_recording_active", False) or getattr(recording, "take_in_progress", False)):
+            self._flash("Workspace ownership changed while checking the take. Open it again when ready.")
+            return
+        studio = self._c.window.recording_studio
+        if request["studio"] is not studio or not studio.open_prepared_take(
+                reference["_verification"], workspace=snapshot, expected_state=request["state"],
+                position_seconds=reference.get("position_seconds", 0)):
+            origin.status.setText("Studio or the recording changed during verification. Open the selected take again.")
+            return
+        self._c._on_rail_view_changed("takes")
+
+        def close_origin():
+            if (self.dialog is origin and not origin.media_operation_pending
+                    and not origin._dirty and _same_snapshot(origin.record, snapshot)
+                    and origin._edited_record() == snapshot):
+                origin.accept()
+        # The flow gate remains held through activation. Close only its exact
+        # originating dialog after the terminal callback has returned.
+        QTimer.singleShot(0, close_origin)
 
     def mark_moment(self, note):
         if self.dialog is None:
@@ -456,12 +696,23 @@ class SessionLibraryCoordinator(QObject):
     def open_bookmark(self, mark):
         if self._profile() == "art" or not isinstance(mark.get("take_path"), str) or not mark["take_path"].strip():
             return
+        if not self._imported_reference_can_open(mark):
+            return
         self._c._on_rail_view_changed("takes")
         opened = self._c.window.recording_studio.jump_to_bookmark(mark.get("take_path", ""),
             mark.get("position_seconds", 0), take_id=mark.get("take_id"),
             source_identity=mark.get("source_identity"))
         if opened and self.dialog:
             self.dialog.accept()
+
+    def _imported_reference_can_open(self, reference):
+        record = getattr(self.dialog, "record", None) if self.dialog else self.current
+        imported = reference.get("_imported_link") or (record is not None and record.import_provenance)
+        if imported and not all(isinstance(reference.get(key), str) and reference[key].strip()
+                                for key in ("take_id", "source_identity")):
+            self._flash("This imported link has no complete take identity. Open its original recording separately in Studio.")
+            return False
+        return True
 
     def song_selected(self, _song):
         if self.dialog and self.current and self.dialog.record.id == self.current.id:

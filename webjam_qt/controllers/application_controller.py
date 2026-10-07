@@ -836,7 +836,7 @@ class ApplicationController(QObject):
         self._notes_save_timer = QTimer(self)
         self._notes_save_timer.setSingleShot(True)
         self._notes_save_timer.setInterval(750)
-        self._notes_save_timer.timeout.connect(self._save_notes)
+        self._notes_save_timer.timeout.connect(lambda: self._save_notes(include_editor=False))
 
         # Mix save/load/restore (~/.webjam_mix.json).
         # Adapt flash_message's keyword-only ``ms=`` to MixManager's positional
@@ -1040,6 +1040,8 @@ class ApplicationController(QObject):
         """Refuse navigation until the session owner has completed End/Leave."""
         if self._shutdown or self._shutdown_cleanup_pending:
             return True
+        if not ApplicationController._prepare_workspace_close(self):
+            return False
         if self.recording.workspace_transition_pending:
             self.window.flash_message(
                 "Interrupted-take recovery is still finishing. Wait for its "
@@ -1191,9 +1193,27 @@ class ApplicationController(QObject):
                 "An unexpected cleanup step did not complete safely.",
             )
 
+    def _prepare_workspace_close(self) -> bool:
+        library = getattr(self, "session_library", None)
+        studio = getattr(self.window, "recording_studio", None)
+        library_pending = bool(getattr(library, "media_operation_pending", False))
+        studio_pending = bool(getattr(studio, "media_open_pending", False))
+        if not library_pending and not studio_pending:
+            return True
+        if library_pending:
+            library.prepare_close()
+        if studio_pending:
+            studio.prepare_close()
+        self.window.flash_message(
+            "Workspace media work is finishing. Its cancellation was requested; wait for the result, then return to launch or quit again.", ms=0,
+        )
+        return False
+
     def _shutdown_once(self) -> bool:
         if self._shutdown:
             return True  # closeEvent + app.py both call this; run teardown once
+        if not ApplicationController._prepare_workspace_close(self):
+            return False
         if bool(getattr(getattr(self, "recording", None), "workspace_transition_pending", False)):
             self.window.flash_message(
                 "Interrupted-take recovery is still finishing. Keep this workspace "
@@ -1822,6 +1842,7 @@ class ApplicationController(QObject):
             def finish_room_ui() -> None:
                 if room is not None and room.generation != generation:
                     return
+                ApplicationController._clear_shared_lesson_context(self)
                 ApplicationController._release_reference_video(self)
                 ApplicationController._release_shared_canvas(self)
                 ApplicationController._release_room_clock(self)
@@ -2397,6 +2418,12 @@ class ApplicationController(QObject):
             # A released video panel may still have a queued Back intent. It
             # must not select a workspace for a later room or another profile.
             return
+        # Explicit Room navigation wins even when the first authenticated
+        # video snapshot is still waiting for its timer callback. Otherwise
+        # that delayed offer can immediately reopen Paint Along over Room.
+        role, session_id, _session_key = self._reference_video_identity()
+        if role and session_id:
+            self._announced_creator_start = (role, session_id)
         # Loss and unfinished cleanup still need an honest room destination.
         # This is navigation only; no transport, file or meeting action runs.
         self.window.side_rail.set_active_key("stage")
@@ -2483,7 +2510,8 @@ class ApplicationController(QObject):
             return
         library = getattr(self, "session_library", None)
         if canonical != active_key and library is not None:
-            library.profile_changing()
+            if library.profile_changing() is False:
+                return
         with ApplicationController._defer_session_pulse_refresh(self):
             if canonical != active_key:
                 self._chat_profile_generation = (
@@ -2817,6 +2845,8 @@ class ApplicationController(QObject):
         # A subsequent native close must not ask again using stale snapshots.
         if bool(getattr(self, "_shutdown", False)):
             return True
+        if not ApplicationController._prepare_workspace_close(self):
+            return False
         if bool(getattr(self, "_workspace_transition_pending", False)):
             return False
         # A prior finalize_close attempt already obtained the user's approval
@@ -4446,6 +4476,9 @@ class ApplicationController(QObject):
         self.window.webex_embed.recheck_webex_requested.connect(
             self._start_webex_app_detection
         )
+        from webjam_qt.controllers.follow_along import FollowAlongController
+
+        self.follow_along = FollowAlongController(self)
         self.window.confirm_close = self._confirm_close
         self.window.finalize_close = self.shutdown
         # Settings shortcut (Ctrl+,) and side-rail Settings button → wizard
@@ -6160,6 +6193,19 @@ class ApplicationController(QObject):
         )
         role = str(attempt.get("role", "guest"))
         phase = str(attempt.get("phase", ""))
+        practice_override = None
+        follow_along = getattr(self, "follow_along", None)
+        practice_visible = getattr(follow_along, "music_practice_visible", None)
+        if (phase in {"launching_client", "native_sound_setup", "verifying_music", "confirm_sound"}
+                and callable(practice_visible) and practice_visible()):
+            # The selected meeting practice can proceed while ensemble audio
+            # setup is pending. Keep the actual attempt and recovery facts;
+            # this changes only the next-action presentation.
+            practice_override = GuidanceDisplayOverride(
+                "Video practice in your meeting",
+                "Jamulus is not required for video practice. Listen to one shared lesson and take turns.",
+                SessionPrimaryAction.NONE,
+            )
         creator_copy = self._startup_creator_copy(self.creator_profile.key)
         enter_label = SessionPrimaryAction.ENTER_JAM.label_for(self.creator_profile)
         end_label = "End Session" if role == "host" else "Leave Jam"
@@ -6167,7 +6213,11 @@ class ApplicationController(QObject):
             end_label,
             enabled=phase != "cancelling",
         )
-        if phase == "starting_server":
+        if practice_override is not None:
+            self.window.session_hud.set_state(
+                practice_override.title, practice_override.message, action_visible=False,
+            )
+        elif phase == "starting_server":
             self.window.session_hud.set_state(
                 creator_copy["starting_title"],
                 creator_copy["starting_detail"],
@@ -6291,7 +6341,7 @@ class ApplicationController(QObject):
         self._persist_startup_attempt(attempt)
         if not isinstance(snapshot, SessionConductorSnapshot):
             return
-        override = self._startup_guidance_override(
+        override = practice_override or self._startup_guidance_override(
             attempt,
             self.creator_profile.key,
         )
@@ -8969,6 +9019,7 @@ class ApplicationController(QObject):
         # Retire every coordinator using the old invitation before reset can
         # advertise a replacement. A queued media tick must never sign a new
         # room snapshot with the previous invitation's key.
+        self._clear_shared_lesson_context()
         self._release_reference_video()
         self._release_shared_canvas()
         self._release_room_clock()
@@ -11522,7 +11573,7 @@ class ApplicationController(QObject):
     def _is_jamulus_running(self) -> bool:
         return self.bridge.jamulus_state in ("Running", "Already running")
 
-    def _show_webex_conversation(self) -> None:
+    def _show_webex_conversation(self, *, resume_lesson: bool = True) -> None:
         """Reveal Conversation controls without opening a meeting link."""
 
         if self._shutdown_cleanup_blocks_action():
@@ -11530,6 +11581,9 @@ class ApplicationController(QObject):
         self.window.side_rail.set_active_key("stage")
         self._on_rail_view_changed("stage")
         self.window.webex_embed.setVisible(True)
+        follow_along = getattr(self, "follow_along", None)
+        if resume_lesson and follow_along is not None:
+            follow_along.resume()
         self.window.webex_embed.focus_primary_action()
         self._record_webex_event("conversation-panel", "shown")
 
@@ -11570,6 +11624,9 @@ class ApplicationController(QObject):
             validated
         )
         self._session_meeting_generation = getattr(self, "_session_meeting_generation", 0) + 1
+        follow_along = getattr(self, "follow_along", None)
+        if follow_along is not None:
+            follow_along.meeting_changed()
         # Invalidate in-flight and queued handoffs even when two rooms use the
         # same URL. A launch result belongs to the room that requested it.
         self.bridge.invalidate_webex_launch()
@@ -11636,7 +11693,11 @@ class ApplicationController(QObject):
             )
             return
         QApplication.clipboard().setText(url)
-        self.window.flash_message("Meeting link copied.", ms=4000)
+        self.window.flash_message(
+            "Meeting link copied. Guests can open it in their browser or meeting app, "
+            "or use Add Link or Change Link in Conversation. It is not a WebJam room invitation.",
+            ms=7000,
+        )
 
     def _on_join_video(self) -> None:
         """Open the configured meeting externally without claiming join state."""
@@ -12697,6 +12758,9 @@ class ApplicationController(QObject):
         )
         if webex_url_changed:
             self._retire_shared_lesson_requests()
+            follow_along = getattr(self, "follow_along", None)
+            if follow_along is not None:
+                follow_along.meeting_changed()
         reference_route_changed = any(
             (
                 getattr(old_settings, "host_server_enabled", False)
@@ -13261,6 +13325,8 @@ class ApplicationController(QObject):
 
         if key == "conversation":
             self._show_webex_conversation()
+        elif key == "play_along":
+            self.follow_along.show_music_choices()
         elif key == "reference_track":
             self._open_reference_track()
         elif key == "reference_video":
@@ -13293,7 +13359,7 @@ class ApplicationController(QObject):
             self.window.side_rail.set_active_key(prev)
             self._open_settings_wizard()
         elif key in _CONTENT_KEYS:
-            self._clear_shared_lesson_context()
+            self._clear_shared_lesson_context(preserve_navigation=True)
             hide_paint_along = getattr(self.window, "hide_paint_along", None)
             if callable(hide_paint_along):
                 hide_paint_along(
@@ -13715,6 +13781,12 @@ class ApplicationController(QObject):
     def _release_reference_video(self) -> None:
         """Return this computer to the no-video path and free its player."""
 
+        # Music state reads probe the optional Art coordinator. Releasing an
+        # absent video must not retire Music's independent meeting lesson.
+        if (getattr(self, "_reference_video", None) is None
+                and getattr(self, "_reference_video_dialog", None) is None):
+            return
+
         ApplicationController._clear_reference_video_notice(self)
         ApplicationController._clear_shared_lesson_context(self)
         timer = getattr(self, "_reference_video_timer", None)
@@ -13961,8 +14033,14 @@ class ApplicationController(QObject):
         if callable(project):
             project()
 
-    def _clear_shared_lesson_context(self) -> None:
+    def _clear_shared_lesson_context(self, *, preserve_navigation: bool = False) -> None:
         ApplicationController._retire_shared_lesson_requests(self)
+        follow_along = getattr(self, "follow_along", None)
+        if follow_along is not None:
+            if preserve_navigation:
+                follow_along.suspend()
+            else:
+                follow_along.retire()
         panel = getattr(getattr(self, "window", None), "webex_embed", None)
         if getattr(panel, "_shared_lesson_hosting", None) is not None:
             panel.set_shared_lesson_context(hosting=None)
@@ -14019,8 +14097,10 @@ class ApplicationController(QObject):
             or QApplication.activePopupWidget() is not None
         ):
             return
-        self._show_webex_conversation()
+        lesson_url = dialog.meeting_lesson_url()
+        self._show_webex_conversation(resume_lesson=False)
         self.window.webex_embed.set_shared_lesson_context(hosting=coordinator.hosting)
+        self.follow_along.activate(hosting=coordinator.hosting, lesson_url=lesson_url, resume_browser_choice=True)
         room.activate_lesson_requests(hosting=coordinator.hosting)
 
     def _run_current_host_paint_along(self, coordinator, dialog, operation) -> None:
@@ -16041,14 +16121,14 @@ class ApplicationController(QObject):
         """Restore session notes from disk (best-effort)."""
         self._persistence._load_notes_only()
 
-    def _save_notes(self) -> bool:
-        """Flush all local drafts and retain failed writes for visible retry."""
+    def _save_notes(self, *, include_editor=True) -> bool:
+        """Flush owned Notes; explicit saves also reconcile the Library draft."""
         timer = getattr(self, "_notes_save_timer", None)
         if timer is not None:
             timer.stop()
         notes_saved = self._persistence._save_notes_only()
         library = getattr(self, "session_library", None)
-        workspace_saved = library.flush() if library is not None else True
+        workspace_saved = library.flush(include_editor=include_editor) if library is not None else True
         return notes_saved and workspace_saved
 
     def _recheck_saved_notes(self, profile: str) -> None:

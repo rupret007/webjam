@@ -22,6 +22,7 @@ from tests.test_native_art_activities import (
     qapp as _qapp_fixture,
 )
 from webjam_qt.theme import load_stylesheet
+from webjam_qt.controllers.application_controller import ApplicationController
 
 native_room = _native_room_fixture
 qapp = _qapp_fixture
@@ -154,6 +155,49 @@ def test_native_notes_return_reaches_full_room_and_preserves_local_work(
     _assert_private_and_stable(pair, caplog)
 
 
+@pytest.mark.parametrize("profile", ["music", "art"])
+def test_deferred_first_video_tick_preserves_explicit_room_return(
+    native_room, qapp, monkeypatch, caplog, profile,
+):
+    original = ApplicationController._reference_video_coordinator
+
+    def defer_first_video_tick(app):
+        coordinator = original(app)
+        app._reference_video_timer.stop()
+        return coordinator
+
+    monkeypatch.setattr(
+        ApplicationController, "_reference_video_coordinator", defer_first_video_tick,
+    )
+    pair = native_room(profile=profile)
+    app = pair.app
+    canvas = _notes(pair, qapp)
+    draft = _draft(canvas)
+    coordinator = app._reference_video
+    assert coordinator.follow_snapshot.state is ReferenceVideoFollowState.NEEDS_FILE
+    assert app._announced_creator_start == ()
+    _click(canvas.room_return_button(), qapp)
+    _assert_room(pair, qapp)
+
+    # Deliver the first pending snapshot after the explicit navigation. No
+    # sleep or scheduling assumption is needed to exercise the race.
+    app._tick_reference_video()
+    app._tick_creator_start()
+    _assert_room(pair, qapp)
+    _assert_draft(canvas, draft, exercise_undo=True)
+    assert app._reference_video is coordinator
+    assert app._reference_video_dialog is None
+    assert pair.players == []
+    _assert_private_and_stable(pair, caplog)
+
+    # The offer still has a deliberate entry; suppressing automatic display
+    # must not discard the host's video or start a player on the guest.
+    app._on_art_overview_activity("video")
+    qapp.processEvents()
+    assert app._reference_video_dialog.isVisibleTo(app.window)
+    assert pair.players == []
+
+
 def test_native_loss_releases_video_safely_then_notes_returns_to_failed_room(
     native_room, qapp,
 ):
@@ -241,7 +285,9 @@ def test_retired_video_return_cannot_redirect_a_replacement_workspace(
     canvas = _notes(pair, qapp)
     draft = _draft(canvas)
     source, generation = app._remote_session, app._room_participant.generation
+    announcement = app._announced_creator_start
     app._return_to_art_room(retired)
+    assert app._announced_creator_start == announcement
     qapp.processEvents()
     assert canvas.isVisibleTo(app.window)
     assert app.window.side_rail.current_key() == "canvas"

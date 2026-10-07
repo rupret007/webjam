@@ -19,7 +19,7 @@ or **More → Session library…** in a room. Choose the new workspace's profile
 then **New workspace…** and a title. The **Notes**, **Rehearsal plan**, **Art project**,
 **Summary**, and **Takes** tabs keep the work appropriate to that profile.
 Changes save locally; check the save status and use **Save** before leaving.
-Search finds previous work. **Continue this work** brings its saved context
+Search finds previous work. **Continue** brings its saved context
 back into the app; it does not connect a room or start recording. **Save as
 copy…** makes a separate workspace. Invitations and meeting credentials are
 not a reusable workspace template.
@@ -37,7 +37,7 @@ Type a moment note and choose **Mark moment**, or press **⌘M** on Mac /
 position produces a take bookmark; otherwise it stays a plain note. The song
 clock and room timer do not certify recording time. **Open in take** rechecks
 the saved take before navigation; a moved or changed recording needs attention.
-The **Summary** tab and **Export summary…** collect progress and next steps;
+The **Summary** tab and **Export summary** collect progress and next steps;
 ending a rehearsal retains its recap with the workspace.
 
 For Art, open **More → Session library… → Art project**. Keep a **Project brief**, **Progress**,
@@ -52,6 +52,102 @@ or turn WebJam into a drawing application.
 For completed Music or Podcast & Voice takes, follow
 [Review and compare completed takes](#review-and-compare-completed-takes)
 to save favorites and notes, audition A/B, and inspect an export receipt.
+
+## Back up and import a workspace: Unreleased
+
+These controls belong to draft workspace-backup builds after v0.29.0. In
+**Session library**, select the workspace and choose **Back up…**.
+Resolve an unsaved draft or conflicting changes first; **Save as copy…** keeps
+a separate workspace when needed. **Export summary** remains available for a
+readable progress handoff.
+
+**Metadata only** is selected by default and writes a new JSON file containing
+notes, song drafts and moments, Art context, recaps and stored take/reference
+links. It does not copy audio, artwork or Studio review/edit files.
+
+To carry files too, choose **Selected media**, check the completed takes
+or local Art files, and choose **Continue**. **Take reviews** and **Studio edits**
+are checked by default. Review the included/excluded items, file count, size
+and blockers. **Change choices…** retains your selections so you can include a
+required alternate take or explicitly exclude Studio edits. Missing, changed,
+unsupported or incomplete selected files block **Create backup…**; they are
+never silently omitted. Web links remain links and are not downloaded.
+
+**Create backup…** needs a new `.webjambackup` filename. Keep the package and its
+small `.webjamreceipt` checksum receipt together. The receipt records the
+intended package bytes before publication, including if the process stops
+unexpectedly. Packages allow up to 4,096 entries and 64 GiB, with bounded
+metadata. Only selected, declared media and supported review/edit files are
+copied; unrelated files and application credentials are not added.
+
+Choose **Import backup…** and select a JSON backup, media package, or its
+`.webjamreceipt` file. A receipt checks the package beside it against the
+intended checksum. Review the title, profile, counts, prior imports and limits.
+**Cancel** leaves the open draft unchanged.
+**Import as new** creates a separate saved workspace and keeps your
+current editor and selection. Select the imported entry yourself when ready.
+An unsaved draft stays unsaved through import, including when a background
+Notes save or recording result arrives. Use **Save** when ready; further
+typing resumes the editor's autosave. Closing also attempts to save your work.
+At compact sizes or with enlarged text, scroll the Library to reach its actions.
+Tab and Shift+Tab bring focused controls into view; save and recovery status stays visible.
+
+Imported links say **stored link — not checked** until an
+explicit action accesses them, including after reopening or saving a copy.
+Continuing a workspace does not start recording, play media or open another app.
+
+In **Takes**, select a link and choose **Verify take**. The check runs
+in the background without opening Studio. **Open Studio** checks it again
+and opens that recording without starting playback. Use **Locate take…**
+to choose the same completed take at a new location; its identity and original
+content must match. Linked rehearsal moments keep their IDs and move with it.
+From the launch screen's Library, **Open Studio** or a linked
+moment's **Open in take** also continues the imported workspace directly.
+If its saved context or media changes before Studio opens, select and open it again.
+
+In **Art project**, select a local file and choose **Verify reference**.
+**Open reference** checks it before opening its external app. **Relink…** locates
+the same content while preserving the brief and bookmarks. A metadata-only file
+without an original checksum can be checked for availability, but cannot be
+proven to be the original or relinked as matching content.
+When you back up imported Art again, its content must still match the saved
+checksum and size. Import rejects a package that contradicts that saved proof;
+relinking the same bytes under a new filename or extension remains supported.
+
+“Content matched when checked” describes that check, not a permanent guarantee.
+Restored Studio arrangements use their declared source locations even if the
+original copies are still on this computer. **Listen A/B** checks a restored
+comparison again before playback. Leaving Studio, editing its arrangement,
+changing the active workspace or beginning a recording retires a pending
+comparison. Choose Listen again when ready. A new Library draft keeps its
+editor open even if an earlier take-open request has just finished.
+If the export control says **Export Aligned Originals**, the export excludes
+Studio arrangement edits. Check the confirmation and new receipt for the export
+kind and destination; an imported historical receipt is not a new export.
+
+Copying and verification run in the background with progress and **Cancel**.
+Session **Stop** and **End** remain reachable in the main window. Cancellation
+waits for the worker's actual result: a completed publication still reports
+success, and an uncertain result retains its receipt. Closing or returning to
+launch waits for that result; review it, then close or return again.
+
+If an import's outcome is uncertain, choose **Check import**. A checked
+complete restore offers **Retry import**. An incomplete restore offers
+**Choose backup…**, followed by **Resume import**. These keep the
+intended workspace identity. A changed recovery record or different package
+blocks retry and preserves its evidence. For uncertain backup publication,
+choose the retained `.webjamreceipt` in **Import backup…** to check its bytes
+without importing anything until you confirm. Private notes and stored
+locations remain literal; this is not a secret-scrubbing feature.
+
+These explicit media controls and Studio activation are in the draft source.
+Local tests now cover two controlled recorder completions and Art through backup,
+import and restart in separate OS processes. The frozen-build hook also includes
+a synthetic portability journey. Delivered test builds require final-commit hosted
+and native package checks; see [draft #172](https://github.com/rupret007/webjam/pull/172)
+for current evidence and the [milestone plan](docs/WORKSPACE_BACKUP_PLAN.md) for scope. Use the
+[ten-minute portability pilot](docs/WORKSPACE_PORTABILITY_PILOT.md) with the identified
+test build when delivered. Physical sound, real-editor import and feel remain NOT RUN.
 
 ## Return to launch: Unreleased
 
@@ -331,25 +427,108 @@ Things worth knowing:
 
 ### Painting along to a video
 
-Bring your own materials or app. Choose **Watch a shared lesson** in Paint
+Bring your own materials or app. **Watch a shared lesson** is the first action in Paint
 along to reach Conversation without choosing a local file. It works even
-when a local copy is missing or cannot play. The focused action is **Add
+when a local copy or embedded YouTube lesson cannot play. The focused action is **Add
 Link**, **Join / Open Meeting**, or the available meeting-app action. Merely
 showing these controls does not join a meeting or start a lesson.
 
-For a YouTube lesson, such as a Bob Ross mountain painting, the host opens
-the lesson in their browser and shares it through the meeting. In the Webex
+For a YouTube lesson, such as a Bob Ross mountain painting, the host chooses
+**Choose YouTube…**, pastes its video link, then chooses **Open in browser**.
+An existing embedded lesson supplies its current reference link and position;
+**Change YouTube…** selects a different browser lesson. Choosing a link starts
+nothing. Add the meeting link if needed, then **Join / Open Meeting**.
+The room invitation includes only the meeting link available when it was
+copied. If the host adds or changes that link later, use **Copy Link** to send
+it separately. Guests choose **Add Link** or **Change Link** in Conversation;
+they keep their current room. A copied meeting link can also open directly in
+the browser or meeting app. It is not an invitation for WebJam's Join field.
+The host shares the lesson through the meeting. In the Webex
 desktop app, share the browser window with computer sound enabled; the video
 optimization option helps motion. In the Webex web client, share the browser
 tab with tab audio enabled. Keep participant videos visible in the meeting.
 These are provider-supported paths; the complete two-person WebJam experience
-still needs physical verification. See the [shared-lesson test guide](docs/plans/webjam-shared-lesson-entry.md).
+still needs physical verification. See the [two-person pilot](docs/PAINT_PLAY_ALONG_PLAN.md#two-person-acceptance).
+
+**Remember lesson** adds the displayed reference link and chosen position to
+the current **Art project**, preserving its existing notes and drafts. Select
+the YouTube reference and choose **Use saved lesson** to return to setup. Select
+a saved bookmark first to use its whole-second position; otherwise the link's
+saved starting position is retained. **Open reference** remains an explicit
+direct browser action. WebJam does not read playback time
+from your browser. A saved link does not start a lesson or join a room.
+For guests, **Save reference** saves the displayed reference link, which may
+come from WebJam's silent video or a saved project. The host may be showing a
+different browser lesson in the meeting.
 
 The host pauses and resumes **the YouTube player** when either person asks.
 A guest asks in Conversation; WebJam cannot control the external browser.
 The YouTube player's volume changes the shared narration. Your meeting
 speaker volume changes what you hear; microphone mute controls your own voice.
 This does not provide separate WebJam faders for narration and each voice.
+Use headphones and ask your partner to confirm they hear both narration and
+your voice. Guests watch the host's meeting share and leave their own audible
+YouTube copy closed. Pause/ready buttons are available in supported Art LAN
+rooms; otherwise ask by voice or meeting chat.
+
+The setup card shows three steps. Expand **Sound and sharing tips** for
+volume and microphone details. Use **Conversation** to return after Notes;
+your selected lesson stays available. Changing the meeting link retires old
+pause requests. In a supported LAN Art room, **Restart pause requests**
+creates fresh controls without leaving the setup. Rejoining another room
+does not revive old request authority. Small windows and larger text scroll;
+Tab reveals the focused control and End/Leave remains outside that scroll.
+
+### Playing along to a song
+
+In Music, choose **Play along** (also in **More → Play along…**):
+
+- **Set up video practice** opens Conversation with a host YouTube chooser,
+  browser action and meeting controls. Share one video with sound, listen and
+  take turns. Your meeting carries the song and voices. If your instrument is
+  not set up in Jamulus, you can still use video practice. The practice header
+  explains this while ensemble setup is pending. Setup failures and unfinished
+  cleanup remain visible. Returning to ensemble restores its setup guidance.
+  If your instrument is also connected to Jamulus, it still transmits; use your instrument/interface
+  send control to stop it. WebJam mix mute changes only what you hear.
+  If ensemble setup fails, its recovery stays visible while the explicit
+  meeting controls remain available. **Copy Link** shares the meeting with
+  people who can open it directly in their browser or meeting app; they do
+  not need a WebJam room for meeting video practice. A WebJam room invitation
+  still requires an available room and is a separate action.
+- **Open Shared Track** opens the host's existing live-ensemble setup. It needs
+  a local audio file and a supported, isolated host route (currently macOS
+  with the certified BlackHole setup). Guests choose **Open Jamulus mixer**
+  and balance the **WebJam Track** channel with the other musicians. Disconnect
+  Webex audio while playing and keep its video for faces. Judge musical timing
+  by the Jamulus sound; conferencing camera motion arrives later.
+
+Music video practice does not synchronize separate YouTube players or send
+their audio into Jamulus. A browser or meeting handoff confirms only that an
+open was requested; verify sharing, hearing and timing together. See the
+[Paint Along / Play Along plan and pilot](docs/PAINT_PLAY_ALONG_PLAN.md).
+
+For practice, **Remember lesson** stores the chosen link with the current
+song in **Rehearsal plan**. If the plan is empty, name a song when prompted.
+The plan also offers **Choose lesson…** / **Change lesson…**; an empty link
+removes the saved reference. **Use saved lesson** returns to video-practice
+setup. Loading a song, template or workspace opens nothing automatically.
+Lesson links survive saved-plan templates and workspace backups. In Session
+library, **Continue** a different workspace before using its lesson. A save
+failure keeps the link and other edits in the existing draft; retry **Save**
+after storage is available.
+
+For either Music or Art at launch, choose **Continue** on the saved workspace.
+This restores local work; it does not rejoin an old room. In Art, choose
+**Start Session** next. With saved host settings this hosts a room; with saved
+guest settings it opens **Join**, where you paste the host's current invitation.
+Once the room is open, reopen **Session library** and choose **Use saved lesson**.
+This keeps the continued workspace and its reference. Music video practice
+can reuse its saved lesson without starting Jamulus.
+The launch-time Library explains this sequence because live lesson setup is
+available only after continuing into the workspace.
+
+### Silent Paint Along references
 
 For the existing **silent local-file option**, the host chooses one video file:
 
@@ -362,7 +541,7 @@ For the existing **silent local-file option**, the host chooses one video file:
    have the right to play. WebJam does not ship, bundle, download, or fetch any
    video, and it will not open anything from a streaming service.
 3. If Room shows **Paint along is starting**, choose **Open Paint along**.
-   Before the host shares, the panel shows **Waiting for a process video**.
+   Before the host shares, the panel shows **Optional silent reference**.
    If you already have the video, choose **Open my copy…**. **Your copy is
    open** means it is waiting locally: WebJam still needs to check it against
    the host's offer before following. No picture or playback starts early.

@@ -14,6 +14,52 @@
 
 ## Scope
 
+The current draft Paint Along / Play Along round uses the two-person pilot in
+[PAINT_PLAY_ALONG_PLAN.md](docs/PAINT_PLAY_ALONG_PLAN.md#two-person-acceptance).
+Record the exact commit and package hash. Verify one audible shared lesson,
+both faces and voices, manual pause/resume, saved reference recovery and the
+separate Jamulus ensemble path. Provider playback, physical audio and feel
+remain **NOT RUN** until observed; source click-path tests are separate proof.
+
+Use the [short first-test guide](docs/FOLLOW_ALONG_FIRST_TEST.md) and copy the
+[pilot record](docs/FOLLOW_ALONG_PILOT_RECORD.md) for this identified build.
+The default Art room invitation requires the same Wi-Fi/local network.
+Observe the first attempt without coaching before offering the click guide;
+record time to the first shared lesson and any assistance separately.
+
+For pilot readiness, also check these explicit recovery paths:
+
+- Copy a room invitation before adding its meeting. After the guest joins,
+  host **Copy Link** → guest **Add Link** reaches the same meeting while
+  preserving the existing room. A later change uses **Change Link**. Nothing
+  opens until the explicit meeting action. A meeting URL is not a WebJam invite.
+- Continue saved Art after restart, try **Use saved lesson** before a room
+  exists, and read the recovery. Close Library, choose **Start Session**, and
+  if Join opens, paste the host's current invitation. Reopen the saved lesson
+  after connection; the same workspace, reference and edits remain.
+- Fail native Music startup deliberately in controlled software tests. Video
+  practice still permits explicit meeting Add/Copy/Open while the actual audio
+  failure remains visible. This does not create a shareable WebJam room.
+
+For the follow-along clarity round, also check:
+
+- Enter Art Paint along and find **Watch a shared lesson** before the optional
+  silent reference. Follow the host/guest steps and expand **Sound and sharing tips**.
+- Choose a lesson, visit Notes, edit the meeting link, and return through
+  **Conversation**. The lesson remains; old request controls cannot act.
+  In a supported LAN Art room, **Restart pause requests** creates fresh controls.
+- Save an Art reference/bookmark or Music song lesson, restart, continue the
+  workspace and choose **Use saved lesson**. Check the starting position,
+  retained notes and explicit browser action. Loading alone opens nothing.
+- At 720×560 and 1040×720 with 22px text, Tab through collapsed and expanded
+  setup. Every enabled action must scroll into view; End/Leave stays reachable.
+- Exercise an embedding refusal and an unavailable video separately. The
+  browser fallback keeps the chosen link but does not promise the video will play.
+
+The [assessment](docs/FOLLOW_ALONG_CLARITY_PLAN.md) records the scope. The
+identified build handoff records final software evidence separately from the
+physical pilot; draft status does not authorize publication or merging.
+
 This procedure distinguishes automated source/package evidence from physical
 participant evidence. A passing source suite does not certify two-Mac audibility,
 hardware changes, sleep/wake, interruption recovery, or external-editor import.
@@ -102,6 +148,13 @@ TERM/KILL cleanup (two seconds each by default). Stack capture depends on the
 pytest plugin having started; a pre-plugin hang may have no stack. Host loss
 or SIGKILL can prevent cleanup/evidence entirely. New diagnostics do not prove
 the cause of the earlier integration timeout or pass any physical-audio gate.
+
+### Windows native workflow diagnostics
+
+Use the [Windows portability diagnostic runbook](docs/WINDOWS_PORTABILITY_DIAGNOSTICS.md)
+for independent CDB/descendant-cleanup controls, retained source/frozen failure
+evidence and the explicitly requested six-per-kind matrix. Ordinary CI does not
+start that matrix; a diagnostic replay never replaces an original failed gate.
 
 ### Deterministic multitrack proof
 

@@ -8,7 +8,9 @@ output.
 
 Journals are kept below the caller-supplied takes root in a private directory.
 Writes first fsync a private temporary file and then use an atomic filesystem
-operation; directory metadata is fsynced before success is returned.  A bad
+operation. POSIX directory metadata is fsynced before success; Windows retains
+atomic publication and mandatory file flushing, without a portable directory
+fsync guarantee. Windows entries are created with protected owner/SYSTEM ACLs. A bad
 or untrusted journal is never interpreted as a clean take: ``load`` returns a
 result marked untrusted with ``RecoveryStatus.NEEDS_ATTENTION``.
 """
@@ -21,10 +23,12 @@ import stat
 import tempfile
 import uuid
 from collections.abc import Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from core.file_io import _fsync_parent_directory
 from core.session_recording_plan import SessionRecordingPlan
 from core.take_project import RecoveryStatus, SessionEvidence
 
@@ -116,27 +120,28 @@ class RecordingManifestJournal:
 
         canonical_take_id = _canonical_take_id(take_id)
         payload = _serialized_payload(canonical_take_id, evidence, plan)
-        directory = self._journal_directory(create=True)
-        path = directory / f"{canonical_take_id}{JOURNAL_FILE_SUFFIX}"
-        temporary = _write_private_temporary(directory, payload)
-        try:
+        with self._directory_guard(create=True) as directory:
+            path = directory / f"{canonical_take_id}{JOURNAL_FILE_SUFFIX}"
+            temporary = _write_private_temporary(directory, payload)
             try:
-                # Linking a fully-fsynced sibling creates the destination
-                # atomically and refuses to overwrite an existing journal.
-                os.link(temporary, path)
-            except FileExistsError:
-                raise
-            except OSError as exc:
-                raise RecordingManifestJournalError(
-                    "Could not atomically create the recording journal."
-                ) from exc
-            _fsync_directory(directory)
+                try:
+                    # Linking a fully-fsynced sibling creates the destination
+                    # atomically and refuses to overwrite an existing journal.
+                    os.link(temporary, path)
+                except FileExistsError:
+                    raise
+                except OSError as exc:
+                    raise RecordingManifestJournalError(
+                        "Could not atomically create the recording journal."
+                    ) from exc
+                _fsync_directory(directory)
+            finally:
+                try:
+                    temporary.unlink()
+                except FileNotFoundError:
+                    pass
+            _verify_windows_publication(path, payload)
             return path
-        finally:
-            try:
-                temporary.unlink()
-            except FileNotFoundError:
-                pass
 
     def update(
         self,
@@ -149,24 +154,25 @@ class RecordingManifestJournal:
 
         canonical_take_id = _canonical_take_id(take_id)
         payload = _serialized_payload(canonical_take_id, evidence, plan)
-        directory = self._journal_directory(create=True)
-        path = directory / f"{canonical_take_id}{JOURNAL_FILE_SUFFIX}"
-        _require_regular_file(path)
-        temporary = _write_private_temporary(directory, payload)
-        try:
+        with self._directory_guard(create=True) as directory:
+            path = directory / f"{canonical_take_id}{JOURNAL_FILE_SUFFIX}"
+            _require_regular_file(path)
+            temporary = _write_private_temporary(directory, payload)
             try:
-                os.replace(temporary, path)
-            except OSError as exc:
-                raise RecordingManifestJournalError(
-                    "Could not atomically update the recording journal."
-                ) from exc
-            _fsync_directory(directory)
+                try:
+                    os.replace(temporary, path)
+                except OSError as exc:
+                    raise RecordingManifestJournalError(
+                        "Could not atomically update the recording journal."
+                    ) from exc
+                _fsync_directory(directory)
+            finally:
+                try:
+                    temporary.unlink()
+                except FileNotFoundError:
+                    pass
+            _verify_windows_publication(path, payload)
             return path
-        finally:
-            try:
-                temporary.unlink()
-            except FileNotFoundError:
-                pass
 
     def load(self, take_id: str) -> JournalLoadResult | None:
         """Load one checkpoint, failing closed if its on-disk form is unsafe.
@@ -177,12 +183,12 @@ class RecordingManifestJournal:
         """
 
         canonical_take_id = _canonical_take_id(take_id)
-        directory = self._journal_directory(create=False)
-        if directory is None:
-            return None
-        path = directory / f"{canonical_take_id}{JOURNAL_FILE_SUFFIX}"
         try:
-            payload = _read_private_file(path)
+            with self._directory_guard(create=False) as directory:
+                if directory is None:
+                    return None
+                path = directory / f"{canonical_take_id}{JOURNAL_FILE_SUFFIX}"
+                payload = _read_private_file(path)
         except FileNotFoundError:
             return None
         except (OSError, UnicodeDecodeError, ValueError, RecordingManifestJournalError):
@@ -208,22 +214,22 @@ class RecordingManifestJournal:
         """Atomically remove a journal entry; return false when it is absent."""
 
         canonical_take_id = _canonical_take_id(take_id)
-        directory = self._journal_directory(create=False)
-        if directory is None:
-            return False
-        path = directory / f"{canonical_take_id}{JOURNAL_FILE_SUFFIX}"
-        try:
-            _require_regular_file(path)
-        except FileNotFoundError:
-            return False
-        try:
-            path.unlink()
-            _fsync_directory(directory)
-        except OSError as exc:
-            raise RecordingManifestJournalError(
-                "Could not remove the recording journal."
-            ) from exc
-        return True
+        with self._directory_guard(create=False) as directory:
+            if directory is None:
+                return False
+            path = directory / f"{canonical_take_id}{JOURNAL_FILE_SUFFIX}"
+            try:
+                _require_regular_file(path)
+            except FileNotFoundError:
+                return False
+            try:
+                path.unlink()
+                _fsync_directory(directory)
+            except OSError as exc:
+                raise RecordingManifestJournalError(
+                    "Could not remove the recording journal."
+                ) from exc
+            return True
 
     def list_pending(self) -> PendingJournalScan:
         """Scan pending journals without recursing or trusting directory names.
@@ -235,32 +241,32 @@ class RecordingManifestJournal:
         copied into a manifest.
         """
 
-        directory = self._journal_directory(create=False)
-        if directory is None:
-            return PendingJournalScan()
-        try:
-            paths = tuple(sorted(directory.iterdir(), key=lambda item: item.name))
-        except OSError as exc:
-            raise RecordingManifestJournalError(
-                "Could not scan the recording journal directory."
-            ) from exc
+        with self._directory_guard(create=False) as directory:
+            if directory is None:
+                return PendingJournalScan()
+            try:
+                paths = tuple(sorted(directory.iterdir(), key=lambda item: item.name))
+            except OSError as exc:
+                raise RecordingManifestJournalError(
+                    "Could not scan the recording journal directory."
+                ) from exc
 
-        journals: list[JournalLoadResult] = []
-        untrusted_entries: list[JournalDirectoryIssue] = []
-        for path in paths:
-            take_id = _take_id_from_journal_name(path.name)
-            if not take_id:
-                untrusted_entries.append(
-                    JournalDirectoryIssue("journal_untrusted_name")
-                )
-                continue
-            result = self.load(take_id)
-            if result is None:
-                # A concurrent delete is not recovery evidence.  It is safe
-                # to omit because the caller cannot recover a missing file.
-                continue
-            journals.append(result)
-        return PendingJournalScan(tuple(journals), tuple(untrusted_entries))
+            journals: list[JournalLoadResult] = []
+            untrusted_entries: list[JournalDirectoryIssue] = []
+            for path in paths:
+                take_id = _take_id_from_journal_name(path.name)
+                if not take_id:
+                    untrusted_entries.append(
+                        JournalDirectoryIssue("journal_untrusted_name")
+                    )
+                    continue
+                result = self.load(take_id)
+                if result is None:
+                    # A concurrent delete is not recovery evidence.  It is safe
+                    # to omit because the caller cannot recover a missing file.
+                    continue
+                journals.append(result)
+            return PendingJournalScan(tuple(journals), tuple(untrusted_entries))
 
     def pending_take_ids(self) -> tuple[str, ...]:
         """Return only trusted canonical UUID checkpoints ready for recovery."""
@@ -268,6 +274,23 @@ class RecordingManifestJournal:
         return tuple(
             result.take_id for result in self.list_pending().journals if result.trusted
         )
+
+    @contextmanager
+    def _directory_guard(self, *, create: bool):
+        if os.name != "nt":
+            yield self._journal_directory(create=create)
+            return
+        from core.windows_private_journal import private_directory
+        if create:
+            self.takes_root.mkdir(parents=True, exist_ok=True)
+        else:
+            try:
+                self._directory.lstat()
+            except FileNotFoundError:
+                yield None
+                return
+        with private_directory(self._directory, create=create) as directory:
+            yield directory
 
     def _journal_directory(self, *, create: bool) -> Path | None:
         directory = self._directory
@@ -379,16 +402,27 @@ def _serialized_payload(
 
 
 def _write_private_temporary(directory: Path, payload: bytes) -> Path:
-    fd, temporary_name = tempfile.mkstemp(
-        prefix=".recording-evidence-", suffix=".tmp", dir=str(directory)
-    )
-    temporary = Path(temporary_name)
+    if os.name == "nt":
+        from core.windows_private_journal import private_file_descriptor
+        temporary = directory / f".recording-evidence-{uuid.uuid4().hex}.tmp"
+        fd = private_file_descriptor(temporary, create=True)
+    else:
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=".recording-evidence-", suffix=".tmp", dir=str(directory)
+        )
+        temporary = Path(temporary_name)
     try:
-        with os.fdopen(fd, "wb") as handle:
+        try:
+            handle = os.fdopen(fd, "wb")
+        except BaseException:
+            os.close(fd)
+            raise
+        with handle:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temporary, JOURNAL_FILE_MODE)
+        if os.name != "nt":
+            os.chmod(temporary, JOURNAL_FILE_MODE)
     except Exception:
         try:
             temporary.unlink()
@@ -399,15 +433,19 @@ def _write_private_temporary(directory: Path, payload: bytes) -> Path:
 
 
 def _read_private_file(path: Path) -> str:
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags)
+    if os.name == "nt":
+        from core.windows_private_journal import private_file_descriptor
+        descriptor = private_file_descriptor(path)
+    else:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
     try:
         file_stat = os.fstat(descriptor)
         if not stat.S_ISREG(file_stat.st_mode):
             raise RecordingManifestJournalError(
                 "Recording journal is not a regular file."
             )
-        if file_stat.st_mode & 0o777 != JOURNAL_FILE_MODE:
+        if os.name != "nt" and file_stat.st_mode & 0o777 != JOURNAL_FILE_MODE:
             raise RecordingManifestJournalError(
                 "Recording journal permissions are not private."
             )
@@ -429,22 +467,36 @@ def _read_private_file(path: Path) -> str:
         os.close(descriptor)
 
 
+def _verify_windows_publication(path: Path, payload: bytes) -> None:
+    if os.name != "nt":
+        return
+    # The creation stage alias must already be removed: a trusted Windows
+    # journal has exactly one link. Retain uncertain publication for recovery.
+    try:
+        if _read_private_file(path).encode("utf-8") != payload:
+            raise ValueError("Published evidence changed.")
+    except (OSError, ValueError, RecordingManifestJournalError) as exc:
+        raise RecordingManifestJournalError(
+            "Could not verify the published recording journal."
+        ) from exc
+
+
 def _require_regular_file(path: Path) -> None:
+    if os.name == "nt":
+        from core.windows_private_journal import assert_private_file
+        assert_private_file(path)
     file_stat = path.lstat()
     if not stat.S_ISREG(file_stat.st_mode):
         raise RecordingManifestJournalError("Recording journal is not a regular file.")
 
 
 def _fsync_directory(directory: Path) -> None:
-    descriptor = os.open(directory, os.O_RDONLY)
     try:
-        os.fsync(descriptor)
+        _fsync_parent_directory(directory)
     except OSError as exc:
         raise RecordingManifestJournalError(
             "Could not make the recording journal durable."
         ) from exc
-    finally:
-        os.close(descriptor)
 
 
 def _parse_payload(

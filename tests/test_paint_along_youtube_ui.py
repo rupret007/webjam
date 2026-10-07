@@ -45,11 +45,20 @@ def test_guest_opens_the_shared_online_lesson_without_asking_for_a_local_copy(qa
     panel.close()
 
 
-def test_host_online_failure_names_the_online_retry_control(qapp):
+def test_host_online_failure_names_the_explicit_shared_lesson_handoff(qapp):
     panel = ReferenceVideoDialog(hosting=True)
+    panel.show()
+    qapp.processEvents()
     panel.set_host_snapshot(ReferenceVideoSnapshot(
         state=ReferenceVideoState.FAILED, source_kind="youtube", error="That lesson is unavailable.",
     ))
-    assert panel._youtube_button.text() in panel._status.text()
-    assert not panel._youtube_button.isHidden()
+    assert "That lesson is unavailable." in panel._status.text()
+    assert panel._watch_lesson_button.text() in panel._status.text()
+    assert not panel._watch_lesson_button.isHidden()
+    assert panel._watch_lesson_button.isEnabled()
+    handoffs = []
+    panel.watch_lesson_requested.connect(lambda: handoffs.append(True))
+    assert handoffs == []
+    panel._watch_lesson_button.click()
+    assert handoffs == [True]
     panel.close()

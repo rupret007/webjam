@@ -47,9 +47,26 @@ showing someone the door? See the [two-minute demo script](DEMO.md).
 v0.29.0 adds **File → Session library…** before a room and
 **More → Session library…** inside it. Save local notes, reuse a Music
 **Rehearsal plan**, or keep an **Art project** with references and next steps.
-**Continue this work** restores its context without starting audio or a room.
+**Continue** restores its context without starting audio or a room.
 Music moments are plain notes unless a recording position is confirmed.
 See [the saved-work walkthrough](USER_GUIDE.md#save-a-session-and-continue-later).
+
+Draft workspace-backup builds provide **Back up…** and
+**Import backup…** in Session library. Choose metadata only, or select completed
+takes and local Art files, inspect the preview, and create a new media package
+with its checksum receipt. Background copying and import support cancellation
+while retaining your current draft. Select **Verify take** or **Verify reference**
+to check stored media, then deliberately open it or locate its original content.
+Restored Studio takes retain their declared alternate sources through selection
+and A/B listening. These controls are part of the
+[portability milestone](docs/WORKSPACE_BACKUP_PLAN.md). Local tests exercise two
+controlled recorder completions, Art, backup/import and restart in separate processes;
+the frozen-build hook adds a synthetic portability journey. See [draft #172](https://github.com/rupret007/webjam/pull/172)
+for exact-commit hosted and native package evidence. Use the
+[ten-minute portability pilot](docs/WORKSPACE_PORTABILITY_PILOT.md) with an identified test build.
+These changes are not included in
+the published v0.29.0 packages. See
+[the backup walkthrough](USER_GUIDE.md#back-up-and-import-a-workspace-unreleased).
 
 ## Unreleased: move between workflows
 
@@ -95,24 +112,48 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    **Join**. **Make together** keeps people working locally and lets the host
    open one shared canvas from inside the room. Music uses **Host** / **Join**; Podcast & Voice
    and Review & Rehearsal retain their profile-specific Host/Join labels.
-3. For Music, configure interface, channels, headphones, and buffer in Jamulus. Confirm
+3. For Music ensemble playing, configure interface, channels, headphones, and buffer in Jamulus. Confirm
    the authenticated audio connection, then use the profile-specific
    **Band Check**, **Sound Check**, or **Session Check** if needed. In Art,
    use your own tools and work space; no instrument or audio-engine setup is required.
 4. Open **Conversation** only when conversation or video is wanted; use
    **Join / Open Meeting** for an explicit meeting-link handoff.
-5. In an Art **Paint along** room, the video becomes the large WebJam
-   workspace once the room exists. The host chooses **Choose process video…**;
-   each guest chooses **Open my copy…** for the same local file. **Back to
-   room** returns to the conductor without ending the room or the video.
-   For embedded silent YouTube playback, the host chooses **YouTube link…**;
-   guests explicitly choose **Open lesson**. For a lesson with sound through
-   a meeting, **Watch a shared lesson** reaches Conversation instead.
+   If the host adds or changes a meeting after copying the room invite,
+   use **Copy Link** to send it separately. Guests use **Add Link** or
+   **Change Link** in Conversation without leaving the room. Meeting links
+   open in a browser/meeting app; they are not WebJam room invitations.
+5. In an Art **Paint along** room, **Watch a shared lesson** is the first
+   action for a lesson with sound. It reaches Conversation. The host uses
+   **Choose YouTube…**, then **Open in browser** and the meeting's Share
+   control with computer sound. An already selected lesson carries its link
+   here, including when embedding fails. **Remember lesson** saves that link
+   in the Art project. In Session library, **Use saved lesson** returns to
+   setup, carrying a selected bookmark's whole-second position. **Conversation**
+   returns to setup after Notes; **Sound and sharing tips** expands extra help.
+   After restarting, **Continue** restores the workspace locally. In Art,
+   choose **Start Session** next; if Join opens, paste the host's current
+   invitation. Once the room is open, reopen Session library to use the lesson.
+   The optional silent reference remains below: **Choose process video…** and
+   **Open my copy…** use each person's local file; **YouTube link…** and
+   **Open lesson** use embedded silent YouTube. **Back to room** leaves the room open.
    In a supported LAN room, guests can **Ask for a pause**
    or choose **Ready to continue**; the host acknowledges the request and
    operates the browser manually. Acknowledgement does not mean the video paused.
    Requests expire after 30 seconds; spoken requests remain available.
-6. In a profile that supports Shared Track, choose **Add Shared Track** or
+   After changing the meeting link, **Restart pause requests** creates fresh
+   controls in supported LAN Art rooms. Retired requests stay retired.
+6. In Music, **Play along** offers **Set up video practice** (one shared
+   YouTube video through the meeting; listen and take turns) or **Open Shared
+   Track** (live ensemble through Jamulus, meeting audio disconnected). You
+   can use video practice without finishing Jamulus audio setup. Guests can
+   open the host's copied meeting link directly, even without a WebJam room.
+   This does not establish a Jamulus ensemble connection. Guests
+   use **Open Jamulus mixer** for the ensemble path. Webex video can lag the
+   musical audio. WebJam mix mute changes your listening, not your outgoing
+   instrument. **Remember lesson** saves a practice link with the current
+   rehearsal song; name a song if the plan is empty. **Use saved lesson** in
+   Rehearsal plan returns to setup without opening media.
+   In a profile that supports Shared Track, choose **Add Shared Track** or
    drop supported reference audio on the live surface; loading does not start
    playback, and Play remains fail-closed until the isolated Jamulus route is
    proven.
@@ -129,6 +170,11 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    projects. Review & Rehearsal correctly
    keeps standalone projects unavailable in Preview; Art intentionally has no
    recording or standalone-project path.
+
+For a first two-person try, use the [short test guide](docs/FOLLOW_ALONG_FIRST_TEST.md)
+and [pilot record](docs/FOLLOW_ALONG_PILOT_RECORD.md). The default Art room
+invitation uses the same Wi-Fi/local network. Physical sound, sharing,
+cameras, reconnects and ensemble latency need separate observations.
 
 ## Creator profiles
 
@@ -929,4 +975,5 @@ promote a package or claim audibility.
 - [Webex companion guidance](WEBEX_AUDIO_MODES.md)
 - [Jamulus component catalog release runbook](docs/JAMULUS_COMPONENT_RELEASE_RUNBOOK.md)
 - [Test procedure](TEST_PROCEDURE.md)
+- [Windows portability diagnostic controls and bounded matrix](docs/WINDOWS_PORTABILITY_DIAGNOSTICS.md)
 - [Architecture](ARCHITECTURE.md)

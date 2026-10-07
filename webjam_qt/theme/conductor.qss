@@ -1925,6 +1925,31 @@ QPushButton#StudioRecordButton {
     padding: 0 10px;
 }
 
+/* Music keeps Play along beside its existing tools. Preserve full action and
+ * recording-status text at the compact floor; only horizontal padding changes. */
+#SessionControlBar[followAlongCompact="true"] QPushButton#GhostButton,
+#SessionControlBar[followAlongCompact="true"] QToolButton#GhostButton {
+    padding: 0 6px;
+}
+
+#SessionControlBar[followAlongCompact="true"] QPushButton#StudioRecordButton {
+    padding: ${SPACE_SM}px 6px;
+}
+
+#SessionControlBar[followAlongCompact="true"] QPushButton#AudioButton[destructive="true"] {
+    padding: 0 8px;
+}
+
+#SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QPushButton#GhostButton,
+#SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QToolButton#GhostButton,
+#SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QPushButton#StudioRecordButton {
+    padding: 0 4px;
+}
+
+#SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QPushButton#AudioButton[destructive="true"] {
+    padding: 0 6px;
+}
+
 QPushButton#StudioRecordButton:hover {
     background-color: ${COLOR_ACCENT_HOVER};
 }

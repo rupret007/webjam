@@ -14,16 +14,22 @@ from PySide6.QtWidgets import (
 )
 
 from core.art_workspace import make_reference, normalize_art_workspace
+from core.youtube_lesson import YouTubeLesson, parse_youtube_lesson_url
 
 
 class ArtWorkspacePanel(QWidget):
     changed = Signal()
+    lesson_requested = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._loading = False
         self._action_rows = []
         self._value = normalize_art_workspace({})
+        self._defer_reference_checks = False
+        self._reference_checks = {}
+        self._reference_evidence = {}
+        self.reference_action_handler = None
         layout = QVBoxLayout(self)
         hint = QLabel("Keep making with your own tools. References and lesson positions stay local.")
         hint.setWordWrap(True)
@@ -55,12 +61,23 @@ class ArtWorkspacePanel(QWidget):
         layout.addLayout(row)
         self._action_rows.append(row)
         row = QHBoxLayout()
+        self.verify_button = QPushButton("Verify reference")
+        self.verify_button.clicked.connect(self._verify)
+        self.verify_button.setEnabled(False)
+        row.addWidget(self.verify_button)
         for label, callback in (("Open reference", self._open), ("Remove reference", self._remove)):
             button = QPushButton(label)
             button.clicked.connect(callback)
             row.addWidget(button)
         layout.addLayout(row)
         self._action_rows.append(row)
+        self.use_lesson_button = QPushButton("Use saved lesson")
+        self.use_lesson_button.setAccessibleDescription(
+            "Set up a shared lesson from this YouTube reference. The browser opens only when you choose."
+        )
+        self.use_lesson_button.setEnabled(False)
+        self.use_lesson_button.clicked.connect(self._use_lesson)
+        layout.addWidget(self.use_lesson_button)
         self.bookmarks = QListWidget()
         self.bookmarks.setAccessibleName("Saved lesson bookmarks")
         self.bookmarks.setMinimumHeight(80)
@@ -132,11 +149,16 @@ class ArtWorkspacePanel(QWidget):
             self._sync_action_rows()
         return super().eventFilter(watched, event)
 
-    def load_payload(self, value: dict) -> None:
+    def load_payload(self, value: dict, *, defer_reference_checks: bool = False) -> None:
         normalized = normalize_art_workspace(value)
         self._loading = True
         try:
             self._value = normalized
+            # Imported locators may be network paths. Even a passive stat can
+            # connect to a remote volume, so provenance defers all such reads.
+            self._defer_reference_checks = defer_reference_checks
+            self._reference_checks = {}
+            self._reference_evidence = {}
             self.brief.setPlainText(normalized["brief"])
             self.progress.setPlainText(normalized["progress"])
             self.next_steps.setPlainText(normalized["next_steps"])
@@ -161,8 +183,18 @@ class ArtWorkspacePanel(QWidget):
         self.bookmarks.blockSignals(True)
         self.references.clear()
         for ref in self._value["references"]:
-            missing = ref["kind"] == "file" and not Path(ref["locator"]).is_file()
-            item = QListWidgetItem(ref["title"] + (" — missing; Relink…" if missing else ""))
+            evidence = self._reference_evidence.get((ref["id"], ref["locator"]))
+            if evidence is not None:
+                suffix = " — " + evidence
+            elif self._defer_reference_checks:
+                suffix = " — stored link — not checked"
+                checked = self._reference_checks.get((ref["id"], ref["locator"]))
+                if checked is not None:
+                    suffix = " — file available; content not verified" if checked else " — missing; Relink…"
+            else:
+                missing = ref["kind"] == "file" and not Path(ref["locator"]).is_file()
+                suffix = " — missing; Relink…" if missing else ""
+            item = QListWidgetItem(ref["title"] + suffix)
             item.setData(Qt.ItemDataRole.UserRole, ref["id"])
             self.references.addItem(item)
             if ref["id"] == reference_id:
@@ -210,7 +242,20 @@ class ArtWorkspacePanel(QWidget):
 
     def _reference_status(self, _index: int) -> None:
         ref = self._selected_reference()
-        if ref and ref["kind"] == "file" and not Path(ref["locator"]).is_file():
+        self.use_lesson_button.setEnabled(self.selected_lesson() is not None)
+        self.verify_button.setEnabled(bool(ref and ref["kind"] == "file" and self.reference_action_handler is not None))
+        evidence = self._reference_evidence.get((ref["id"], ref["locator"])) if ref else None
+        if evidence is not None:
+            self.status.setText(evidence + ". Verify again after changing the file.")
+        elif ref and self._defer_reference_checks:
+            checked = self._reference_checks.get((ref["id"], ref["locator"]))
+            if checked is False:
+                self.status.setText("This reference moved or is unavailable. Choose Relink… to locate it.")
+            elif checked is True:
+                self.status.setText("File was available when checked; its content is not verified against the original.")
+            else:
+                self.status.setText("Stored link — not checked. Choose Open reference or Relink… to access it.")
+        elif ref and ref["kind"] == "file" and not Path(ref["locator"]).is_file():
             self.status.setText("This reference moved or is unavailable. Choose Relink… to locate it.")
         else:
             self.status.setText("Open reference launches its usual app only when you choose it.")
@@ -220,9 +265,19 @@ class ArtWorkspacePanel(QWidget):
         if not ref or ref["kind"] != "file":
             self.status.setText("Select a local file reference to relink.")
             return
+        if self.reference_action_handler is not None and self.reference_action_handler("relink", ref):
+            return
         path, _ = QFileDialog.getOpenFileName(self, "Locate this project reference")
         if path:
+            if self._defer_reference_checks:
+                try:
+                    if not Path(path).is_file():
+                        raise ValueError("Choose an available local file.")
+                except (OSError, ValueError) as error:
+                    self.status.setText(f"Reference was not relinked: {error}")
+                    return
             ref["locator"] = path
+            self._reference_checks[(ref["id"], path)] = True
             self._render_lists()
             self._changed()
 
@@ -230,8 +285,17 @@ class ArtWorkspacePanel(QWidget):
         ref = self._selected_reference()
         if not ref:
             return
+        if self.reference_action_handler is not None and self.reference_action_handler("open", ref):
+            return
         if ref["kind"] == "file":
-            if not Path(ref["locator"]).is_file():
+            try:
+                available = Path(ref["locator"]).is_file()
+            except (OSError, ValueError):
+                available = False
+            self._reference_checks[(ref["id"], ref["locator"])] = available
+            if self._defer_reference_checks:
+                self._render_lists()
+            if not available:
                 self._reference_status(self.references.currentRow())
                 return
             url = QUrl.fromLocalFile(ref["locator"])
@@ -239,6 +303,33 @@ class ArtWorkspacePanel(QWidget):
             url = QUrl(ref["locator"])
         if not QDesktopServices.openUrl(url):
             self.status.setText("The reference could not be opened. Check its file or link.")
+
+    def _verify(self):
+        ref = self._selected_reference()
+        if ref is not None and self.reference_action_handler is not None:
+            self.reference_action_handler("verify", ref)
+
+    def set_reference_evidence(self, reference_id, locator, message):
+        if any(ref["id"] == reference_id and ref["locator"] == locator for ref in self._value["references"]):
+            self._reference_evidence[(reference_id, locator)] = message
+            self._render_lists()
+
+    def replace_reference_locator(self, reference_id, old_locator, new_locator):
+        ref = next((r for r in self._value["references"] if r["id"] == reference_id and r["locator"] == old_locator), None)
+        if ref is None:
+            raise ValueError("Reference changed before relinking.")
+        ref["locator"] = new_locator
+        self._render_lists()
+        self._changed()
+
+    def open_verified_reference(self, reference_id, expected_locator, verified_locator):
+        ref = self._selected_reference()
+        if ref is None or ref["id"] != reference_id or ref["locator"] != expected_locator:
+            return False
+        opened = QDesktopServices.openUrl(QUrl.fromLocalFile(verified_locator))
+        if not opened:
+            self.status.setText("The checked reference could not be opened by its usual app.")
+        return opened
 
     def _remove(self) -> None:
         ref = self._selected_reference()
@@ -271,6 +362,26 @@ class ArtWorkspacePanel(QWidget):
             self._value["bookmarks"].pop(index)
             self._render_lists()
             self._changed()
+
+    def selected_lesson(self):
+        ref = self._selected_reference()
+        if ref is None or ref["kind"] != "url":
+            return None
+        try:
+            lesson = parse_youtube_lesson_url(ref["locator"])
+        except ValueError:
+            return None
+        index = self.bookmarks.currentRow()
+        if 0 <= index < len(self._value["bookmarks"]):
+            mark = self._value["bookmarks"][index]
+            if mark["reference_id"] == ref["id"]:
+                lesson = YouTubeLesson(lesson.video_id, int(mark["seconds"]))
+        return ref["id"], lesson.playback_url
+
+    def _use_lesson(self):
+        selected = self.selected_lesson()
+        if selected is not None and self.use_lesson_button.isEnabled() and self.use_lesson_button.isVisible():
+            self.lesson_requested.emit(*selected)
 
     def _bookmark_selected(self, index: int) -> None:
         if not 0 <= index < len(self._value["bookmarks"]):

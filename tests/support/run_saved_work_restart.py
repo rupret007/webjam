@@ -120,7 +120,7 @@ def _select_library_from_launch(launch, workspace_id):
     if errors:
         raise errors[0]
     _require(launch.selected_role == "library" and launch.selected_workspace_id == workspace_id,
-             "Continue this work did not select the saved library route")
+             "Continue did not select the saved library route")
 
 
 def _reopen(root):

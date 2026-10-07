@@ -89,6 +89,40 @@ class TestSessionLibraryCoordinator(TestCase):
             self.coordinator.finish_session()
         return self.coordinator._pending[self.coordinator.current.id]
 
+    def test_remember_lesson_preserves_art_draft_and_saves_canonical_position_once(self):
+        self.owner._apply_creator_profile_key("art")
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        editor.show()
+        editor.art.brief.setPlainText("Keep these colors")
+        editor.notes.setPlainText("Do the sky first")
+        link = "https://youtu.be/M7lc1UVf-VE?t=90"
+        self.assertTrue(self.coordinator.remember_art_lesson(link))
+        self.assertTrue(self.coordinator.remember_art_lesson(link))
+        saved = self.library.load(self.coordinator.current.id)
+        self.assertEqual(saved.notes, "Do the sky first")
+        self.assertEqual(saved.art["brief"], "Keep these colors")
+        self.assertEqual(len(saved.art["references"]), 1)
+        self.assertEqual(saved.art["references"][0]["locator"],
+                         "https://www.youtube.com/watch?v=M7lc1UVf-VE&t=90s")
+
+    def test_remember_lesson_cannot_replace_another_unsavable_art_draft(self):
+        self.owner._apply_creator_profile_key("art")
+        self.assertTrue(self.coordinator.ensure_current())
+        current_id = self.coordinator.current.id
+        other = self.library.create("art", "Another painting")
+        editor = self._editor()
+        editor.show()
+        editor.select_id(other.id)
+        editor.art.brief.setPlainText("Unfinished work in another painting")
+        with patch.object(self.library, "save", side_effect=OSError("write unavailable")):
+            self.assertFalse(self.coordinator.remember_art_lesson("https://youtu.be/M7lc1UVf-VE"))
+        self.assertEqual(editor.record.id, other.id)
+        self.assertEqual(editor.art.brief.toPlainText(), "Unfinished work in another painting")
+        self.assertTrue(editor._dirty)
+        self.assertEqual(self.coordinator.current.id, current_id)
+        self.assertEqual(self.library.load(current_id).art.get("references", []), [])
+
     def test_editor_save_merges_late_pending_take_and_recap_before_publication(self):
         self.coordinator.start_session()
         self.coordinator.recording_started("late-take", "recording-session")
@@ -384,3 +418,84 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertTrue(self.coordinator.flush())
         self.assertEqual(self.library.load(dialog.record.id).notes, "just typed")
         dialog.close()
+
+    def test_background_flush_retains_live_notes_conflict_and_editor_disk_token(self):
+        self.window.session_canvas.set_notes("Original Notes")
+        self.coordinator.ensure_current()
+        editor = self._editor()
+        editor.notes.setPlainText("Retained Library draft")
+        editor.timer.stop()
+        draft, base = editor._edited_record(), editor._base_record
+        path = self.library.root / f"{base.id}.json"
+        before = path.read_bytes()
+        self.window.session_canvas.set_notes("Newer live Notes")
+        self.coordinator.timer.timeout.emit()
+        self.assertEqual(self.coordinator._pending[base.id].notes, "Newer live Notes")
+        self.assertEqual(editor._edited_record(), draft)
+        self.assertEqual(editor._base_record._store_token, base._store_token)
+        self.assertTrue(editor._dirty)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertFalse(self.coordinator.flush())
+        self.assertTrue(editor._dirty)
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_late_recording_completion_waits_for_retained_editor_save(self):
+        self.coordinator.start_session()
+        self.coordinator.recording_started("late-take", "recording-session")
+        editor = self._editor()
+        editor.notes.setPlainText("Retained Library draft")
+        editor.timer.stop()
+        draft, base = editor._edited_record(), editor._base_record
+        path = self.library.root / f"{base.id}.json"
+        before = path.read_bytes()
+        take = SimpleNamespace(take_id="late-take", session_id="recording-session",
+                               path=self.root / "take", display_name="Late completed take")
+        with patch("core.take_review.take_source_identity", return_value="a" * 64):
+            self.coordinator.recording_completed(take, validated=True)
+        self.assertEqual(editor._edited_record(), draft)
+        self.assertEqual(editor._base_record._store_token, base._store_token)
+        self.assertTrue(editor._dirty)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(self.coordinator.current.id, base.id)
+        pending = self.coordinator._pending[base.id]
+        self.assertEqual(pending.take_links[0]["status"], "complete")
+        self.assertTrue(editor.save_current())
+        saved = self.library.load(base.id)
+        self.assertEqual(saved.notes, draft.notes)
+        self.assertEqual(saved.take_links[0]["status"], "complete")
+        self.assertNotIn(base.id, self.coordinator._pending)
+
+    def test_import_preview_keeps_runtime_owner_and_conflicting_editor_draft(self):
+        from copy import deepcopy
+        from PySide6.QtWidgets import QDialog, QFileDialog
+        from core.workspace_backup import export_workspace_backup
+        from webjam_qt.windows.session_library import WorkspaceBackupPreviewDialog
+        self.coordinator.start_session()
+        self.coordinator.recording_started("current-take", "current-recording-session")
+        current = self.coordinator.current
+        source = self.library.create("music", "Import this separate workspace")
+        backup = self.root / "backup.json"
+        export_workspace_backup(source, backup)
+        editor = self._editor()
+        editor.notes.setPlainText("Unsaved editor conflict")
+        self.library.save(replace(current, notes="External changes"))
+        owners = deepcopy(self.coordinator._recording_owners)
+        live_ids = set(self.coordinator._live_take_ids)
+        def preview(_dialog):
+            self.assertFalse(self.coordinator.flush())
+            self.assertEqual(editor.notes.toPlainText(), "Unsaved editor conflict")
+            return QDialog.DialogCode.Accepted
+        with patch.object(QFileDialog, "getOpenFileName", return_value=(str(backup), "")), \
+                patch.object(WorkspaceBackupPreviewDialog, "exec", preview):
+            editor.import_backup_button.click()
+        self.assertEqual(self.coordinator.current, current)
+        self.assertEqual(self.coordinator._recording_owners, owners)
+        self.assertEqual(self.coordinator._live_take_ids, live_ids)
+        self.assertEqual(editor.record, current)
+        self.assertTrue(editor._dirty)
+        self.assertEqual(editor.notes.toPlainText(), "Unsaved editor conflict")
+        self.assertIsNone(editor.selected_record)
+        self.assertEqual(len(self.library.list()), 3)
+        self.owner.audio.start.assert_not_called()
+        self.owner.recording.start.assert_not_called()
+        self.owner._on_rail_view_changed.assert_not_called()

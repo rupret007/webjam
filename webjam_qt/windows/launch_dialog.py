@@ -1129,6 +1129,33 @@ class LaunchDialog(QDialog):
         self.selected_library_open = None
 
         def open_in_studio(kind: str, reference: dict) -> None:
+            if reference.get("_verification") is not None:
+                from webjam_qt.controllers.session_library import _same_snapshot
+                snapshot = reference.get("_workspace_snapshot")
+                generation = dialog.workspace_flow.generation
+                # The worker already reconciled and saved the exact snapshot.
+                # Retire its gate before accepting the modal launch Library.
+                finish = QTimer(dialog)
+                finish.setSingleShot(True)
+
+                def accept_verified():
+                    finish.deleteLater()
+                    if (not dialog.isVisible() or dialog.media_operation_pending or dialog._dirty
+                            or dialog.workspace_flow.job.cancellation_requested
+                            or dialog.workspace_flow.generation != generation
+                            or not _same_snapshot(dialog.record, snapshot)
+                            or dialog._edited_record() != snapshot):
+                        return
+                    self.selected_library_open = (kind, {
+                        key: value for key, value in reference.items()
+                        if key not in {"_origin_dialog", "_studio_request"}
+                    })
+                    dialog.selected_record = dialog.record
+                    dialog.accept()
+
+                finish.timeout.connect(accept_verified)
+                finish.start(0)
+                return
             if dialog.record is None or not dialog.save_current():
                 return
             self.selected_library_open = (kind, dict(reference))

@@ -34,6 +34,9 @@ from core.meeting_companion import (
 )
 from core.meeting_link import is_allowed_meeting_link
 from core.lesson_request import LessonRequestIntent, LessonRequestNotice
+from core.follow_along import lesson_setup_steps, lesson_sound_guidance
+from webjam_qt.widgets.lesson_handoff import LessonHandoffPanel
+from webjam_qt.widgets.scrollable_content import ScrollableContent
 from webjam_qt.theme.tokens import Space
 
 LOGGER = logging.getLogger("webjam.qt.webex_embed")
@@ -129,7 +132,7 @@ class WebexEmbed(QFrame):
         self.setObjectName("WebexEmbed")
         self.setMinimumHeight(112)
         self.setMaximumHeight(152)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self._audio_mode = "talkback"
         self._creator_profile_key = "music"
         self._shared_lesson_hosting: bool | None = None
@@ -278,7 +281,21 @@ class WebexEmbed(QFrame):
         text_column.setSpacing(0)
         text_column.addLayout(header)
         text_column.addWidget(self._mode_label)
+        self._sound_tips_button = QPushButton("Sound and sharing tips")
+        self._sound_tips_button.setObjectName("GhostButton")
+        self._sound_tips_button.setCheckable(True)
+        self._sound_tips_button.setAutoDefault(False)
+        self._sound_tips_button.setAccessibleName("Sound and sharing tips")
+        self._sound_tips = QLabel()
+        self._sound_tips.setTextFormat(Qt.TextFormat.PlainText)
+        self._sound_tips.setWordWrap(True)
+        self._sound_tips.setAccessibleName("Sound and sharing guidance")
+        self._sound_tips_button.toggled.connect(self._toggle_sound_tips)
+        text_column.addWidget(self._sound_tips_button)
+        text_column.addWidget(self._sound_tips)
         text_column.addWidget(self._status_label)
+        self.lesson_handoff = LessonHandoffPanel(self)
+        text_column.addWidget(self.lesson_handoff)
         self._build_lesson_request_panel(text_column)
 
         actions = self._actions_layout = QGridLayout()
@@ -297,7 +314,9 @@ class WebexEmbed(QFrame):
         for button, row, column in self._action_positions:
             actions.addWidget(button, row, column)
 
-        layout = self._content_layout = QHBoxLayout(self)
+        self._scroll = ScrollableContent(self)
+        content = QWidget()
+        layout = self._content_layout = QHBoxLayout(content)
         layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
         layout.setSpacing(Space.LG)
         layout.addLayout(text_column, stretch=1)
@@ -305,6 +324,12 @@ class WebexEmbed(QFrame):
             actions,
         )
         actions.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        self._scroll.setWidget(content)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self._scroll)
+        self._scroll.viewport_resized.connect(self._sync_art_layout)
+        self._scroll.content_height_changed.connect(self._fit_card_height)
         self._render_audio_guidance()
         self._render_launch_status()
         self._render_link_accessibility()
@@ -462,7 +487,7 @@ class WebexEmbed(QFrame):
     def minimumSizeHint(self):
         hint = super().minimumSizeHint()
         layout = getattr(self, "_content_layout", None)
-        if layout is not None and self._creator_profile_key == "art":
+        if layout is not None and (self._creator_profile_key == "art" or self._shared_lesson_hosting is not None):
             # A wide layout must still permit its parent to reach the narrow
             # breakpoint. Otherwise its old horizontal minimum prevents the
             # resize event that would stack these same controls.
@@ -481,7 +506,18 @@ class WebexEmbed(QFrame):
                 max(text_width, action_width)
                 + margins.left() + margins.right() + 2 * self.frameWidth()
             )
+        hint.setHeight(112)
         return hint
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        hint.setHeight(self.maximumHeight())
+        return hint
+
+    def _fit_card_height(self, height):
+        expanded = self._creator_profile_key == "art" or self._shared_lesson_hosting is not None
+        self.setMaximumHeight(max(112, height + 2 * self.frameWidth()) if expanded else 152)
+        self.updateGeometry()
 
     def _action_column_widths(self) -> tuple[int, int]:
         """Measure the original grid independently of its current arrangement."""
@@ -519,9 +555,9 @@ class WebexEmbed(QFrame):
             return
         self._updating_art_layout = True
         try:
-            art = self._creator_profile_key == "art"
+            art = self._creator_profile_key == "art" or self._shared_lesson_hosting is not None
             margins = layout.contentsMargins()
-            available = self.width() - margins.left() - margins.right() - 2 * self.frameWidth()
+            available = self._scroll.viewport().width() - margins.left() - margins.right()
             column_widths = self._action_column_widths()
             two_column_width = sum(column_widths) + (
                 self._actions_layout.horizontalSpacing() if all(column_widths) else 0
@@ -554,19 +590,8 @@ class WebexEmbed(QFrame):
             ) | Qt.AlignmentFlag.AlignVCenter
             if self._app_status_label.alignment() != alignment:
                 self._app_status_label.setAlignment(alignment)
-            if art:
-                # QLayout accounts for the current wrapped labels, visible
-                # actions and stylesheet metrics. No timer or rebuilt widget
-                # can disturb the current meeting state or keyboard focus.
-                required = layout.totalHeightForWidth(self.width())
-                height = max(112, required + 2 * self.frameWidth())
-                if self.minimumHeight() != height or self.maximumHeight() != height:
-                    self.setFixedHeight(height)
-            else:
-                if self.minimumHeight() != 112:
-                    self.setMinimumHeight(112)
-                if self.maximumHeight() != 152:
-                    self.setMaximumHeight(152)
+            self._scroll.fit_content()
+            self._fit_card_height(self._scroll._content_height)
         finally:
             self._updating_art_layout = False
 
@@ -993,7 +1018,7 @@ class WebexEmbed(QFrame):
         self._bring_forward_btn.setEnabled(enabled)
         # Art uses conversation and work sharing directly in the meeting.
         # The Music-specific shortcut to its mute controls is not a room task.
-        show_mute = self._creator_profile_key != "art"
+        show_mute = self._creator_profile_key != "art" and self._shared_lesson_hosting is None
         self._mute_btn.setVisible(show_mute)
         self._mute_btn.setEnabled(enabled and show_mute)
         self._recheck_btn.setEnabled(not self._native_action_busy)
@@ -1037,9 +1062,11 @@ class WebexEmbed(QFrame):
             target.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def set_creator_profile(self, profile) -> None:
+        changed = self._creator_profile_key != profile.key
         self._creator_profile_key = profile.key
-        if profile.key != "art":
+        if changed:
             self._shared_lesson_hosting = None
+            self.lesson_handoff.set_context(hosting=None)
             self._clear_lesson_requests()
         self._sync_lesson_requests()
         self._render_audio_guidance()
@@ -1051,39 +1078,37 @@ class WebexEmbed(QFrame):
 
         if hosting is not None and not isinstance(hosting, bool):
             raise ValueError("Shared lesson context must be a room role or None.")
-        current = hosting if self._creator_profile_key == "art" else None
+        current = hosting if self._creator_profile_key in {"art", "music"} else None
         if current is None or current is not self._shared_lesson_hosting:
             self._clear_lesson_requests()
         self._shared_lesson_hosting = current
+        self.lesson_handoff.set_context(hosting=current, profile=self._creator_profile_key)
         self._sync_lesson_requests()
+        self._sync_native_actions()
         self._render_audio_guidance()
+        self._sync_art_layout()
+
+    def _toggle_sound_tips(self, checked):
+        self._sound_tips.setVisible(checked and self._shared_lesson_hosting is not None)
         self._sync_art_layout()
 
     def _render_audio_guidance(self) -> None:
         service = self._service_label
+        lesson = self._shared_lesson_hosting is not None
+        self._sound_tips_button.setVisible(lesson)
+        self._sound_tips.setVisible(lesson and self._sound_tips_button.isChecked())
+        if self._shared_lesson_hosting is not None:
+            self._title_label.setText("Paint along with sound" if self._creator_profile_key == "art" else "Video practice")
+            self._mode_label.setText(lesson_setup_steps(
+                profile=self._creator_profile_key, hosting=self._shared_lesson_hosting, service=service,
+                meeting_configured=self._meeting_configured,
+            ))
+            self._sound_tips.setText(lesson_sound_guidance(
+                profile=self._creator_profile_key, hosting=self._shared_lesson_hosting, service=service,
+            ))
+            return
         if self._creator_profile_key == "art":
             self._title_label.setText("Conversation")
-            if self._shared_lesson_hosting is not None:
-                meeting = service or "your meeting"
-                if self._shared_lesson_hosting:
-                    share = (
-                        "Webex app: Share your YouTube window with Include computer sound. "
-                        "Browser meeting: share the YouTube tab with tab audio. "
-                        if service == "Webex" else
-                        f"Share a YouTube browser window or tab with computer sound in {meeting}. "
-                    )
-                    self._mode_label.setText(
-                        share
-                        + "Keep faces visible there. Pause and resume in your browser when asked. "
-                        "YouTube player volume changes the shared lesson; your meeting's speaker volume and microphone mute are yours."
-                    )
-                else:
-                    self._mode_label.setText(
-                        f"Watch the host's shared YouTube lesson and faces in {meeting}. "
-                        "Ask the host to pause or resume when you need time; the host controls the browser. "
-                        "Use your meeting's speaker volume for what you hear and microphone mute for your voice."
-                    )
-                return
             self._mode_label.setText(
                 art_conversation_guidance(meeting_service=service)
             )

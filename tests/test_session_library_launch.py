@@ -1,6 +1,7 @@
 """Saved-work entry restores the selected workspace without authorizing a jam."""
 from __future__ import annotations
 
+from dataclasses import replace
 import os
 import sys
 from pathlib import Path
@@ -28,6 +29,8 @@ from webjam_qt.controllers import session_persistence as persistence_module
 from webjam_qt.controllers.recording_coordinator import RecordingCoordinator
 from webjam_qt.windows.launch_dialog import LaunchDialog
 from webjam_qt.windows.session_library import SessionLibraryDialog
+from tests.test_workspace_media_activation import portable_takes as portable_takes
+from tests.test_workspace_media_library_ui import _wait
 
 
 class _Signals(QObject):
@@ -318,6 +321,112 @@ def test_initial_library_open_action_restores_workspace_and_exact_take_without_c
 
 
 @pytest.mark.parametrize("kind", ["take", "bookmark"])
+@pytest.mark.parametrize("damage", [None, "manifest", "workspace"])
+def test_imported_launch_open_binds_verified_media_to_the_fresh_owner(
+    bootstrap, portable_takes, tmp_path, qapp, kind, damage,
+):
+    from core.workspace_backup import export_workspace_backup, import_workspace_backup, preview_workspace_backup
+    _library, imported, originals, _roots, _projects = portable_takes
+    bootstrap.settings.takes_directory = str(originals)
+    save_settings(bootstrap.settings)
+    metadata = tmp_path / "launch-metadata.json"
+    export_workspace_backup(imported, metadata)
+    record = import_workspace_backup(bootstrap.library, preview_workspace_backup(metadata))
+    reference = record.take_links[0]
+    target = Path(reference["take_path"])
+    bookmark = make_bookmark("Exact imported moment", **reference, position_seconds=.04, timing_verified=True)
+    song = make_song("Imported song", bookmarks=[bookmark])
+    record = bootstrap.library.save(replace(record,
+        rehearsal=RehearsalPlan(songs=[song], active_song_id=song["id"]).payload()))
+    baseline = {p: p.read_bytes() for p in target.rglob("*") if p.is_file()}
+    create = bootstrap.constructor.side_effect
+
+    def create_after_launch(*args, **kwargs):
+        controller = create(*args, **kwargs)
+        if damage == "manifest":
+            manifest = target / "webjam-take.json"
+            manifest.write_bytes(manifest.read_bytes() + b"\n")
+        elif damage == "workspace":
+            current = bootstrap.library.load(record.id)
+            bootstrap.library.save(replace(current, notes="Another writer after launch selection"))
+        return controller
+    bootstrap.constructor.side_effect = create_after_launch
+
+    def open_from_door(dialog):
+        dialog.show()
+        dialog.notes.setPlainText("Keep imported launch draft")
+        if kind == "take":
+            dialog.tabs.setCurrentIndex(4)
+            dialog.takes.setCurrentRow(0)
+            button = dialog.open_take_button
+        else:
+            dialog.tabs.setCurrentWidget(dialog.rehearsal)
+            dialog.rehearsal._bookmarks.setCurrentRow(0)
+            button = dialog.rehearsal._open_moment
+        button.click()
+        _wait(qapp, lambda: not dialog.media_operation_pending)
+        qapp.processEvents()
+        assert dialog.selected_record is not None, dialog.status.text()
+        assert dialog.selected_record.id == record.id
+        assert dialog.result() == dialog.DialogCode.Accepted
+
+    def check(controller):
+        studio = controller.window.recording_studio
+        assert controller.session_library.current.id == record.id
+        studio.jump_to_bookmark.assert_not_called()
+        assert not studio._player.is_playing and not controller.recording.is_recording_active
+        if damage:
+            assert studio._current is None or studio._current.path != target
+        else:
+            assert studio._current.path == target
+            assert studio._player.position_s == pytest.approx(.04 if kind == "bookmark" else 0)
+            assert studio._workspace_media_context["workspace"].id == record.id
+            assert len(studio._studio_source_catalog.take_ids) == 2
+            for linked in record.take_links:
+                assert studio._studio_source_catalog.root_for_take(linked["take_id"]) == Path(linked["take_path"])
+            assert all(path.read_bytes() == value for path, value in baseline.items())
+        assert controller.window.session_canvas.current_notes() == (
+            "Another writer after launch selection" if damage == "workspace" else "Keep imported launch draft")
+
+    bootstrap.run(record, library_action=open_from_door, after_open=check)
+    assert bootstrap.launchers[0].selected_library_open is None
+
+
+@pytest.mark.parametrize("interruption", ["late_draft", "cancel"])
+def test_imported_launch_open_retains_late_draft_or_cancel_without_accepting(
+    bootstrap, portable_takes, tmp_path, qapp, interruption,
+):
+    from core.workspace_backup import export_workspace_backup, import_workspace_backup, preview_workspace_backup
+    _library, imported, _originals, _roots, _projects = portable_takes
+    path = tmp_path / "late-launch.json"
+    export_workspace_backup(imported, path)
+    record = import_workspace_backup(bootstrap.library, preview_workspace_backup(path))
+
+    def interrupt_open(dialog):
+        dialog.show()
+        def after_verification(_reference):
+            if interruption == "late_draft":
+                dialog.notes.setPlainText("Late launch edit remains here")
+            else:
+                dialog.reject()
+        dialog.take_open_requested.connect(after_verification)
+        dialog.tabs.setCurrentIndex(4)
+        dialog.takes.setCurrentRow(0)
+        dialog.open_take_button.click()
+        _wait(qapp, lambda: not dialog.media_operation_pending)
+        qapp.processEvents()
+        assert dialog.selected_record is None and dialog.isVisible()
+        assert bootstrap.launchers[0].selected_library_open is None
+        if interruption == "late_draft":
+            assert dialog._dirty and dialog.notes.toPlainText() == "Late launch edit remains here"
+
+    assert bootstrap.run(record, cancel=True, library_action=interrupt_open) is None
+    bootstrap.constructor.assert_not_called()
+    if interruption == "late_draft":
+        assert bootstrap.library.load(record.id).notes == "Late launch edit remains here"
+
+
+@pytest.mark.parametrize("kind", ["take", "bookmark"])
 @pytest.mark.parametrize("cancel", [False, True])
 def test_selecting_launch_reference_without_open_does_not_capture_a_studio_request(
     bootstrap, tmp_path, kind, cancel,
@@ -370,7 +479,7 @@ def test_library_take_action_opens_only_selected_verified_take_in_existing_studi
             dialog.tabs.setCurrentIndex(4)
             dialog.takes.setCurrentRow(0)
             button = next(button for button in dialog.findChildren(QPushButton)
-                          if button.text() == "Open selected take in Studio")
+                          if button.text() == "Open Studio")
             button.click()
             opened.append(studio._current.path)
             return dialog.result()

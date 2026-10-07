@@ -34,7 +34,7 @@ keeps the product story and five-minute demo intentionally short.
 v0.29.0 adds **File → Session library…** before a room and
 **More → Session library…** inside it. Save local notes, reuse a Music
 **Rehearsal plan**, or keep an **Art project** with references and next steps.
-**Continue this work** restores its context without starting audio or a room.
+**Continue** restores its context without starting audio or a room.
 Music moments are plain notes unless a recording position is confirmed.
 See [the saved-work walkthrough](../USER_GUIDE.md#save-a-session-and-continue-later).
 
@@ -68,6 +68,17 @@ See [the saved-work walkthrough](../USER_GUIDE.md#save-a-session-and-continue-la
 - [Session help preview](SESSION_HELP_PREVIEW.md) — development-gated temporary
   troubleshooting text after secure peer proof, separate from Jamulus chat and
   saved notes; source evidence and unperformed physical gates.
+- [Workspace backup draft plan](WORKSPACE_BACKUP_PLAN.md) and
+  [under-4,000-character goal prompt](WORKSPACE_BACKUP_GOAL.md) — the
+  portability milestone after workflow continuity. Metadata and
+  selected-media backup, explicit verification/relink and local restart tests exist;
+  see the draft PR for exact-build evidence and the
+  [portability pilot](WORKSPACE_PORTABILITY_PILOT.md) for owner observations.
+
+- [Windows portability diagnostics](WINDOWS_PORTABILITY_DIAGNOSTICS.md) and
+  [next goal prompt](WINDOWS_PORTABILITY_RELIABILITY_GOAL.md) — independent native
+  crash controls, exact package/source identity and one bounded workflow matrix.
+  Historical Windows crash causes and physical observations remain unproven.
 
 ## Evidence, releases, and operations
 

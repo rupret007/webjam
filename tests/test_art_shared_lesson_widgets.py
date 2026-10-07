@@ -59,10 +59,9 @@ def test_empty_paint_along_offers_shared_lesson_without_requiring_a_file(qapp, h
                    if button.text() == "Watch a shared lesson"
                    and button.isVisibleTo(panel) and button.isEnabled()]
         assert len(offered) == 1
-        assert offered[0].objectName() == "GhostButton"
-        # Paint along's own file/link choice comes first; external meeting
-        # handoff remains reachable below it as a secondary action.
-        assert offered[0].y() > panel._headline.y()
+        assert offered[0].objectName() == "PrimaryButton"
+        # The audible route comes first; silent reference controls remain.
+        assert offered[0].y() < panel._headline.y()
         assert offered[0].geometry().bottom() <= panel.height()
     finally:
         panel.close()
@@ -189,6 +188,13 @@ def test_lesson_context_explains_the_selected_provider_without_launching(card, q
     text = panel._mode_label.text()
     assert "YouTube" in text and "faces" in text
     assert "pause" in text.casefold() and "resume" in text
+    owner.show()
+    _settle(qapp)
+    assert not panel._sound_tips.isVisibleTo(owner)
+    panel._sound_tips_button.click()
+    _settle(qapp)
+    assert panel._sound_tips.isVisibleTo(owner)
+    text += " " + panel._sound_tips.text()
     assert "speaker volume" in text and "microphone mute" in text
     if hosting:
         assert "computer sound" in text and "shared lesson" in text
@@ -202,7 +208,7 @@ def test_lesson_context_explains_the_selected_provider_without_launching(card, q
         assert service in text
     if service != "Webex":
         assert "Webex" not in text
-    assert panel._title_label.text() == "Conversation"
+    assert panel._title_label.text() == "Paint along with sound"
     assert events == []
     panel.set_shared_lesson_context(None)
     assert panel._mode_label.text() == normal
@@ -289,6 +295,15 @@ def test_lesson_actions_fit_larger_font_through_narrow_wide_roundtrip(card, qapp
     for width in (320, 760, 320):
         owner.resize(width, 1000)
         panel.set_shared_lesson_context(hosting)
+        panel.lesson_handoff.set_context(
+            hosting=hosting, profile="art", lesson_url="https://www.youtube.com/watch?v=M7lc1UVf-VE&t=86400s",
+        )
+        panel.lesson_handoff.set_status("Lesson selected. Open it when you are ready to share.")
+        if not hosting:
+            assert "reference link" in panel.lesson_handoff.source.text()
+            assert "meeting may show another lesson" in panel.lesson_handoff.source.text()
+            assert panel.lesson_handoff.open_button.isHidden()
+            assert panel.lesson_handoff.save_button.text() == "Save reference"
         _settle(qapp)
         assert panel.width() == width
         assert QApplication.focusWidget() is focused

@@ -742,3 +742,22 @@ def test_linux_release_names_only_the_intended_ubuntu_target() -> None:
     assert "Ubuntu 22.04 x64 ZIP" in PROJECT_README
     assert "certified only for Ubuntu 22.04 x64" in THIRD_PARTY_NOTICES
     assert "22.04 or newer" not in claims
+
+
+def test_windows_diagnostic_control_is_independent_and_matrix_requires_explicit_run() -> None:
+    job = _workflow_job('windows-diagnostic-control')
+    assert 'needs:' not in job
+    assert 'runs-on: windows-2025' in job
+    assert '--mode control' in job
+    assert 'tests/test_windows_diagnostic_process.py' in job
+    assert "github.event_name == 'workflow_dispatch' && inputs.windows_diagnostic_source_run != ''" in job
+    assert '--run-id $env:DIAGNOSTIC_SOURCE_RUN' in job
+    assert 'tests.support.prepare_windows_diagnostic_artifact' in job
+    assert 'tests.support.run_windows_workflow_matrix' in job
+    assert 'if: always()' in job
+    assert 'continue-on-error' not in job
+    build = _workflow_job('build-desktop')
+    assert '--mode source --original-gate FAILED' in build
+    assert '--mode frozen --original-gate FAILED' in build
+    assert "steps.native_reference_workflow.outcome == 'failure'" in build
+    assert "steps.frozen_windows.outcome == 'failure'" in build

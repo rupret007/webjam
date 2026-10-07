@@ -223,7 +223,7 @@ def test_failed_save_does_not_close_or_continue_with_unsaved_changes(tmp_path, m
     library.save(replace(original, notes="Other writer"))
     requested = []
     dialog.continue_requested.connect(requested.append)
-    _click(dialog, "Continue this work")
+    _click(dialog, "Continue")
     assert requested == []
     assert dialog.selected_record is None
     assert dialog._dirty
@@ -246,16 +246,16 @@ def test_selecting_history_or_takes_never_opens_an_accidental_take(tmp_path, mak
     dialog.take_open_requested.connect(opened.append)
     dialog.select_id(record.id)
     assert dialog.takes.currentRow() == -1
-    _click(dialog, "Open selected take in Studio")
+    _click(dialog, "Open Studio")
     assert opened == []
     dialog.tabs.setCurrentIndex(4)
     dialog.takes.setCurrentRow(1)
     app.processEvents()
     assert opened == []
-    _click(dialog, "Open selected take in Studio")
+    _click(dialog, "Open Studio")
     assert opened == [dict(record.take_links[1])]
     dialog.select_id(art.id)
-    _click(dialog, "Open selected take in Studio")
+    _click(dialog, "Open Studio")
     assert len(opened) == 1
 
 
@@ -314,7 +314,7 @@ def test_summary_export_keeps_local_locators_private_and_never_overwrites_origin
     dialog = make_dialog(library, current_id=record.id)
     destination = tmp_path / "summary.md"
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_args, **_kwargs: (str(destination), ""))
-    _click(dialog, "Export summary…")
+    _click(dialog, "Export summary")
     summary = destination.read_text()
     assert "Light study" in summary
     assert "1:32: Soft edges" in summary
@@ -322,7 +322,7 @@ def test_summary_export_keeps_local_locators_private_and_never_overwrites_origin
     assert "Finished the first pass" in summary
     assert str(tmp_path) not in summary
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_args, **_kwargs: (str(reference_path), ""))
-    _click(dialog, "Export summary…")
+    _click(dialog, "Export summary")
     assert reference_path.read_bytes() == b"original art project"
     assert "not exported" in dialog.status.text()
 
@@ -384,14 +384,19 @@ def test_compact_library_keeps_actions_visible_and_art_controls_scrollable(tmp_p
     dialog.show()
     app.processEvents()
     assert dialog.width() <= 480
-    for button in (dialog.save_button, dialog.export_button, dialog.continue_button, dialog.copy_button):
+    for button in (dialog.save_button, dialog.export_button, dialog.continue_button, dialog.copy_button,
+                   dialog.backup_button, dialog.import_backup_button):
+        dialog.content_scroll.ensureWidgetVisible(button, 0, 0)
+        app.processEvents()
         assert button.isVisible()
+        assert dialog.rect().contains(button.mapTo(dialog, button.rect().topLeft()))
         assert dialog.rect().contains(button.mapTo(dialog, button.rect().bottomRight()))
     scroll = dialog.tabs.widget(2)
     assert isinstance(scroll, QScrollArea)
     assert scroll.verticalScrollBar().maximum() > 0
     assert scroll.horizontalScrollBar().maximum() == 0
     scroll.ensureWidgetVisible(dialog.art.bookmark_note)
+    dialog.content_scroll.ensureWidgetVisible(dialog.art.bookmark_note, 0, 0)
     app.processEvents()
     visible_point = dialog.art.bookmark_note.mapTo(scroll.viewport(), dialog.art.bookmark_note.rect().center())
     assert scroll.viewport().rect().contains(visible_point)
@@ -408,7 +413,8 @@ def test_library_actions_and_art_buttons_fit_after_resizing_and_hidden_tab_activ
     dialog.setStyleSheet(load_stylesheet() + f"QWidget {{ font-size: {font_size}px; }}")
     dialog.show()
     actions = (dialog.new_button, dialog.copy_button, dialog.save_button,
-               dialog.export_button, dialog.continue_button,
+               dialog.export_button, dialog.backup_button, dialog.import_backup_button,
+               dialog.continue_button,
                next(button for button in dialog.findChildren(QPushButton) if button.text() == "Close"))
     for width, height in ((760, 680), (480, 500), (760, 680)):
         dialog.tabs.setCurrentIndex(0)
@@ -416,10 +422,16 @@ def test_library_actions_and_art_buttons_fit_after_resizing_and_hidden_tab_activ
         for _ in range(6):
             app.processEvents()
         assert (dialog.width(), dialog.height()) == (width, height)
+        bounds = [QRect(button.mapTo(dialog._content, QPoint()), button.size()) for button in actions]
+        assert all(not left.intersects(right) for index, left in enumerate(bounds) for right in bounds[index + 1:])
         for button in actions:
+            dialog.content_scroll.ensureWidgetVisible(button, 0, 0)
+            app.processEvents()
             assert button.width() >= button.minimumSizeHint().width(), button.text()
-            bounds = QRect(button.mapTo(dialog, QPoint()), button.size())
-            assert dialog.rect().contains(bounds), button.text()
+            viewport = dialog.content_scroll.viewport()
+            bounds = QRect(button.mapTo(viewport, QPoint()), button.size())
+            assert viewport.rect().contains(bounds), button.text()
+            assert dialog.content_scroll.horizontalScrollBar().maximum() == 0
         dialog.tabs.setCurrentIndex(2)
         for _ in range(6):
             app.processEvents()
@@ -428,10 +440,14 @@ def test_library_actions_and_art_buttons_fit_after_resizing_and_hidden_tab_activ
         assert dialog.art.width() <= scroll.viewport().width()
         for button in dialog.art.findChildren(QPushButton):
             scroll.ensureWidgetVisible(button, 0, 0)
+            dialog.content_scroll.ensureWidgetVisible(button, 0, 0)
             app.processEvents()
             assert button.width() >= button.minimumSizeHint().width(), button.text()
             bounds = QRect(button.mapTo(scroll.viewport(), QPoint()), button.size())
             assert scroll.viewport().rect().contains(bounds), button.text()
+            viewport = dialog.content_scroll.viewport()
+            bounds = QRect(button.mapTo(viewport, QPoint()), button.size())
+            assert viewport.rect().contains(bounds), button.text()
         assert dialog.notes.toPlainText() == record.notes
         assert not dialog._dirty
         assert not dialog.isModal()

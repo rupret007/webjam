@@ -8,7 +8,7 @@ from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QBoxLayout, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout,
-    QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
+    QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QPushButton, QInputDialog,
     QScrollArea, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
 
@@ -17,12 +17,14 @@ from core.rehearsal_plan import (
     MAX_BOOKMARKS, MAX_PLAN_FILE_BYTES, MAX_SONGS, RehearsalPlan, make_bookmark,
 )
 from core.song_clock import MAX_TEMPO_BPM, MIN_TEMPO_BPM
+from core.youtube_lesson import parse_youtube_lesson_url
 from webjam_qt.theme.tokens import Space
 
 
 class RehearsalPlanPanel(QFrame):
     changed = Signal()
     song_selected = Signal(dict)
+    lesson_requested = Signal(str, str)
     bookmark_requested = Signal(str)
     bookmark_open_requested = Signal(dict)
 
@@ -92,6 +94,18 @@ class RehearsalPlanPanel(QFrame):
         self._completed = QCheckBox("Song complete")
         self._completed.setAccessibleName("Song marked complete for this rehearsal")
         form.addRow(self._completed)
+        self._lesson_url = QLineEdit()
+        self._lesson_url.setReadOnly(True)
+        self._lesson_url.setAccessibleName("Saved YouTube lesson")
+        self._lesson_url.setPlaceholderText("No saved lesson for this song")
+        form.addRow("YouTube lesson", self._lesson_url)
+        self._change_lesson = self._button("Choose lesson…")
+        self._change_lesson.clicked.connect(self._choose_lesson)
+        self._use_lesson = self._button("Use saved lesson")
+        self._use_lesson.setAccessibleDescription("Set up video practice. Opening the browser is a separate action.")
+        self._use_lesson.clicked.connect(self._request_lesson)
+        form.addRow(self._change_lesson)
+        form.addRow(self._use_lesson)
         layout.addWidget(self._editor)
 
         self._moment_note = QLineEdit()
@@ -200,6 +214,58 @@ class RehearsalPlanPanel(QFrame):
 
     def summary(self) -> str:
         return self._plan.summary()
+
+    def set_lesson_url(self, url: str, *, expected_song_id: str, new_title=None) -> bool:
+        """Change this reference without rebuilding an existing song's drafts."""
+        if self._plan.active_song_id != expected_song_id:
+            return False
+        canonical = parse_youtube_lesson_url(url).playback_url if url else ""
+        created = self._plan.current is None and new_title is not None
+        if created:
+            self._plan.add_song(new_title)
+        song = self._plan.current
+        if song is None:
+            return False
+        if canonical:
+            song["lesson_url"] = canonical
+        else:
+            song.pop("lesson_url", None)
+        if created:
+            self._render()
+        else:
+            self._render_lesson()
+        self.changed.emit()
+        if created:
+            self._emit_selected()
+        return True
+
+    def _render_lesson(self):
+        url = (self._plan.current or {}).get("lesson_url", "")
+        self._lesson_url.setText(url)
+        self._use_lesson.setEnabled(bool(url))
+        self._change_lesson.setText("Change lesson…" if url else "Choose lesson…")
+
+    def _choose_lesson(self):
+        song = self._plan.current
+        if song is None:
+            return
+        owner = self._plan
+        song_id = song["id"]
+        url, accepted = QInputDialog.getText(
+            self, "Save a YouTube lesson", "Paste a video link; leave empty to remove it.",
+            text=song.get("lesson_url", ""),
+        )
+        if accepted and self._plan is owner and self.isVisible() and self.isEnabled():
+            try:
+                self.set_lesson_url(url.strip(), expected_song_id=song_id)
+            except ValueError as error:
+                self._feedback.setText(str(error))
+
+    def _request_lesson(self):
+        song = self._plan.current
+        if (song is not None and song.get("lesson_url") and self._use_lesson.isEnabled()
+                and self._use_lesson.isVisible()):
+            self.lesson_requested.emit(song["id"], song["lesson_url"])
 
     def add_song(self, title: str = "New song") -> None:
         if isinstance(title, bool):  # QPushButton.clicked supplies checked.
@@ -330,6 +396,7 @@ class RehearsalPlanPanel(QFrame):
             self._notes.setPlainText(song.get("notes", ""))
             self._next_steps.setPlainText(song.get("next_steps", ""))
             self._moment_note.setText(song.get("moment_draft", ""))
+            self._render_lesson()
             self._completed.setChecked(song.get("completed", False))
             self._editor.setEnabled(bool(song))
             self._mark.setEnabled(bool(song))
@@ -356,6 +423,16 @@ class RehearsalPlanPanel(QFrame):
             item.setData(Qt.ItemDataRole.UserRole, bookmark["id"])
             self._bookmarks.addItem(item)
         self._sync_bookmark_actions()
+
+    def relink_take(self, take_id, source_identity, locator):
+        """Update only matching locations, retaining every open song/moment draft."""
+        for song in self._plan.songs:
+            for bookmark in song["bookmarks"]:
+                if bookmark.get("take_id") == take_id and bookmark.get("source_identity") == source_identity:
+                    bookmark["take_path"] = locator
+        # Titles/positions do not change, so leave the current selection and
+        # editing widgets alone instead of rebuilding this panel.
+        self.changed.emit()
 
     def _selected_bookmark(self) -> dict | None:
         song, row = self._plan.current, self._bookmarks.currentRow()

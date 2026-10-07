@@ -972,7 +972,19 @@ class RoomParticipantController:
             self._wire_lesson_actions(None)
             panel.set_lesson_request_guest(status="Ask the host aloud.")
             panel.set_lesson_request_host(())
+            handoff = getattr(panel, "lesson_handoff", None)
+            if handoff is not None:
+                owner = self.app.host_peer if panel._shared_lesson_hosting else self.lan_guest
+                supported = (callable(getattr(getattr(owner, "server", None), "activate_lesson_requests", None))
+                             if panel._shared_lesson_hosting else owner is not None)
+                handoff.restart_button.setVisible(
+                    supported and not self.blocked and self.app.creator_profile.key == "art"
+                    and self.app._remote_session is None and self.app._remote_invite_owner is None
+                )
             return
+        handoff = getattr(panel, "lesson_handoff", None)
+        if handoff is not None:
+            handoff.restart_button.hide()
         if binding.role == "host":
             notices = binding.server.lesson_request_notices()
             if not self._lesson_current(binding):

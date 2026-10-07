@@ -232,7 +232,7 @@ def test_shutdown_stops_owned_server_then_clears_owner_and_ephemeral_mode() -> N
     controller._pulse_refresh_timer = timer
     controller._connection_timer = timer
     controller.window = SimpleNamespace(
-        recording_studio=mock.Mock(),
+        recording_studio=mock.Mock(media_open_pending=False),
         webex_embed=mock.Mock(),
     )
     events: list[str] = []

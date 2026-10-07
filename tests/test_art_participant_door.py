@@ -318,7 +318,7 @@ def test_art_conversation_stays_optional_without_music_mute_controls(
             assert "talk in" in visible
             assert "does not join or mute" in visible
             assert "webjam does not play the movie." in visible
-            assert "not the movie-watch path" in visible
+            assert "watch a shared lesson" in visible
         else:
             # Neutral Art Conversation: Join / Open Meeting affordance without
             # the Webex-branded combined essay. Full visible dump may still
