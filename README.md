@@ -44,8 +44,8 @@ showing someone the door? See the [two-minute demo script](DEMO.md).
 
 ## This checkout
 
-The GitHub repository is **public**. This branch is unreleased PR/test-build
-work stacked on published v0.29.0 (drafts #171–#177). The version string stays
+The GitHub repository is **public**. This checkout is unreleased source on
+published v0.29.0, including merged PRs #171–#177. The version string stays
 `0.29.0`; these behaviors are **not** in the published packages. Art and
 Review & Rehearsal remain **Preview**. Physical audio, cameras, signing,
 notarization, and feel remain **NOT RUN**.
