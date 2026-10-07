@@ -6,6 +6,7 @@ import sys
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from shiboken6 import isValid
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication
 
@@ -248,5 +249,6 @@ def test_bootstrap_passes_accepted_conversation_separately_from_saved_settings(
         assert (kwargs["session_invite"] is not None) is (not native)
         assert door.invitation_meeting_url == ""
     finally:
-        door.deleteLater()
+        if isValid(door):
+            door.deleteLater()
         qapp.processEvents()

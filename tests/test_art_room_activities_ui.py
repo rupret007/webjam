@@ -75,6 +75,9 @@ def window(qapp):
         mode_entries=[("music_jam", "Music jam")],
         initial_mode_key="music_jam", initial_title="Making together",
     )
+    # Keep the File/Help menu's client-height cost in the layout on macOS
+    # too, including the wider-glyph cases below.
+    window.menuBar().setNativeMenuBar(False)
     window.setStyleSheet(load_stylesheet())
     window.set_creator_profile(get_creator_profile_by_key("art"))
     window.set_art_room_overview(room_overview())

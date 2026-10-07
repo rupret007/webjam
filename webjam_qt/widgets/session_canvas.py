@@ -95,6 +95,7 @@ class SessionCanvas(QFrame):
         self._current_guidance: MusicianGuidanceSnapshot | None = None
         self._compact_guidance = False
         self._compact_notes_controls = False
+        self._tight_notes_controls = False
         self._narrow_notes_controls = False
         self._suggestion_inline = False
         self._art_profile = False
@@ -771,9 +772,12 @@ class SessionCanvas(QFrame):
 
     def _sync_notes_controls(self) -> None:
         compact = self._art_profile and self.height() < 500
+        tight = self.height() < 380
         narrow = self._art_profile and self.width() < 400
-        if compact != self._compact_notes_controls or narrow != self._narrow_notes_controls:
+        if (compact != self._compact_notes_controls or tight != self._tight_notes_controls
+                or narrow != self._narrow_notes_controls):
             self._compact_notes_controls = compact
+            self._tight_notes_controls = tight
             self._narrow_notes_controls = narrow
             # Two full-height tool rows can otherwise overlap in a compact Art
             # workspace. Keep every action and leave the editor its own space.
@@ -782,8 +786,13 @@ class SessionCanvas(QFrame):
                 rules.append(f"padding-left: {Space.XS}px; padding-right: {Space.XS}px;")
             for button in (*self._toolbar_buttons, self._save_notes_button, self._recheck_notes_button):
                 button.setStyleSheet(" ".join(rules))
-            self.layout().setSpacing(Space.XS if compact else Space.SM)
-            self.layout().setContentsMargins(0, 0, 0, Space.XS if compact else Space.MD)
+            # An in-window menu and a visible recovery notice can leave less
+            # than 380 px for Notes. Spend the outer gaps on the full recovery
+            # copy and editor; keep text, controls and their own padding intact.
+            self.layout().setSpacing(0 if tight else Space.XS if compact else Space.SM)
+            self.layout().setContentsMargins(
+                0, 0, 0, 0 if tight else Space.XS if compact else Space.MD,
+            )
             # Keep the draft usable at the compact window floor. The readouts
             # retain all their text; only their interior spacing becomes tighter.
             for readout in (self._guidance, self._pulse):

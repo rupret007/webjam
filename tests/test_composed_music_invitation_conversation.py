@@ -257,8 +257,11 @@ def copied_room(qapp, monkeypatch, tmp_path):
             drain(qapp, lambda: not app.audio.stopping)
         assert app.shutdown()
     for widget in reversed(widgets):
-        widget.deleteLater()
-        QCoreApplication.sendPostedEvents(widget, QEvent.Type.DeferredDelete)
+        # Navigation may already retire the captured launch dialog while the
+        # real event loop drains; never invoke Qt methods on a deleted wrapper.
+        if shiboken6.isValid(widget):
+            widget.deleteLater()
+            QCoreApplication.sendPostedEvents(widget, QEvent.Type.DeferredDelete)
         assert not shiboken6.isValid(widget)
     qapp.processEvents()
     for guard in guards:

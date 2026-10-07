@@ -173,6 +173,7 @@ class ReferenceVideoDialog(QDialog):
     def __init__(self, *, hosting: bool, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._hosting = bool(hosting)
+        self._embedded = False
         self._duration_s = 0.0
         self._scrubbing = False
         self._pointer_active = False
@@ -414,6 +415,7 @@ class ReferenceVideoDialog(QDialog):
         """Adapt the surface for WebJam's single-window workspace stack."""
 
         embedded = bool(embedded)
+        self._embedded = embedded
         self._back_button.setVisible(embedded)
         if embedded:
             # Reserve room for recovery and navigation at the 720x560 client
@@ -424,6 +426,21 @@ class ReferenceVideoDialog(QDialog):
         else:
             self.setMinimumSize(720, 520)
             self._surface_holder.setMinimumHeight(360)
+        self._update_layout_spacing()
+
+    def _update_layout_spacing(self) -> None:
+        # An inline File/Help menu reduces the compact workspace's height.
+        # Recover space between rows before any video controls or guidance
+        # overlap; larger workspaces keep the original breathing room.
+        layout = self.layout()
+        if layout is not None:
+            layout.setSpacing(
+                Space.SM if self._embedded and self.height() < 360 else Space.MD
+            )
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._update_layout_spacing()
 
     def attach_surface(self, widget: QWidget | None) -> None:
         """Embed the player's own video surface, replacing any previous one."""

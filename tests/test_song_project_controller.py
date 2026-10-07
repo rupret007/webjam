@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import stat
 import uuid
@@ -23,6 +24,7 @@ from core.song_project_store import (
     SongProjectStoreError,
     load_project_bundle,
     save_project_bundle,
+    write_recent_projects,
 )
 
 
@@ -678,6 +680,40 @@ def test_recent_projects_are_bounded_and_most_recent_first(tmp_path: Path) -> No
     assert SongProjectController(
         recent_index_path=recent_index
     ).snapshot.recent_projects == (first.resolve(), second.resolve())
+
+
+@pytest.mark.parametrize("surrogate", ["\ud800", "\udfff"])
+def test_invalid_unicode_recents_do_not_block_project_work_or_rewrite_the_index(
+    tmp_path: Path, surrogate: str,
+) -> None:
+    recent_index = tmp_path / "recent.json"
+    private_path = str(tmp_path / f"Private Song{surrogate}.webjam")
+    damaged = json.dumps({"schema_version": 1, "projects": [private_path]}).encode()
+    recent_index.write_bytes(damaged)
+
+    controller = SongProjectController(recent_index_path=recent_index)
+    assert not controller.snapshot.is_open
+    assert controller.snapshot.recent_projects == ()
+    assert controller.snapshot.recent_error == "WebJam couldn't read the recent-project list."
+    assert recent_index.read_bytes() == damaged
+    with pytest.raises(SongProjectControllerError, match="couldn't read") as caught:
+        controller.refresh_recent_projects()
+    assert "Private Song" not in str(caught.value)
+    assert recent_index.read_bytes() == damaged
+
+    bundle = tmp_path / "New Song.webjam"
+    created = controller.create_project(bundle, "New Song", project_id=_id("unicode-recents"))
+    assert created.is_open and not created.dirty
+    assert created.recent_error == "WebJam couldn't update the recent-project list."
+    assert load_project_bundle(bundle).project == created.project
+    assert recent_index.read_bytes() == damaged
+
+    # Recovery is an explicit replacement; normal project work never repairs
+    # or discards the unreadable index behind the user's back.
+    write_recent_projects(recent_index, [bundle])
+    assert controller.refresh_recent_projects().paths == (bundle.resolve(),)
+    assert controller.snapshot.recent_error == ""
+    assert controller.snapshot.project == created.project
 
 
 def test_corrupt_primary_backup_open_is_dirty_until_explicit_save(

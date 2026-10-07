@@ -1561,7 +1561,7 @@ class TestConductorWindow(unittest.TestCase):
         from unittest import mock
 
         with mock.patch(
-            "webjam_qt.windows.help_dialog.HelpDialog.exec",
+            "webjam_qt.windows.help_dialog.HelpDialog.show",
             return_value=0,
         ), mock.patch(
             "PySide6.QtWidgets.QTextBrowser.setHtml",
@@ -1575,7 +1575,7 @@ class TestConductorWindow(unittest.TestCase):
         self.assertNotIn("Host a Jam", body)
         self.assertNotIn("Join a Jam", body)
         self.assertIn("review completed session takes", body)
-        self.assertIn("end or leave the session and relaunch WebJam", body)
+        self.assertIn("end or leave the session, then choose <b>File → Return to launch…</b>", body)
         self.assertIn("File → New Music Project…", body)
         self.assertIn("<b>Play Along / Record</b> or <b>Open Project…</b>", body)
         self.assertIn("Choose <b>Conversation</b> to show meeting controls", body)
@@ -1606,7 +1606,7 @@ class TestConductorWindow(unittest.TestCase):
                     )
                     workspace = window.workspace_stack.currentWidget()
                     with mock.patch(
-                        "webjam_qt.windows.help_dialog.HelpDialog.exec", return_value=0,
+                        "webjam_qt.windows.help_dialog.HelpDialog.show", return_value=0,
                     ), mock.patch(
                         "PySide6.QtWidgets.QTextBrowser.setHtml",
                     ) as set_text:
@@ -1641,7 +1641,7 @@ class TestConductorWindow(unittest.TestCase):
             "sys.platform",
             "darwin",
         ), mock.patch(
-            "webjam_qt.windows.help_dialog.HelpDialog.exec",
+            "webjam_qt.windows.help_dialog.HelpDialog.show",
             return_value=0,
         ), mock.patch(
             "PySide6.QtWidgets.QTextBrowser.setHtml",
@@ -1671,7 +1671,7 @@ class TestConductorWindow(unittest.TestCase):
                 get_creator_profile_by_key_or_default(profile_key)
             )
             with mock.patch("sys.platform", "darwin"), mock.patch(
-                "webjam_qt.windows.help_dialog.HelpDialog.exec",
+                "webjam_qt.windows.help_dialog.HelpDialog.show",
                 return_value=0,
             ), mock.patch(
                 "PySide6.QtWidgets.QTextBrowser.setHtml",
@@ -1708,7 +1708,7 @@ class TestConductorWindow(unittest.TestCase):
                     get_creator_profile_by_key_or_default(profile_key)
                 )
                 with mock.patch(
-                    "webjam_qt.windows.help_dialog.HelpDialog.exec",
+                    "webjam_qt.windows.help_dialog.HelpDialog.show",
                     return_value=0,
                 ), mock.patch(
                     "PySide6.QtWidgets.QTextBrowser.setHtml",
@@ -1898,7 +1898,7 @@ class TestConductorWindow(unittest.TestCase):
 
         w.show_reference_studio_only()
         with mock.patch(
-            "webjam_qt.windows.help_dialog.HelpDialog.exec",
+            "webjam_qt.windows.help_dialog.HelpDialog.show",
             return_value=0,
         ), mock.patch(
             "PySide6.QtWidgets.QTextBrowser.setHtml",

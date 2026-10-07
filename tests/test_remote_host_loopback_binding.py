@@ -259,7 +259,7 @@ def test_shutdown_stops_owned_server_then_clears_owner_and_ephemeral_mode() -> N
             events.append("disable-mode")
 
     controller.bridge = Bridge()
-    controller.recording = mock.Mock()
+    controller.recording = mock.Mock(workspace_transition_pending=False)
     controller.recording.stop_server_recording_for_shutdown.side_effect = (
         lambda: events.append("stop-recording") or True
     )

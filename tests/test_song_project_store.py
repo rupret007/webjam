@@ -800,6 +800,29 @@ def test_recent_project_index_is_bounded_deduplicated_and_space_safe(
         write_recent_projects(index, too_many)
 
 
+@pytest.mark.parametrize("surrogate", ["\ud800", "\udfff"])
+@pytest.mark.parametrize("as_path", [False, True])
+def test_recent_index_rejects_invalid_unicode_without_changing_saved_bytes(
+    tmp_path: Path, surrogate: str, as_path: bool,
+) -> None:
+    index = tmp_path / "recent.json"
+    valid = tmp_path / "valid.webjam"
+    invalid = str(tmp_path / f"bad{surrogate}.webjam")
+    write_recent_projects(index, [valid])
+    original = index.read_bytes()
+
+    with pytest.raises(SongProjectStoreError, match="not safe"):
+        write_recent_projects(index, [valid, Path(invalid) if as_path else invalid])
+    assert index.read_bytes() == original
+
+    # Escaped surrogates are valid JSON but not safe UTF-8 path text.
+    damaged = json.dumps({"schema_version": 1, "projects": [str(valid), invalid]}).encode()
+    index.write_bytes(damaged)
+    with pytest.raises(SongProjectStoreError, match="not safe"):
+        load_recent_projects(index)
+    assert index.read_bytes() == damaged
+
+
 def test_recent_index_rejects_relative_control_unknown_and_symlink_paths(
     tmp_path: Path,
 ) -> None:

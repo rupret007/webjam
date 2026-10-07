@@ -13,6 +13,31 @@
 > gates remain **NOT RUN**. A source checkout is not a published package.
 
 
+## Current work: workflow continuity, Unreleased
+
+The published v0.29.0 baseline already includes saved workspaces, rehearsal
+plans, Art projects and take review/receipts. This PR/test-build round keeps
+the source version v0.29.0 and adds safe return to launch, local searchable
+Help, focused persistence fixes and bounded integration diagnostics. Bind
+evidence to the exact commit/tree and package hash; the unchanged version
+string is not sufficient. No new tag, release, signing project, cloud service,
+paid API or mobile expansion is requested.
+
+Workspace replacement must use the existing save/finalization/shutdown
+authorities. End or leave an active room explicitly. Create a fresh controller
+only after cleanup succeeds; failure retains the current owner and recovery
+controls. Clear consumed invitation/startup intent rather than replaying it.
+Construction failure releases initialized owners without saving partial UI
+state. Retain failed cleanup for a Return to launch/Quit retry, and report
+completion only after every owner confirms it has released its resources.
+Help searches static packaged topics, remains modeless and only routes an
+explicit finite navigation action. It must not become a second status owner
+or invoke recording, playback, export, sharing or external-open operations.
+
+Use [the workflow continuity pilot](docs/WORKFLOW_CONTINUITY_PILOT.md) for new
+exact-build physical observations. Prior package ledgers retain their own
+identities and **NOT RUN** rows.
+
 ## Local setup
 
 Use the repository virtual environment:
@@ -22,13 +47,19 @@ Use the repository virtual environment:
 .venv/bin/python -m compileall -q core webjam_qt ui services api tests
 .venv/bin/python -m pip check
 .venv/bin/python ux_smoke_test.py
-.venv/bin/pytest -q
+git ls-files 'tests/test_*.py' | while IFS= read -r test_file; do
+  .venv/bin/python -m pytest "$test_file" -q || exit $?
+done
 ```
+
+Match CI's fresh interpreter per test module: Qt owns native process state,
+so one long-lived interpreter can retain deleted widgets across modules.
+Keep every tracked module and assertion; this isolation is not a retry.
 
 For Studio arrangement changes, run the focused model, persistence, history,
 controller, renderer, comping, waveform, export, and Qt integration modules in
 addition to the full suite. The physical-output and external-editor gates in
-`TEST_PROCEDURE.md` are separate and currently **NOT RUN** for v0.28.0.
+`TEST_PROCEDURE.md` are separate; this work's pilot starts **NOT RUN**.
 
 Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
@@ -225,6 +256,23 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m webjam_qt.theme.generate_brand_ico
 The normal session surface has one dominant next action. Avoid adding device
 forms, server fields, or technical diagnostics to Host/Join.
 
+## Bounded integration diagnostics
+
+The real Jamulus/JACK test process runs under
+`tests.support.jamulus_integration_supervisor`, with
+`tests.support.jamulus_integration_diagnostics` loaded as its pytest plugin.
+The supervisor owns a separate process group and an outer deadline; a stuck
+native close must not prevent collecting bounded evidence and stopping that
+group. The GitHub job deadline remains the final backstop.
+
+Preserve the first failure and report timeout, test failure and cleanup
+failure distinctly. Do not retry to replace a red result with a green one.
+Diagnostics are for synthetic integration fixtures: never collect user
+environments, command lines, credentials, invitations, private media or full
+profiles. See [the test procedure](TEST_PROCEDURE.md#bounded-jamulus-integration-evidence-unreleased)
+for the invocation and required artifacts. Captured stacks are evidence of
+the current run, not proof of the cause of an older timeout.
+
 ## Build and release hygiene
 
 This checkout's package identity is unsigned `0.29.0`. Current publication status
@@ -234,10 +282,11 @@ pre-v0.29.0 checkpoint, Latest was immutable release `396603181` at commit
 `WebJam-v0.28.4-SHA256SUMS.txt`. A checkout is not a release package.
 Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted
 by owner; git tags remain. Do not recreate them or invent a signed catalog;
-sealed v3 authorized 0.22.5 only. Follow the current
-[release sequence](docs/DESKTOP_RELEASE_RUNBOOK.md#current-unsigned-testing-release)
-for this authorized candidate. Windows remains unsigned and macOS remains
-ad-hoc signed and unnotarized.
+sealed v3 authorized 0.22.5 only. This workflow continuity round is limited
+to a PR and test build; do not apply the previous release authorization to
+new tags or publication. The [release runbook](docs/DESKTOP_RELEASE_RUNBOOK.md#current-unsigned-testing-release)
+preserves that earlier round's process and trust boundaries. Windows remains
+unsigned and macOS remains ad-hoc signed and unnotarized.
 
 The v0.24.0 tag, asset inventory, checksums, tag CI, and protected promotion
 remain immutable historical release evidence and must not be reused.

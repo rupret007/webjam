@@ -57,7 +57,7 @@ exception.
 | `starlette` | `1.3.1` | Runtime | `BSD-3-Clause` | [project](https://github.com/Kludex/starlette) |
 | `typing-extensions` | `4.16.0` | Runtime | `PSF-2.0` | [project](https://github.com/python/typing_extensions) |
 | `typing-inspection` | `0.4.2` | Runtime | `MIT` | [project](https://github.com/pydantic/typing-inspection) |
-| `urllib3` | `2.7.0` | Runtime | `MIT` | [project](https://github.com/urllib3/urllib3) |
+| `urllib3` | `2.8.0` | Runtime | `MIT` | [project](https://github.com/urllib3/urllib3) |
 | `uvicorn` | `0.51.0` | Runtime | `BSD-3-Clause` | [project](https://github.com/encode/uvicorn) |
 | `websockets` | `16.1.1` | Runtime | `BSD-3-Clause` | [project](https://github.com/python-websockets/websockets) |
 

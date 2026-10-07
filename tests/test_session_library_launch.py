@@ -168,8 +168,10 @@ def bootstrap(qapp, tmp_path, monkeypatch):
         controller.window.close()
         controller.window.deleteLater()
         controller.deleteLater()
+    from shiboken6 import isValid
     for dialog in launchers:
-        dialog.deleteLater()
+        if isValid(dialog):
+            dialog.deleteLater()
     qapp.processEvents()
 
 

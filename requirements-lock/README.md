@@ -17,7 +17,7 @@ and platform-trust gate remains **NOT RUN** unless separately recorded against
 an exact package.
 The locks target CPython
 3.11.9 on Windows and both macOS targets, CPython
-3.11.15 on Linux, pip 26.1.2, setuptools 81.0.0 on macOS, and setuptools 83.0.0
+3.11.15 on Linux, pip 26.2, setuptools 81.0.0 on macOS, and setuptools 83.0.0
 elsewhere. PyInstaller 6.21's macOS `pkg_resources`
 runtime hook requires `NullProvider`, which setuptools 82+ no longer ships.
 Regenerate all locks with uv 0.11.29 after a deliberate dependency change,

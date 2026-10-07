@@ -23,6 +23,18 @@ qapp = _qapp_fixture
 failed_studio_save = _failed_fixture
 
 
+@pytest.fixture
+def full_keyboard_navigation(qapp):
+    # macOS can otherwise reserve Tab navigation for text controls. Exercise
+    # the full keyboard mode explicitly and restore the user's Qt preference.
+    previous = qapp.styleHints().tabFocusBehavior()
+    qapp.styleHints().setTabFocusBehavior(Qt.TabFocusBehavior.TabFocusAllControls)
+    try:
+        yield
+    finally:
+        qapp.styleHints().setTabFocusBehavior(previous)
+
+
 def _settle(qapp, count=12):
     for _ in range(count):
         qapp.processEvents()
@@ -248,7 +260,9 @@ def test_arrange_actions_remain_reachable_after_labels_grow_and_reflow(loaded, q
     flush.assert_not_called()
 
 
-def test_keyboard_focus_reveals_output_and_playback_failure_names_it(loaded, qapp):
+def test_keyboard_focus_reveals_output_and_playback_failure_names_it(
+    loaded, qapp, full_keyboard_navigation,
+):
     _, window, studio = loaded
     studio.setStyleSheet("QLabel, QPushButton {font-size:22px;}")
     _settle(qapp)
@@ -379,7 +393,9 @@ def test_export_keeps_keyboard_focus_across_long_label_reflow(loaded, qapp, monk
     assert parents == {studio._transport_buttons, studio._transport_position}
 
 
-def test_keyboard_focus_reveals_each_existing_workspace_control(loaded, qapp):
+def test_keyboard_focus_reveals_each_existing_workspace_control(
+    loaded, qapp, full_keyboard_navigation,
+):
     _, window, studio = loaded
     studio.setStyleSheet('QLabel,QPushButton{font-size:22px;}')
     _settle(qapp)

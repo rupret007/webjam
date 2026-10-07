@@ -6,6 +6,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLineEdit, QVBoxLayout, QWidget
 
 from webjam_qt.widgets.session_hud import SessionHud
@@ -25,9 +26,11 @@ def test_retry_refresh_preserves_keyboard_focus_after_initial_recovery(qapp):
     layout.addWidget(hud)
     layout.addWidget(editor)
     window.show()
+    window.raise_()
     window.activateWindow()
     qapp.processEvents()
     try:
+        assert QTest.qWaitForWindowActive(window, 1000)
         hud.set_state(
             "Connection needs attention", "Connection was interrupted.",
             action_text="Try Again", action_kind="retry",

@@ -241,6 +241,26 @@ def test_actual_recovery_prioritizes_copy_editor_and_actions(
     for button in (panel._save_notes_button, panel._recheck_notes_button):
         if button.isVisibleTo(panel):
             _button_text_fits(button)
+    editor = panel._notes
+    document = editor.document()
+    draft = panel.current_notes()
+    editor.setFocus(Qt.FocusReason.OtherFocusReason)
+    # The in-window menu reduces the available Notes height. Recovery must
+    # survive regaining and losing that space without rebuilding the draft.
+    for height in (700, 600):
+        window.resize(760, height)
+        _settle(qapp)
+        assert panel._notes is editor and editor.document() is document
+        assert panel.current_notes() == draft and editor.hasFocus()
+        rects = []
+        for widget in widgets:
+            _inside(panel, widget)
+            rect = QRect(widget.mapTo(panel, QPoint()), widget.size())
+            assert not any(rect.intersects(previous) for previous in rects)
+            rects.append(rect)
+        assert editor.height() >= 2 * editor.fontMetrics().height()
+        assert status.height() >= status.heightForWidth(status.width())
+        assert window.session_strip._tools_button.isVisibleTo(window)
     if failure == "permission":
         assert app._persistence.unsaved_notes == (("music", "Keep this retained draft"),)
         assert app._save_notes()
@@ -314,6 +334,10 @@ def test_details_and_profile_round_trip_preserve_editor_and_recovery(qapp):
 def test_keyboard_opens_scrolls_and_closes_session_details(qapp):
     from PySide6.QtTest import QTest
 
+    # Exercise full keyboard navigation independently of macOS's preference
+    # that otherwise lets Tab/Backtab skip non-text controls.
+    previous_tab_behavior = qapp.styleHints().tabFocusBehavior()
+    qapp.styleHints().setTabFocusBehavior(Qt.TabFocusBehavior.TabFocusAllControls)
     panel = SessionCanvas()
     panel.setStyleSheet(_style(22))
     panel.resize(280, 560)
@@ -342,6 +366,7 @@ def test_keyboard_opens_scrolls_and_closes_session_details(qapp):
         assert scroll.isHidden()
         assert button.hasFocus()
     finally:
+        qapp.styleHints().setTabFocusBehavior(previous_tab_behavior)
         panel.close()
         panel.deleteLater()
         _settle(qapp)
