@@ -22,7 +22,8 @@ MIDI or automatically collect the preceding jam. Logic supplies the next
 production step. Conversation hands talking and screen sharing to Webex or the
 chosen meeting service. Optional Moises stems stay behind Music workflows.
 
-Published baseline: [v0.28.3](https://github.com/rupret007/webjam/releases/tag/v0.28.3).
+Published baseline: [v0.29.0](https://github.com/rupret007/webjam/releases/tag/v0.29.0)
+([GitHub Latest](https://github.com/rupret007/webjam/releases/latest), checked 2026-10-07).
 Wave PRs remain open drafts for exact-tip checks and Bob/Karen review. Jeff owns
 installed-build feel. **No new publish, tag, or Latest until Bob says FINAL BUILD
 after all MATCHED and Bob + Karen QA.** No signing/notarization or Pages; parked

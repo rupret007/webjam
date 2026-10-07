@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- README, contributing, and development guides now describe this checkout’s
+  unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
+  diagnostics, Art companion, Pocket Stage), the public repo, and the actual
+  Qt/pytest/PyInstaller commands. Art and Review & Rehearsal remain Preview.
+
 - Launch Art/Music doors stay keyboard-reachable (arrows plus restored Tab
   focus after Qt polish). Follow-along pause rows, lesson handoff, and missing
   local-video recovery keep accessible names. Compact 800×600 / larger-text

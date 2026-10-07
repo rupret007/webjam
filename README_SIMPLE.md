@@ -21,6 +21,10 @@ v0.29.0 adds **File → Session library…** before a room and
 Music moments are plain notes unless a recording position is confirmed.
 See [the saved-work walkthrough](USER_GUIDE.md#save-a-session-and-continue-later).
 
+Unreleased Session library builds also add **Back up…** and **Import backup…**.
+Those controls are not in the published v0.29.0 download. See
+[the backup walkthrough](USER_GUIDE.md#back-up-and-import-a-workspace-unreleased).
+
 ## Unreleased: return and find help
 
 The workflow continuity PR/test build keeps the v0.29.0 version number. Its

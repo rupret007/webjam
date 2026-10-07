@@ -8,94 +8,78 @@ alwaysApply: true
 
 ## Language and Runtime
 
-- Python 3.11 (CI target). Code uses 3.10+ features (type union syntax `X | Y`).
-- No linter, formatter, or type checker is configured. Follow existing code style.
+- Python 3.11 is the CI target. Code uses 3.10+ features (type union syntax `X | Y`).
+- Lint in CI: `ruff check webjam_qt/ core/ ui/ services/ api/` (`ruff==0.15.22`).
+- Follow existing code style. Do not weaken tests, CI, or fail-closed Preview boundaries.
 
 ## Entry Points
 
-- **Main app**: `python webjam_app_enhanced.py` (tkinter + optional customtkinter GUI)
-- **Legacy app**: `python webjam_app.py` (basic tkinter GUI)
-- **Installer**: `python webjam_installer.py` (Windows setup wizard)
-- **Build script**: `python build_webjam.py` (PyInstaller packaging)
+- **Main app**: `python webjam_qt_main.py` (Qt Conductor; `webjam_qt/`)
+- **Legacy Tkinter**: `python legacy/webjam_app_enhanced.py` (quarantined; not the shipping UI)
+- **Packaging**: `python -m PyInstaller --clean --noconfirm webjam.spec` (not `build_webjam.py`)
 
 ## Running Tests
 
-Tests use `unittest` (stdlib). Run with:
+Tests use pytest. Match CI: one fresh interpreter per module (Qt owns native process state).
 
 ```
-python -m unittest discover -s tests -v
-python -m unittest test_webjam test_modernization -v
+.venv/bin/ruff check webjam_qt/ core/ ui/ services/ api/
+.venv/bin/python -m compileall -q core webjam_qt ui services api tests
+.venv/bin/python -m pip check
+.venv/bin/python ux_smoke_test.py
+git ls-files 'tests/test_*.py' | while IFS= read -r test_file; do
+  QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest "$test_file" -q || exit $?
+done
 ```
 
-All test files in `tests/` plus `test_webjam.py` and `test_modernization.py` at root.
-Shared fixtures live in `tests/conftest.py`.
+Shared fixtures live in `tests/` and `tests/support/`. Physical audio, signing, and notarization are **NOT RUN** until recorded against an exact package.
 
 ## Building
 
 ```
-pyinstaller --onefile --windowed --name WebJam \
-  --hidden-import=customtkinter --hidden-import=numpy \
-  --hidden-import=sounddevice --hidden-import=fastapi \
-  --hidden-import=uvicorn webjam_app_enhanced.py
+python -m PyInstaller --clean --noconfirm webjam.spec
 ```
 
-CI builds run on `windows-latest` and `macos-14` (see `.github/workflows/ci.yml`).
+CI `build-desktop` produces Windows x64, Ubuntu 22.04 x64, Intel Mac, and Apple-silicon Mac packages. Skip code signing and notarization unless an authorized trust job is explicitly requested. See `.github/workflows/ci.yml`.
 
 ## Architecture
 
 ```
-webjam_app_enhanced.py   Main GUI (tkinter/customtkinter, ~1600 lines)
-core/
-  settings.py            AppSettings dataclass, config loading, env overrides
-  models.py              AudioLevel, ParticipantState, MixerSnapshot dataclasses
-  creative_modes.py      CreativeMode definitions and lookup helpers
-  session_templates.py   SessionTemplate presets per mode
-  jamulus_protocol.py    Low-level Jamulus UDP protocol adapter
-jamulus_controller.py    High-level Jamulus process + mixer control
-storage/
-  repository.py          SQLite persistence (users, settings, canvas, audit)
-admin/
-  policy.py              RBAC PolicyEngine (admin/operator/performer)
-  admin_panel.py         Admin UI panel
-ui/
-  auth_controller.py     Sign-in flow with lockout and password rotation
-  services.py            RetryService, MetricsService, diagnostics export
-  dialogs.py             Shared dialog helpers (bootstrap notice, password change)
-  preferences.py         Window geometry and UI preference persistence
-  theme.py               Color theme constants
-  accessibility.py       Font scaling, contrast palette, clamping
-  ux_status.py           Latency classification, readiness state
-  views/                 Setup wizard, diagnostics panel, session canvas, tooltips
-api/
-  local_bridge.py        Optional FastAPI companion API (/health, /participants, /diagnostics)
-utils/
-  installer_helpers.py   Platform helpers (is_admin, find_jamulus, vb_cable_present)
+webjam_qt_main.py        Qt Conductor entry
+webjam_qt/               Windows, widgets, controllers, theme
+core/                    Session, recording, settings, lesson requests, guidance
+services/                Jamulus, Pocket Stage gateway, LAN room, transport adapters
+api/                     Optional local companion API
+ios/                     Pocket Stage and Art companion (Phase 1) Swift sources
+tests/                   pytest modules (run one file per process)
+packaging/               Native payload, Jamulus staging, lockfiles
+webjam.spec              PyInstaller spec used by CI and local source-bundle smokes
 ```
+
+Tkinter sources under `legacy/` are historical. Do not treat them as the product UI.
 
 ## Key Conventions
 
-- All `messagebox` and `simpledialog` calls must include `parent=` for proper dialog ownership.
-- Broad `except Exception` in UI code should be narrowed to `tk.TclError` (styling) or specific socket/OS errors (networking).
-- `_or_default` helper variants return the first creative mode instead of `None`.
-- Settings unknown keys are filtered before constructing `AppSettings` to avoid `TypeError`.
-- Password hashing uses `hashlib.pbkdf2_hmac` with `hmac.compare_digest` for timing-safe comparison.
-- SQLite repository sets `busy_timeout=5000` and `journal_mode=WAL`.
+- Art and Review & Rehearsal stay visibly **Preview** and fail closed where unimplemented.
+- Do not claim a checkout is a published package. GitHub Latest is the download evidence.
+- Never log credentials, invitations, meeting links, raw paths, or raw exceptions.
+- Settings unknown keys are filtered before constructing `AppSettings`.
+- Password hashing uses `hashlib.pbkdf2_hmac` with `hmac.compare_digest`.
 
 ## Dependencies
 
-All in `requirements.txt`. Optional at runtime: `customtkinter`, `sounddevice`, `numpy`, `fastapi`, `uvicorn`.
-Required: `pycasbin`, `httpx`, `sentry-sdk` (Sentry disabled by default).
+All in `requirements.txt`. Desktop UI is PySide6. Release locks in `requirements-lock/` are hash-pinned per target.
 
 ## Environment Variables
 
 - `WEBJAM_JAMULUS_SERVER` -- Jamulus server host
 - `WEBJAM_JAMULUS_PORT` -- Jamulus port (default 22124)
-- `WEBJAM_WEBEX_URL` -- Webex meeting URL
-- `WEBJAM_JAMULUS_CANDIDATES` -- Semicolon-separated Jamulus executable paths
+- `WEBJAM_WEBEX_URL` -- meeting URL (provider-neutral policy still applies)
+- `WEBJAM_JAMULUS_CANDIDATES` -- semicolon-separated Jamulus executable paths
 - `WEBJAM_ENABLE_SENTRY` -- Enable Sentry error reporting (1/true/yes/on)
 
 ## Platform Notes
 
-- Windows: VB-Cable INFs in `VB/`, `is_admin()` and `vb_cable_present()` use Windows APIs.
-- macOS: Audio routing differs; VB-Cable not applicable.
-- Both platforms: tkinter is bundled with Python; customtkinter is pip-installable.
+- Windows: VB-Cable INFs in `VB/`; native diagnostic controls are CI-only on `windows-2025`.
+- macOS: Shared Track isolation uses BlackHole; packages are ad-hoc signed and unnotarized.
+- iOS Art companion / Pocket Stage need Xcode and an Apple Personal Team; Command Line Tools alone cannot produce those apps.

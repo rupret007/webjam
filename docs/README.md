@@ -26,6 +26,7 @@ keeps the product story and five-minute demo intentionally short.
 | New creator | [Simple-language guide](../README_SIMPLE.md) | Understand WebJam in plain words before anything technical |
 | Creator | [Creator guide](../USER_GUIDE.md) | Choose a profile, host/join, record, and follow that profile's Studio boundary |
 | First-time demo | [First Session](../FIRST_JAM.md) | Follow the shortest profile-first live-session path |
+| Follow-along pilot | [First test](FOLLOW_ALONG_FIRST_TEST.md) and [pilot record](FOLLOW_ALONG_PILOT_RECORD.md) | Two-person same-LAN Paint along / Play along; physical rows stay **NOT RUN** until observed |
 | Reference Studio user | [Reference Studio guide](REFERENCE_STUDIO_MUSICIAN_GUIDE.md) | Write, arrange, record, and bounce a local project |
 | Developer | [Development guide](../DEVELOPMENT.md) | Set up the repository, preserve ownership boundaries, and run checks |
 
@@ -37,6 +38,9 @@ v0.29.0 adds **File → Session library…** before a room and
 **Continue** restores its context without starting audio or a room.
 Music moments are plain notes unless a recording position is confirmed.
 See [the saved-work walkthrough](../USER_GUIDE.md#save-a-session-and-continue-later).
+Unreleased builds add **Back up…** / **Import backup…**; see
+[the backup walkthrough](../USER_GUIDE.md#back-up-and-import-a-workspace-unreleased)
+and [follow-along first test](FOLLOW_ALONG_FIRST_TEST.md).
 
 ## Product and architecture
 

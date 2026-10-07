@@ -55,7 +55,7 @@ Run the existing workflow once against that same branch:
 
 ```sh
 gh workflow run ci.yml \
-  --ref codex/windows-portability-diagnostics-20261003 \
+  --ref BRANCH_THAT_PRODUCED_THE_PUSH_RUN \
   -f windows_diagnostic_source_run=SOURCE_PUSH_RUN_ID
 ```
 
