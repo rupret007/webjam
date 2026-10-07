@@ -42,6 +42,60 @@ New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
 [First Jam](FIRST_JAM.md); this README is the complete technical story. Just
 showing someone the door? See the [two-minute demo script](DEMO.md).
 
+## This checkout
+
+The GitHub repository is **public**. This branch is unreleased PR/test-build
+work stacked on published v0.29.0 (drafts #171–#177). The version string stays
+`0.29.0`; these behaviors are **not** in the published packages. Art and
+Review & Rehearsal remain **Preview**. Physical audio, cameras, signing,
+notarization, and feel remain **NOT RUN**.
+
+| In this source | What it is |
+| --- | --- |
+| Saved work | **File → Session library…** / **More → Session library…**; **Continue** restores a workspace without starting audio or a room |
+| Workspace backup | **Back up…** / **Import backup…**, **Verify take** / **Verify reference**; metadata-only or selected completed takes and local Art files |
+| Paint along / Play along | Art **Watch a shared lesson** (meeting share with sound) plus silent local/YouTube reference; Music **Play along** (video practice through the meeting, or Jamulus Shared Track) |
+| Follow-along pilot | Same-LAN Art host/guest Join, pause requests, saved-lesson reuse; [first test](docs/FOLLOW_ALONG_FIRST_TEST.md) |
+| Windows portability diagnostics | Independent CI native control job and one optional frozen/source workflow matrix; [diagnostics](docs/WINDOWS_PORTABILITY_DIAGNOSTICS.md) |
+| Art companion | Phase 1 iPhone/iPad same-LAN guest Join (source / unsigned simulator); not Pocket Stage |
+| Pocket Stage | Owner iPhone mix second-screen behind **More → Use iPhone as Pocket Stage…** |
+
+## Quick start
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python webjam_qt_main.py
+```
+
+CI uses Python 3.11. The app requires 3.10+. From source, close the window
+when finished. Packaged downloads are on [GitHub Latest](https://github.com/rupret007/webjam/releases/latest);
+verify that release’s checksum manifest.
+
+## Build and test
+
+Match CI: one fresh interpreter per test module (Qt owns native process state).
+
+```bash
+.venv/bin/ruff check webjam_qt/ core/ ui/ services/ api/
+.venv/bin/python -m compileall -q core webjam_qt ui services api tests
+.venv/bin/python -m pip check
+.venv/bin/python ux_smoke_test.py
+git ls-files 'tests/test_*.py' | while IFS= read -r test_file; do
+  QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest "$test_file" -q || exit $?
+done
+```
+
+Local macOS source bundle (unsigned, no notarization; not a release package):
+
+```bash
+.venv/bin/python -m PyInstaller --clean --noconfirm webjam.spec
+```
+
+Four-platform release packages come from CI `build-desktop`. iOS Art companion
+and Pocket Stage app installs need Xcode and an Apple Personal Team; they are
+not a Command Line Tools path. Details: [Development](DEVELOPMENT.md).
+
 ## Keep working between sessions
 
 v0.29.0 adds **File → Session library…** before a room and
@@ -87,8 +141,9 @@ remain **NOT RUN**; these changes are not claimed in the published v0.29.0 packa
 | Area | Current state |
 | --- | --- |
 | Product | Creator-facing desktop conductor around Jamulus, optional external meeting conversation, Studio, Pocket Stage, and Phase 1 native Art companion (source / unsigned simulator) |
-| Published line | [GitHub Latest](https://github.com/rupret007/webjam/releases/latest); verify the selected release’s own checksum manifest |
-| Current source line | v0.29.0: saved workspaces, rehearsal plans, Art projects, and take review; same baked Jamulus identities through v0.29.0 |
+| Repository | Public: [rupret007/webjam](https://github.com/rupret007/webjam) |
+| Published line | [GitHub Latest](https://github.com/rupret007/webjam/releases/latest) is v0.29.0 (checked 2026-10-07); verify that release’s own checksum manifest |
+| Current source line | Unsigned v0.29.0 source, plus the stacked PR/test-build work listed above. Same baked Jamulus identities through v0.29.0 |
 | Trust posture | Windows unsigned; macOS ad-hoc signed and unnotarized |
 | License | [MIT](LICENSE), with third-party notices shipped separately |
 | Supported package targets | Windows x64, Ubuntu 22.04 x64, Intel Mac, Apple-silicon Mac |
@@ -958,6 +1013,7 @@ promote a package or claim audibility.
 - [Historical v0.23.0 Shared Track checklist](V023_SHARED_TRACK_RECORDING_PHYSICAL_TEST_CHECKLIST.md)
 - [v0.18 unified-guidance pilot checklist](V018_UNIFIED_GUIDANCE_PILOT.md)
 - [First jam](FIRST_JAM.md)
+- [Follow-along first test](docs/FOLLOW_ALONG_FIRST_TEST.md) and [pilot record](docs/FOLLOW_ALONG_PILOT_RECORD.md)
 - [Creator guide](USER_GUIDE.md)
 - [Simple language guide](README_SIMPLE.md)
 - [Reference Studio guide](docs/REFERENCE_STUDIO_MUSICIAN_GUIDE.md)

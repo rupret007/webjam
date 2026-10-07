@@ -93,9 +93,10 @@ def test_presence_is_only_refreshed_by_state_read_and_exact_boundary_refuses(roo
     with pytest.raises(LessonRequestError, match="presence_stale"):
         store.acknowledge(command.context_id, command.admission_id, 1)
     assert store.host_notices() == ()
-    store.record_state_read(participant, read_at=clock())
-    store.acknowledge(command.context_id, command.admission_id, 1)
-    assert store.current_view(participant).own_receipt.state == "acknowledged"
+    fresh = store.record_state_read(participant, read_at=clock())
+    assert fresh.admission_id != command.admission_id
+    assert fresh.own_receipt is None
+    assert fresh.next_revision == 1
 
 
 def test_retirement_rejects_old_requests_and_acks_and_new_admission_is_distinct(room):

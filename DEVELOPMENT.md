@@ -48,7 +48,7 @@ Use the repository virtual environment:
 .venv/bin/python -m pip check
 .venv/bin/python ux_smoke_test.py
 git ls-files 'tests/test_*.py' | while IFS= read -r test_file; do
-  .venv/bin/python -m pytest "$test_file" -q || exit $?
+  QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest "$test_file" -q || exit $?
 done
 ```
 

@@ -40,6 +40,12 @@ class LessonHandoffPanel(QFrame):
             button.setAccessibleName(button.text())
             button.clicked.connect(lambda _checked=False, b=button, s=signal: self._request(b, s))
             layout.addWidget(button)
+        self.choose_button.setAccessibleDescription(
+            "Choose the YouTube lesson to share in your meeting."
+        )
+        self.open_button.setAccessibleDescription(
+            "Open the selected lesson in your browser. Sharing in the meeting is a separate step."
+        )
         self.restart_button.setAccessibleDescription(
             "Start fresh requests for this room. Previous requests stay retired; the host controls playback."
         )
@@ -71,6 +77,11 @@ class LessonHandoffPanel(QFrame):
         self.choose_button.setVisible(hosting is True)
         self.choose_button.setText("Change YouTube…" if url else "Choose YouTube…")
         self.choose_button.setAccessibleName("Change YouTube lesson" if url else "Choose YouTube lesson")
+        self.choose_button.setAccessibleDescription(
+            "Change the YouTube lesson shared in your meeting."
+            if url else
+            "Choose the YouTube lesson to share in your meeting."
+        )
         self.open_button.setVisible(hosting is True and bool(url))
         self.save_button.setVisible(profile in {"art", "music"} and bool(url) and hosting is not None)
         self.save_button.setAccessibleDescription(

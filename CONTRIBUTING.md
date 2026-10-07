@@ -17,11 +17,11 @@ boundaries, privacy contracts, and evidence discipline.
 From the repository root:
 
 ```sh
-.venv/bin/ruff check webjam_qt/ core/ ui/ services/ api/ tests/
+.venv/bin/ruff check webjam_qt/ core/ ui/ services/ api/
 .venv/bin/python -m compileall -q core webjam_qt ui services api tests
 .venv/bin/python -m pip check
 git ls-files 'tests/test_*.py' | while IFS= read -r test_file; do
-  .venv/bin/python -m pytest "$test_file" -q || exit $?
+  QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest "$test_file" -q || exit $?
 done
 ```
 

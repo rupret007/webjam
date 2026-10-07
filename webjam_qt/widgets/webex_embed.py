@@ -73,6 +73,7 @@ class _LessonRequestRow(QFrame):
         self.status_label = QLabel()
         self.status_label.setTextFormat(Qt.TextFormat.PlainText)
         self.status_label.setWordWrap(True)
+        self.status_label.setAccessibleName("Request status")
         self.ack_button = QPushButton("Acknowledge request")
         self.ack_button.setObjectName("GhostButton")
         self.ack_button.setAutoDefault(False)
@@ -95,6 +96,7 @@ class _LessonRequestRow(QFrame):
         self.status_label.setText(
             state if expired else f"{state} · {remaining}s left"
         )
+        self.status_label.setAccessibleDescription(self.status_label.text())
         self.ack_button.setAccessibleName(
             f"Acknowledge request from {self.name_label._name}"
         )
@@ -363,6 +365,10 @@ class WebexEmbed(QFrame):
         )
         self._lesson_request_host_hint.setTextFormat(Qt.TextFormat.PlainText)
         self._lesson_request_host_hint.setWordWrap(True)
+        self._lesson_request_host_hint.setAccessibleName("How lesson requests work")
+        self._lesson_request_host_hint.setAccessibleDescription(
+            self._lesson_request_host_hint.text()
+        )
         request_layout.addWidget(self._lesson_request_host_hint)
         self._lesson_request_scroll = QScrollArea()
         self._lesson_request_scroll.setWidgetResizable(True)

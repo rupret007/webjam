@@ -17,7 +17,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QSize, QTimer, Qt
+from PySide6.QtCore import QEvent, QSize, QTimer, Qt
 from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeyEvent, QKeySequence, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -255,8 +255,61 @@ class ProfileCard(QCommandLinkButton):
         self.setIconSize(QSize(0, 0))
         self.setMinimumHeight(54)
         self.setMaximumHeight(64)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName(title)
         self.setAccessibleDescription(summary)
+
+    def event(self, event):
+        # Offscreen: the unchecked Music command-link loses TabFocus during
+        # QDialog.show() polish (ClickFocus|0x8). That write is C++ style
+        # polish, not QWidget.setFocusPolicy, so a Python override of
+        # setFocusPolicy never sees it. A 0-ms timer in showEvent is also too
+        # early: Qt can fire it, then polish again. Restore only after the
+        # events that actually follow polish, and only when TabFocus is gone.
+        result = super().event(event)
+        if getattr(self, "_restoring_tab_focus", False):
+            return result
+        if event.type() in (
+            QEvent.Type.Show,
+            QEvent.Type.Paint,
+            QEvent.Type.Polish,
+            QEvent.Type.StyleChange,
+            QEvent.Type.PolishRequest,
+        ) and not (self.focusPolicy() & Qt.FocusPolicy.TabFocus):
+            self._restoring_tab_focus = True
+            try:
+                super().setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            finally:
+                self._restoring_tab_focus = False
+        return result
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        """Art and Music are equal doors; arrows move between them."""
+
+        group = self.group()
+        if group is not None and event.key() in (
+            Qt.Key.Key_Right,
+            Qt.Key.Key_Down,
+            Qt.Key.Key_Left,
+            Qt.Key.Key_Up,
+        ):
+            buttons = [
+                button
+                for button in group.buttons()
+                if button.isVisible() and button.isEnabled()
+            ]
+            if self in buttons and len(buttons) > 1:
+                step = (
+                    1
+                    if event.key() in (Qt.Key.Key_Right, Qt.Key.Key_Down)
+                    else -1
+                )
+                other = buttons[(buttons.index(self) + step) % len(buttons)]
+                other.setChecked(True)
+                other.setFocus(Qt.FocusReason.TabFocusReason)
+                event.accept()
+                return
+        super().keyPressEvent(event)
 
 
 class StartCard(QCommandLinkButton):
@@ -322,6 +375,7 @@ class StartCard(QCommandLinkButton):
         # Sixty-four pixels still leaves both cards and Host / Join inside the
         # supported 760x600 screen floor.
         self.setFixedHeight(_START_CARD_HEIGHT)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName(start.label)
         self.setAccessibleDescription(f"{start.summary} {start.detail}")
         self.setToolTip(start.detail)
@@ -556,6 +610,9 @@ class LaunchDialog(QDialog):
         self.setTabOrder(previous, self._host_button)
         self.setTabOrder(self._host_button, self._join_button)
         self.setTabOrder(self._join_button, self._studio_button)
+        self.setTabOrder(self._invite_input, self._join_button_primary)
+        self.setTabOrder(self._join_button_primary, self._join_back_button)
+        self._keep_door_cards_tabbable()
 
         if initial_invitation is not None and initial_invite_url:
             raise ValueError("provide one initial invitation")
@@ -964,10 +1021,15 @@ class LaunchDialog(QDialog):
         layout.addWidget(self._join_button_primary)
         layout.addStretch(2)
 
-        back = QPushButton("Back")
-        back.setObjectName("GhostButton")
-        back.clicked.connect(self.show_choices)
-        layout.addWidget(back, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._join_back_button = QPushButton("Back")
+        self._join_back_button.setObjectName("GhostButton")
+        self._join_back_button.setAccessibleName("Back")
+        self._join_back_button.setAccessibleDescription(
+            "Return to Host and Join without using the pasted invite."
+        )
+        self._join_back_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._join_back_button.clicked.connect(self.show_choices)
+        layout.addWidget(self._join_back_button, 0, Qt.AlignmentFlag.AlignHCenter)
         self._apply_creator_profile_presentation()
         self._on_invite_text_changed()
         return page
@@ -1073,9 +1135,13 @@ class LaunchDialog(QDialog):
             )
             if art_door:
                 self._refresh_start_presentation()
+        self._keep_door_cards_tabbable()
         if hasattr(self, "_join_title"):
             self._join_title.setText(copy.join_title)
+            self._join_title.setAccessibleName(copy.join_title)
             self._join_subtitle.setText(copy.join_subtitle)
+            self._join_subtitle.setAccessibleName("How to join")
+            self._join_subtitle.setAccessibleDescription(copy.join_subtitle)
             self._join_button_primary.setText(copy.join)
             self._join_button_primary.setAccessibleName(copy.join)
             self._join_button_primary.setAccessibleDescription(copy.join_description)
@@ -1091,6 +1157,20 @@ class LaunchDialog(QDialog):
         helper = str(text or "").strip()
         self._choice_helper.setText(helper)
         self._choice_helper.setVisible(bool(helper))
+
+    def _keep_door_cards_tabbable(self) -> None:
+        """Restore Tab focus after setTabOrder, which can drop it on command-links."""
+
+        for card in getattr(self, "_profile_cards", {}).values():
+            card.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        for cards in getattr(self, "_start_cards", {}).values():
+            for card in cards:
+                card.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._keep_door_cards_tabbable()
+        QTimer.singleShot(0, self, self._keep_door_cards_tabbable)
 
     def _build_menu(self, root: QVBoxLayout) -> None:
         self._menu_bar = QMenuBar(self)

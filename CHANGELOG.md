@@ -6,6 +6,28 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- README, contributing, and development guides now describe this checkout’s
+  unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
+  diagnostics, Art companion, Pocket Stage), the public repo, and the actual
+  Qt/pytest/PyInstaller commands. Art and Review & Rehearsal remain Preview.
+
+- Launch Art/Music doors stay keyboard-reachable (arrows plus restored Tab
+  focus after Qt polish). Follow-along pause rows, lesson handoff, and missing
+  local-video recovery keep accessible names. Compact 800×600 / larger-text
+  regressions cover the live door and lesson controls. Art live chrome still
+  says Preview (in-session honesty; the first-screen ban is unchanged).
+  Physical audio, cameras, and feel remain **NOT RUN**.
+
+- Paint along's empty host surface keeps Watch a shared lesson, Choose process
+  video, and YouTube link, with only Watch a shared lesson visually primary.
+  Join, Make together after Host, and Conversation fit a 760×600 floor with
+  20px text. Profile cards no longer ignore `setFocusPolicy`.
+
+- Document real-session acceptance gaps for follow-along (`docs/FOLLOW_ALONG_SESSION_GAPS.md`)
+  and add offscreen regressions for multi-guest pause rows, End-then-Start stale
+  lesson context, and guest reconnect admission. Unacknowledged pause requests
+  rotate admission after presence TTL on re-read.
+
 ### Follow-along pilot readiness — draft test-build scope
 
 - Lesson setup explains how a host shares a meeting link added after the room
