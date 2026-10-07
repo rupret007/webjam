@@ -19,28 +19,23 @@ import pytest
 from webjam_reference.config import ServiceConfig
 from webjam_reference.server import ReferenceService
 
-CONNECT_TIMEOUT_DURING_SHUTDOWN = "connect-timeout-during-shutdown"
-
 
 async def turns(count):
     for _ in range(count):
         await asyncio.sleep(0)
 
 
-async def burst_client(port, *, http, observations, responded, shutdown_started):
+async def burst_client(port, *, http, observations, responded, handshake=None):
     peer = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     peer.setblocking(False)
     loop = asyncio.get_running_loop()
     try:
-        try:
-            await asyncio.wait_for(loop.sock_connect(peer, ("127.0.0.1", port)), 1)
-        except TimeoutError:
-            # This client races intentional listener retirement. Classify the
-            # connect deadline separately; it does not prove whether the server
-            # accepted a socket. Every server ownership check still runs below.
-            if shutdown_started.is_set():
-                return CONNECT_TIMEOUT_DURING_SHUTDOWN
-            raise
+        await asyncio.wait_for(loop.sock_connect(peer, ("127.0.0.1", port)), 1)
+        # Close must race accept/setup, not TCP SYN. Retiring a listen socket
+        # while connect is still in progress can leave sock_connect waiting
+        # until this deadline instead of raising ConnectionError.
+        if handshake is not None:
+            await handshake.wait()
         await asyncio.wait_for(loop.sock_sendall(peer, b"GET /healthz HTTP/1.1\r\nX-Incomplete: " if http
                                else b'{"v":3,"op":"unknown"}\n'), 1)
         while True:
@@ -55,12 +50,9 @@ async def burst_client(port, *, http, observations, responded, shutdown_started)
         peer.close()
 
 
-@pytest.mark.parametrize("stage, closing", [
-    ("connect", True), ("connect", False), ("send", True),
-    ("receive", True), ("cancel", True),
-])
-def test_burst_client_timeout_contract(monkeypatch, stage, closing):
-    """Only connection establishment during intentional Close may time out."""
+@pytest.mark.parametrize("stage", ["connect", "send", "receive", "cancel"])
+def test_burst_client_timeout_contract(monkeypatch, stage):
+    """Phase deadlines stay fail-closed; they are never classified as success."""
     class Peer:
         closed = False
 
@@ -73,9 +65,7 @@ def test_burst_client_timeout_contract(monkeypatch, stage, closing):
     async def scenario():
         loop = asyncio.get_running_loop()
         peer, entered, observations = Peer(), [], []
-        shutdown_started, responded = asyncio.Event(), asyncio.Event()
-        if closing:
-            shutdown_started.set()
+        responded = asyncio.Event()
 
         async def connect(*_args):
             entered.append("connect")
@@ -101,17 +91,13 @@ def test_burst_client_timeout_contract(monkeypatch, stage, closing):
             patch.setattr(loop, "sock_sendall", send)
             patch.setattr(loop, "sock_recv", receive)
             task = asyncio.create_task(burst_client(
-                12345, http=False, observations=observations, responded=responded,
-                shutdown_started=shutdown_started))
+                12345, http=False, observations=observations, responded=responded))
             if stage == "cancel":
                 await asyncio.sleep(0)
                 task.cancel()
             try:
-                if stage == "connect" and closing:
-                    assert await task == CONNECT_TIMEOUT_DURING_SHUTDOWN
-                else:
-                    with pytest.raises(asyncio.CancelledError if stage == "cancel" else TimeoutError):
-                        await task
+                with pytest.raises(asyncio.CancelledError if stage == "cancel" else TimeoutError):
+                    await task
             finally:
                 assert peer.closed
             assert not observations and not responded.is_set()
@@ -123,7 +109,7 @@ def test_burst_client_timeout_contract(monkeypatch, stage, closing):
     asyncio.run(scenario(), debug=True)
 
 
-def test_default_loop_acceptance_close_bursts_retire_resources_without_diagnostics(monkeypatch, record_property):
+def test_default_loop_acceptance_close_bursts_retire_resources_without_diagnostics(monkeypatch):
     diagnostics, unraisable, observations = [], [], []
     monkeypatch.setattr(sys, "unraisablehook", lambda event: unraisable.append(type(event.exc_value).__name__))
 
@@ -136,7 +122,7 @@ def test_default_loop_acceptance_close_bursts_retire_resources_without_diagnosti
             "has_transport": "transport" in context,
             "has_protocol": "protocol" in context,
         }))
-        established = connect_timeouts = 0
+        established = 0
         for index in range(24):
             service = await ReferenceService(ServiceConfig(
                 control_port=0, relay_port=0, http_port=0,
@@ -144,7 +130,7 @@ def test_default_loop_acceptance_close_bursts_retire_resources_without_diagnosti
                 connection_write_timeout_seconds=0.2,
             )).start()
             tasks, fixed_peer, closing = [], None, None
-            responded, shutdown_started = asyncio.Event(), asyncio.Event()
+            responded = asyncio.Event()
             try:
                 # Half the cases prove an actual handler before creating seven
                 # competing accepts; the other half race all eight cold entries.
@@ -162,12 +148,14 @@ def test_default_loop_acceptance_close_bursts_retire_resources_without_diagnosti
                     assert json.loads(reply)["error"] == "unknown_operation"
                     established += 1
                     count -= 1
+                handshake = asyncio.Barrier(count + 1)
                 for number in range(count):
                     http = bool(number % 2)
                     tasks.append(asyncio.create_task(burst_client(
                         service.http_port if http else service.control_port,
                         http=http, observations=observations, responded=responded,
-                        shutdown_started=shutdown_started)))
+                        handshake=handshake)))
+                await asyncio.wait_for(handshake.wait(), 1)
                 await turns((0, 1, 2, 3, 5, 8)[index % 6])
                 if index >= 12:
                     # Exercise both sides of an ordinary poll interval too;
@@ -182,7 +170,6 @@ def test_default_loop_acceptance_close_bursts_retire_resources_without_diagnosti
                 if index % 3 == 2:
                     for task in tasks[::2]:
                         task.cancel()
-                shutdown_started.set()
                 closing = asyncio.create_task(service.close())
                 if index % 4 == 3:
                     await turns(1)
@@ -191,11 +178,10 @@ def test_default_loop_acceptance_close_bursts_retire_resources_without_diagnosti
                 else:
                     await closing
                 results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 1.5)
-                connect_timeouts += results.count(CONNECT_TIMEOUT_DURING_SHUTDOWN)
-                assert all(result in (None, CONNECT_TIMEOUT_DURING_SHUTDOWN) or isinstance(result, asyncio.CancelledError) for result in results), [
+                assert all(result is None or isinstance(result, asyncio.CancelledError) for result in results), [
                     (type(result).__name__, getattr(result, "errno", None),
                      [(frame.name, frame.lineno) for frame in traceback.extract_tb(result.__traceback__)]) for result in results
-                    if result not in (None, CONNECT_TIMEOUT_DURING_SHUTDOWN) and not isinstance(result, asyncio.CancelledError)]
+                    if result is not None and not isinstance(result, asyncio.CancelledError)]
                 assert service.registry.session_count == 0
                 assert service._active_connections == service._active_http_connections == 0
                 assert not service._connection_tasks and not service._adopted_connections
@@ -224,11 +210,10 @@ def test_default_loop_acceptance_close_bursts_retire_resources_without_diagnosti
         await turns(5)
         gc.collect()
         await turns(5)
-        return connect_timeouts
 
     with warnings.catch_warnings(record=True) as seen:
         warnings.simplefilter("error", ResourceWarning)
-        record_property("shutdown_connect_timeouts", asyncio.run(scenario(), debug=True))
+        asyncio.run(scenario(), debug=True)
         gc.collect()
     assert not diagnostics, diagnostics
     assert not unraisable, unraisable
