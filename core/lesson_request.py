@@ -215,7 +215,12 @@ class _Admission:
 
 
 class LessonRequestStore:
-    """One retained admission/high-water per participant, scoped to one context."""
+    """One retained admission per participant, scoped to one context.
+
+    Revision is per-admission and resets when that admission is rotated
+    (including reconnect after presence TTL with an unacknowledged request).
+    It is not a participant-lifetime high-water mark.
+    """
 
     def __init__(self, *, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
