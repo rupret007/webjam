@@ -128,10 +128,12 @@ class _SoundDeviceModule:
     def __init__(self) -> None:
         self.streams: list[_SoundDeviceStream] = []
         self.fail_next_start = False
+        self.fail_next_close = False
 
     def InputStream(self, **kwargs):
         stream = _SoundDeviceStream(kwargs)
         stream.fail_start = self.fail_next_start
+        stream.fail_close = self.fail_next_close
         self.streams.append(stream)
         return stream
 
@@ -804,4 +806,126 @@ def test_sounddevice_input_backend_closes_after_start_stop_and_abort_failures() 
     with pytest.raises(ProjectRecordingError, match="abort"):
         backend.abort()
     assert stream.closes == 1
+    assert backend.snapshot.running is False
+
+
+@pytest.mark.parametrize("operation", ["stop", "abort"])
+@pytest.mark.parametrize("operation_fails", [False, True])
+@pytest.mark.parametrize("retry", ["stop", "abort"])
+def test_sounddevice_unconfirmed_close_blocks_start_until_cleanup_retry(
+    operation: str, operation_fails: bool, retry: str,
+) -> None:
+    module = _SoundDeviceModule()
+    backend = SoundDeviceProjectInputBackend(
+        input_channels=1, sounddevice_module=module,
+    )
+    backend.start(lambda _samples: None)
+    stream = module.streams[0]
+    setattr(stream, f"fail_{operation}", operation_fails)
+    stream.fail_close = True
+
+    for attempt in (1, 2):
+        with pytest.raises(ProjectRecordingError) as caught:
+            getattr(backend, operation)()
+        assert str(caught.value) == (
+            f"WebJam couldn't {operation} the Studio input device cleanly."
+        )
+        assert stream.closes == attempt
+        assert backend.snapshot.running is True
+        with pytest.raises(ProjectRecordingError, match="already running"):
+            backend.start(lambda _samples: None)
+        assert module.streams == [stream]
+
+    stream.fail_stop = stream.fail_abort = stream.fail_close = False
+    getattr(backend, retry)()
+    assert stream.closes == 3
+    assert backend.snapshot.running is False
+    backend.stop()
+    backend.abort()
+    assert stream.closes == 3
+
+    backend.start(lambda _samples: None)
+    assert len(module.streams) == 2
+    backend.abort()
+    assert stream.closes == 3
+
+
+@pytest.mark.parametrize("retry", ["stop", "abort"])
+def test_sounddevice_failed_start_retains_unconfirmed_close_for_retry(
+    retry: str,
+) -> None:
+    module = _SoundDeviceModule()
+    module.fail_next_start = module.fail_next_close = True
+    backend = SoundDeviceProjectInputBackend(
+        input_channels=1, sounddevice_module=module,
+    )
+    with pytest.raises(ProjectRecordingError) as caught:
+        backend.start(lambda _samples: None)
+    assert str(caught.value) == (
+        "WebJam couldn't open the selected Studio input device."
+    )
+    stream = module.streams[0]
+    assert stream.closes == 1
+    assert backend.snapshot.running is True
+    with pytest.raises(ProjectRecordingError, match="already running"):
+        backend.start(lambda _samples: None)
+    assert module.streams == [stream]
+
+    stream.fail_close = False
+    getattr(backend, retry)()
+    assert stream.closes == 2
+    assert backend.snapshot.running is False
+    backend.abort()
+    assert stream.closes == 2
+
+    module.fail_next_start = module.fail_next_close = False
+    backend.start(lambda _samples: None)
+    assert len(module.streams) == 2
+    backend.abort()
+
+
+@pytest.mark.parametrize("fallback_closes", [False, True])
+def test_recorder_fallback_abort_reaches_stream_with_unconfirmed_close(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fallback_closes: bool,
+) -> None:
+    module = _SoundDeviceModule()
+    backend = SoundDeviceProjectInputBackend(
+        input_channels=1, block_frames=4, sounddevice_module=module,
+    )
+    recorder = ProjectMultitrackRecorder(backend)
+    destination = tmp_path / "capture"
+    recorder.start(
+        destination,
+        schedule=ProjectRecordingSchedule(0, 4),
+        tracks=(ArmedProjectTrack("mic", (0,)),),
+    )
+    stream = module.streams[0]
+    stream.emit(np.ones((4, 1), dtype=np.float32))
+    stream.fail_stop = stream.fail_close = True
+    original_abort = stream.abort
+
+    def abort():
+        original_abort()
+        stream.fail_close = not fallback_closes
+
+    monkeypatch.setattr(stream, "abort", abort)
+    result = recorder.stop()
+    assert stream.aborts == 1
+    assert stream.closes == 2
+    assert backend.snapshot.running is (not fallback_closes)
+    assert result.state is ProjectRecorderState.FAILED
+    assert result.published is False
+    assert result.recovery_dir is not None
+    assert not destination.exists()
+    assert "secret" not in " ".join(result.errors)
+    assert str(tmp_path) not in " ".join(result.errors)
+
+    if not fallback_closes:
+        with pytest.raises(ProjectRecordingError, match="already running"):
+            backend.start(lambda _samples: None)
+        assert module.streams == [stream]
+        monkeypatch.setattr(stream, "abort", original_abort)
+        stream.fail_close = False
+        backend.abort()
+        assert stream.closes == 3
     assert backend.snapshot.running is False
