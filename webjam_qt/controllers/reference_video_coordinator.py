@@ -418,11 +418,12 @@ class ReferenceVideoCoordinator:
             host, generation = self._host, self._generation
             if host.snapshot.state is ReferenceVideoState.LOADING:
                 return
-            sampling = host.snapshot.state is ReferenceVideoState.PLAYING
+            before = host.snapshot
+            sampling = before.state is ReferenceVideoState.PLAYING
             snapshot = host.refresh()
-            # Playing refreshes notify through the host; paused/ready states
-            # still need their ordinary heartbeat for the guest follower.
-            if not sampling:
+            # Playing refreshes and invalidated sources notify through the
+            # host; unchanged paused/ready states still need a heartbeat.
+            if not sampling and snapshot == before:
                 self._notify_host(snapshot, host=host, generation=generation)
             return
         follower = self._follower

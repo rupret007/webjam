@@ -564,6 +564,10 @@ For the existing **silent local-file option**, the host chooses one video file:
 
 Things worth knowing:
 
+- If the host's chosen file changes or moves after sharing, WebJam checks it
+  again on the next refresh or Play, stops using its old sharing identity, and
+  offers **Choose process video…** to open it again. This also applies while
+  the video is ready or paused.
 - **Only the host controls playback.** Guests have no play, pause, stop, or
   scrub control, by design.
 - **The video is silent from its first frame.** Use an optional meeting app
