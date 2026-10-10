@@ -8,6 +8,7 @@ from enum import Enum
 class SessionPhase(str, Enum):
     NOT_CONNECTED = "not_connected"
     CONNECTING = "connecting"
+    CONNECTED = "connected"
     PRACTICE = "practice"
     RECONNECTING = "reconnecting"
     ENDING = "ending"
