@@ -812,6 +812,23 @@ QLineEdit#CanvasChatInput {
     font-size: ${FONT_SIZE_MD}px;
 }
 
+QToolButton#LaunchJoinHelp {
+    background-color: transparent;
+    color: ${COLOR_TEXT_SECONDARY};
+    border: 0;
+    padding: 0;
+    min-height: 20px;
+}
+
+QToolButton#LaunchJoinHelp:hover {
+    color: ${COLOR_ACCENT_PRIMARY};
+    background-color: transparent;
+}
+
+QToolButton#LaunchJoinHelp:focus {
+    border: 1px solid ${COLOR_BORDER_FOCUS};
+}
+
 #LaunchHelper {
     color: ${COLOR_TEXT_MUTED};
     font-size: ${FONT_SIZE_SM}px;

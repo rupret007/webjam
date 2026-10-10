@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QMenuBar,
     QPushButton,
     QStackedWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -70,9 +71,12 @@ from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 
 LOGGER = logging.getLogger("webjam.qt.launch_dialog")
 
-_JOIN_INVITATION_GUIDANCE = (
-    "Paste the invite or the whole message.\n"
+_JOIN_INVITATION_PROMPT = "Paste the invite or the whole message."
+_JOIN_NETWORK_GUIDANCE = (
     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
+)
+_JOIN_INVITATION_GUIDANCE = (
+    f"{_JOIN_INVITATION_PROMPT}\n{_JOIN_NETWORK_GUIDANCE}"
 )
 
 
@@ -102,7 +106,7 @@ _CREATOR_LAUNCH_COPY = {
         ),
         helper="Write songs or play live together.",
         join_title="Join Music.",
-        join_subtitle=_JOIN_INVITATION_GUIDANCE,
+        join_subtitle=_JOIN_INVITATION_PROMPT,
     ),
     "podcast_voice": _CreatorLaunchCopy(
         host="Host Remote Recording",
@@ -121,7 +125,7 @@ _CREATOR_LAUNCH_COPY = {
         ),
         helper="Record remote voices or start a local multitrack recording.",
         join_title="Join Recording.",
-        join_subtitle=_JOIN_INVITATION_GUIDANCE,
+        join_subtitle=_JOIN_INVITATION_PROMPT,
     ),
     "review_rehearsal": _CreatorLaunchCopy(
         host="Host Review",
@@ -134,7 +138,7 @@ _CREATOR_LAUNCH_COPY = {
         ),
         helper="Host or join a review.",
         join_title="Join Review.",
-        join_subtitle=_JOIN_INVITATION_GUIDANCE,
+        join_subtitle=_JOIN_INVITATION_PROMPT,
     ),
     "art": _CreatorLaunchCopy(
         host="Host",
@@ -149,7 +153,7 @@ _CREATOR_LAUNCH_COPY = {
         local_description="Standalone art projects are not on this door.",
         helper="Open a room and make something together.",
         join_title="Join the room.",
-        join_subtitle=_JOIN_INVITATION_GUIDANCE,
+        join_subtitle=_JOIN_INVITATION_PROMPT,
     ),
 }
 
@@ -973,6 +977,28 @@ class LaunchDialog(QDialog):
         self._join_subtitle.setWordWrap(True)
         layout.addWidget(self._join_title)
         layout.addWidget(self._join_subtitle)
+        self._join_help_toggle = QToolButton()
+        self._join_help_toggle.setObjectName("LaunchJoinHelp")
+        self._join_help_toggle.setText("Need help?")
+        self._join_help_toggle.setCheckable(True)
+        self._join_help_toggle.setToolButtonStyle(
+            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+        )
+        self._join_help_toggle.setArrowType(Qt.ArrowType.RightArrow)
+        self._join_help_toggle.setAccessibleName("Need help?")
+        self._join_help_toggle.setAccessibleDescription(
+            "Show invitation tips, including guidance for same-network invites."
+        )
+        self._join_help_toggle.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        layout.addWidget(self._join_help_toggle, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._join_network_guidance = QLabel(_JOIN_NETWORK_GUIDANCE)
+        self._join_network_guidance.setObjectName("LaunchHelper")
+        self._join_network_guidance.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._join_network_guidance.setWordWrap(True)
+        self._join_network_guidance.setAccessibleName("Same-network invitation help")
+        layout.addWidget(self._join_network_guidance)
+        self._join_help_toggle.toggled.connect(self._set_join_help_visible)
+        self._set_join_help_visible(False)
         layout.addStretch(1)
 
         self._join_status = QLabel("Paste your invitation")
@@ -1141,7 +1167,7 @@ class LaunchDialog(QDialog):
             self._join_title.setAccessibleName(copy.join_title)
             self._join_subtitle.setText(copy.join_subtitle)
             self._join_subtitle.setAccessibleName("How to join")
-            self._join_subtitle.setAccessibleDescription(copy.join_subtitle)
+            self._join_subtitle.setAccessibleDescription(_JOIN_INVITATION_GUIDANCE)
             self._join_button_primary.setText(copy.join)
             self._join_button_primary.setAccessibleName(copy.join)
             self._join_button_primary.setAccessibleDescription(copy.join_description)
@@ -1332,8 +1358,17 @@ class LaunchDialog(QDialog):
     def show_join(self) -> None:
         if not self._submitting:
             self._on_invite_text_changed()
+        if hasattr(self, "_join_help_toggle"):
+            self._join_help_toggle.setChecked(False)
+            self._set_join_help_visible(False)
         self._pages.setCurrentWidget(self._join_page)
         self._invite_input.setFocus()
+
+    def _set_join_help_visible(self, visible: bool) -> None:
+        self._join_network_guidance.setVisible(visible)
+        self._join_help_toggle.setArrowType(
+            Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow
+        )
 
     def _clear_join_error(self) -> None:
         self._join_error.clear()
