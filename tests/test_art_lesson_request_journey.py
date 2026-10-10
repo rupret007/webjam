@@ -14,6 +14,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QMessageBox
 
 from core.lesson_request import LessonRequestCommand, LessonRequestError
+from core.session_conductor import ArtRoomState
 from core.session_transfer import (
     EnrollmentRegistry,
     SessionControlState,
@@ -388,11 +389,13 @@ def test_saved_meeting_change_retires_only_effective_host_context(pair, monkeypa
         assert pair.server.lesson_request_notices() == ()
 
 
-def test_route_loss_drops_requests_and_recovery_requires_explicit_host_entry(pair, qapp, monkeypatch):
+def test_route_loss_with_replaced_owner_requires_explicit_host_entry(pair, qapp, monkeypatch):
     _pause(pair, qapp)
     app = pair.host.app
     binding = app._room_participant._lesson_binding
     monkeypatch.setattr("core.network_invite.local_band_address", lambda: "")
+    # A replacement listener really retires authority, unlike a route blip.
+    app.host_peer._lifecycle_generation = 1
     app._room_participant.tick()
     assert app._room_participant._lesson_binding is None
     assert pair.server.lesson_request_notices() == ()
@@ -401,6 +404,99 @@ def test_route_loss_drops_requests_and_recovery_requires_explicit_host_entry(pai
     assert app._room_participant._lesson_binding is None
     pair.enter(pair.host)
     assert app._room_participant._lesson_binding.context_id != binding.context_id
+
+
+@pytest.mark.parametrize("interruption", ["route", "missing_snapshot", "aged_snapshot", "missing_names"])
+def test_host_lesson_binding_survives_temporary_observation_loss(pair, qapp, monkeypatch, interruption):
+    notice = _pause(pair, qapp)
+    app = pair.host.app
+    room, panel = app._room_participant, app.window.webex_embed
+    binding = room._lesson_binding
+    key = (notice.context_id, notice.admission_id, notice.revision)
+    with monkeypatch.context() as patch:
+        if interruption == "route":
+            patch.setattr("core.network_invite.local_band_address", lambda: "")
+            room.tick()
+            assert room.state is ArtRoomState.RECONNECTING
+        elif interruption == "missing_snapshot":
+            room._host_names_owner = None
+        elif interruption == "aged_snapshot":
+            room._host_names_observed_at -= 6.0
+        else:
+            patch.setattr(pair.server, "lesson_request_names", lambda _ids: None)
+        room.project_lesson_requests()
+        assert room._lesson_binding is binding
+        assert pair.server.lesson_request_notices() == (notice,)
+        assert not panel.lesson_handoff.restart_button.isVisibleTo(app.window)
+        assert panel._lesson_request_rows == {}
+    pair.poll()
+    assert room._lesson_binding is binding
+    assert key in panel._lesson_request_rows
+    assert not panel.lesson_handoff.restart_button.isVisibleTo(app.window)
+    panel.lesson_request_acknowledge.emit(*key)
+    pair.poll()
+    assert pair.owner.lesson_request_state.status == "acknowledged"
+
+
+def test_guest_lesson_binding_recovers_after_failed_poll_without_reentry(pair, qapp, monkeypatch):
+    notice = _pause(pair, qapp)
+    app = pair.guest.app
+    room, panel = app._room_participant, app.window.webex_embed
+    binding = room._lesson_binding
+    old_submit = room._lesson_slots[0][1]
+    with monkeypatch.context() as patch:
+        patch.setattr(pair.owner.client, "state_with_lesson_requests", Mock(side_effect=OSError("offline")))
+        with pytest.raises(OSError, match="offline"):
+            pair.owner.poll_once()
+        room.lose_lan(pair.owner, room.generation, False)
+        assert room.state is ArtRoomState.RECONNECTING
+        room.project_lesson_requests()
+        assert room._lesson_binding is binding
+        assert not panel._lesson_pause_button.isEnabled()
+        assert not panel._lesson_ready_button.isEnabled()
+        assert not panel.lesson_handoff.restart_button.isVisibleTo(app.window)
+        old_submit("ready")
+        assert pair.owner.lesson_request_state.command is None
+    pair.poll()
+    pair.poll()
+    assert room._lesson_binding is binding
+    assert panel._lesson_pause_button.isEnabled()
+    assert pair.owner.lesson_request_state.status == "accepted"
+    assert pair.server.lesson_request_notices() == (notice,)
+
+
+@pytest.mark.parametrize("role", ["host", "guest"])
+@pytest.mark.parametrize("boundary", ["generation", "profile", "blocked", "role", "owner"])
+def test_lesson_binding_retires_at_room_authority_boundaries(pair, qapp, monkeypatch, role, boundary):
+    notice = _pause(pair, qapp)
+    app = getattr(pair, role).app
+    room = app._room_participant
+    binding = room._lesson_binding
+    callback = room._lesson_slots[0][1]
+    with monkeypatch.context() as patch:
+        if boundary == "generation":
+            patch.setattr(room, "generation", room.generation + 1)
+        elif boundary == "profile":
+            patch.setattr(app, "_active_creator_profile_key", "music")
+        elif boundary == "blocked":
+            patch.setattr(room, "stopping", True)
+        elif boundary == "role":
+            patch.setattr(room, "role", "")
+        elif role == "host":
+            patch.setattr(app, "host_peer", SimpleNamespace(server=None))
+        else:
+            patch.setattr(room, "lan_guest", None)
+        room.project_lesson_requests()
+        assert room._lesson_binding is None
+        assert room._lesson_slots == []
+        if role == "host":
+            callback(notice.context_id, notice.admission_id, notice.revision)
+            assert pair.server.lesson_request_notices() == ()
+        else:
+            callback("ready")
+            assert not pair.owner.lesson_request_state.can_submit
+            assert pair.server.lesson_request_notices() == (notice,)
+        assert not room._lesson_current(binding)
 
 
 def test_expiry_clears_host_action_without_turning_guest_ready_or_paused(pair, qapp):

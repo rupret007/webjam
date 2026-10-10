@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Art lesson-request ownership survives a temporary LAN interruption or a
+  missing names observation. Requests recover without **Restart requests**;
+  controls and names still require fresh evidence. End, Leave, replacement
+  rooms, profile changes, and blocked cleanup still retire authority.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual
