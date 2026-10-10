@@ -8291,7 +8291,7 @@ class ApplicationController(QObject):
                  if switch_is_art
                  else ("Try End Session" if switch_was_hosting else "Try Leave Jam"))
                 if cleanup_unresolved
-                else ("Start Room" if switch_is_art else "Start Session"),
+                else "Start Session",
                 enabled=cleanup_unresolved,
             )
             self.window.flash_message(

@@ -1,7 +1,7 @@
 # W29 — Art room switch copy
 
 Implemented on `webjam-24h/W29-art-room-switch-copy-not-jam` in the assigned
-W29 worktree. Product/test commit: `5c40a13`.
+W29 worktree. Initial product/test commit: `5c40a13`; review fix recorded below.
 
 ## What changed
 
@@ -21,16 +21,18 @@ Words a person sees with Art active:
 - Cleanup unresolved: **Try End Room** for a host; **Try Leave Room** for a guest.
 - Cleanup completed but invite application failed: **The previous room connection
   was stopped, but the new invitation could not be applied safely. Quit and
-  reopen WebJam, then open the invitation again.** The Start Room control remains
+  reopen WebJam, then open the invitation again.** The Start Session control remains
   disabled, matching the existing recovery behavior.
 
 ## Files
 
 - `webjam_qt/controllers/application_controller.py`: bounded profile-aware copy
   in `_accept_band_invitation`, including its asynchronous failure closures.
-- `tests/test_art_invite_switch_copy.py`: 14 tests covering Art/Music, host/guest,
+- `tests/test_art_invite_switch_copy.py`: 16 tests covering Art/Music, host/guest,
   No/cancellation, joining progress, unresolved cleanup, failed invite application,
-  and retaining Art wording after a profile changes while a switch is pending.
+  and retaining Art wording after a simulated profile change while a switch is
+  pending. Two additional host/guest cases compare the failure button with the
+  real readiness path and verify that recovery remains disabled.
   Tests use real controller/UI objects and controlled cleanup services; no live
   participant connection or media process is needed.
 - `CHANGELOG.md`, `USER_GUIDE.md`: explain the visible Art switch/recovery copy.
@@ -50,13 +52,13 @@ Maker-tool reference: [Drawpile Joining Sessions](https://docs.drawpile.net/help
 uses a direct invite/paste/Join flow. WebJam retains its own established Art
 room vocabulary and adds no setup explanation or tool name to the door.
 
-## Tests and exact results
+## Initial implementation tests and exact results
 
 Before the product change, the initial 12-case regression module returned
 **6 failed, 6 passed in 1.87s**, exit 1. Art confirmation/progress assertions
 failed on the existing “jam” wording; the Music cases passed. Progress was then
 split into two independent tests so failure cases reach their failure HUD
-assertions, and profile-change coverage was added to the failure cases.
+assertions, and simulated profile-change coverage was added to the failure cases.
 
 During test development, Ruff caught one imported-fixture F811 diagnostic.
 An attempted dynamic-fixture lookup hid the fixture dependency from the repo's
@@ -64,7 +66,7 @@ database isolation: that intermediate run returned **14 failed in 3.18s**.
 Restored explicit fixture injection and annotated the intentional pytest name
 binding. The final gate below passes with repository isolation active.
 
-Final command, run from the worktree root on 2026-10-10:
+Initial implementation's final command, run from the worktree root on 2026-10-10:
 
 ```sh
 bash /Users/jeffstory/Documents/bob-overnight-inject/local-webjam-24h-1010/items/W29/gate.sh
@@ -105,6 +107,42 @@ Other final gate commands:
 The gate is offline, uses installed dependencies, and completes well below
 25 minutes. No build outputs were created. Final observed available disk:
 10,820,472 KiB (more than 10 GiB).
+
+## Review fix — 2026-10-10
+
+Addressed the blocking review by reusing **Start Session** after successful
+cleanup followed by invitation-application failure. This matches the existing
+Art `_refresh_readiness` control. The product diff changes one label expression;
+the disabled state, cleanup retries, and recovery instruction are unchanged.
+USER_GUIDE and CHANGELOG now describe that recovery state.
+
+Added two host/guest regressions that read the actual readiness button, run the
+failed invitation switch, compare the labels, and assert recovery is disabled.
+The existing 14 cases retain their assertions, with the reviewed label corrected.
+
+The non-blocking profile-mutation note overlooks that `creator_profile` is a
+property backed by `_active_creator_profile_key` (controller line 2099), not a
+stored profile. Added assertions before and after mutation to prove that the
+live property changes. This is simulated mutation coverage, not evidence of a
+user-driven profile transition during cleanup. An initial test-development
+assertion based on the review's interpretation failed (6 failed, 10 passed in
+1.90s); checking the property implementation resolved that mistaken assumption.
+With the correct property assertions and before the product fix, the focused
+module returned **4 failed, 12 passed in 1.38s**, all four failures showing
+**Start Room** instead of **Start Session**.
+
+Re-ran the unchanged campaign `items/W29/gate.sh` from this worktree after the
+fix: **exit 0; 431 passed across 13 complete modules; no failures or skips**.
+The focused module passed **16 tests in 1.38s**. Ruff, compileall, pip check,
+UX smoke, and `git diff --check` also passed. Pip emitted the existing unwritable
+cache warning. No gate checks were removed or loosened; both gate copies remain
+identical. No dependencies were installed or large build outputs created.
+Observed available disk after the gate: **11,381,156 KiB**, more than 10 GiB.
+
+Re-read the launch copy and Art start definitions for the UX gate: **Make
+together**, **Paint along**, then **Host** / **Join**. The fix reuses established
+copy and introduces no new vocabulary, doors, tool choices, or first-screen
+words. Preview labels and all physical-evidence markings are unchanged.
 
 ## NOT RUN
 

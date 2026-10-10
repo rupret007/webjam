@@ -77,9 +77,11 @@ def test_switch_failure_keeps_room_copy_and_recovery_truth(
     monkeypatch.setattr("core.settings.load_settings", Mock(side_effect=OSError("fixture")))
 
     assert app.accept_invite_url(create_invite_link("192.168.1.42"))
-    # Copy must retain the old room's context if the profile changes while
-    # the worker is in flight (for example while applying an invitation).
+    # creator_profile is a property backed by this key. Simulate a profile
+    # change while the worker is pending and prove the live property changed.
+    assert app.creator_profile.key == profile
     app._active_creator_profile_key = "music"
+    assert app.creator_profile.key == "music"
     thread.call_args.kwargs["target"]()
 
     assert app.window.session_hud._status.text() == f"WebJam couldn’t open the new {noun} safely"
@@ -104,7 +106,7 @@ def test_switch_failure_keeps_room_copy_and_recovery_truth(
             "new invitation could not be applied safely. Quit and "
             "reopen WebJam, then open the invitation again."
         )
-        label = "Start Room" if profile == "art" else "Start Session"
+        label = "Start Session"
         assert app.window.flash_message.call_args.args[0] == (
             f"The {noun} switch did not finish. Quit and reopen "
             "WebJam, then open the invitation again."
@@ -114,4 +116,23 @@ def test_switch_failure_keeps_room_copy_and_recovery_truth(
     assert app.audio.cleanup_retry_required is cleanup_unresolved
     assert app.audio._stop_hosting is hosting
     assert not app._invite_switch_in_flight
+    app.begin_startup_journey.assert_not_called()
+
+
+@pytest.mark.parametrize("hosting", [False, True], ids=["guest", "host"])
+def test_art_apply_failure_reuses_ready_button_copy(switching, monkeypatch, hosting):
+    app, question, thread = switching("art", hosting)
+    assert not app._room_participant.active
+    app._refresh_readiness()
+    ready_label = app.window.session_strip._audio_button.text()
+    assert ready_label == "Start Session"
+    assert app.window.session_strip._audio_button.isEnabled()
+    monkeypatch.setattr("core.settings.load_settings", Mock(side_effect=OSError("fixture")))
+
+    assert app.accept_invite_url(create_invite_link("192.168.1.42"))
+    thread.call_args.kwargs["target"]()
+
+    assert app.window.session_strip._audio_button.text() == ready_label
+    assert not app.window.session_strip._audio_button.isEnabled()
+    assert not app.audio.cleanup_retry_required
     app.begin_startup_journey.assert_not_called()
