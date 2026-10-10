@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 from core.art_workspace import art_summary
 from core.session_intelligence import build_session_pulse
 from core.session_library import (
-    SessionLibrary, SessionLibraryError, SessionLibraryImportUnconfirmed,
+    SessionLibrary, SessionLibraryConflict, SessionLibraryError, SessionLibraryImportUnconfirmed,
     validate_session_record,
 )
 from webjam_qt.widgets.art_workspace import ArtWorkspacePanel
@@ -159,13 +159,14 @@ class SessionLibraryDialog(QDialog):
     lesson_requested = Signal(object)
 
     def __init__(self, library: SessionLibrary, parent=None, *, profile="music", current_id="", pending_records=None,
-                 save_record=None, prepare_take_open=None):
+                 save_record=None, summary_record=None, prepare_take_open=None):
         super().__init__(parent)
         self.library = library
         # The coordinator remains the owner of its recovery map. Only the
         # success signals may settle that map; this dialog edits a snapshot.
         self.pending_records = deepcopy(dict(pending_records or {}))
         self._save_record = save_record
+        self._summary_record = summary_record
         self._prepare_take_open = prepare_take_open
         from webjam_qt.controllers.workspace_media import LibraryMediaActions
         self.media_actions = LibraryMediaActions(self)
@@ -753,8 +754,26 @@ class SessionLibraryDialog(QDialog):
             self.status.setText(f"Take was not relinked: {error}")
 
     def _export(self):
-        if self.record is None or not self.save_current():
+        if self.record is None or self._import_in_progress:
             return
+        self.timer.stop()
+        try:
+            edited = self._edited_record()
+            snapshot = (self._summary_record(deepcopy(self._base_record), edited)
+                        if self._summary_record is not None else edited)
+            validate_session_record(snapshot)
+            current = self.library.load(snapshot.id, profile=snapshot.profile)
+            if (snapshot._store_token is None or snapshot._store_token != current._store_token
+                    or snapshot.revision != current.revision):
+                raise SessionLibraryConflict("Workspace changed since it was opened.")
+            # Freeze the selected workspace before the picker pumps events.
+            # Export must not advance the baseline behind unchanged controls.
+            summary = workspace_summary(snapshot)
+        except (OSError, ValueError):
+            self.status.setText("Summary was not exported. Your drafts are still here; use Save or Save as copy.")
+            return
+        if self._dirty:
+            self.status.setText("Draft changes are still here. Use Save to keep them.")
         path, _ = QFileDialog.getSaveFileName(self, "Export workspace summary", "workspace-summary.md", "Markdown (*.md)")
         if not path:
             return
@@ -765,13 +784,14 @@ class SessionLibraryDialog(QDialog):
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                    handle.write(workspace_summary(self.record))
+                    handle.write(summary)
                     handle.flush()
                     os.fsync(handle.fileno())
             except BaseException:
                 Path(path).unlink(missing_ok=True)
                 raise
-            self.status.setText("Summary exported. Original work is unchanged.")
+            self.status.setText("Summary exported. Original work is unchanged."
+                                + (" Use Save to keep draft changes." if self._dirty else ""))
         except (OSError, ValueError):
             self.status.setText("Summary was not exported. Choose a new filename in a writable folder.")
 

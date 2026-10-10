@@ -340,7 +340,8 @@ class SessionLibraryCoordinator(QObject):
         self.flush()
         dialog = SessionLibraryDialog(self.library, self._c.window,
             profile=self._profile(), current_id=self.current.id, pending_records=self._pending,
-            save_record=self.save_editor_record, prepare_take_open=self.prepare_take_open)
+            save_record=self.save_editor_record, summary_record=self.summary_editor_record,
+            prepare_take_open=self.prepare_take_open)
         self.dialog = dialog
         dialog.record_saved.connect(self._record_saved)
         dialog.copy_saved.connect(self._copy_saved)
@@ -378,18 +379,28 @@ class SessionLibraryCoordinator(QObject):
     def prepare_close(self):
         return self.dialog is None or self.dialog.prepare_close()
 
-    def save_editor_record(self, base, edited):
-        """Reconcile the editor before writing, including late take/recap facts.
-
-        Only our known in-memory snapshot can advance an editor's disk token.
-        The store still rejects external writes we have not read and owned.
-        """
+    def _reconcile_editor_record(self, base, edited):
+        """Reconcile only owned changes, including live Notes and late facts."""
         self._capture_current_notes()
         latest = self._pending.get(base.id)
         if latest is None and self.current is not None and self.current.id == base.id:
             latest = self.current
         latest = deepcopy(latest or base)
         merged = _merge_editor_changes(base, edited, latest)
+        return latest, merged
+
+    def summary_editor_record(self, base, edited):
+        """Snapshot for export; neither save nor settle either owner's draft."""
+        _latest, merged = self._reconcile_editor_record(base, edited)
+        return merged
+
+    def save_editor_record(self, base, edited):
+        """Reconcile the editor before writing, including late take/recap facts.
+
+        Only our known in-memory snapshot can advance an editor's disk token.
+        The store still rejects external writes we have not read and owned.
+        """
+        latest, merged = self._reconcile_editor_record(base, edited)
         saved = self.library.save(merged)
         if _same_snapshot(self._pending.get(saved.id), latest):
             self._pending.pop(saved.id, None)
