@@ -816,6 +816,7 @@ QLineEdit#CanvasChatInput {
     color: ${COLOR_TEXT_MUTED};
     font-size: ${FONT_SIZE_SM}px;
     padding-top: ${SPACE_XS}px;
+    padding-bottom: 0px;
 }
 
 QPushButton#LaunchMoreRooms {
