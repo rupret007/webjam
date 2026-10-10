@@ -696,6 +696,11 @@ class LaunchDialog(QDialog):
         # stretch at the bottom of this page is enough.
         layout.addWidget(self._build_start_cards())
 
+        # Slack belongs between the cards and Host/Join, not under the helper.
+        # At 800×600 the consequence line must sit beside the buttons, not
+        # stranded above empty space at the bottom edge.
+        layout.addStretch(1)
+
         self._host_button = QPushButton()
         self._host_button.setObjectName("LaunchPrimary")
         self._host_button.setMinimumHeight(52)
@@ -733,7 +738,6 @@ class LaunchDialog(QDialog):
         self._choice_error.setWordWrap(True)
         self._choice_error.setVisible(False)
         layout.addWidget(self._choice_error)
-        layout.addStretch(1)
         self._apply_creator_profile_presentation()
         return page
 
