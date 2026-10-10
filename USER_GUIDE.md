@@ -536,7 +536,8 @@ For the existing **silent local-file option**, the host chooses one video file:
    workspace once the room exists. It replaces the conductor surface inside
    the existing WebJam window; it does not create a third window beside WebJam
    and an optional meeting app. If you returned to the room, choose its
-   **Paint along** line to come back.
+   **Paint along** line to come back. The session status banner stays hidden
+   while Paint along is open; **Back to room** restores current room guidance.
 2. The host chooses **Choose process video…** and picks a local video file they
    have the right to play. WebJam does not ship, bundle, download, or fetch any
    video, and it will not open anything from a streaming service.
