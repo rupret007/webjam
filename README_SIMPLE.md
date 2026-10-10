@@ -108,7 +108,9 @@ For a short teammate walkthrough of the door and first room action, use
 
 Join has one private invitation field and one button. Paste the full invitation
 copied by the host. WebJam checks the host's profile before choosing Art or the
-Music audio path. Art shows waiting, connected, or reconnecting room status;
+Music audio path. If a workspace or Studio media operation is still finishing,
+the invitation stays pending and WebJam retries when that work settles.
+Art shows waiting, connected, or reconnecting room status;
 Music continues through **Opening Jamulus** and requires fresh authenticated
 Jamulus roster evidence. Use **Try Again** when WebJam says the one-use
 invitation was not submitted. If it may have been used, choose **Paste New Invite** with a fresh invitation from the host. Older peers must update
