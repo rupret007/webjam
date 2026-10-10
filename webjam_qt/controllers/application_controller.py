@@ -10123,6 +10123,16 @@ class ApplicationController(QObject):
                       else ArtRoomState.NONE),
         )
 
+    _CONDUCTOR_CONNECTED_STAGE_PHASES = frozenset(
+        {
+            SessionConductorPhase.CONNECTED,
+            SessionConductorPhase.LIVE,
+            SessionConductorPhase.RECORDING,
+            SessionConductorPhase.TAKE_READY,
+            SessionConductorPhase.REVIEWING,
+        }
+    )
+
     @staticmethod
     def _conductor_stage_phase(phase: SessionConductorPhase) -> SessionPhase:
         if phase in {
@@ -10135,6 +10145,8 @@ class ApplicationController(QObject):
             return SessionPhase.ERROR
         if phase is SessionConductorPhase.ENDING:
             return SessionPhase.ENDING
+        if phase in ApplicationController._CONDUCTOR_CONNECTED_STAGE_PHASES:
+            return SessionPhase.CONNECTED
         if phase in {
             SessionConductorPhase.STARTING_HOST,
             SessionConductorPhase.WAITING_FOR_HOST_READINESS,
@@ -10148,6 +10160,27 @@ class ApplicationController(QObject):
         }:
             return SessionPhase.CONNECTING
         return SessionPhase.NOT_CONNECTED
+
+    def _sync_session_status_chip_from_conductor(
+        self,
+        presentation,
+        *,
+        headline: str | None = None,
+    ) -> None:
+        """Keep legacy Session chip aligned with SessionHud when Jamulus is idle."""
+
+        room = getattr(self, "_room_participant", None)
+        if room is not None and (
+            self.creator_profile.key == "art" or self._art_room_active()
+        ):
+            return
+        if self._jamulus_connected or getattr(self.audio, "connected", False):
+            return
+        label = headline or presentation.title
+        if presentation.phase in self._CONDUCTOR_CONNECTED_STAGE_PHASES:
+            self.window.set_status_latency(label)
+        elif presentation.phase is SessionConductorPhase.IDLE:
+            self.window.set_status_latency("Not connected")
 
     @staticmethod
     def _conductor_action_kind(action: SessionPrimaryAction) -> str:
@@ -10317,6 +10350,10 @@ class ApplicationController(QObject):
                     primary_action="start",
                 )
             )
+            self._sync_session_status_chip_from_conductor(
+                presentation,
+                headline=display_override.title,
+            )
             return
 
         action = presentation.primary_action
@@ -10393,6 +10430,7 @@ class ApplicationController(QObject):
                 primary_action="start",
             )
         )
+        self._sync_session_status_chip_from_conductor(presentation)
         # The strip copy button is an older duplicate of the HUD action.  Its
         # reset command remains under More when a v3 host owns that invite.
         if action is SessionPrimaryAction.COPY_INVITE:
