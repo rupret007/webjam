@@ -20,6 +20,7 @@ from core.session_transfer import (
     SessionCredentials,
     SessionPeerClient,
     SessionPeerServer,
+    SessionTransferError,
     TransferStore,
 )
 from tests.test_art_conversation_link_journey import (
@@ -317,6 +318,42 @@ def test_guest_navigation_cancels_local_intent_and_old_callbacks_without_retirin
     assert pair.host.app._room_participant._lesson_binding.context_id == identity[0]
     fresh = _pause(pair, qapp)
     assert fresh.revision > pending.command.revision
+
+
+def test_guest_restart_reappears_after_transient_poll_failure_within_grace(pair, qapp, monkeypatch):
+    rig = pair
+    owner, app = rig.owner, rig.guest.app
+    panel = app.window.webex_embed
+    assert not panel.lesson_handoff.restart_button.isVisibleTo(app.window)
+
+    real_reader = owner.client.state_with_lesson_requests
+    monkeypatch.setattr(
+        owner.client, "state_with_lesson_requests",
+        Mock(side_effect=SessionTransferError("induced-transient-failure")),
+    )
+    with pytest.raises(SessionTransferError):
+        owner.poll_once()
+    qapp.processEvents()
+    assert not owner.lesson_requests_enabled
+    assert not owner.lesson_request_state.can_submit
+
+    # The very next poll already succeeds, well inside the 5s connection grace.
+    monkeypatch.setattr(owner.client, "state_with_lesson_requests", real_reader)
+    rig.poll()
+    assert owner.connection_available
+    assert not owner.lesson_request_state.can_submit
+
+    # Restart must reappear instead of leaving the guest stranded with no control.
+    assert panel.lesson_handoff.restart_button.isVisibleTo(app.window)
+    assert not panel._lesson_pause_button.isEnabled()
+    assert not panel._lesson_ready_button.isEnabled()
+
+    QTest.mouseClick(panel.lesson_handoff.restart_button, Qt.MouseButton.LeftButton)
+    rig.poll()
+    assert owner.lesson_requests_enabled
+    assert owner.lesson_request_state.can_submit
+    # Explicit reentry never replays the request that was in flight before the loss.
+    assert rig.server.lesson_request_notices() == ()
 
 
 @pytest.mark.parametrize("role", ["host", "guest"])
