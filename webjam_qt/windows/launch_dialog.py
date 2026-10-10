@@ -74,6 +74,7 @@ _JOIN_INVITATION_GUIDANCE = (
     "Paste the invite or the whole message.\n"
     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
 )
+_JOIN_PASTE_PROMPT = "Paste your invitation"
 
 
 @dataclass(frozen=True)
@@ -975,7 +976,7 @@ class LaunchDialog(QDialog):
         layout.addWidget(self._join_subtitle)
         layout.addStretch(1)
 
-        self._join_status = QLabel("Paste your invitation")
+        self._join_status = QLabel(_JOIN_PASTE_PROMPT)
         self._join_status.setObjectName("LaunchJoinStatus")
         self._join_status.setAccessibleName("Join status")
         self._join_status.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -1318,7 +1319,7 @@ class LaunchDialog(QDialog):
         self.invitation_meeting_url = ""
         self._invite_input.clear()
         self._clear_join_error()
-        self._join_status.setText("Paste your invitation")
+        self._join_status.setText(_JOIN_PASTE_PROMPT)
         self._pages.setCurrentWidget(self._choice_page)
         # First-screen rooms hide the picker. Host is the next click.
         if (
@@ -1349,7 +1350,7 @@ class LaunchDialog(QDialog):
         self._clear_join_error()
         has_invite = bool(self._invite_input.text().strip())
         self._join_status.setText(
-            "Invitation pasted — choose Join" if has_invite else "Paste your invitation"
+            "Invitation pasted — choose Join" if has_invite else _JOIN_PASTE_PROMPT
         )
         self._join_status.setProperty("joinReady", "true" if has_invite else "false")
         join_style = self._join_status.style()
@@ -1426,10 +1427,8 @@ class LaunchDialog(QDialog):
         self.remote_invitation = None
         self.accept()
 
-    _EMPTY_JOIN_PROMPT = "Paste your invitation to continue"
-
     def _prompt_empty_join_invite(self) -> None:
-        self._join_status.setText(self._EMPTY_JOIN_PROMPT)
+        self._join_status.setText(_JOIN_PASTE_PROMPT)
         self._announce_error(self._join_status, focus=self._invite_input)
 
     def _join(self) -> None:

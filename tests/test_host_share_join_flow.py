@@ -31,6 +31,7 @@ from core.settings import AppSettings, load_settings, save_settings
 from webjam_qt.widgets.session_hud import SessionHud
 from webjam_qt.windows.launch_dialog import (
     LaunchDialog,
+    _JOIN_PASTE_PROMPT,
     apply_join_invite,
     default_musician_name,
 )
@@ -520,7 +521,7 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     assert dialog._name_input.isVisibleTo(dialog) is False
     assert dialog._join_button_primary.text() == "Join"
     assert dialog._join_button_primary.isEnabled() is False
-    assert dialog._join_status.text() == "Paste your invitation"
+    assert dialog._join_status.text() == _JOIN_PASTE_PROMPT
     assert "never saved" in dialog._join_privacy.text()
     assert dialog._invite_input.echoMode() is QLineEdit.EchoMode.Password
     dialog._name_input.setText("Drummer")
