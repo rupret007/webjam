@@ -721,8 +721,6 @@ class RoomParticipantController:
         key = (source, snapshot.generation, state.revision)
         if key == self.native_applied:
             return
-        if time.monotonic() - self.native_received_at >= 5.0:
-            return
         self.native_applied = key
         self.probing = False
         self.borrowed_start = state.art_start_key
