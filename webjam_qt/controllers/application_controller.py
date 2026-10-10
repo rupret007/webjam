@@ -8094,6 +8094,7 @@ class ApplicationController(QObject):
         busy = bool(self._is_jamulus_running() or self.bridge.hosted_server_alive()
                     or self._room_is_busy_for_invitation())
         switch_was_hosting = bool(getattr(self.settings, "host_server_enabled", False))
+        switch_was_art = bool(self.creator_profile.key == "art" or self._art_room_active())
         if (
             busy
             and bool(
@@ -8116,8 +8117,12 @@ class ApplicationController(QObject):
         if busy:
             reply = QMessageBox.question(
                 self.window,
-                "Join this jam?",
-                "WebJam will safely end your current jam, then join the new one.",
+                "Join this room?" if switch_was_art else "Join this jam?",
+                (
+                    "WebJam will safely end your current room, then join the new one."
+                    if switch_was_art
+                    else "WebJam will safely end your current jam, then join the new one."
+                ),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -8269,14 +8274,24 @@ class ApplicationController(QObject):
             self._complete_pocket_stage_session_end(succeeded=not cleanup_unresolved)
             self.window.participant_grid.set_session_state(SessionUiState.stop_failed())
             self.window.session_hud.set_state(
-                "WebJam couldn’t open the new jam safely",
+                (
+                    "WebJam couldn’t open the new room safely"
+                    if switch_was_art
+                    else "WebJam couldn’t open the new jam safely"
+                ),
                 (
                     "Some previous session services still need to stop. Try "
                     "ending or leaving again before opening the invitation."
                     if cleanup_unresolved
-                    else "The previous music connection was stopped, but the "
-                    "new invitation could not be applied safely. Quit and "
-                    "reopen WebJam, then open the invitation again."
+                    else (
+                        "The previous room connection was stopped, but the "
+                        "new invitation could not be applied safely. Quit and "
+                        "reopen WebJam, then open the invitation again."
+                        if switch_was_art
+                        else "The previous music connection was stopped, but the "
+                        "new invitation could not be applied safely. Quit and "
+                        "reopen WebJam, then open the invitation again."
+                    )
                 ),
             )
             self.window.session_strip.set_audio_state(
@@ -8287,11 +8302,21 @@ class ApplicationController(QObject):
             )
             self.window.flash_message(
                 (
-                    "The jam switch did not finish safely. Try ending or "
-                    "leaving again, then reopen the invitation."
+                    (
+                        "The room switch did not finish safely. Try ending or "
+                        "leaving again, then reopen the invitation."
+                        if switch_was_art
+                        else "The jam switch did not finish safely. Try ending or "
+                        "leaving again, then reopen the invitation."
+                    )
                     if cleanup_unresolved
-                    else "The jam switch did not finish. Quit and reopen "
-                    "WebJam, then open the invitation again."
+                    else (
+                        "The room switch did not finish. Quit and reopen "
+                        "WebJam, then open the invitation again."
+                        if switch_was_art
+                        else "The jam switch did not finish. Quit and reopen "
+                        "WebJam, then open the invitation again."
+                    )
                 ),
                 ms=8000,
             )
