@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Join keeps its paste instruction short and moves network advice behind
+  **Need help?**, beside **Back**. The invitation field and actions fit at
+  800×600, including larger text and error messages (offscreen Qt checks).
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual

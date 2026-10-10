@@ -106,8 +106,9 @@ helper that removes quarantine from WebJam only.
 For a short teammate walkthrough of the door and first room action, use
 [Show WebJam](DEMO.md).
 
-Join has one private invitation field and one button. Paste the full invitation
-copied by the host. WebJam checks the host's profile before choosing Art or the
+Join has one private invitation field and a **Join** button. Paste the full
+invitation copied by the host. **Need help?**, beside **Back**, explains when
+to use the host's Wi-Fi or local network. WebJam checks the host's profile before choosing Art or the
 Music audio path. Art shows waiting, connected, or reconnecting room status;
 Music continues through **Opening Jamulus** and requires fresh authenticated
 Jamulus roster evidence. Use **Try Again** when WebJam says the one-use

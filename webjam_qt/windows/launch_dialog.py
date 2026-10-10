@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenuBar,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -70,8 +71,8 @@ from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 
 LOGGER = logging.getLogger("webjam.qt.launch_dialog")
 
-_JOIN_INVITATION_GUIDANCE = (
-    "Paste the invite or the whole message.\n"
+_JOIN_INVITATION_GUIDANCE = "Paste the invite or the whole message."
+_JOIN_NETWORK_HELP = (
     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
 )
 
@@ -612,6 +613,7 @@ class LaunchDialog(QDialog):
         self.setTabOrder(self._join_button, self._studio_button)
         self.setTabOrder(self._invite_input, self._join_button_primary)
         self.setTabOrder(self._join_button_primary, self._join_back_button)
+        self.setTabOrder(self._join_back_button, self._join_help_button)
         self._keep_door_cards_tabbable()
 
         if initial_invitation is not None and initial_invite_url:
@@ -1029,10 +1031,32 @@ class LaunchDialog(QDialog):
         )
         self._join_back_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._join_back_button.clicked.connect(self.show_choices)
-        layout.addWidget(self._join_back_button, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._join_help_button = QPushButton("Need help?")
+        self._join_help_button.setObjectName("GhostButton")
+        self._join_help_button.setAccessibleName("Need help?")
+        self._join_help_button.setAccessibleDescription("Help joining with an invitation.")
+        self._join_help_button.setAutoDefault(False)
+        self._join_help_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._join_help_button.clicked.connect(self._show_join_help)
+
+        # Keep secondary actions together without adding height to the form.
+        footer = QHBoxLayout()
+        footer.setSpacing(Space.SM)
+        footer.addStretch(1)
+        footer.addWidget(self._join_back_button)
+        footer.addWidget(self._join_help_button)
+        footer.addStretch(1)
+        layout.addLayout(footer)
         self._apply_creator_profile_presentation()
         self._on_invite_text_changed()
         return page
+
+    def _show_join_help(self) -> None:
+        QMessageBox.information(
+            self,
+            "Joining a room",
+            f"{_JOIN_INVITATION_GUIDANCE}\n\n{_JOIN_NETWORK_HELP}",
+        )
 
     @property
     def showing_choices(self) -> bool:

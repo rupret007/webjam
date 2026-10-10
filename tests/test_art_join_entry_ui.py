@@ -80,8 +80,14 @@ def test_all_entry_profiles_explain_whole_message_and_conditional_network(
     dialog = join_door(profile)
     guidance = dialog._join_subtitle.text()
     assert "whole message" in guidance
-    assert "If your invitation says “same network,”" in guidance
-    assert "your host’s Wi-Fi or local network" in guidance
+    assert guidance == "Paste the invite or the whole message."
+    with patch("webjam_qt.windows.launch_dialog.QMessageBox.information") as help_box:
+        dialog._join_help_button.click()
+    help_box.assert_called_once()
+    help_guidance = help_box.call_args.args[2]
+    assert guidance in help_guidance
+    assert "If your invitation says “same network,”" in help_guidance
+    assert "your host’s Wi-Fi or local network" in help_guidance
     assert dialog._invite_input.accessibleDescription() == guidance
     assert dialog._invite_input.echoMode() == QLineEdit.EchoMode.Password
     assert dialog._invite_input.hasFocus()
@@ -90,7 +96,7 @@ def test_all_entry_profiles_explain_whole_message_and_conditional_network(
         button.text()
         for button in dialog._join_page.findChildren(QPushButton)
         if button.isVisibleTo(dialog)
-    ] == [dialog._join_button_primary.text(), "Back"]
+    ] == [dialog._join_button_primary.text(), "Back", "Need help?"]
     assert all(
         not card.isVisibleTo(dialog)
         for cards in dialog._start_cards.values()
