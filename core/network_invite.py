@@ -258,12 +258,17 @@ def parse_invite_link(
             session_id != query["sid"][0].lower()
             or not peer_text.isascii()
             or not peer_text.isdigit()
-            or not 1 <= int(peer_text) <= 65535
             or not _TOKEN_PATTERN.fullmatch(invite_token)
         ):
             raise InviteLinkError("That private WebJam invite link is not valid.")
+        try:
+            peer_port = int(peer_text)
+        except ValueError:
+            # Python's digit limit can reject an otherwise numeric port.
+            raise InviteLinkError("That private WebJam invite link is not valid.") from None
+        if not 1 <= peer_port <= 65535:
+            raise InviteLinkError("That private WebJam invite link is not valid.")
         _validate_private_peer_host(endpoint.host)
-        peer_port = int(peer_text)
     return BandInvite(
         host=endpoint.host,
         port=endpoint.port,

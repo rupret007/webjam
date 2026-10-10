@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from core.network_invite import BandInvite, create_invite_link
+from core.network_invite import (
+    BandInvite,
+    InviteLinkError,
+    create_invite_link,
+    parse_invite_link,
+)
 from core.remote_invitation import RemoteInvitation, issue_remote_invitation
 from webjam_qt.invitation_ingress import (
     InvitationIngressError,
@@ -15,6 +20,35 @@ from webjam_qt.invitation_ingress import (
 
 PROFILE = "reference-local"
 ALLOWED = frozenset({PROFILE})
+
+
+@pytest.mark.parametrize("through_ingress", [False, True])
+def test_oversized_numeric_peer_port_has_a_bounded_invite_error(
+    through_ingress, caplog,
+) -> None:
+    token = "PRIVATE-PORT-SENTINEL-" + "t" * 32
+    raw = create_invite_link(
+        "192.168.1.42",
+        session_id="11111111-1111-4111-8111-111111111111",
+        peer_port=43121,
+        invite_token=token,
+    ).replace("peer=43121", "peer=" + "9" * 5000)
+    assert len(raw) < 8192  # Reach numeric conversion, not the paste-size guard.
+
+    error_type = InvitationIngressError if through_ingress else InviteLinkError
+    with pytest.raises(error_type) as caught:
+        if through_ingress:
+            parse_invitation_at_ingress(raw, source=InvitationSource.PASTE)
+        else:
+            parse_invite_link(raw)
+
+    if through_ingress:
+        assert caught.value.code is InvitationIngressErrorCode.INVALID
+    else:
+        assert str(caught.value) == "That private WebJam invite link is not valid."
+    assert len(str(caught.value)) < 160
+    assert token not in str(caught.value) + caplog.text
+    assert raw not in str(caught.value) + caplog.text
 
 
 def _remote_link(*, issued_at: int = 1_800_000_000, ttl: int = 600) -> str:
