@@ -29,6 +29,7 @@ from tests.support.start_ux import (
 )
 from webjam_qt.windows.launch_dialog import (
     _CREATOR_LAUNCH_COPY,
+    _JOIN_STATUS_PASTE_PROMPT,
     LaunchDialog,
     ProfileCard,
     StartCard,
@@ -535,9 +536,34 @@ def test_whitespace_only_invite_stays_blocked_and_empty_join_on_submit(
         dialog.deleteLater()
 
 
-def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
+def test_empty_join_prompt_shares_the_default_join_status_string(qapp, tmp_path: Path):
+    """W07: the initial join page status and the blocked-submit prompt must
+    come from the same string constant, not two near-duplicate copies."""
+
+    assert LaunchDialog._EMPTY_JOIN_PROMPT == _JOIN_STATUS_PASTE_PROMPT
+
+    dialog = _dialog(tmp_path, "music")
+    try:
+        dialog.show_join()
+        dialog.show()
+        qapp.processEvents()
+        assert dialog._join_status.text() == _JOIN_STATUS_PASTE_PROMPT
+
+        dialog._invite_input.clear()
+        dialog._on_invite_text_changed()
+        QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
+        qapp.processEvents()
+        assert dialog._join_status.text() == _JOIN_STATUS_PASTE_PROMPT
+    finally:
+        dialog.deleteLater()
+
+
+def test_empty_join_prompt_returns_to_shared_status_once_real_text_is_pasted(
     qapp, tmp_path: Path
 ):
+    """The empty-submit prompt and the default join status share one string
+    (W07), so clearing after a paste lands back on that same text."""
+
     dialog = _dialog(tmp_path, "music")
     try:
         dialog.show_join()
@@ -557,7 +583,7 @@ def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
         dialog._invite_input.clear()
         dialog._on_invite_text_changed()
         assert dialog._join_status.text() == "Paste your invitation"
-        assert dialog._join_status.text() != LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
     finally:
         dialog.deleteLater()
 
