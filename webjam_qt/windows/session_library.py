@@ -628,6 +628,16 @@ class SessionLibraryDialog(QDialog):
         except (OSError, ValueError) as error:
             self.status.setText(f"Changes are still here but not saved: {error} Use Save to retry or Save as copy.")
             return False
+        # Reconciliation may include newer live edits. Display those values
+        # before advancing the baseline so a later edit cannot undo the merge.
+        self._loading = True
+        try:
+            if self.title.text() != self.record.title:
+                self.title.setText(self.record.title)
+            if self.notes.toPlainText() != self.record.notes:
+                self.notes.setPlainText(self.record.notes)
+        finally:
+            self._loading = False
         self._dirty = False
         self._base_record = deepcopy(self.record)
         self.pending_records.pop(self.record.id, None)
