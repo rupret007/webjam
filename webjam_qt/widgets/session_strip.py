@@ -1721,13 +1721,16 @@ class SessionStrip(QFrame):
                     if self._creator_profile_locked
                     else "Preview"
                 )
+            elif self._creator_profile_key == "music":
+                status = "Host profile" if self._creator_profile_locked else ""
             else:
                 status = "Host profile" if self._creator_profile_locked else "Ready"
             self._subtitle.setText(
-                f"{self._creator_profile_label} · {status}"
+                self._creator_profile_label + (f" · {status}" if status else "")
             )
             self._subtitle.setAccessibleName(
-                f"Creator profile: {self._creator_profile_label}; {status}"
+                f"Creator profile: {self._creator_profile_label}"
+                + (f"; {status}" if status else "")
             )
             return
         label = self._mode_picker.currentText()

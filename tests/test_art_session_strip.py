@@ -124,12 +124,36 @@ def test_art_strip_status_shows_preview_not_ready_when_profile_is_preview(qapp):
         music = get_creator_profile_by_key("music")
         assert music.is_preview is False
         strip.set_creator_profile(music)
-        assert strip._subtitle.text() == "Music · Ready"
+        assert strip._subtitle.text() == "Music"
+        assert strip._subtitle.accessibleName() == "Creator profile: Music"
 
         review = get_creator_profile_by_key("review_rehearsal")
         assert review.is_preview is True
         strip.set_creator_profile(review)
         assert strip._subtitle.text() == "Review & Rehearsal · Preview"
+    finally:
+        strip.deleteLater()
+
+
+def test_music_subtitle_stays_neutral_through_profile_changes(qapp):
+    strip = _strip()
+    try:
+        assert strip._subtitle.text() == "Music"
+        assert strip._subtitle.accessibleName() == "Creator profile: Music"
+
+        for key in ("art", "review_rehearsal", "podcast_voice", "music"):
+            strip.set_creator_profile(get_creator_profile_by_key(key), locked=True)
+            strip.set_creator_profile(get_creator_profile_by_key("music"))
+            assert strip._subtitle.text() == "Music"
+            assert strip._subtitle.accessibleName() == "Creator profile: Music"
+
+        strip.set_creator_profile(get_creator_profile_by_key("music"), locked=True)
+        assert strip._subtitle.text() == "Music · Host profile"
+        assert strip._subtitle.accessibleName() == "Creator profile: Music; Host profile"
+
+        strip.set_creator_profile(get_creator_profile_by_key("music"))
+        assert strip._subtitle.text() == "Music"
+        assert strip._subtitle.accessibleName() == "Creator profile: Music"
     finally:
         strip.deleteLater()
 

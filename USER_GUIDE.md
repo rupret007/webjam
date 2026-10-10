@@ -237,6 +237,11 @@ Project…**, **Podcast & Voice…**, or **Review & Rehearsal…** before a live
 starts. The profile follows the
 launch, live session, recording, Studio, local session metadata, and new
 standalone projects. Legacy content without a saved profile opens as Music.
+
+The Music room's subtitle says **Music**. It identifies the profile; session
+connection status appears in the room. Guests following the host's profile
+see **Music · Host profile**.
+
 Review & Rehearsal allows live WebJam-audio Host/Join, Record Session, local
 notes, and playback/read-only review of completed session takes. It blocks
 standalone projects, take editing/comp/mix mutation, track export, shared
