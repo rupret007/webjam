@@ -128,10 +128,12 @@ class _SoundDeviceModule:
     def __init__(self) -> None:
         self.streams: list[_SoundDeviceStream] = []
         self.fail_next_start = False
+        self.fail_next_close = False
 
     def InputStream(self, **kwargs):
         stream = _SoundDeviceStream(kwargs)
         stream.fail_start = self.fail_next_start
+        stream.fail_close = self.fail_next_close
         self.streams.append(stream)
         return stream
 
@@ -776,7 +778,10 @@ def test_sounddevice_input_callback_has_no_allocation_io_logging_or_wait(
     backend.abort()
 
 
-def test_sounddevice_input_backend_closes_after_start_stop_and_abort_failures() -> None:
+@pytest.mark.parametrize("fail_close", [False, True])
+def test_sounddevice_input_backend_closes_after_start_stop_and_abort_failures(
+    fail_close: bool,
+) -> None:
     module = _SoundDeviceModule()
     module.fail_next_start = True
     backend = SoundDeviceProjectInputBackend(
@@ -800,8 +805,139 @@ def test_sounddevice_input_backend_closes_after_start_stop_and_abort_failures() 
 
     backend.start(lambda _samples: None)
     stream = module.streams[-1]
+    stream.fail_stop = True
+    stream.fail_close = fail_close
+    with pytest.raises(ProjectRecordingError, match="stop") as caught:
+        backend.stop()
+    assert "secret" not in str(caught.value)
+    assert stream.closes == 1
+    assert backend.snapshot.running is fail_close
+    if fail_close:
+        with pytest.raises(ProjectRecordingError, match="already running"):
+            backend.start(lambda _samples: None)
+        assert module.streams[-1] is stream
+    stream.fail_stop = False
+    stream.fail_close = False
+    backend.abort()
+    assert stream.aborts == int(fail_close)
+    assert stream.closes == 1 + int(fail_close)
+    assert backend.snapshot.running is False
+
+    backend.start(lambda _samples: None)
+    stream = module.streams[-1]
     stream.fail_abort = True
     with pytest.raises(ProjectRecordingError, match="abort"):
         backend.abort()
     assert stream.closes == 1
+    assert backend.snapshot.running is False
+
+
+@pytest.mark.parametrize("cleanup", ["stop", "abort"])
+@pytest.mark.parametrize("retry", ["stop", "abort"])
+@pytest.mark.parametrize("fail_operation", [False, True])
+def test_sounddevice_input_backend_retains_stream_until_close_succeeds(
+    cleanup: str, retry: str, fail_operation: bool,
+) -> None:
+    module = _SoundDeviceModule()
+    backend = SoundDeviceProjectInputBackend(
+        input_channels=1, sounddevice_module=module,
+    )
+    backend.start(lambda _samples: None)
+    stream = module.streams[0]
+    setattr(stream, f"fail_{cleanup}", fail_operation)
+    stream.fail_close = True
+
+    # Repeated failures must leave the same handle available for recovery.
+    for attempt in (1, 2):
+        with pytest.raises(ProjectRecordingError, match=cleanup) as caught:
+            getattr(backend, cleanup)()
+        assert "secret" not in str(caught.value)
+        assert stream.closes == attempt
+        assert backend.snapshot.running is True
+        with pytest.raises(ProjectRecordingError, match="already running"):
+            backend.start(lambda _samples: None)
+        assert module.streams == [stream]
+
+    stream.fail_stop = stream.fail_abort = stream.fail_close = False
+    getattr(backend, retry)()
+    assert stream.closes == 3
+    assert stream.stops == 2 * (cleanup == "stop") + (retry == "stop")
+    assert stream.aborts == 2 * (cleanup == "abort") + (retry == "abort")
+    assert backend.snapshot.running is False
+    backend.stop()
+    backend.abort()
+    assert stream.closes == 3
+    backend.start(lambda _samples: None)
+    assert len(module.streams) == 2
+    backend.abort()
+
+
+@pytest.mark.parametrize("retry", ["stop", "abort"])
+def test_sounddevice_input_backend_retains_failed_start_until_close_succeeds(
+    retry: str,
+) -> None:
+    module = _SoundDeviceModule()
+    module.fail_next_start = module.fail_next_close = True
+    backend = SoundDeviceProjectInputBackend(
+        input_channels=1, sounddevice_module=module,
+    )
+    with pytest.raises(ProjectRecordingError, match="couldn't open") as caught:
+        backend.start(lambda _samples: None)
+    assert "secret" not in str(caught.value)
+    stream = module.streams[0]
+    assert stream.closes == 1
+    assert backend.snapshot.running is True
+    with pytest.raises(ProjectRecordingError, match="already running"):
+        backend.start(lambda _samples: None)
+    assert module.streams == [stream]
+
+    stream.fail_close = False
+    getattr(backend, retry)()
+    assert stream.closes == 2
+    assert backend.snapshot.running is False
+    backend.abort()
+    assert stream.closes == 2
+    module.fail_next_start = module.fail_next_close = False
+    backend.start(lambda _samples: None)
+    assert len(module.streams) == 2
+    backend.stop()
+
+
+def test_sounddevice_recorder_fallback_abort_reaches_original_stream(
+    tmp_path: Path,
+) -> None:
+    module = _SoundDeviceModule()
+    backend = SoundDeviceProjectInputBackend(
+        input_channels=1, block_frames=4, sounddevice_module=module,
+    )
+    recorder = ProjectMultitrackRecorder(backend)
+    destination = tmp_path / "stop-failure"
+    recorder.start(
+        destination,
+        schedule=ProjectRecordingSchedule(0, 4),
+        tracks=(ArmedProjectTrack("mic", (0,)),),
+    )
+    stream = module.streams[0]
+    stream.emit(np.ones((4, 1), dtype=np.float32))
+    stream.fail_stop = stream.fail_close = True
+
+    result = recorder.stop()
+
+    assert stream.stops == 1
+    assert stream.aborts == 1
+    assert stream.closes == 2
+    assert backend.snapshot.running is True
+    assert result.state is ProjectRecorderState.FAILED
+    assert result.recovery_dir is not None
+    assert result.published is False
+    assert not destination.exists()
+    assert "secret" not in " ".join(result.errors)
+    with pytest.raises(ProjectRecordingError, match="already running"):
+        backend.start(lambda _samples: None)
+    assert module.streams == [stream]
+
+    stream.fail_stop = stream.fail_close = False
+    backend.abort()
+    assert stream.aborts == 2
+    assert stream.closes == 3
     assert backend.snapshot.running is False

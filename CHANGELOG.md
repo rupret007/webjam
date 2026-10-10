@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Studio keeps ownership of its input device when close fails, including
+  cleanup after a failed start. Cleanup retries reach the original stream,
+  and another start stays blocked until the device is confirmed closed.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual
