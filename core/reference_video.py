@@ -148,10 +148,12 @@ class ReferenceVideoSource:
 def load_reference_video_source(path: str | os.PathLike[str]) -> ReferenceVideoSource:
     """Hash one regular local video file, failing closed on any substitution.
 
-    The pathname is opened without following symlinks and the descriptor's
-    identity is compared again after EOF, so a file replaced or mutated while
-    it was being read produces an error rather than an identity for bytes that
-    were never fully seen.
+    Non-regular paths are rejected before opening. Where supported, a
+    nonblocking open also prevents a FIFO substituted after that check from
+    waiting for a writer. The pathname is opened without following symlinks
+    and the descriptor's identity is compared again after EOF, so a file
+    replaced or mutated while it was being read produces an error rather than
+    an identity for bytes that were never fully seen.
     """
 
     try:
@@ -169,11 +171,14 @@ def load_reference_video_source(path: str | os.PathLike[str]) -> ReferenceVideoS
     display_name = _display_name(candidate)
     descriptor = -1
     try:
+        if not stat.S_ISREG(candidate.lstat().st_mode):
+            raise OSError("not a regular file")
         flags = (
             os.O_RDONLY
             | getattr(os, "O_BINARY", 0)
             | getattr(os, "O_CLOEXEC", 0)
             | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0)
         )
         descriptor = os.open(candidate, flags)
         opened = os.fstat(descriptor)

@@ -7,8 +7,11 @@ committed binary -- is needed to prove the contract.
 
 from __future__ import annotations
 
+import json
 import os
+import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -194,6 +197,85 @@ def test_directory_is_refused(tmp_path):
     folder.mkdir()
     with pytest.raises(ReferenceVideoError):
         load_reference_video_source(folder)
+
+
+def test_non_regular_source_is_refused_before_open(tmp_path, monkeypatch):
+    folder = tmp_path / "clip.mp4"
+    folder.mkdir()
+    opened = []
+    real_open = os.open
+
+    def record_open(path, flags):
+        opened.append(path)
+        return real_open(path, flags)
+
+    monkeypatch.setattr(os, "open", record_open)
+    with pytest.raises(ReferenceVideoError):
+        load_reference_video_source(folder)
+    assert opened == []
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="Requires POSIX FIFOs")
+@pytest.mark.parametrize("replace_on_open", [False, True])
+def test_fifo_source_fails_promptly_in_bounded_subprocess(tmp_path, replace_on_open):
+    # Never call the potentially blocking loader in the pytest process.
+    # subprocess.run kills AND reaps the child if the timeout expires.
+    script = textwrap.dedent(
+        """
+        import json
+        import os
+        from pathlib import Path
+        import sys
+        from core.reference_video import ReferenceVideoError, load_reference_video_source
+
+        path = Path(sys.argv[1])
+        replace_on_open = sys.argv[2] == "True"
+        if replace_on_open:
+            path.write_bytes(b"ordinary video bytes")
+        else:
+            os.mkfifo(path)
+
+        real_open = os.open
+        opened = []
+        def open_source(candidate, flags):
+            opened.append(str(candidate))
+            if replace_on_open:
+                path.unlink()
+                os.mkfifo(path)
+            return real_open(candidate, flags)
+
+        os.open = open_source
+        try:
+            load_reference_video_source(path)
+        except ReferenceVideoError as exc:
+            print(json.dumps({"error": str(exc), "opened": bool(opened)}))
+        else:
+            raise AssertionError("FIFO was accepted as a video")
+        """
+    )
+    try:
+        result = subprocess.run(
+            [
+                sys.executable, "-c", script, str(tmp_path / "process.mp4"),
+                str(replace_on_open),
+            ],
+            cwd=Path(__file__).resolve().parent.parent,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("Video loader blocked on a FIFO; child killed and reaped")
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["error"] == (
+        "WebJam couldn't read that video file. Check that it is a regular "
+        "local video file that has not moved or changed."
+    )
+    assert str(tmp_path) not in report["error"]
+    assert report["opened"] is replace_on_open
 
 
 # ---------------------------------------------------------------------------
