@@ -210,6 +210,34 @@ def test_choosing_a_card_binds_host_to_that_card(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+def test_host_button_a11y_places_invite_copy_inside_the_room(
+    qapp, tmp_path: Path
+) -> None:
+    """The door starts a room; clipboard copy is described from inside the room."""
+
+    for key in ("music", "art"):
+        copy = _CREATOR_LAUNCH_COPY[key]
+        assert "inside the room" in copy.host_description.casefold()
+
+    music = _dialog(tmp_path, "music")
+    try:
+        host_described = music._host_button.accessibleDescription().casefold()
+        assert "inside the room" in host_described
+        assert "start the room and copy an invite" not in host_described
+    finally:
+        music.deleteLater()
+
+    art = _dialog(tmp_path, "art")
+    try:
+        for card in _visible_cards(art):
+            card.setChecked(True)
+            host_described = art._host_button.accessibleDescription().casefold()
+            assert "inside the room" in host_described
+            assert "copy an invite for your guests" not in host_described
+    finally:
+        art.deleteLater()
+
+
 def test_the_first_screen_names_no_component(qapp, tmp_path: Path):
     """The ten-second door is about what you are making, not what runs it.
 
