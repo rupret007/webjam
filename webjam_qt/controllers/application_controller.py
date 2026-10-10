@@ -6351,7 +6351,10 @@ class ApplicationController(QObject):
         self._publish_musician_guidance(snapshot, display_override=override)
         self.window.participant_grid.set_session_state(
             SessionUiState(
-                self._conductor_stage_phase(snapshot.presentation.phase),
+                self._conductor_stage_phase(
+                    snapshot.presentation.phase,
+                    snapshot.facts,
+                ),
                 override.title,
                 override.message,
                 primary_text=override.action_label
@@ -10123,10 +10126,15 @@ class ApplicationController(QObject):
                       else ArtRoomState.NONE),
         )
 
-    _CONDUCTOR_CONNECTED_STAGE_PHASES = frozenset(
+    _CONDUCTOR_LIVE_CONNECTION_PHASES = frozenset(
         {
             SessionConductorPhase.CONNECTED,
             SessionConductorPhase.LIVE,
+        }
+    )
+
+    _CONDUCTOR_IN_SESSION_WORK_PHASES = frozenset(
+        {
             SessionConductorPhase.RECORDING,
             SessionConductorPhase.TAKE_READY,
             SessionConductorPhase.REVIEWING,
@@ -10134,7 +10142,17 @@ class ApplicationController(QObject):
     )
 
     @staticmethod
-    def _conductor_stage_phase(phase: SessionConductorPhase) -> SessionPhase:
+    def _conductor_has_music_connection(facts: SessionConductorFacts) -> bool:
+        return (
+            facts.music_path is MusicPathState.AUTHENTICATED
+            and facts.local_participant is EvidenceState.VERIFIED
+        )
+
+    @staticmethod
+    def _conductor_stage_phase(
+        phase: SessionConductorPhase,
+        facts: SessionConductorFacts | None = None,
+    ) -> SessionPhase:
         if phase in {
             SessionConductorPhase.RECONNECTING,
             SessionConductorPhase.FAILED,
@@ -10145,8 +10163,15 @@ class ApplicationController(QObject):
             return SessionPhase.ERROR
         if phase is SessionConductorPhase.ENDING:
             return SessionPhase.ENDING
-        if phase in ApplicationController._CONDUCTOR_CONNECTED_STAGE_PHASES:
+        if phase in ApplicationController._CONDUCTOR_LIVE_CONNECTION_PHASES:
             return SessionPhase.CONNECTED
+        if phase in ApplicationController._CONDUCTOR_IN_SESSION_WORK_PHASES:
+            if (
+                facts is not None
+                and ApplicationController._conductor_has_music_connection(facts)
+            ):
+                return SessionPhase.CONNECTED
+            return SessionPhase.NOT_CONNECTED
         if phase in {
             SessionConductorPhase.STARTING_HOST,
             SessionConductorPhase.WAITING_FOR_HOST_READINESS,
@@ -10177,10 +10202,10 @@ class ApplicationController(QObject):
         if self._jamulus_connected or getattr(self.audio, "connected", False):
             return
         label = headline or presentation.title
-        if presentation.phase in self._CONDUCTOR_CONNECTED_STAGE_PHASES:
-            self.window.set_status_latency(label)
-        elif presentation.phase is SessionConductorPhase.IDLE:
+        if presentation.phase is SessionConductorPhase.IDLE:
             self.window.set_status_latency("Not connected")
+        else:
+            self.window.set_status_latency(label)
 
     @staticmethod
     def _conductor_action_kind(action: SessionPrimaryAction) -> str:
@@ -10329,7 +10354,7 @@ class ApplicationController(QObject):
                 self.window.session_strip.set_invite_available(False)
             self.window.participant_grid.set_session_state(
                 SessionUiState(
-                    self._conductor_stage_phase(presentation.phase),
+                    self._conductor_stage_phase(presentation.phase, facts),
                     display_override.title,
                     display_override.message,
                     primary_text=(
@@ -10418,7 +10443,7 @@ class ApplicationController(QObject):
         # pile alongside the same action in the HUD.
         self.window.participant_grid.set_session_state(
             SessionUiState(
-                self._conductor_stage_phase(presentation.phase),
+                self._conductor_stage_phase(presentation.phase, facts),
                 presentation.title,
                 presentation.message,
                 primary_text=presentation.action_label or "Continue",
