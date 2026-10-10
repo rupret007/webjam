@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Joining with a legacy Music invitation from the Art door now opens the
+  Music guest setup instead of asking for the invitation again. The saved
+  Art choice is preserved; peer-enabled invitations still check the host's
+  profile. Physical audio and two-Mac checks remain **NOT RUN**.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual

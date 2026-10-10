@@ -740,7 +740,9 @@ host's Wi-Fi or local network first. After a paste error, the invitation
 field keeps keyboard focus so you can paste again. Private invitation values
 are never saved in settings or logs and are not echoed back after a private-link error.
 
-WebJam waits for the host's profile before choosing the room or audio path.
+For peer-enabled invitations, WebJam waits for the host's profile before
+choosing the room or audio path. A legacy Music invitation opens Music guest
+setup even when you chose Art on the door; your saved Art choice is preserved.
 An Art invitation follows the waiting and connection states described in
 [Art](#art), without Jamulus. For a remote Music invitation, the normal visible
 sequence is **Checking invite → Contacting host → Securing connection → Opening
