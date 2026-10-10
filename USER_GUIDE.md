@@ -12,6 +12,18 @@
 > macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
 > gates remain **NOT RUN**. A source checkout is not a published package.
 
+## Launch door: Unreleased
+
+The launch and Join screens have no File/Help menu bar. Choose **Art**, then
+**Make together** or **Paint along**, then **Host** or **Join**; Music offers
+**Host** or **Join**. When Windows music setup is available, a single **Help**
+link beside the logo opens it. **Back** returns to the door (or to Join when
+joining from an existing workspace).
+
+Launch-menu routes described below for v0.29.0 are unavailable on this
+Unreleased door, including the New Project keyboard shortcut. In a room,
+**More → Session library…** and workflow Help remain available.
+
 ## Save a session and continue later
 
 In v0.29.0, open **File → Session library…** at launch,

@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Launch and Join no longer show File/Help menu chrome or offer a New Project
+  shortcut. When Windows music setup is available, one Help link opens it
+  inside the dialog. Art's two starts and Music's Host/Join stay unchanged.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual

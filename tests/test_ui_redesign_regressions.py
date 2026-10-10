@@ -126,8 +126,11 @@ def test_launch_hierarchy_is_one_primary_then_two_clear_alternatives(
     styled_qapp.processEvents()
     try:
         assert [action.text() for action in dialog._menu_bar.actions()] == ["&File", "&Help"]
-        assert dialog._menu_bar.isVisibleTo(dialog)
-        assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
+        assert not dialog._menu_bar.isVisibleTo(dialog)
+        assert not dialog._menu_bar.isNativeMenuBar()
+        assert dialog.layout().menuBar() is None
+        assert all(not action.isVisible() for action in dialog._menu_bar.actions())
+        assert all(action.shortcut().isEmpty() for action in dialog._workspace_actions.values())
         assert dialog.minimumWidth() <= 460
         assert dialog.minimumHeight() <= 600
         assert dialog._host_button.objectName() == "LaunchPrimary"
@@ -186,8 +189,11 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
     styled_qapp.processEvents()
     try:
         assert [action.text() for action in dialog._menu_bar.actions()] == ["&File", "&Help"]
-        assert dialog._menu_bar.isVisibleTo(dialog)
-        assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
+        assert not dialog._menu_bar.isVisibleTo(dialog)
+        assert not dialog._menu_bar.isNativeMenuBar()
+        assert dialog.layout().menuBar() is None
+        assert all(not action.isVisible() for action in dialog._menu_bar.actions())
+        assert all(action.shortcut().isEmpty() for action in dialog._workspace_actions.values())
         assert dialog.width() <= 760
         assert dialog.height() <= 520
         assert dialog.height() + 40 <= 600
@@ -241,8 +247,11 @@ def test_art_door_keeps_two_starts_and_host_join_inside_760_by_600(
     styled_qapp.processEvents()
     try:
         assert [action.text() for action in dialog._menu_bar.actions()] == ["&File", "&Help"]
-        assert dialog._menu_bar.isVisibleTo(dialog)
-        assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
+        assert not dialog._menu_bar.isVisibleTo(dialog)
+        assert not dialog._menu_bar.isNativeMenuBar()
+        assert dialog.layout().menuBar() is None
+        assert all(not action.isVisible() for action in dialog._menu_bar.actions())
+        assert all(action.shortcut().isEmpty() for action in dialog._workspace_actions.values())
         assert dialog.width() <= 760
         assert dialog.height() + 40 <= 600
         assert dialog._choice_helper.isVisibleTo(dialog)
@@ -288,8 +297,11 @@ def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
     styled_qapp.processEvents()
     try:
         assert [action.text() for action in dialog._menu_bar.actions()] == ["&File", "&Help"]
-        assert dialog._menu_bar.isVisibleTo(dialog)
-        assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
+        assert not dialog._menu_bar.isVisibleTo(dialog)
+        assert not dialog._menu_bar.isNativeMenuBar()
+        assert dialog.layout().menuBar() is None
+        assert all(not action.isVisible() for action in dialog._menu_bar.actions())
+        assert all(action.shortcut().isEmpty() for action in dialog._workspace_actions.values())
         for hidden in (
             dialog._name_label,
             dialog._name_input,
