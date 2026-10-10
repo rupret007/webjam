@@ -120,6 +120,7 @@ class SessionHud(QFrame):
             self._detail.setText(plain_detail)
             self._checklist_note.clear()
             self._checklist_note.setVisible(False)
+        self._detail.setVisible(bool(self._detail.text()))
         self._invite_available = bool(invite_available)
         self._action_kind = str(action_kind).strip().lower() or "primary"
         default_visible = (

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from core.art_room_overview import art_room_overview
 from core.network_invite import BandInvite
 from core.session_conductor import (
     ArtRoomState,
@@ -47,7 +48,17 @@ def test_art_room_can_connect_with_no_audio_evidence(role):
     assert facts.local_participant is EvidenceState.NOT_STARTED
     assert facts.human_two_way_audibility is EvidenceState.NOT_STARTED
     assert "Jamulus" not in view.message
-    assert view.message.startswith("Make from your own space")
+    assert view.message == ""
+    overview = art_room_overview(
+        state=facts.art_room, hosting=role is SessionRole.HOST,
+    )
+    assert overview.activity_label == "Make from your own space"
+    assert overview.activity_detail == (
+        "Use paper, clay, a model, printer, or your usual app, or just talk. "
+        "Choose Set Up Conversation to add your meeting link."
+    )
+    assert overview.conversation_action_label == "Set Up Conversation"
+    assert overview.conversation_enabled
     assert "paint along" not in view.message.casefold()
 
 

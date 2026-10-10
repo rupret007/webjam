@@ -746,10 +746,10 @@ def _presentation(
                 "The room is open; another artist has not joined yet.",
             )
         if facts.art_room is ArtRoomState.CONNECTED:
+            # The room overview owns making guidance and Conversation's next step.
             return present(
                 SessionPrimaryAction.NONE, "You’re in",
-                "Make from your own space with your own tools. "
-                "Conversation is here when you want to talk.",
+                "",
                 "Room connection confirmed. Optional shared layers have their own next step.",
             )
         if facts.art_room is ArtRoomState.RECONNECTING:
