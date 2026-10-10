@@ -681,6 +681,18 @@ def test_normal_v1_keeps_opaque_legacy_fields_readable_but_backup_refuses_unknow
     assert (library.root / f"{legacy.id}.json").read_bytes() == raw
 
 
+def test_copy_detached_take_ownership_still_exports_as_a_backup(tmp_path):
+    library = SessionLibrary(tmp_path / "source")
+    original = library.create("music", "Still recording", take_links=({
+        "take_id": "t1", "take_path": "", "status": "pending", "run_id": "r1",
+        "recording_session_id": "s1", "validated": False, "title": "Recording requested",
+    },))
+    copied_links = backup.detach_take_ownership(original.take_links, original.id)
+    copy = library.create("music", "Copy", take_links=copied_links)
+    preview = export_workspace_backup(copy, tmp_path / "backup.json")
+    assert preview.record.take_links == copied_links
+
+
 def test_store_import_boundary_rejects_reusing_source_identity_before_writes(tmp_path, record):
     source = SessionLibrary(tmp_path / "source")
     imported = import_workspace_backup(source, export_workspace_backup(record, tmp_path / "backup.json"))

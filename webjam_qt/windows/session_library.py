@@ -20,6 +20,7 @@ from core.session_library import (
     SessionLibrary, SessionLibraryError, SessionLibraryImportUnconfirmed,
     validate_session_record,
 )
+from core.workspace_backup import detach_take_ownership
 from webjam_qt.widgets.art_workspace import ArtWorkspacePanel
 from webjam_qt.widgets.rehearsal_plan import RehearsalPlanPanel
 from webjam_qt.windows.workspace_backup import (
@@ -569,7 +570,11 @@ class SessionLibraryDialog(QDialog):
             if checked is not None and path:
                 suffix = " — " + checked
             elif not path:
-                suffix = (" — historical reference; no completed take here" if imported and not ref.get("recording_session_id")
+                # A reservation whose live ownership was detached (import, or a
+                # copy that can't own the original's in-flight recording) never
+                # completes here, regardless of whether this record is imported.
+                suffix = (" — historical reference; no completed take here"
+                          if ref.get("historical_origins") and not ref.get("recording_session_id")
                           else " — requested or finalizing; no completed take yet")
             elif imported:
                 suffix = " — stored link — not checked"
@@ -663,6 +668,10 @@ class SessionLibraryDialog(QDialog):
             edited = self._edited_record()
             fields = {key: getattr(edited, key) for key in ("notes", "decisions", "actions", "blockers",
                 "recaps", "take_links", "rehearsal", "art", "mode_key", "source_key", "import_provenance", "media_provenance")}
+            # A copy never started its own recordings; keep provenance but drop
+            # live ownership so it can't shadow the original as the completion
+            # owner (recording_completed() fails closed on ambiguous matches).
+            fields["take_links"] = detach_take_ownership(fields["take_links"], edited.id)
             record = self.library.create(edited.profile, title.strip(), **fields)
             self._dirty = False
             self.pending_records.pop(edited.id, None)

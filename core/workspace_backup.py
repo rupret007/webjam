@@ -47,6 +47,33 @@ _RECAP_FIELDS = frozenset(("run_id", "ended_at", "duration_seconds", "summary", 
 _OWNERSHIP_FIELDS = ("recording_session_id", "run_id", "validated", "status")
 
 
+def detach_take_ownership(take_links, source_workspace_id: str) -> tuple[dict, ...]:
+    """Strip live recording ownership from take links, keeping provenance.
+
+    A workspace that did not itself request or complete a recording must never
+    resolve as that take's live owner. The post-restart lookup in
+    ``SessionLibraryCoordinator.recording_completed`` matches on bare
+    ``take_id``/``recording_session_id`` across the whole library and silently
+    refuses to act once more than one record claims the same take, so any
+    record that retains ownership fields verbatim (a copy, an import) can make
+    the real owner unreachable. Ownership facts move to ``historical_origins``
+    instead of being discarded, so provenance stays visible.
+    """
+    references = []
+    for reference in take_links:
+        reference = dict(reference)
+        historical = {key: reference[key] for key in _OWNERSHIP_FIELDS if key in reference}
+        if historical:
+            origins = reference.get("historical_origins", [])
+            if len(origins) >= MAX_IMPORT_HISTORY:
+                raise WorkspaceBackupError("Historical take origins are full; no history was discarded.")
+            reference["historical_origins"] = [*origins, {"source_workspace_id": source_workspace_id, **historical}]
+            for key in historical:
+                del reference[key]
+        references.append(reference)
+    return tuple(references)
+
+
 class WorkspaceBackupError(SessionLibraryError):
     """A backup cannot be read, published, or imported without losing evidence."""
 
@@ -60,8 +87,14 @@ def _portable(record: SessionRecord) -> None:
     for reference in record.take_links:
         if not set(reference) <= _TAKE_FIELDS:
             raise WorkspaceBackupError("Workspace take link contains unsupported fields.")
-        if "historical_origins" in reference and not record.import_provenance:
-            raise WorkspaceBackupError("Legacy historical take fields have no supported provenance; preserve the original.")
+        if "historical_origins" in reference:
+            origins = reference["historical_origins"]
+            # A copy's detached ownership (detach_take_ownership) is well-formed
+            # without import_provenance; only truly opaque/legacy (pre-v2) shapes
+            # have no supported meaning here.
+            if (not isinstance(origins, list) or not 1 <= len(origins) <= MAX_IMPORT_HISTORY
+                    or any(not isinstance(origin, dict) or "source_workspace_id" not in origin for origin in origins)):
+                raise WorkspaceBackupError("Legacy historical take fields have no supported provenance; preserve the original.")
         if "validated" in reference and type(reference["validated"]) is not bool:
             raise WorkspaceBackupError("Workspace take validation must be boolean.")
     for recap in record.recaps:
@@ -179,20 +212,10 @@ def prepare_workspace_backup_import(preview: WorkspaceBackupPreview) -> SessionR
            "revision": source.revision, "created_at": source.created_at,
            "updated_at": source.updated_at, "source_key": source.source_key,
            "payload_sha256": preview.payload_sha256}
-    references = []
-    for reference in source.take_links:
-        historical = {key: reference[key] for key in _OWNERSHIP_FIELDS if key in reference}
-        if historical:
-            origins = reference.get("historical_origins", [])
-            if len(origins) >= MAX_IMPORT_HISTORY:
-                raise WorkspaceBackupError("Historical take origins are full; no history was discarded.")
-            reference["historical_origins"] = [*origins, {"source_workspace_id": source.id, **historical}]
-            for key in historical:
-                del reference[key]
-        references.append(reference)
+    references = detach_take_ownership(source.take_links, source.id)
     now = datetime.now(timezone.utc).isoformat(timespec="microseconds")
     imported = replace(source, id=uuid4().hex, revision=1, created_at=now, updated_at=now,
-                       take_links=tuple(references), import_provenance=(*source.import_provenance, hop),
+                       take_links=references, import_provenance=(*source.import_provenance, hop),
                        recovered=False, _store_token=None)
     return imported
 

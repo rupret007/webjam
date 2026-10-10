@@ -166,6 +166,32 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertEqual(saved_original.recaps[0]["take_ids"], ["late-take"])
         self.assertEqual(saved_original.notes, "Retained original draft")
 
+    def test_copy_cannot_shadow_original_as_post_restart_completion_owner(self):
+        self.coordinator.start_session()
+        self.coordinator.recording_started("audit-take", "audit-session")
+        base = self.coordinator.current
+        self.assertTrue(self.coordinator.flush())
+        editor = self._editor()
+        with patch.object(QInputDialog, "getText", return_value=("Separate copy", True)):
+            editor._copy()
+        copied = self.library.load(editor.record.id)
+        self.assertNotEqual(copied.id, base.id)
+        # The pending reservation's live ownership must not have been copied
+        # verbatim, or a post-restart lookup across the library would see two
+        # records claiming the same take and refuse to pick either (fail-closed).
+        self.assertNotIn("recording_session_id", copied.take_links[0])
+        self.assertEqual(copied.take_links[0]["historical_origins"][0]["recording_session_id"], "audit-session")
+        self.assertEqual(copied.take_links[0]["historical_origins"][0]["source_workspace_id"], base.id)
+        # Model a restart: the in-memory start-to-owner binding is gone, so
+        # completion must resolve the owner by scanning on-disk records.
+        self.coordinator._recording_owners.clear()
+        take = SimpleNamespace(take_id="audit-take", session_id="audit-session",
+                               path=self.root / "take", display_name="Audit take")
+        with patch("core.take_review.take_source_identity", return_value="a" * 64):
+            self.coordinator.recording_completed(take, validated=True)
+        self.assertEqual(self.library.load(base.id).take_links[0]["status"], "complete")
+        self.assertIsNone(self.library.load(copied.id).take_links[0].get("status"))
+
     def test_competing_notes_stay_in_editor_and_pending_without_a_disk_overwrite(self):
         self.window.session_canvas.set_notes("Base Notes")
         self.coordinator.ensure_current()
