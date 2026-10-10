@@ -18,7 +18,7 @@ from webjam_qt.invitation_ingress import (
     InvitationIngressErrorCode,
 )
 from webjam_qt.theme import load_stylesheet
-from webjam_qt.windows.launch_dialog import LaunchDialog
+from webjam_qt.windows.launch_dialog import LaunchDialog, _JOIN_PASTE_PROMPT
 
 
 @pytest.fixture(scope="module")
@@ -110,7 +110,7 @@ def test_paste_does_not_parse_or_claim_a_network_type(join_door, profile):
             assert dialog.selected_role == ""
         parse.assert_not_called()
     dialog._invite_input.clear()
-    assert dialog._join_status.text() == "Paste your invitation"
+    assert dialog._join_status.text() == _JOIN_PASTE_PROMPT
     assert dialog._join_subtitle.text() == guidance
 
 

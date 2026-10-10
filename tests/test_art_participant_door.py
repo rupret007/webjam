@@ -22,7 +22,7 @@ from webjam_qt.theme import load_stylesheet
 from webjam_qt.theme.tokens import Color
 from webjam_qt.widgets.session_strip import SessionStrip
 from webjam_qt.widgets.webex_embed import WebexEmbed
-from webjam_qt.windows.launch_dialog import LaunchDialog
+from webjam_qt.windows.launch_dialog import LaunchDialog, _JOIN_PASTE_PROMPT
 
 
 @pytest.fixture(scope="module")
@@ -187,7 +187,7 @@ def test_paste_is_unchecked_and_replacing_it_clears_spoken_errors(door, reset):
     else:
         dialog.show_choices()
         dialog.show_join()
-        assert dialog._join_status.text() == "Paste your invitation"
+        assert dialog._join_status.text() == _JOIN_PASTE_PROMPT
         assert dialog._invite_input.text() == ""
     assert dialog._join_error.text() == ""
     assert dialog._join_error.accessibleDescription() == ""
