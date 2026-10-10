@@ -1604,7 +1604,12 @@ class TestConductorWindow(unittest.TestCase):
         body = set_text.call_args.args[0]
         self.assertIn("Choose <b>Studio</b>", body)
         self.assertNotIn("build a song project", body)
-        self.assertIn("choose <b>Music</b>, then <b>Host</b> or <b>Join</b>", body)
+        self.assertIn(
+            "choose <b>Music</b> or <b>Art</b> "
+            "(<b>Make together</b> / <b>Paint along</b>), then <b>Host</b> "
+            "or <b>Join</b>",
+            body,
+        )
         self.assertNotIn("Host a Jam", body)
         self.assertNotIn("Join a Jam", body)
         self.assertIn("review completed session takes", body)
@@ -1662,7 +1667,9 @@ class TestConductorWindow(unittest.TestCase):
                             self.assertNotIn(token, body)
                     else:
                         self.assertIn("review completed session takes", body)
-                        self.assertNotIn("Paint along", body)
+                        self.assertNotIn("— Art", body)
+                        self.assertIn("Make together", body)
+                        self.assertIn("Paint along", body)
         finally:
             window.close()
 

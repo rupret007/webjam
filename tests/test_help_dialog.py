@@ -72,7 +72,7 @@ def test_real_help_fits_scrolls_and_returns_without_changing_work(app, window, p
         assert dialog._body.isReadOnly()
         assert dialog._body.horizontalScrollBar().maximum() == 0
         text = dialog._body.toPlainText()
-        assert ("Paint along" in text) == (profile == "art")
+        assert ("— Art" in text) == (profile == "art")
         bar = dialog._body.verticalScrollBar()
         if large_text:
             assert bar.maximum() > 0

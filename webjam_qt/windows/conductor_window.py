@@ -765,7 +765,8 @@ class ConductorWindow(QMainWindow):
             body = (
                 f"<b>WebJam v{__version__}</b><br>"
                 "<i>Host. Share. Join. Play.</i><br><br>"
-                "<b>1.</b> At launch, choose <b>Music</b>, then <b>Host</b> "
+                "<b>1.</b> At launch, choose <b>Music</b> or <b>Art</b> "
+                "(<b>Make together</b> / <b>Paint along</b>), then <b>Host</b> "
                 "or <b>Join</b>.<br>"
                 "<b>2.</b> For a WebJam room, the host presses <b>Copy Invite</b> and sends the link. "
                 "For video practice, continue to <b>Play along</b> even if audio setup needs attention.<br>"
