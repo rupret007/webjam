@@ -290,6 +290,48 @@ def test_the_page_names_what_host_and_join_do_with_the_card_choice(qapp, tmp_pat
             elsewhere.deleteLater()
 
 
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800), (620, 520)])
+def test_art_door_consequence_is_readable_next_to_join(qapp, tmp_path: Path, size):
+    """Both choices explain Host/Join at reading size, beside the actions."""
+    from PySide6.QtGui import QColor, QPalette
+    from webjam_qt.theme import load_stylesheet
+    from webjam_qt.theme.tokens import Color, Font
+
+    dialog = _dialog(tmp_path)
+    try:
+        dialog._menu_bar.setNativeMenuBar(False)
+        dialog.setStyleSheet(load_stylesheet())
+        dialog.resize(*size)
+        dialog.show()
+        qapp.processEvents()
+        for card in _visible_cards(dialog):
+            card.click()
+            qapp.processEvents()
+            helper = dialog._choice_helper
+            join = dialog._join_button
+            assert helper.isVisibleTo(dialog)
+            assert helper.font().pixelSize() >= Font.SIZE_BASE
+            assert helper.palette().color(QPalette.ColorRole.WindowText) == QColor(
+                Color.TEXT_SECONDARY
+            )
+            assert "Host starts " + card.accessibleName() in helper.text()
+            assert "Join uses the host's invite." in helper.text()
+            gap = (
+                helper.mapTo(dialog, helper.rect().topLeft()).y()
+                - join.mapTo(dialog, join.rect().bottomLeft()).y() - 1
+            )
+            assert 0 <= gap <= 24
+            assert helper.height() >= helper.heightForWidth(helper.width())
+            for widget in (helper, dialog._host_button, join):
+                assert dialog.rect().contains(widget.mapTo(dialog, widget.rect().topLeft()))
+                assert dialog.rect().contains(widget.mapTo(dialog, widget.rect().bottomRight()))
+            assert dialog.size() == QSize(*size)
+            _assert_first_screen_has_no_banned_words(_first_screen_spoken(dialog))
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_a_profile_without_cards_keeps_its_headline_and_helper(
     qapp, tmp_path: Path
 ):
