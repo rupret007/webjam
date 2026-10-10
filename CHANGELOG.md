@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Studio input retains a stream when device close fails, blocking another
+  start until a cleanup retry confirms release. Failed-start cleanup follows
+  the same rule; recording failures retain their recovery status. Physical
+  audio/device validation remains **NOT RUN**.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual

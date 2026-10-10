@@ -1249,6 +1249,8 @@ class SoundDeviceProjectInputBackend:
     integer counter updates, and one handoff to ``ProjectMultitrackRecorder``.
     A preallocated invalid sentinel reports a backend format violation to the
     recorder without allocating, logging, waiting, or doing path I/O.
+    Until close succeeds, the stream remains owned and blocks another start;
+    stop or abort can retry cleanup, including after a failed start.
     """
 
     def __init__(
@@ -1348,6 +1350,8 @@ class SoundDeviceProjectInputBackend:
         stream = None
         try:
             stream = module.InputStream(**kwargs)
+            # Own the stream even if start and its cleanup both fail.
+            self._stream = stream
             stream.start()
         except Exception:
             if stream is not None:
@@ -1355,14 +1359,14 @@ class SoundDeviceProjectInputBackend:
                     stream.close()
                 except Exception:
                     pass
+                else:
+                    self._stream = None
             raise ProjectRecordingError(
                 "WebJam couldn't open the selected Studio input device."
             ) from None
-        self._stream = stream
 
     def stop(self) -> None:
         stream = self._stream
-        self._stream = None
         if stream is None:
             return
         failure = False
@@ -1374,6 +1378,9 @@ class SoundDeviceProjectInputBackend:
             stream.close()
         except Exception:
             failure = True
+        else:
+            # A stop request alone does not confirm release of the device.
+            self._stream = None
         if failure:
             raise ProjectRecordingError(
                 "WebJam couldn't stop the Studio input device cleanly."
@@ -1381,7 +1388,6 @@ class SoundDeviceProjectInputBackend:
 
     def abort(self) -> None:
         stream = self._stream
-        self._stream = None
         if stream is None:
             return
         failure = False
@@ -1393,6 +1399,8 @@ class SoundDeviceProjectInputBackend:
             stream.close()
         except Exception:
             failure = True
+        else:
+            self._stream = None
         if failure:
             raise ProjectRecordingError(
                 "WebJam couldn't abort the Studio input device cleanly."
