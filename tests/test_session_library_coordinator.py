@@ -140,6 +140,49 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertNotIn(saved.id, self.coordinator._pending)
         self.assertEqual(self.window.session_canvas.current_notes(), saved.notes)
 
+    def test_editor_two_saves_preserve_merged_live_notes(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        self.window.session_canvas.set_notes("Newer live notes")
+        editor.title.setText("First rename")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self.library.load(editor.record.id).notes, "Newer live notes")
+
+        editor.title.setText("Second rename")
+        self.assertTrue(editor.save_current())
+        saved = self.library.load(editor.record.id)
+        self.assertEqual(saved.notes, "Newer live notes")
+        self.assertEqual(saved.title, "Second rename")
+        self.assertEqual(self.window.session_canvas.current_notes(), saved.notes)
+
+    def test_editor_merge_refreshes_notes_before_publishing_saved_record(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        editor.title.setText("Renamed workspace")
+        editor.title.setSelection(0, 7)
+        cursor = editor.notes.textCursor()
+        cursor.setPosition(2)
+        cursor.setPosition(6, cursor.MoveMode.KeepAnchor)
+        editor.notes.setTextCursor(cursor)
+        self.window.session_canvas.set_notes("Newer live notes")
+        published = []
+        editor.record_saved.connect(lambda record: published.append((
+            editor.notes.toPlainText(), editor._base_record.notes,
+            editor._dirty, editor.timer.isActive(), record.notes,
+        )))
+
+        self.assertTrue(editor.save_current())
+        self.assertEqual(published, [(
+            "Newer live notes", "Newer live notes", False, False, "Newer live notes",
+        )])
+        self.assertEqual(editor.title.selectedText(), "Renamed")
+        self.assertEqual(editor.notes.textCursor().anchor(), 2)
+        self.assertEqual(editor.notes.textCursor().position(), 6)
+        self.assertFalse(editor._loading)
+        self.assertEqual(editor.status.text(), "Saved on this computer.")
+
     def test_copy_of_older_pending_snapshot_keeps_newer_take_and_recap_owned(self):
         self.coordinator.start_session()
         self.coordinator.recording_started("late-take", "recording-session")

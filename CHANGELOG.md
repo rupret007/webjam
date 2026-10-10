@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Session Library refreshes its editor after merging live workspace changes,
+  so a later unrelated save preserves the accepted Notes, title, Art project,
+  and rehearsal plan.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual

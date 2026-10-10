@@ -11,6 +11,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog, QPushButton, QScrollArea
 
 from core.art_workspace import make_reference, normalize_art_workspace
+from core.rehearsal_plan import RehearsalPlan
 from core.session_library import SessionLibrary
 from webjam_qt.windows.session_library import SessionLibraryDialog
 from webjam_qt.theme import load_stylesheet
@@ -46,6 +47,49 @@ def _click(dialog, label):
 def _selected_id(dialog):
     item = dialog.history.currentItem()
     return item.data(Qt.ItemDataRole.UserRole) if item else None
+
+
+@pytest.mark.parametrize("field,profile,value", [
+    ("title", "music", "Newer live title"),
+    ("art", "art", normalize_art_workspace({"version": 1, "brief": "Newer live brief"})),
+    ("rehearsal", "music", RehearsalPlan.from_payload({
+        "version": 1, "songs": [{"id": "new-song", "title": "Newer live song"}],
+        "active_song_id": "new-song",
+    }).payload()),
+])
+def test_merged_editor_fields_survive_an_unrelated_second_save(
+        tmp_path, make_dialog, field, profile, value):
+    from webjam_qt.controllers.session_library import _merge_editor_changes
+
+    library = SessionLibrary(tmp_path)
+    original = library.create(profile, "Original", notes="Original notes",
+        art=normalize_art_workspace({}), rehearsal=RehearsalPlan().payload())
+    latest = original
+
+    def save_record(base, edited):
+        nonlocal latest
+        latest = library.save(_merge_editor_changes(base, edited, latest))
+        return latest
+
+    dialog = make_dialog(library, current_id=original.id, save_record=save_record)
+    latest = replace(original, **{field: value})
+    dialog.notes.setPlainText("Library notes")
+    cursor = dialog.notes.textCursor()
+    cursor.setPosition(3)
+    dialog.notes.setTextCursor(cursor)
+    assert dialog.save_current()
+    assert dialog.title.text() == latest.title
+    assert dialog.art.payload() == latest.art
+    assert dialog.rehearsal.payload() == latest.rehearsal
+    assert dialog.notes.textCursor().position() == 3
+    assert not dialog._dirty
+    assert not dialog.timer.isActive()
+
+    dialog.notes.setPlainText("Another notes edit")
+    assert dialog.save_current()
+    saved = library.load(original.id)
+    assert getattr(saved, field) == value
+    assert saved.notes == "Another notes edit"
 
 
 def test_switching_dirty_workspaces_saves_old_draft_and_opens_requested_record(tmp_path, make_dialog):
