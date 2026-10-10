@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Track exports honor recording-start cancellation during rendering and before
+  publication, including legacy and aligned-originals exports. A folder that
+  already finished remains available through **Show Unverified Export** instead
+  of being silently discarded or reported as canceled.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual

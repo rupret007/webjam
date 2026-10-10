@@ -1192,3 +1192,111 @@ def test_schema2_track_export_blocks_missing_or_changed_media_atomically(tmp_pat
         export_track_package(take, destination_root=root)
     assert root.is_dir()
     assert list(root.iterdir()) == []
+
+
+@pytest.mark.parametrize("project_manifest", [False, True])
+@pytest.mark.parametrize("phase", ["before", "render", "mix", "checksum", "publication"])
+def test_track_export_cancel_removes_unpublished_files(
+    tmp_path, monkeypatch, project_manifest, phase
+):
+    import threading
+    from contextlib import contextmanager
+    from core import take_export, take_project
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    if not project_manifest:
+        (take.path / "webjam-take.json").unlink()
+        take = replace(take, manifest_schema_version=1)
+    before = {path: path.read_bytes() for path in sources}
+    cancel = threading.Event()
+    destination = tmp_path / "exports"
+    if phase == "before":
+        cancel.set()
+    elif phase == "publication":
+        original = take_project.take_project_manifest_lock
+
+        @contextmanager
+        def cancel_in_lock(*args, **kwargs):
+            with original(*args, **kwargs):
+                cancel.set()
+                yield
+
+        monkeypatch.setattr(take_project, "take_project_manifest_lock", cancel_in_lock)
+    else:
+        method = {
+            "render": "_write_project_track" if project_manifest else "_write_aligned_stem",
+            "mix": "_write_rough_mix",
+            "checksum": "_write_checksum_manifest",
+        }[phase]
+        original = getattr(take_export, method)
+
+        def cancel_in_stage(*args, **kwargs):
+            cancel.set()
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(take_export, method, cancel_in_stage)
+
+    with pytest.raises(TakeExportError, match="cancelled"):
+        export_track_package(take, destination_root=destination, cancel_event=cancel)
+
+    assert not destination.exists() or not list(destination.iterdir())
+    assert {path: path.read_bytes() for path in sources} == before
+
+
+@pytest.mark.parametrize("project_manifest", [False, True])
+def test_track_export_cancel_after_publication_preserves_completed_folder(
+    tmp_path, monkeypatch, project_manifest
+):
+    import threading
+    from core.export_receipt import verify_export_receipt
+
+    take, _tracks, _sources = _reordered_project_take(tmp_path)
+    if not project_manifest:
+        (take.path / "webjam-take.json").unlink()
+        take = replace(take, manifest_schema_version=1)
+    cancel = threading.Event()
+    original = Path.rename
+
+    def cancel_after_rename(path, destination):
+        result = original(path, destination)
+        if path.name.startswith(".webjam-export-"):
+            cancel.set()
+        return result
+
+    monkeypatch.setattr(Path, "rename", cancel_after_rename)
+    result = export_track_package(take, cancel_event=cancel)
+    assert cancel.is_set()
+    assert result.folder.is_dir()
+    assert verify_export_receipt(result.folder).file_count > 0
+
+
+@pytest.mark.parametrize("project_manifest", [False, True])
+def test_track_export_cancel_during_audio_stops_at_next_chunk(
+    tmp_path, monkeypatch, project_manifest
+):
+    import threading
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    if not project_manifest:
+        (take.path / "webjam-take.json").unlink()
+        take = replace(take, manifest_schema_version=1)
+    before = {path: path.read_bytes() for path in sources}
+    cancel = threading.Event()
+    original = sf.SoundFile.write
+    writes = []
+
+    def cancel_after_first_chunk(writer, block):
+        result = original(writer, block)
+        writes.append(len(block))
+        cancel.set()
+        return result
+
+    monkeypatch.setattr(sf.SoundFile, "write", cancel_after_first_chunk)
+    destination = tmp_path / "exports"
+    with pytest.raises(TakeExportError, match="cancelled"):
+        export_track_package(
+            take, destination_root=destination, chunk_frames=1024, cancel_event=cancel
+        )
+    assert writes == [1024]
+    assert not list(destination.iterdir())
+    assert {path: path.read_bytes() for path in sources} == before
