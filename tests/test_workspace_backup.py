@@ -681,6 +681,74 @@ def test_normal_v1_keeps_opaque_legacy_fields_readable_but_backup_refuses_unknow
     assert (library.root / f"{legacy.id}.json").read_bytes() == raw
 
 
+def test_copy_detached_take_ownership_still_exports_as_a_backup(tmp_path):
+    library = SessionLibrary(tmp_path / "source")
+    original = library.create("music", "Still recording", take_links=({
+        "take_id": "t1", "take_path": "", "status": "pending", "run_id": "r1",
+        "recording_session_id": "s1", "validated": False, "title": "Recording requested",
+    },))
+    copied_links = backup.detach_take_ownership(original.take_links, original.id)
+    copy = library.create("music", "Copy", take_links=copied_links)
+    preview = export_workspace_backup(copy, tmp_path / "backup.json")
+    assert preview.record.take_links == copied_links
+
+
+@pytest.mark.parametrize("legacy_origins", [
+    {"note": "keep"},
+    "old opaque metadata",
+    None,
+])
+def test_detach_take_ownership_refuses_to_corrupt_opaque_legacy_history(legacy_origins):
+    # Version-1 records permit arbitrary bounded metadata under this key
+    # (core.session_library only assigns it meaning once import_provenance is
+    # non-empty). A pending reservation's live ownership fields must still be
+    # detached safely: merging into whatever shape happens to be here would
+    # silently scramble a dict's keys, explode a string into characters, or
+    # crash on None.
+    take_links = ({
+        "take_id": "t1", "take_path": "", "status": "pending", "run_id": "r1",
+        "recording_session_id": "s1", "validated": False, "title": "Recording requested",
+        "historical_origins": legacy_origins,
+    },)
+    with pytest.raises(WorkspaceBackupError, match="unsupported legacy shape"):
+        backup.detach_take_ownership(take_links, "a" * 32)
+    assert take_links[0]["historical_origins"] == legacy_origins
+
+
+def test_detach_take_ownership_extends_existing_well_formed_history():
+    first = backup.detach_take_ownership(({
+        "take_id": "t1", "take_path": "", "status": "pending",
+        "recording_session_id": "s1", "run_id": "r1", "validated": False,
+    },), "a" * 32)
+    second = backup.detach_take_ownership(({
+        **first[0], "status": "pending",
+        "recording_session_id": "s2", "run_id": "r2", "validated": True,
+    },), "b" * 32)
+    assert second[0]["historical_origins"] == [
+        {"source_workspace_id": "a" * 32, "status": "pending",
+         "recording_session_id": "s1", "run_id": "r1", "validated": False},
+        {"source_workspace_id": "b" * 32, "status": "pending",
+         "recording_session_id": "s2", "run_id": "r2", "validated": True},
+    ]
+
+
+def test_copy_detached_history_with_invalid_field_type_refuses_export_not_just_import(tmp_path):
+    # detach_take_ownership only validates *pre-existing* historical_origins;
+    # it does not retype the ownership fields it just moved. The export guard
+    # must still catch an invalid type here instead of letting a backup out
+    # that is only discovered broken by whoever imports it later.
+    library = SessionLibrary(tmp_path / "source")
+    original = library.create("music", "Still recording", take_links=({
+        "take_id": "t1", "take_path": "", "status": "pending", "run_id": "r1",
+        "recording_session_id": "s1", "validated": 1, "title": "Recording requested",
+    },))
+    copied_links = backup.detach_take_ownership(original.take_links, original.id)
+    assert copied_links[0]["historical_origins"][0]["validated"] == 1
+    copy = library.create("music", "Copy", take_links=copied_links)
+    with pytest.raises(WorkspaceBackupError, match="Legacy historical"):
+        export_workspace_backup(copy, tmp_path / "backup.json")
+
+
 def test_store_import_boundary_rejects_reusing_source_identity_before_writes(tmp_path, record):
     source = SessionLibrary(tmp_path / "source")
     imported = import_workspace_backup(source, export_workspace_backup(record, tmp_path / "backup.json"))

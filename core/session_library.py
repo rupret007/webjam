@@ -166,22 +166,32 @@ def _import_history(record: SessionRecord) -> None:
         # assigns meaning to this reserved imported-history structure.
         return
     for reference in record.take_links:
-        if "historical_origins" not in reference:
-            continue
-        origins = reference["historical_origins"]
-        if (not isinstance(origins, list)
-                or not 1 <= len(origins) <= MAX_IMPORT_HISTORY):
-            raise SessionLibraryError("Workspace historical take origins are invalid or full.")
-        for origin in origins:
-            if (not isinstance(origin, dict) or not set(origin) <= _HISTORICAL_FIELDS
-                    or "source_workspace_id" not in origin or len(origin) < 2):
-                raise SessionLibraryError("Workspace historical take origin is unsupported.")
-            _identifier(origin["source_workspace_id"])
-            for key in ("recording_session_id", "run_id", "status"):
-                if key in origin:
-                    _text(origin[key], "Workspace historical take detail", MAX_RECOVERY_DRAFT_BYTES)
-            if "validated" in origin and type(origin["validated"]) is not bool:
-                raise SessionLibraryError("Workspace historical validation must be boolean.")
+        if "historical_origins" in reference:
+            validate_historical_origins(reference["historical_origins"])
+
+
+def validate_historical_origins(origins: object) -> None:
+    """Validate one take-link's ``historical_origins`` in isolation.
+
+    Pulled out of ``_import_history`` so callers that assign this structure
+    without an import hop (a plain workspace copy has no
+    ``import_provenance`` entry) can still enforce the same shape. ``_import_history``
+    only reaches this check once ``import_provenance`` is non-empty, which a
+    copy never has.
+    """
+    if (not isinstance(origins, list)
+            or not 1 <= len(origins) <= MAX_IMPORT_HISTORY):
+        raise SessionLibraryError("Workspace historical take origins are invalid or full.")
+    for origin in origins:
+        if (not isinstance(origin, dict) or not set(origin) <= _HISTORICAL_FIELDS
+                or "source_workspace_id" not in origin or len(origin) < 2):
+            raise SessionLibraryError("Workspace historical take origin is unsupported.")
+        _identifier(origin["source_workspace_id"])
+        for key in ("recording_session_id", "run_id", "status"):
+            if key in origin:
+                _text(origin[key], "Workspace historical take detail", MAX_RECOVERY_DRAFT_BYTES)
+        if "validated" in origin and type(origin["validated"]) is not bool:
+            raise SessionLibraryError("Workspace historical validation must be boolean.")
 
 
 def _json_value(value: object, *, depth: int = 0, budget: list[int] | None = None) -> None:
@@ -772,4 +782,5 @@ __all__ = [
     "SessionLibraryError", "SessionRecord", "validate_session_record",
     "encode_session_record", "decode_session_record",
     "MAX_IMPORT_HISTORY", "SessionLibraryImportUnconfirmed", "SessionLibraryMediaImportRequired",
+    "validate_historical_origins",
 ]
