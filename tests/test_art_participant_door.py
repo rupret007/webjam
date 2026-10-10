@@ -187,7 +187,7 @@ def test_paste_is_unchecked_and_replacing_it_clears_spoken_errors(door, reset):
     else:
         dialog.show_choices()
         dialog.show_join()
-        assert dialog._join_status.text() == "Paste your invitation"
+        assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
         assert dialog._invite_input.text() == ""
     assert dialog._join_error.text() == ""
     assert dialog._join_error.accessibleDescription() == ""
