@@ -53,6 +53,10 @@ class ProjectRecordingError(RuntimeError):
     """A path-free project-recording failure suitable for musician-facing UI."""
 
 
+class ProjectRecordingDrainPending(ProjectRecordingError):
+    """The owned writer has not settled within the bounded wait; retry later."""
+
+
 class ProjectRecorderState(str, Enum):
     IDLE = "idle"
     RECORDING = "recording"
@@ -1001,6 +1005,7 @@ class ProjectMultitrackRecorder:
         self._writer_factory = writer_factory or _default_wave_writer
         self._gate = GenerationGate()
         self._control_lock = threading.Lock()
+        self._settlement_lock = threading.Lock()
         self._session: _RecordingSession | None = None
         self._active_generation = 0
         self._state = ProjectRecorderState.IDLE
@@ -1168,77 +1173,66 @@ class ProjectMultitrackRecorder:
         return generation
 
     def stop(self) -> ProjectRecordingResult:
-        with self._control_lock:
-            session = self._session
-            if session is None:
-                if self._last_result is not None:
-                    return self._last_result
-                raise ProjectRecordingError("No project recording is active.")
-            if self._state is ProjectRecorderState.STOPPING:
-                raise ProjectRecordingError(
-                    "The project recording is already stopping."
-                )
-            self._state = ProjectRecorderState.STOPPING
-            session.accepting = False
-
-        try:
-            self._backend.stop()
-        except Exception:
-            session.backend_failed = True
-            try:
-                self._backend.abort()
-            except Exception:
-                pass
-        session.stop_requested = True
-        session.wake.set()
-        session.thread.join(self._join_timeout_s)
-        if session.thread.is_alive() or session.result is None:
-            session.backend_failed = True
-            raise ProjectRecordingError(
-                "Project recording is still stopping; its temporary WAVs "
-                "remain protected."
-            )
-
-        self._gate.cancel()
-        self._active_generation = 0
-        with self._control_lock:
-            self._session = None
-            self._last_result = session.result
-            self._state = session.result.state
-            return session.result
+        return self._finish(cancel=False)
 
     def cancel(self) -> ProjectRecordingResult:
-        with self._control_lock:
-            session = self._session
-            if session is None:
-                if self._last_result is not None:
-                    return self._last_result
-                raise ProjectRecordingError("No project recording is active.")
-            if self._state is ProjectRecorderState.STOPPING:
-                raise ProjectRecordingError(
-                    "The project recording is already stopping."
-                )
-            session.accepting = False
-            session.cancelled = True
-            self._state = ProjectRecorderState.STOPPING
-        self._gate.cancel()
-        self._active_generation = 0
+        return self._finish(cancel=True)
+
+    def _finish(self, *, cancel: bool) -> ProjectRecordingResult:
+        # One control caller owns backend shutdown and settlement at a time.
+        # A later retry may join again, but must preserve the first stop/cancel
+        # decision: the writer may already be publishing its terminal result.
+        if not self._settlement_lock.acquire(blocking=False):
+            raise ProjectRecordingError("The project recording is already stopping.")
         try:
-            self._backend.abort()
-        except Exception:
-            pass
-        session.stop_requested = True
-        session.wake.set()
-        session.thread.join(self._join_timeout_s)
-        if session.thread.is_alive() or session.result is None:
-            raise ProjectRecordingError(
-                "Project recording cancellation is still draining safely."
-            )
-        with self._control_lock:
-            self._session = None
-            self._last_result = session.result
-            self._state = session.result.state
-            return session.result
+            with self._control_lock:
+                session = self._session
+                if session is None:
+                    if self._last_result is not None:
+                        return self._last_result
+                    raise ProjectRecordingError("No project recording is active.")
+                first_attempt = self._state is not ProjectRecorderState.STOPPING
+                if first_attempt:
+                    self._state = ProjectRecorderState.STOPPING
+                    session.accepting = False
+                    session.cancelled = cancel
+
+            if first_attempt:
+                if cancel:
+                    self._gate.cancel()
+                    self._active_generation = 0
+                    try:
+                        self._backend.abort()
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        self._backend.stop()
+                    except Exception:
+                        session.backend_failed = True
+                        try:
+                            self._backend.abort()
+                        except Exception:
+                            pass
+                session.stop_requested = True
+                session.wake.set()
+
+            session.thread.join(self._join_timeout_s)
+            if session.thread.is_alive() or session.result is None:
+                raise ProjectRecordingDrainPending(
+                    "Project recording is still stopping; its temporary WAVs "
+                    "remain protected."
+                )
+
+            with self._control_lock:
+                self._gate.cancel()
+                self._active_generation = 0
+                self._session = None
+                self._last_result = session.result
+                self._state = session.result.state
+                return session.result
+        finally:
+            self._settlement_lock.release()
 
 
 class SoundDeviceProjectInputBackend:

@@ -43,6 +43,7 @@ from core.project_recording import (
     ArmedProjectTrack,
     ProjectMultitrackRecorder,
     ProjectRecorderState,
+    ProjectRecordingDrainPending,
     ProjectRecordingError,
     ProjectRecordingSchedule,
     SoundDeviceProjectInputBackend,
@@ -389,9 +390,17 @@ class ReferenceStudioApplicationController(QObject):
         )
 
     @property
+    def _recording_draining(self) -> bool:
+        return bool(
+            self._recorder is not None
+            and self._recorder.state is ProjectRecorderState.STOPPING
+        )
+
+    @property
     def _recording_busy(self) -> bool:
         return bool(
             self._is_recording
+            or self._recording_draining
             or self._recording_progress is not None
             or self._recording_commit_future is not None
         )
@@ -2478,6 +2487,11 @@ class ReferenceStudioApplicationController(QObject):
                     and not self._recording_recovery_pending
                 ),
                 can_record=recording or (ready_to_record and not self._recording_busy),
+                can_retry_recording_stop=(
+                    self._recording_draining
+                    and self._recording_commit_future is None
+                    and self._recording_progress is None
+                ),
                 can_bounce=(
                     can_play
                     and not bounce_running
@@ -2647,7 +2661,7 @@ class ReferenceStudioApplicationController(QObject):
     # Remaining concrete menu handlers are kept below so the command surface
     # remains auditable as one finite vocabulary.
     def _stop_and_refresh(self) -> None:
-        if self._is_recording:
+        if self._is_recording or self._recording_draining:
             self._stop_recording_async()
             return
         if self._recording_busy:
@@ -2671,6 +2685,9 @@ class ReferenceStudioApplicationController(QObject):
         self._start_recording()
 
     def _start_recording(self) -> None:
+        if self._recording_busy:
+            self._reject_recording_change("starting another recording")
+            return
         project, bundle = self._open_identity()
         if self._recording_recovery_pending:
             self._reject_recording_change("starting another recording")
@@ -2949,7 +2966,9 @@ class ReferenceStudioApplicationController(QObject):
             self._refresh()
             return
         recorder = self._recorder
-        if recorder is None or recorder.state is not ProjectRecorderState.RECORDING:
+        if recorder is None or recorder.state not in {
+            ProjectRecorderState.RECORDING, ProjectRecorderState.STOPPING,
+        }:
             return
         project = self._recording_source_project
         document = self._recording_source_document
@@ -2988,7 +3007,8 @@ class ReferenceStudioApplicationController(QObject):
                 recorded = recorder.stop()
                 if not recorded.published:
                     raise ProjectRecordingError(
-                        "The recording did not publish complete temporary WAVs."
+                        " ".join(recorded.errors)
+                        or "The recording did not publish complete temporary WAVs."
                     )
                 committed = commit_project_recording(
                     bundle,
@@ -3000,6 +3020,8 @@ class ReferenceStudioApplicationController(QObject):
                 )
                 cleaned = self._remove_recording_capture(recorded.output_dir)
                 return committed, "", cleaned
+            except ProjectRecordingDrainPending:
+                return None, "drain_pending", False
             except ProjectRecordingCommitRecoveryRequired:
                 cleaned = self._remove_recording_capture(recorded.output_dir)
                 return None, "recovery_required", cleaned
@@ -3018,20 +3040,12 @@ class ReferenceStudioApplicationController(QObject):
         try:
             future = self._executor.submit(worker)
         except RuntimeError:
-            try:
-                recorder.cancel()
-            except ProjectRecordingError:
-                pass
             self._recording_progress = None
             progress.close()
             progress.deleteLater()
-            self._recorder = None
-            self._recording_backend = None
             self._status = (
-                "WebJam couldn't start recording verification. The input was "
-                "stopped and temporary capture data was retained."
+                "WebJam couldn't start finishing the recording. Press Stop to retry."
             )
-            self._clear_recording_context()
             self._refresh()
             return
         self._recording_commit_future = future
@@ -3047,7 +3061,10 @@ class ReferenceStudioApplicationController(QObject):
         project_id: str,
         future: object,
     ) -> None:
-        if generation != self._recording_generation:
+        if (
+            generation != self._recording_generation
+            or future is not self._recording_commit_future
+        ):
             return
         progress = self._recording_progress
         self._recording_progress = None
@@ -3055,8 +3072,6 @@ class ReferenceStudioApplicationController(QObject):
             progress.close()
             progress.deleteLater()
         self._recording_commit_future = None
-        self._recorder = None
-        self._recording_backend = None
         if self._closed:
             return
         current = self.project_controller.snapshot.project
@@ -3072,6 +3087,19 @@ class ReferenceStudioApplicationController(QObject):
                 "The recording could not finish safely; temporary audio was retained.",
                 False,
             )
+        if error == "drain_pending":
+            self._status = "Recording is still finishing. Press Stop to retry."
+            self._refresh()
+            return
+        # Keep a failed terminal result's recovery location available. It no
+        # longer blocks capture, but must not be mistaken for a pending drain.
+        failed_capture = bool(
+            self._recorder is not None
+            and self._recorder.state is ProjectRecorderState.FAILED
+        )
+        if not failed_capture:
+            self._recorder = None
+            self._recording_backend = None
         if error == "recovery_required":
             self._recording_recovery_pending = True
             self._status = (
@@ -3114,7 +3142,8 @@ class ReferenceStudioApplicationController(QObject):
                 "Reference Studio Recording",
                 self._status,
             )
-            self._clear_recording_context()
+            if not failed_capture:
+                self._clear_recording_context()
             self._refresh()
             return
         bundle = self._recording_bundle

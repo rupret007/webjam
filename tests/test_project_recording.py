@@ -805,3 +805,114 @@ def test_sounddevice_input_backend_closes_after_start_stop_and_abort_failures() 
         backend.abort()
     assert stream.closes == 1
     assert backend.snapshot.running is False
+
+
+@pytest.mark.parametrize("outcome", ["completed", "failed", "cancelled"])
+@pytest.mark.parametrize("blocked_phase", ["write", "flush"])
+def test_drain_timeout_retry_settles_original_result_once(tmp_path, outcome, blocked_phase):
+    release = threading.Event()
+    flushing = threading.Event()
+
+    class SlowWriter:
+        def __init__(self, path, channels):
+            self.inner = project_recording._default_wave_writer(path, channels)
+
+        def write(self, data):
+            if blocked_phase == "write":
+                flushing.set()
+                assert release.wait(5)
+            return self.inner.write(data)
+
+        def flush(self):
+            if blocked_phase == "flush":
+                flushing.set()
+                assert release.wait(5)
+            return self.inner.flush()
+
+        def close(self):
+            return self.inner.close()
+
+    backend = _InputBackend()
+    backend.fail_stop = outcome == "failed"
+    recorder = ProjectMultitrackRecorder(
+        backend, writer_factory=SlowWriter, join_timeout_s=0.1,
+    )
+    schedule = ProjectRecordingSchedule(punch_in_frame=0, punch_out_frame=4)
+    tracks = (ArmedProjectTrack("vocal", (0,)),)
+    recorder.start(tmp_path / "take", schedule=schedule, tracks=tracks)
+    session = recorder._session
+    backend.emit(_ramp(4))
+    finish = recorder.cancel if outcome == "cancelled" else recorder.stop
+    try:
+        with pytest.raises(ProjectRecordingError, match="still"):
+            finish()
+        assert flushing.is_set()
+        assert recorder.state is ProjectRecorderState.STOPPING
+        assert recorder.result is None
+        assert recorder._session is session
+        with pytest.raises(ProjectRecordingError, match="already active"):
+            recorder.start(tmp_path / "other", schedule=schedule, tracks=tracks)
+        # A second bounded attempt must remain pending without changing intent.
+        with pytest.raises(ProjectRecordingError, match="still"):
+            recorder.stop()
+    finally:
+        release.set()
+        session.thread.join(5)
+    assert not session.thread.is_alive()
+    # Cancel on a pending stop also settles the original publish decision.
+    result = recorder.cancel()
+    assert result.state.value == outcome
+    assert recorder.result is result
+    assert recorder.stop() is result
+    assert recorder.cancel() is result
+    assert recorder._session is None
+    assert recorder.active_generation == 0
+    assert backend.stops == (0 if outcome == "cancelled" else 1)
+    assert backend.aborts == (0 if outcome == "completed" else 1)
+    if outcome == "completed":
+        assert result.published
+        np.testing.assert_array_equal(_read(result.tracks[0].file)[:, 0], _ramp(4)[:, 0])
+    elif outcome == "failed":
+        assert not result.published
+        assert result.recovery_dir.is_dir()
+        assert result.tracks[0].file.is_file()
+        assert result.errors
+    else:
+        assert not result.published
+        assert not tuple(tmp_path.iterdir())
+
+
+def test_concurrent_finish_cannot_change_stop_to_cancel(tmp_path):
+    entered = threading.Event()
+    release = threading.Event()
+
+    class SlowStopBackend(_InputBackend):
+        def stop(self):
+            super().stop()
+            entered.set()
+            assert release.wait(5)
+
+    backend = SlowStopBackend()
+    recorder = ProjectMultitrackRecorder(backend, join_timeout_s=0.1)
+    recorder.start(
+        tmp_path / "take",
+        schedule=ProjectRecordingSchedule(punch_in_frame=0, punch_out_frame=4),
+        tracks=(ArmedProjectTrack("vocal", (0,)),),
+    )
+    backend.emit(_ramp(4))
+    results = []
+    worker = threading.Thread(target=lambda: results.append(recorder.stop()))
+    worker.start()
+    try:
+        assert entered.wait(5)
+        with pytest.raises(ProjectRecordingError, match="already stopping"):
+            recorder.cancel()
+    finally:
+        release.set()
+        worker.join(5)
+    assert not worker.is_alive()
+    assert len(results) == 1
+    assert results[0].published
+    assert recorder.stop() is results[0]
+    assert backend.stops == 1
+    assert backend.aborts == 0

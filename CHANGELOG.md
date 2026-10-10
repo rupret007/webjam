@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Studio keeps a slow recording finish retryable through **Stop**, retaining
+  the capture and commit ownership until the writer settles. New recordings
+  stay blocked while pending; failed captures retain their recovery evidence.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual
