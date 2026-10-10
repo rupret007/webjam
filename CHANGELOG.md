@@ -6,6 +6,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Session library refreshes editable fields after a reconciled save, including
+  Back up, so a later title edit preserves newer live Notes and workspace work.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual
