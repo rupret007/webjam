@@ -251,6 +251,119 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertTrue(self.coordinator.flush())
         self.assertEqual(self.library.load(self.coordinator.current.id).notes, "must survive")
 
+    def _assert_failed_autosave_revert(self, field, original, draft):
+        strip = self.window.session_strip
+        picker = strip._mode_picker
+        picker.addItem("Review", "review_rehearsal")
+        setters = {
+            "notes": self.window.session_canvas.set_notes,
+            "title": strip.set_session_title,
+            "mode_key": lambda value: picker.setCurrentIndex(picker.findData(value)),
+        }
+        setters[field](original)
+        self.assertTrue(self.coordinator.ensure_current())
+        record_id = self.coordinator.current.id
+        setters[field](draft)
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush(include_editor=False))
+        self.assertEqual(getattr(self.coordinator._pending[record_id], field), draft)
+        self.assertEqual(getattr(self.library.load(record_id), field), original)
+        setters[field](original)
+        self.assertTrue(self.coordinator.flush(include_editor=False))
+        saved = self.library.load(record_id)
+        self.assertEqual(getattr(saved, field), original)
+        self.assertEqual(getattr(self.coordinator.current, field), original)
+        self.assertEqual(self.coordinator._context(), (saved.title, saved.mode_key, saved.notes))
+        self.assertNotIn(record_id, self.coordinator._pending)
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(record_id), saved)
+        return saved
+
+    def test_failed_autosave_notes_revert_restores_derived_facts(self):
+        saved = self._assert_failed_autosave_revert(
+            "notes", "Decision: keep intro\nAction: @Sam practice\nRisk: timing",
+            "Decision: discard intro\nAction: @Lee rewrite\nRisk: volume")
+        self.assertEqual(saved.decisions, ("keep intro",))
+        self.assertEqual(saved.actions, ("@Sam practice",))
+        self.assertEqual(saved.blockers, ("timing",))
+
+    def test_failed_autosave_notes_revert_to_empty_clears_derived_facts(self):
+        saved = self._assert_failed_autosave_revert(
+            "notes", "", "Decision: discard intro\nAction: rewrite\nRisk: volume")
+        self.assertEqual((saved.decisions, saved.actions, saved.blockers), ((), (), ()))
+
+    def test_failed_autosave_title_revert(self):
+        self._assert_failed_autosave_revert("title", "Wednesday", "Discard this title")
+
+    def test_failed_autosave_mode_revert(self):
+        self._assert_failed_autosave_revert("mode_key", "music_jam", "review_rehearsal")
+
+    def test_failed_autosave_revert_keeps_editor_and_late_facts(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.start_session()
+        self.coordinator.recording_started("late-take", "recording-session")
+        editor = self._editor()
+        editor.title.setText("Editor's title")
+        self.window.session_canvas.set_notes("Discard this draft")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush(include_editor=False))
+        late = self._late_take_and_recap()
+        self.window.session_canvas.set_notes("Original notes")
+        # Autosave must retain the independent editor's dirty draft.
+        self.assertFalse(self.coordinator.flush(include_editor=False))
+        self.assertTrue(editor._dirty)
+        self.assertEqual(editor.title.text(), "Editor's title")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(self.coordinator.current.id)
+        self.assertEqual(saved.notes, "Original notes")
+        self.assertEqual(saved.title, "Editor's title")
+        self.assertEqual(saved.take_links, late.take_links)
+        self.assertEqual(saved.recaps, late.recaps)
+        self.assertEqual(self.coordinator._context(), (saved.title, saved.mode_key, saved.notes))
+
+    def test_unchanged_live_controls_preserve_another_pending_owner(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.ensure_current()
+        current = self.coordinator.current
+        pending = replace(current, title="Other owner's title", notes="Other owner's notes",
+                          mode_key="review_rehearsal", decisions=("Keep this decision",))
+        self.coordinator._pending[current.id] = pending
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush(include_editor=False))
+            self.assertFalse(self.coordinator.flush(include_editor=False))
+        self.assertEqual(self.coordinator._pending[current.id], pending)
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(current.id)
+        for field in ("title", "notes", "mode_key", "decisions"):
+            self.assertEqual(getattr(saved, field), getattr(pending, field))
+
+    def test_editor_publication_is_not_mistaken_for_a_new_live_edit(self):
+        self.coordinator.ensure_current()
+        editor = self._editor()
+        editor.title.setText("Published title")
+        editor.notes.setPlainText("Published notes")
+        self.assertTrue(editor.save_current())
+        current = self.coordinator.current
+        pending = replace(current, title="Later pending title", notes="Later pending notes")
+        self.coordinator._pending[current.id] = pending
+        self.coordinator._capture_current_notes()
+        self.assertEqual(self.coordinator._pending[current.id], pending)
+
+    def test_failed_autosave_revert_survives_another_write_failure(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.ensure_current()
+        original = self.coordinator.current
+        self.window.session_canvas.set_notes("Discard this draft")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+            self.window.session_canvas.set_notes("Original notes")
+            self.assertFalse(self.coordinator.flush())
+            self.assertEqual(self.coordinator._pending[original.id].notes, "Original notes")
+            self.assertFalse(self.coordinator.flush())
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(original.id).notes, "Original notes")
+        self.assertEqual(self.coordinator.current.notes, self.window.session_canvas.current_notes())
+
     def test_active_room_blocks_switch_but_keeps_saved_workspace(self):
         self.coordinator.ensure_current()
         previous = self.coordinator.current.id
