@@ -350,6 +350,10 @@ open WebJam, choose **Join**, and paste that whole message; they do not need
 to pick the host's activity or extract the link. Follow the invitation's
 network instructions before joining.
 
+If Join says **Needs attention** because an invitation is malformed, copy a
+new invitation from your host and paste it into the same field. Private
+invitations are cleared after an error; you do not need to restart WebJam.
+
 If the room loses contact, shared playback holds. Follow **Reconnecting to
 the room** or the recovery action shown; WebJam does not claim the room is
 connected while the connection is lost. If a local-network attempt ends,

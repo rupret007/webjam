@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Join recovers from invitations with an oversized numeric peer port. It shows
+  the existing malformed-invitation message, clears the private invitation,
+  and lets the guest paste a corrected invitation without restarting.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual

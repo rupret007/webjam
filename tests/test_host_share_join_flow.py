@@ -586,6 +586,64 @@ def test_join_door_never_reflects_case_varied_private_invite(
     dialog.close()
 
 
+@pytest.mark.parametrize("profile", ["music", "art"])
+def test_oversized_peer_port_restores_join_and_accepts_corrected_invite(
+    qapp, tmp_path, caplog, profile,
+):
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        last_creator_profile_key=profile,
+    )
+    token = "PRIVATE-PORT-SENTINEL-" + "t" * 32
+    corrected = create_invite_link(
+        "192.168.1.42",
+        session_id="11111111-1111-4111-8111-111111111111",
+        peer_port=43121,
+        invite_token=token,
+    )
+    oversized = corrected.replace("peer=43121", "peer=" + "9" * 5000)
+    assert len(oversized) < 8192
+    dialog = LaunchDialog(settings)
+    dialog.show_join()
+    dialog.show()
+    qapp.processEvents()
+    try:
+        assert dialog.accept_invite(oversized) is False
+        qapp.processEvents()
+        assert dialog._submitting is False
+        assert dialog._invite_input.isEnabled()
+        assert dialog._invite_input.hasFocus()
+        assert dialog._invite_input.text() == ""
+        assert dialog._join_back_button.isEnabled()
+        assert not dialog._join_button_primary.submission_locked()
+        assert dialog._join_button_primary.text() == "Join"
+        assert not dialog._join_button_primary.isEnabled()
+        assert dialog._join_status.text() == "Needs attention"
+        assert dialog._join_error.isVisibleTo(dialog)
+        assert dialog._join_error.text() == (
+            "That invitation is malformed. Copy a new invitation from your host."
+        )
+        rendered = " ".join((
+            dialog._join_error.text(), dialog._join_status.text(),
+            dialog.accessibleDescription(), caplog.text,
+        ))
+        assert token not in rendered
+        assert oversized not in rendered
+        assert not Path(settings.config_file).exists()
+
+        dialog._invite_input.setText(corrected)
+        assert dialog._join_button_primary.isEnabled()
+        dialog._join_button_primary.click()
+        assert dialog.result() == dialog.DialogCode.Accepted
+        assert dialog.selected_role == "join"
+        assert dialog.band_invite == parse_invite_link(corrected)
+        assert dialog._invite_input.text() == ""
+        assert token not in Path(settings.config_file).read_text() + caplog.text
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_pasted_join_save_failure_is_visible_and_retryable(qapp, tmp_path):
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
     dialog = LaunchDialog(settings)
