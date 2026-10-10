@@ -790,6 +790,11 @@ microphone and speaker controls.
 
 ## Main session actions and More
 
+WebJam Settings starts with **Set your name and optional meeting link.**
+Edit **Your name** under **You**, or expand **Meeting link (optional)** under
+**Conversation**. **Live music** contains the Jamulus name preview and
+**Open Jamulus Audio Settings** for interface, channel, headphone, and buffer setup.
+
 The main session rail keeps the everyday destinations visible:
 
 | Action | What it does |
