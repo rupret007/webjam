@@ -116,6 +116,21 @@ def _coerce_input_maps(value: object) -> list:
     return cleaned
 
 
+def _input_maps_value_is_malformed_persisted(raw: object) -> bool:
+    """Whether a persisted ``input_maps`` value must not use the legacy empty-map rule.
+
+    Only a valid JSON empty list ``[]`` is an intentional legacy-compatible
+    configuration. Falsy scalars (``false``, ``0``, ``""``), objects, and
+    non-empty lists that fail coercion are malformed and must fail closed.
+    """
+
+    if raw == []:
+        return False
+    if not isinstance(raw, list):
+        return True
+    return not bool(_coerce_input_maps(raw))
+
+
 def _coerce_settings_data(data: dict) -> None:
     """Coerce config values to expected types; fall back to defaults on invalid data."""
     defaults = asdict(AppSettings())
@@ -174,7 +189,7 @@ def _coerce_settings_data(data: dict) -> None:
         # A non-empty malformed/over-capacity map must never degrade into the
         # empty-list compatibility default and unexpectedly record inputs 1–2.
         # Disable supplemental capture until the musician repairs the map.
-        if raw_input_maps and not data["input_maps"]:
+        if _input_maps_value_is_malformed_persisted(raw_input_maps):
             data["local_capture_enabled"] = False
     # String fields: ensure str
     for key in ("jamulus_server", "webex_url", "config_file", "mix_file",
@@ -347,9 +362,10 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         except Exception as exc:
             _logger.warning("Failed to parse settings file %s: %s - using defaults", file_path, exc)
 
-    persisted_input_map_invalid = bool(
-        loaded_data.get("input_maps")
-    ) and not bool(_coerce_input_maps(loaded_data.get("input_maps")))
+    persisted_input_map_invalid = (
+        "input_maps" in loaded_data
+        and _input_maps_value_is_malformed_persisted(loaded_data["input_maps"])
+    )
 
     # Migrate the one-release legacy bridge flag before coercion.  Explicit
     # new fields always win over their legacy-derived values.

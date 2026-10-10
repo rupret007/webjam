@@ -1,7 +1,13 @@
 import json
 
+import pytest
+
 from core.local_capture import LocalCaptureTrack
-from core.session_recording_plan import configured_input_map_bindings
+from core.session_recording_plan import (
+    LEGACY_CAPTURE_TRACKS,
+    configured_input_map_bindings,
+    resolve_capture_tracks,
+)
 from core.settings import AppSettings, load_settings, save_settings
 
 
@@ -44,6 +50,32 @@ def test_valid_input_maps_round_trip_through_disk(tmp_path):
     assert bindings[1].channel_count == 2
 
 
+@pytest.mark.parametrize(
+    "hostile",
+    (
+        {},
+        False,
+        0,
+        "",
+        None,
+    ),
+)
+def test_falsy_malformed_input_maps_disable_capture_not_legacy_pair(
+    tmp_path, hostile, monkeypatch
+):
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps({"local_capture_enabled": True, "input_maps": hostile}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WEBJAM_LOCAL_CAPTURE_ENABLED", "true")
+    loaded = load_settings(str(config))
+    assert loaded.input_maps == []
+    assert loaded.local_capture_enabled is False
+    assert resolve_capture_tracks(loaded) != LEGACY_CAPTURE_TRACKS
+    assert resolve_capture_tracks(loaded) == ()
+
+
 def test_hostile_input_maps_fail_safe_to_empty(tmp_path):
     hostile_lists = (
         "not-a-list",
@@ -65,6 +97,8 @@ def test_hostile_input_maps_fail_safe_to_empty(tmp_path):
         loaded = load_settings(str(config))
         assert loaded.input_maps == [], hostile
         assert configured_input_map_bindings(loaded) == ()
+        if hostile != []:
+            assert loaded.local_capture_enabled is False
 
 
 def test_default_is_empty_and_compat_rule_is_the_fixed_two_stem_map():
