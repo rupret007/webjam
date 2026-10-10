@@ -39,6 +39,10 @@ clock and room timer do not certify recording time. **Open in take** rechecks
 the saved take before navigation; a moved or changed recording needs attention.
 The **Summary** tab and **Export summary** collect progress and next steps;
 ending a rehearsal retains its recap with the workspace.
+**Export summary** includes the selected workspace's latest live Notes and
+recaps, even if its library editor has no new edits. It creates a separate file;
+use **Save** to keep draft changes in the workspace. Competing edits block export
+and retain both drafts; use **Save as copy…** to keep a separate workspace.
 
 For Art, open **More → Session library… → Art project**. Keep a **Project brief**, **Progress**,
 and **Next steps** alongside references added with **Add file…** or **Add

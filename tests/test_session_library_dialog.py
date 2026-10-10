@@ -327,6 +327,45 @@ def test_summary_export_keeps_local_locators_private_and_never_overwrites_origin
     assert "not exported" in dialog.status.text()
 
 
+def test_summary_export_cancel_keeps_draft_and_creates_nothing(tmp_path, make_dialog, monkeypatch):
+    library = SessionLibrary(tmp_path / "library")
+    record = library.create("music", "Rehearsal", notes="Original notes")
+    dialog = make_dialog(library, current_id=record.id)
+    dialog.notes.setPlainText("Unsaved draft")
+    before = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_a, **_k: ("", ""))
+
+    _click(dialog, "Export summary")
+
+    assert {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()} == before
+    assert dialog._dirty
+    assert dialog.notes.toPlainText() == "Unsaved draft"
+    assert dialog._base_record._store_token == record._store_token
+    assert dialog.status.text() == "Draft changes are still here. Use Save to keep them."
+
+
+def test_summary_export_rejects_unowned_disk_change_even_when_clean(tmp_path, make_dialog, monkeypatch):
+    library = SessionLibrary(tmp_path / "library")
+    record = library.create("music", "Rehearsal", notes="Original notes")
+    dialog = make_dialog(library, current_id=record.id)
+    library.save(replace(record, notes="Changed by another owner"))
+    destination = tmp_path / "summary.md"
+    choices = []
+
+    def choose(*_args):
+        choices.append(True)
+        return str(destination), ""
+
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", choose)
+    _click(dialog, "Export summary")
+
+    assert not choices
+    assert not destination.exists()
+    assert dialog.notes.toPlainText() == "Original notes"
+    assert library.load(record.id).notes == "Changed by another owner"
+    assert "not exported" in dialog.status.text()
+
+
 def test_unreadable_art_record_does_not_partially_replace_current_editor(tmp_path, make_dialog):
     library = SessionLibrary(tmp_path)
     current = library.create("art", "Good workspace", notes="Current notes", art={"version": 1, "brief": "Current brief"})

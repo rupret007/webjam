@@ -1,6 +1,7 @@
 """Work survives room transitions; reopening never authorizes audio or sharing."""
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import os
 from dataclasses import replace
@@ -88,6 +89,159 @@ class TestSessionLibraryCoordinator(TestCase):
             self.coordinator.capture_summary()
             self.coordinator.finish_session()
         return self.coordinator._pending[self.coordinator.current.id]
+
+    def _summary_editor(self):
+        self.window.session_canvas.set_notes("Decision: initial")
+        self.coordinator.show()
+        editor = self.coordinator.dialog
+        self.editors.append(editor)
+        self.assertFalse(editor._dirty)
+        return editor
+
+    def _export_summary(self, editor, destination, *, picker=None):
+        with patch("webjam_qt.windows.session_library.QFileDialog.getSaveFileName",
+                   side_effect=picker, return_value=(str(destination), "")) as choose:
+            editor.export_button.click()
+        return choose
+
+    def test_summary_export_clean_editor_includes_flushed_live_notes_and_late_facts(self):
+        editor = self._summary_editor()
+        base = deepcopy(editor._base_record)
+        self.window.session_canvas.set_notes("Decision: NEW LIVE DECISION")
+        self.assertTrue(self.coordinator.flush())
+        self.coordinator.start_session()
+        self.coordinator.recording_started("late-take", "recording-session")
+        latest = self._late_take_and_recap()
+        self.assertEqual(latest.take_links[0]["status"], "complete")
+        self.assertEqual(latest.recaps[-1]["take_ids"], ["late-take"])
+        self.assertTrue(self.coordinator.flush())
+        before = self.library.load(base.id)
+        destination = self.root / "summary.md"
+
+        self._export_summary(editor, destination)
+
+        summary = destination.read_text()
+        self.assertIn("NEW LIVE DECISION", summary)
+        self.assertIn(latest.recaps[-1]["summary"], summary)
+        self.assertNotIn("Decision: initial", summary)
+        self.assertEqual(self.library.load(base.id), before)
+        self.assertEqual(editor._base_record, base)
+        self.assertEqual(editor._base_record._store_token, base._store_token)
+        self.assertEqual(editor.notes.toPlainText(), base.notes)
+        self.assertFalse(editor._dirty)
+        # Export must not make a later title-only save revert the live Notes.
+        editor.title.setText("Renamed after export")
+        self.assertTrue(editor.save_current())
+        saved = self.library.load(base.id)
+        self.assertEqual(saved.notes, "Decision: NEW LIVE DECISION")
+        self.assertEqual(saved.recaps, before.recaps)
+        self.assertEqual(saved.take_links, before.take_links)
+
+    def test_summary_export_captures_unflushed_notes_and_retains_pending_facts(self):
+        editor = self._summary_editor()
+        self.coordinator.start_session()
+        self.coordinator.recording_started("late-take", "recording-session")
+        latest = self._late_take_and_recap()
+        self.assertEqual(latest.take_links[0]["status"], "complete")
+        self.window.session_canvas.set_notes("Decision: typed just now")
+        before = self.library.load(editor.record.id)
+        destination = self.root / "summary.md"
+
+        self._export_summary(editor, destination)
+
+        summary = destination.read_text()
+        self.assertIn("typed just now", summary)
+        self.assertIn(latest.recaps[-1]["summary"], summary)
+        pending = self.coordinator._pending[before.id]
+        self.assertEqual(pending.notes, "Decision: typed just now")
+        self.assertEqual(pending.recaps, latest.recaps)
+        self.assertEqual(pending.take_links, latest.take_links)
+        self.assertEqual(self.library.load(before.id), before)
+
+    def test_summary_export_art_includes_live_notes_and_recap(self):
+        self.owner._apply_creator_profile_key("art")
+        editor = self._summary_editor()
+        self.window.session_canvas.set_notes("Decision: Keep the blue glaze")
+        self.coordinator.capture_summary()
+        self.coordinator.finish_session()
+        destination = self.root / "art-summary.md"
+
+        self._export_summary(editor, destination)
+
+        summary = destination.read_text()
+        self.assertIn("Keep the blue glaze", summary)
+        self.assertIn("## Session history", summary)
+        self.assertIn(self.coordinator.current.recaps[-1]["summary"], summary)
+        self.assertFalse(editor._dirty)
+
+    def test_summary_export_merges_disjoint_editor_draft_without_advancing_baseline(self):
+        editor = self._summary_editor()
+        base = deepcopy(editor._base_record)
+        editor.title.setText("Draft title")
+        self.window.session_canvas.set_notes("Decision: live choice")
+        destination = self.root / "summary.md"
+
+        self._export_summary(editor, destination)
+
+        summary = destination.read_text()
+        self.assertIn("Draft title", summary)
+        self.assertIn("live choice", summary)
+        self.assertTrue(editor._dirty)
+        self.assertEqual(editor.title.text(), "Draft title")
+        self.assertEqual(editor._base_record, base)
+        self.assertEqual(editor._base_record._store_token, base._store_token)
+        self.assertEqual(self.library.load(base.id), base)
+
+    def test_summary_export_conflict_blocks_picker_and_retains_both_drafts(self):
+        editor = self._summary_editor()
+        base = deepcopy(editor._base_record)
+        editor.notes.setPlainText("Decision: editor choice")
+        self.window.session_canvas.set_notes("Decision: live choice")
+        destination = self.root / "summary.md"
+
+        choose = self._export_summary(editor, destination)
+
+        choose.assert_not_called()
+        self.assertFalse(destination.exists())
+        self.assertTrue(editor._dirty)
+        self.assertEqual(editor.notes.toPlainText(), "Decision: editor choice")
+        self.assertEqual(editor._base_record._store_token, base._store_token)
+        self.assertEqual(self.coordinator._pending[base.id].notes, "Decision: live choice")
+        self.assertEqual(self.library.load(base.id), base)
+        self.assertIn("not exported", editor.status.text())
+        self.assertIn("Save as copy", editor.status.text())
+
+    def test_summary_export_stays_bound_to_selection_before_picker(self):
+        editor = self._summary_editor()
+        other = self.library.create("music", "Another workspace", notes="Other private notes")
+        editor.refresh()
+        self.window.session_canvas.set_notes("Decision: selected workspace choice")
+        destination = self.root / "summary.md"
+
+        def choose(*_args):
+            editor.select_id(other.id)
+            return str(destination), ""
+
+        self._export_summary(editor, destination, picker=choose)
+
+        self.assertEqual(editor.record.id, other.id)
+        summary = destination.read_text()
+        self.assertIn("selected workspace choice", summary)
+        self.assertNotIn("Other private notes", summary)
+
+    def test_summary_export_other_workspace_does_not_include_active_live_notes(self):
+        editor = self._summary_editor()
+        other = self.library.create("music", "Another workspace", notes="Selected other notes")
+        editor.refresh()
+        editor.select_id(other.id)
+        self.window.session_canvas.set_notes("Decision: active private notes")
+        destination = self.root / "summary.md"
+
+        self._export_summary(editor, destination)
+
+        summary = destination.read_text()
+        self.assertIn("Selected other notes", summary)
+        self.assertNotIn("active private notes", summary)
 
     def test_remember_lesson_preserves_art_draft_and_saves_canonical_position_once(self):
         self.owner._apply_creator_profile_key("art")
