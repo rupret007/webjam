@@ -10,7 +10,12 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QLabel, QLineEdit  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+    QApplication,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+)
 
 from core.jamulus_name import JAMULUS_NAME_HELP  # noqa: E402
 from core.provider_credentials import (  # noqa: E402
@@ -398,3 +403,43 @@ def test_save_merges_visible_fields_into_latest_controller_settings(tmp_path):
     assert saved.host_server_enabled is True
     assert saved.jamulus_server == "127.0.0.1"
     assert saved.jamulus_port == 43123
+
+
+def test_settings_omits_live_music_section_for_art_profile(tmp_path):
+    dialog = _dialog(tmp_path, opener=lambda _url: True)
+    assert dialog._creator_profile_key == "music"
+    art_dialog = SimpleSettingsDialog(
+        AppSettings(config_file=str(tmp_path / "art-settings.json")),
+        webex_opener=lambda _url: True,
+        creator_profile_key="art",
+    )
+
+    labels = " ".join(label.text() for label in art_dialog.findChildren(QLabel))
+    assert "Live music" not in labels
+    assert (
+        "Choose your interface, input channels, headphones, and buffer "
+        "in Jamulus." not in labels
+    )
+    buttons = [button.text() for button in art_dialog.findChildren(QPushButton)]
+    assert "Open Jamulus Audio Settings" not in buttons
+    assert not hasattr(art_dialog, "_open_jamulus")
+
+
+def test_settings_keeps_live_music_section_pixel_identical_for_music_profile(
+    tmp_path,
+):
+    default_dialog = _dialog(tmp_path, opener=lambda _url: True)
+    music_dialog = SimpleSettingsDialog(
+        AppSettings(config_file=str(tmp_path / "music-settings.json")),
+        webex_opener=lambda _url: True,
+        creator_profile_key="music",
+    )
+
+    for dialog in (default_dialog, music_dialog):
+        labels = " ".join(label.text() for label in dialog.findChildren(QLabel))
+        assert "Live music" in labels
+        assert (
+            "Choose your interface, input channels, headphones, and buffer "
+            "in Jamulus." in labels
+        )
+        assert dialog._open_jamulus.text() == "Open Jamulus Audio Settings"
