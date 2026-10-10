@@ -232,7 +232,9 @@ create a take or unlock export.
 
 At launch, choose **Art** or **Music**. Those are the equal first clicks.
 Art is **Make together** or **Paint along**, then **Host** or **Join**. Music
-is **Host** or **Join** only. The launch **File** menu opens **New Music
+is **Host** or **Join** only. **Host** starts the room; you can copy an invite
+inside the room once it is ready for guests. Host does not copy an invite at
+launch. The launch **File** menu opens **New Music
 Project…**, **Podcast & Voice…**, or **Review & Rehearsal…** before a live session
 starts. The profile follows the
 launch, live session, recording, Studio, local session metadata, and new
