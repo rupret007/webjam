@@ -251,6 +251,99 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertTrue(self.coordinator.flush())
         self.assertEqual(self.library.load(self.coordinator.current.id).notes, "must survive")
 
+    def test_reverted_notes_edit_overrides_failed_autosave_draft(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.ensure_current()
+        record_id = self.coordinator.current.id
+        self.assertEqual(self.library.load(record_id).notes, "Original notes")
+        self.window.session_canvas.set_notes("Discard this draft")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        self.assertEqual(self.coordinator._pending[record_id].notes, "Discard this draft")
+        # Revert the live control back to the value already on disk: this
+        # must override the stale failed draft, not be swallowed by it.
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.window.session_canvas.current_notes(), "Original notes")
+        self.assertEqual(self.library.load(record_id).notes, "Original notes")
+
+    def test_reverted_title_edit_overrides_failed_autosave_draft(self):
+        self.coordinator.ensure_current()
+        record_id = self.coordinator.current.id
+        self.assertEqual(self.coordinator.current.title, "Wednesday")
+        self.window.session_strip._title_input.setText("Discard this title")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        self.assertEqual(self.coordinator._pending[record_id].title, "Discard this title")
+        self.window.session_strip._title_input.setText("Wednesday")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(record_id).title, "Wednesday")
+
+    def test_reverted_mode_edit_overrides_failed_autosave_draft(self):
+        window = ConductorWindow(mode_entries=[("music_jam", "Music"), ("music_cover", "Covers")],
+                                  initial_mode_key="music_jam", initial_title="Wednesday")
+        window.flash_message = Mock()
+        owner = Owner(window)
+        library = SessionLibrary(self.root / "mode_library")
+        coordinator = SessionLibraryCoordinator(owner, library=library)
+        coordinator._imported = True
+        try:
+            coordinator.ensure_current()
+            record_id = coordinator.current.id
+            self.assertEqual(coordinator.current.mode_key, "music_jam")
+            picker = window.session_strip._mode_picker
+            picker.setCurrentIndex(picker.findData("music_cover"))
+            with patch.object(library, "save", side_effect=OSError("temporary write failure")):
+                self.assertFalse(coordinator.flush())
+            self.assertEqual(coordinator._pending[record_id].mode_key, "music_cover")
+            picker.setCurrentIndex(picker.findData("music_jam"))
+            self.assertTrue(coordinator.flush())
+            self.assertEqual(library.load(record_id).mode_key, "music_jam")
+        finally:
+            coordinator.timer.stop()
+            window.close()
+            window.deleteLater()
+            owner.deleteLater()
+            _app.processEvents()
+
+    def test_reverted_notes_edit_overrides_editor_save(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.ensure_current()
+        record_id = self.coordinator.current.id
+        self.assertTrue(self.coordinator.flush())
+        editor = self._editor()
+        editor.notes.setPlainText("Editor notes")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self.library.load(record_id).notes, "Editor notes")
+        self.assertEqual(self.window.session_canvas.current_notes(), "Editor notes")
+        # Revert the live control back to the value captured before the
+        # editor's save: this must override the editor's save, not be
+        # swallowed by a stale capture baseline.
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(record_id).notes, "Original notes")
+
+    def test_reverted_title_edit_overrides_editor_save(self):
+        self.coordinator.ensure_current()
+        record_id = self.coordinator.current.id
+        self.assertEqual(self.coordinator.current.title, "Wednesday")
+        self.assertTrue(self.coordinator.flush())
+        editor = self._editor()
+        editor.title.setText("Editor title")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self.library.load(record_id).title, "Editor title")
+        self.assertEqual(self.window.session_strip.current_title(), "Editor title")
+        self.window.session_strip._title_input.setText("Wednesday")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(record_id).title, "Wednesday")
+
+    def test_preloaded_notes_derive_decisions_on_first_capture(self):
+        self.window.session_canvas.set_notes("Decision: keep the chorus")
+        self.assertTrue(self.coordinator.ensure_current())
+        record_id = self.coordinator.current.id
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(record_id).decisions, ("keep the chorus",))
+
     def test_active_room_blocks_switch_but_keeps_saved_workspace(self):
         self.coordinator.ensure_current()
         previous = self.coordinator.current.id
