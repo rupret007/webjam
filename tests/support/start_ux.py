@@ -78,9 +78,9 @@ def harvest_first_screen(dialog: QWidget) -> str:
     """Harvest the choice page a person actually sees."""
 
     spoken = harvest_spoken_page(dialog)
-    menu = getattr(dialog, "_menu_bar", None)
-    if menu is not None:
-        spoken += " " + " ".join(action.text() for action in menu.actions() if action.isVisible()).casefold()
+    help_link = getattr(dialog, "_music_setup_link", None)
+    if help_link is not None and help_link.isVisibleTo(dialog):
+        spoken += " " + help_link.text().casefold()
     return spoken
 
 

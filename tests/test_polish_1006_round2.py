@@ -84,7 +84,6 @@ def _dialog(tmp_path: Path, profile_key: str = "art") -> LaunchDialog:
     )
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(settings)
-    dialog._menu_bar.setNativeMenuBar(False)
     return dialog
 
 

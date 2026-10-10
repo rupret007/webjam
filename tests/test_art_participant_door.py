@@ -49,7 +49,6 @@ def door(qapp, tmp_path):
                     last_creator_profile_key=profile,
                 )
             )
-        dialog._menu_bar.setNativeMenuBar(False)
         dialog.setStyleSheet(load_stylesheet())
         dialog.resize(620, 520)
         dialog.show()

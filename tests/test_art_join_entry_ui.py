@@ -51,7 +51,6 @@ def join_door(qapp, tmp_path):
         ):
             dialog = LaunchDialog(settings)
         dialogs.append(dialog)
-        dialog._menu_bar.setNativeMenuBar(False)
         dialog.setStyleSheet(load_stylesheet())
         if profile not in {"music", "art"}:
             dialog._workspace_actions[profile].trigger()
