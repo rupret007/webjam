@@ -341,6 +341,8 @@ copy and hidden-video choice also stay as they were.
 
 Joining borrows the host's room context. After **Leave Room** finishes,
 WebJam returns to your saved workspace, activity, personal title, and notes.
+Your saved Art card applies the next time you choose **Host**. While joining,
+WebJam waits for the host's room details before offering its activity.
 A native invitation carries no title, so its room is called **Room** until
 you choose another title. A title you type yourself is saved for that workspace.
 
