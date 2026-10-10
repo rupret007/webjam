@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenuBar,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -70,8 +71,8 @@ from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 
 LOGGER = logging.getLogger("webjam.qt.launch_dialog")
 
-_JOIN_INVITATION_GUIDANCE = (
-    "Paste the invite or the whole message.\n"
+_JOIN_INVITATION_GUIDANCE = "Paste the invite or the whole message."
+_JOIN_NETWORK_HELP = (
     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
 )
 
@@ -1019,7 +1020,6 @@ class LaunchDialog(QDialog):
         self._join_button_primary.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._join_button_primary.clicked.connect(self._join)
         layout.addWidget(self._join_button_primary)
-        layout.addStretch(2)
 
         self._join_back_button = QPushButton("Back")
         self._join_back_button.setObjectName("GhostButton")
@@ -1030,6 +1030,8 @@ class LaunchDialog(QDialog):
         self._join_back_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._join_back_button.clicked.connect(self.show_choices)
         layout.addWidget(self._join_back_button, 0, Qt.AlignmentFlag.AlignHCenter)
+        # Keep Back beside the paste action rather than at the window edge.
+        layout.addStretch(2)
         self._apply_creator_profile_presentation()
         self._on_invite_text_changed()
         return page
@@ -1192,10 +1194,20 @@ class LaunchDialog(QDialog):
             new = self._workspace_actions["music"]
             new.setShortcut(QKeySequence.StandardKey.New)
             new.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        help_menu = self._menu_bar.addMenu("&Help")
+        self._help_menu = self._menu_bar.addMenu("&Help")
+        help_menu = self._help_menu
+        self._join_help_action = help_menu.addAction("Joining a room…")
+        self._join_help_action.triggered.connect(self._show_join_help)
         self._setup_action = help_menu.addAction("Music setup…")
         self._setup_action.triggered.connect(self._show_music_setup)
         self._setup_action.setEnabled(bool(self._jamulus_installer))
+
+    def _show_join_help(self) -> None:
+        QMessageBox.information(
+            self,
+            "Joining a room",
+            f"{_JOIN_INVITATION_GUIDANCE}\n\n{_JOIN_NETWORK_HELP}",
+        )
 
     def _open_session_library(self) -> None:
         if self._submitting or not self._allow_workspace_choices:

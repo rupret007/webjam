@@ -107,7 +107,8 @@ For a short teammate walkthrough of the door and first room action, use
 [Show WebJam](DEMO.md).
 
 Join has one private invitation field and one button. Paste the full invitation
-copied by the host. WebJam checks the host's profile before choosing Art or the
+copied by the host. For same-network guidance, choose **Help → Joining a room…**.
+WebJam checks the host's profile before choosing Art or the
 Music audio path. Art shows waiting, connected, or reconnecting room status;
 Music continues through **Opening Jamulus** and requires fresh authenticated
 Jamulus roster evidence. Use **Try Again** when WebJam says the one-use
