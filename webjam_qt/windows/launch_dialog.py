@@ -642,6 +642,11 @@ class LaunchDialog(QDialog):
         # choice page compact enough for the editable Jamulus-name preview and
         # the optional Windows installer without squeezing role buttons.
         layout.setSpacing(Space.XS)
+        # Tall windows give the choice page extra height. Bookend the door with
+        # equal stretch so profile cards and Host/Join stay centered instead of
+        # hugging the top. Stretch minimum size is zero, so the 760×600 floor
+        # still fits when the dialog is only as tall as its content.
+        layout.addStretch(1)
 
         self._choice_title = QLabel("Create together.")
         title = self._choice_title
