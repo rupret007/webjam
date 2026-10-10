@@ -111,6 +111,10 @@ could not finish publication, WebJam presents an explicit recovery candidate
 on the next open. Recover or discard it deliberately; do not assume an
 interrupted commit is already part of the arrangement.
 
+If the Studio input device cannot close, WebJam keeps it available for cleanup
+retries and blocks another input start until close succeeds. A failed stop
+does not mean the device has been released.
+
 Count-in is pre-roll and is not represented as recorded program material.
 Punch limits the kept performance range. Cycle recording creates bounded
 passes that can be auditioned and comped; it does not destructively overwrite
