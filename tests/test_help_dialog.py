@@ -31,6 +31,34 @@ def window(app):
     app.processEvents()
 
 
+@pytest.mark.parametrize("profile", ["music", "art", "podcast_voice", "review_rehearsal"])
+@pytest.mark.parametrize("offline_studio", [False, True])
+def test_current_workspace_help_does_not_name_the_audio_engine(app, window, profile, offline_studio):
+    window.set_creator_profile(get_creator_profile_by_key(profile))
+    window._reference_studio_only = offline_studio
+    window.show_help()
+    app.processEvents()
+    dialog = window._workflow_help_dialog
+    item = dialog._topics.currentItem()
+    assert item.text() == "Current workspace"
+    topic = item.data(Qt.ItemDataRole.UserRole)
+    assert (topic.key, topic.route, topic.action) == ("overview", "", "")
+    assert not dialog._navigate.isVisible()
+    text = dialog._body.toPlainText()
+    assert "jamulus" not in text.casefold()
+    if profile == "review_rehearsal" or (profile == "podcast_voice" and not offline_studio):
+        assert "Record Session captures individual room audio tracks plus explicitly selected Local Original input devices." in text
+        assert "WebJam never directly or automatically taps a meeting app, browser, or system output." in text
+        assert "Do not route meeting or system audio into those inputs." in text
+    if profile == "review_rehearsal":
+        assert "Preview" in text
+        assert "playback-only" in text
+    if profile == "music" and not offline_studio:
+        assert "without a WebJam room or completed live audio setup" in text
+        assert "Open Shared Track uses a supported local backing file for ensemble playing" in text
+        assert "disconnect meeting audio" in text
+
+
 @pytest.mark.parametrize("profile", ["music", "art"])
 @pytest.mark.parametrize("route", ["f1", "more"])
 @pytest.mark.parametrize("large_text", [False, True])

@@ -1941,7 +1941,7 @@ class TestConductorWindow(unittest.TestCase):
         body = set_text.call_args.args[0]
         self.assertIn("Build and rehearse a song offline", body)
         self.assertIn("Import a backing track", body)
-        self.assertIn("separate from Jamulus", body)
+        self.assertIn("separate from live room audio", body)
         self.assertIn("File → New Music Project…", body)
         self.assertIn("Open Project…", body)
         self.assertNotIn("Copy Invite", body)

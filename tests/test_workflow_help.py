@@ -32,6 +32,19 @@ def test_search_is_literal_and_does_not_search_private_workspaces():
     assert all("href=" not in topic.body for topic in topics)
 
 
+@pytest.mark.parametrize("profile", ["music", "art"])
+def test_follow_along_help_describes_audio_actions_without_naming_the_engine(profile):
+    topic = next(t for t in workflow_topics(profile) if t.key == "follow_along")
+    assert "jamulus" not in topic.body.casefold()
+    assert "live audio setup is not required" in topic.body
+    assert "<b>Open Shared Track</b> as host" in topic.body
+    assert "open the shared track mixer as guest" in topic.body
+    assert "shares one local backing file with the room" in topic.body
+    assert "Disconnect meeting audio while playing" in topic.body
+    assert "changes only your listening, not your outgoing instrument" in topic.body
+    assert (topic.route, topic.action) == ("", "")
+
+
 def test_profile_and_standalone_topics_do_not_offer_incompatible_actions():
     art = workflow_topics("art")
     assert {topic.route for topic in art if topic.route} == {"library", "art"}

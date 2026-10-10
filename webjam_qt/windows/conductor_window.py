@@ -640,6 +640,10 @@ class ConductorWindow(QMainWindow):
             mix_shortcuts = "Ctrl+S / Ctrl+O"
             reset_shortcut = "Ctrl+Shift+R"
         profile = self._creator_profile
+        # Keep the capture boundary intact while describing it in Help's vocabulary.
+        recording_notice = RECORD_SESSION_MEETING_CAPTURE_NOTICE.replace(
+            "Jamulus server stems", "individual room audio tracks"
+        )
         # Song exists only in Music, so only Music advertises its shortcut.
         navigation_line = (
             f"{navigation_shortcuts} / {song_shortcut} — "
@@ -687,7 +691,7 @@ class ConductorWindow(QMainWindow):
                 "chapters.<br>"
                 "<b>4.</b> Save the project, then use <b>Bounce</b> to export "
                 "the episode or recording.<br><br>"
-                "Podcast & Voice Studio is independent of Jamulus live-audio "
+                "Podcast & Voice Studio is independent of live room audio "
                 f"settings. {STUDIO_MEETING_CAPTURE_NOTICE}<br><br>"
                 "F11 / Esc — Enter / leave full screen"
             )
@@ -698,7 +702,7 @@ class ConductorWindow(QMainWindow):
                 "Use Host Review or Join Review for live WebJam audio, local notes, "
                 "and playback-only review of completed session takes. Notes stay "
                 "local; visual media and media timecode are not synchronized. "
-                f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}"
+                f"{recording_notice}"
             )
         elif self._reference_studio_only:
             body = (
@@ -712,7 +716,7 @@ class ConductorWindow(QMainWindow):
                 "your demo.<br><br>"
                 "This standalone Music workspace opens from launch "
                 "<b>File → New Music Project…</b>. "
-                "Reference Studio audio is separate from Jamulus live audio "
+                "Reference Studio audio is separate from live room audio "
                 "and settings.<br><br>"
                 "F11 / Esc — Enter / leave full screen"
             )
@@ -725,13 +729,13 @@ class ConductorWindow(QMainWindow):
                 "<b>2.</b> The host presses <b>Copy Invite</b> and sends the link.<br>"
                 "<b>3.</b> Speak. Each speaker tile shows real connection and level truth.<br>"
                 "<b>4.</b> The host presses <b>Record Session</b> for synchronized "
-                f"WebJam tracks. {RECORD_SESSION_MEETING_CAPTURE_NOTICE}<br>"
+                f"WebJam tracks. {recording_notice}<br>"
                 "<b>5.</b> Choose <b>Studio</b> to review, edit, and export the episode.<br>"
                 "<b>6.</b> Choose <b>Conversation</b> for an optional external "
                 "meeting handoff. Native verification and app focus remain "
                 "Webex-only.<br>"
                 "<b>7.</b> Use <b>Shared Track</b> for reference audio after its "
-                "isolated Jamulus route is proven.<br>"
+                "isolated audio route is proven.<br>"
                 "<b>8.</b> Press <b>End Session</b> when recording is finished.<br><br>"
                 "<b>Useful shortcuts</b><br>"
                 "F2 — Sound Check<br>"
@@ -748,7 +752,7 @@ class ConductorWindow(QMainWindow):
                 "<b>2.</b> The host presses <b>Copy Invite</b> and sends the link.<br>"
                 "<b>3.</b> Each participant tile shows real WebJam-audio truth.<br>"
                 "<b>4.</b> The host may press <b>Record Session</b>. "
-                f"{RECORD_SESSION_MEETING_CAPTURE_NOTICE}<br>"
+                f"{recording_notice}<br>"
                 "<b>5.</b> Choose <b>Studio</b> for playback-only take review. "
                 "Editing and track export are unavailable in this Preview.<br>"
                 "<b>6.</b> <b>Notes</b> stay private to this computer; they are "
@@ -772,8 +776,8 @@ class ConductorWindow(QMainWindow):
                 "<b>3.</b> Choose <b>Play along</b>: <b>Set up video practice</b> uses one "
                 "YouTube presentation in your meeting with conversation and turn-taking. "
                 "Use <b>Copy Link</b> for the meeting; guests open it in their browser or meeting app. "
-                "This practice works without a WebJam room or completed Jamulus setup. "
-                "<b>Open Shared Track</b> uses a supported local backing file and Jamulus "
+                "This practice works without a WebJam room or completed live audio setup. "
+                "<b>Open Shared Track</b> uses a supported local backing file "
                 "for ensemble playing; disconnect meeting audio and keep Webex for faces. "
                 "Each musician tile shows real connection and level truth.<br>"
                 "<b>4.</b> The host presses <b>Record Session</b> for synchronized tracks.<br>"
