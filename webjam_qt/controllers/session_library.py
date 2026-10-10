@@ -85,6 +85,7 @@ class SessionLibraryCoordinator(QObject):
         self.current = None
         self.dialog = None
         self._pending = {}
+        self._captured_context = None
         self._applying = False
         self._run_id = ""
         self._live_take_ids = set()
@@ -129,6 +130,7 @@ class SessionLibraryCoordinator(QObject):
             first_workspace = self.current is None
             self.current = self.library.create(self._profile(), title or "Untitled workspace",
                                                notes=notes, mode_key=mode)
+            self._captured_context = (self.current.id, title, mode, notes)
             follow_along = getattr(self._c, "follow_along", None)
             if first_workspace and follow_along is not None:
                 follow_along.workspace_created()
@@ -148,12 +150,18 @@ class SessionLibraryCoordinator(QObject):
         if self.current is not None and self.current.profile == self._profile():
             latest = self._pending.get(self.current.id, self.current)
             title, mode, notes = self._context()
+            previous = self._captured_context
+            if previous is None or previous[0] != self.current.id:
+                previous = (self.current.id, self.current.title, self.current.mode_key, self.current.notes)
+            # A failed write retains its draft but must not hide a later live
+            # revert to the saved value. Compare with the last capture too;
+            # unchanged controls still leave other pending owners intact.
             changes = {}
-            if title != self.current.title:
+            if title != self.current.title or title != previous[1]:
                 changes["title"] = title or latest.title
-            if mode != self.current.mode_key:
+            if mode != self.current.mode_key or mode != previous[2]:
                 changes["mode_key"] = mode
-            if notes != self.current.notes or notes == latest.notes:
+            if notes != self.current.notes or notes == latest.notes or notes != previous[3]:
                 pulse = build_session_pulse(creator_profile_key=self._profile(), title=title, notes=notes)
                 changes.update(notes=notes, decisions=pulse.decisions,
                     actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
@@ -161,6 +169,7 @@ class SessionLibraryCoordinator(QObject):
             candidate = replace(latest, **changes)
             if candidate != self.current or self.current.id in self._pending:
                 self._pending[candidate.id] = candidate
+            self._captured_context = (self.current.id, title, mode, notes)
 
     def flush(self, *, include_editor=True) -> bool:
         self.timer.stop()
@@ -227,6 +236,7 @@ class SessionLibraryCoordinator(QObject):
             return False
         self.flush()
         self.current = None
+        self._captured_context = None
         self._live_take_ids.clear()
         return True
 
@@ -409,6 +419,7 @@ class SessionLibraryCoordinator(QObject):
             try:
                 self._c.window.session_strip.set_session_title(record.title)
                 self._c.window.session_canvas.set_notes(record.notes)
+                self._captured_context = (record.id, *self._context())
             finally:
                 self._applying = False
             self._refresh_song_tools()
@@ -470,6 +481,7 @@ class SessionLibraryCoordinator(QObject):
                 if index >= 0:
                     picker.setCurrentIndex(index)
             self._c.window.session_canvas.set_notes(record.notes)
+            self._captured_context = (record.id, *self._context())
         finally:
             self._applying = False
         self._refresh_song_tools()

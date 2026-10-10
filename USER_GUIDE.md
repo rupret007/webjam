@@ -89,6 +89,8 @@ current editor and selection. Select the imported entry yourself when ready.
 An unsaved draft stays unsaved through import, including when a background
 Notes save or recording result arrives. Use **Save** when ready; further
 typing resumes the editor's autosave. Closing also attempts to save your work.
+If autosave fails, reverting the room's Notes, title, or mode to its last saved
+value replaces that failed draft on retry. Other pending workspace edits remain retained.
 At compact sizes or with enlarged text, scroll the Library to reach its actions.
 Tab and Shift+Tab bring focused controls into view; save and recovery status stays visible.
 
