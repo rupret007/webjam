@@ -10125,6 +10125,8 @@ class ApplicationController(QObject):
 
     @staticmethod
     def _conductor_stage_phase(phase: SessionConductorPhase) -> SessionPhase:
+        if phase in {SessionConductorPhase.CONNECTED, SessionConductorPhase.LIVE}:
+            return SessionPhase.CONNECTED
         if phase in {
             SessionConductorPhase.RECONNECTING,
             SessionConductorPhase.FAILED,
@@ -10288,6 +10290,13 @@ class ApplicationController(QObject):
         self._last_guidance_display_override = display_override
         self._last_session_conductor_snapshot = snapshot
         self._last_session_conductor = presentation
+        if self.creator_profile.key == "music" and not self.window.participant_grid.cards():
+            # Without a roster, the footer must follow the same accepted
+            # session truth as the empty stage, including recovery overrides.
+            # Populated sessions retain the audio coordinator's roster count.
+            self.window.set_status_latency(
+                display_override.title if display_override is not None else presentation.title
+            )
         self._record_pilot_conductor_presentation(presentation)
         self._publish_musician_guidance(snapshot, display_override=display_override)
         self._sync_art_room_overview()
