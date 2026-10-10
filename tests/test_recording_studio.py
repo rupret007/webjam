@@ -4862,3 +4862,81 @@ def test_long_arrange_names_offer_recovery_without_changing_recording(tmp_path, 
         assert {path: path.read_bytes() for path in truth} == truth
     finally:
         studio.shutdown()
+
+
+@pytest.mark.parametrize("phase", ["render", "published", "verification", "queued"])
+def test_legacy_export_recording_cancel_keeps_finalized_folder_recovery(
+    tmp_path, monkeypatch, phase
+):
+    from core.take_export import export_track_package
+    from core.export_receipt import verify_export_receipt
+
+    take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+    observed_cancel = []
+    published = []
+
+    def export(*args, **kwargs):
+        observed_cancel.append(kwargs.get("cancel_event"))
+        if phase == "render":
+            started.set()
+            assert release.wait(3.0)
+        result = export_track_package(*args, **kwargs)
+        published.append(result.folder)
+        if phase == "published":
+            started.set()
+            assert release.wait(3.0)
+        return result
+
+    def verify(folder):
+        receipt = verify_export_receipt(folder)
+        if phase == "verification":
+            started.set()
+            assert release.wait(3.0)
+        return receipt
+
+    monkeypatch.setattr("webjam_qt.widgets.recording_studio.studio_export_supported", lambda: False)
+    monkeypatch.setattr("webjam_qt.widgets.recording_studio.export_track_package", export)
+    monkeypatch.setattr("webjam_qt.widgets.recording_studio.verify_export_receipt", verify)
+    studio = RecordingStudio(str(tmp_path), player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    finished = []
+    studio.export_finished.connect(finished.append)
+    try:
+        studio._take_list.setCurrentRow(0)
+        studio.set_can_record(True)
+        studio._export_tracks()
+        worker = studio._export_thread
+        assert worker is not None
+        if phase == "queued":
+            assert _wait_without_qt_events(lambda: not worker.is_alive())
+        else:
+            assert _wait_without_qt_events(started.is_set)
+        studio.set_recording_phase("recording")
+        assert observed_cancel[0] is not None
+        assert observed_cancel[0].is_set()
+        assert "canceled" not in studio._review_dialog.status.text().lower()
+        assert studio._viewing_live
+        assert studio._record_btn.text() == "■ Stop Recording"
+        assert finished == [False]
+        release.set()
+        assert _wait_without_qt_events(lambda: not worker.is_alive())
+        studio._drain_export_results()
+        assert finished == [False]
+        if phase == "render":
+            assert not published
+            assert not list(take_dir.glob("Track Exports/*"))
+            assert "canceled" in studio._review_dialog.status.text().lower()
+        else:
+            assert len(published) == 1
+            assert published[0].is_dir()
+            assert studio._reveal_path == published[0]
+            assert studio._reveal_btn.text() == "Show Unverified Export"
+            assert studio._reveal_btn.isVisibleTo(studio)
+            assert studio._reveal_btn.accessibleName() == "Show Unverified Export"
+            assert studio._reveal_btn.isEnabled()
+            assert "canceled" not in studio._review_dialog.status.text().lower()
+            assert "No verified receipt" in studio._review_dialog.status.text()
+    finally:
+        release.set()
+        studio.shutdown()

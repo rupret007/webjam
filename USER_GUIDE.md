@@ -1295,6 +1295,12 @@ does not record a session at all, so it has no take and no Studio.
    completed receipt; keep the original take and retry. Changing takes or
    editing the mix or arrangement clears the previous receipt.
 
+If recording starts during an export, Studio stops the export and checks
+whether its folder already finished. **Show Unverified Export** keeps that
+folder available for inspection; it has no verified receipt. Cancellation
+before completion removes only temporary export files. The original take
+stays unchanged.
+
 The receipt confirms the package bytes at export completion. Listening and
 importing into another editor remain separate checks; WebJam does not open
 or control that editor for you.
