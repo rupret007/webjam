@@ -124,6 +124,8 @@ editor open even if an earlier take-open request has just finished.
 If the export control says **Export Aligned Originals**, the export excludes
 Studio arrangement edits. Check the confirmation and new receipt for the export
 kind and destination; an imported historical receipt is not a new export.
+If a source recording changes while exporting, WebJam removes the unfinished
+package and asks you to reopen the take and retry.
 
 Copying and verification run in the background with progress and **Cancel**.
 Session **Stop** and **End** remain reachable in the main window. Cancellation
