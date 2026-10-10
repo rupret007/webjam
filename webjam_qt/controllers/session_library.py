@@ -85,6 +85,7 @@ class SessionLibraryCoordinator(QObject):
         self.current = None
         self.dialog = None
         self._pending = {}
+        self._live_context = {}
         self._applying = False
         self._run_id = ""
         self._live_take_ids = set()
@@ -129,6 +130,7 @@ class SessionLibraryCoordinator(QObject):
             first_workspace = self.current is None
             self.current = self.library.create(self._profile(), title or "Untitled workspace",
                                                notes=notes, mode_key=mode)
+            self._remember_live_context(self.current.id, title or self.current.title, mode, notes)
             follow_along = getattr(self._c, "follow_along", None)
             if first_workspace and follow_along is not None:
                 follow_along.workspace_created()
@@ -141,6 +143,9 @@ class SessionLibraryCoordinator(QObject):
         if not self._applying and self.current is not None:
             self.timer.start()
 
+    def _remember_live_context(self, workspace_id, title, mode, notes):
+        self._live_context[workspace_id] = (title, mode, notes)
+
     def _capture_current_notes(self):
         """Keep live Notes ahead of editor saves without dropping pending facts."""
         if self._applying:
@@ -148,19 +153,25 @@ class SessionLibraryCoordinator(QObject):
         if self.current is not None and self.current.profile == self._profile():
             latest = self._pending.get(self.current.id, self.current)
             title, mode, notes = self._context()
+            observed = self._live_context.get(self.current.id)
+            if observed is None:
+                observed = (self.current.title, self.current.mode_key, self.current.notes)
+            last_title, last_mode, last_notes = observed
             changes = {}
-            if title != self.current.title:
+            if title != last_title:
                 changes["title"] = title or latest.title
-            if mode != self.current.mode_key:
+            if mode != last_mode:
                 changes["mode_key"] = mode
-            if notes != self.current.notes or notes == latest.notes:
+            if notes != last_notes or notes != self.current.notes or notes == latest.notes:
                 pulse = build_session_pulse(creator_profile_key=self._profile(), title=title, notes=notes)
                 changes.update(notes=notes, decisions=pulse.decisions,
                     actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
                     blockers=pulse.blockers)
-            candidate = replace(latest, **changes)
-            if candidate != self.current or self.current.id in self._pending:
-                self._pending[candidate.id] = candidate
+            if changes:
+                candidate = replace(latest, **changes)
+                if candidate != self.current or self.current.id in self._pending:
+                    self._pending[candidate.id] = candidate
+            self._remember_live_context(self.current.id, title, mode, notes)
 
     def flush(self, *, include_editor=True) -> bool:
         self.timer.stop()
@@ -411,6 +422,7 @@ class SessionLibraryCoordinator(QObject):
                 self._c.window.session_canvas.set_notes(record.notes)
             finally:
                 self._applying = False
+            self._remember_live_context(record.id, record.title, record.mode_key, record.notes)
             self._refresh_song_tools()
 
     def _copy_saved(self, previous, copied):
@@ -470,6 +482,7 @@ class SessionLibraryCoordinator(QObject):
                 if index >= 0:
                     picker.setCurrentIndex(index)
             self._c.window.session_canvas.set_notes(record.notes)
+            self._remember_live_context(record.id, record.title, record.mode_key, record.notes)
         finally:
             self._applying = False
         self._refresh_song_tools()

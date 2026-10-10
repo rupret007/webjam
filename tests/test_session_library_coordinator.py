@@ -166,6 +166,38 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertEqual(saved_original.recaps[0]["take_ids"], ["late-take"])
         self.assertEqual(saved_original.notes, "Retained original draft")
 
+    def test_undo_to_saved_notes_clears_failed_autosave_draft(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.ensure_current()
+        record_id = self.coordinator.current.id
+        self.assertTrue(self.coordinator.flush())
+        self.window.session_canvas.set_notes("Discard this draft")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        self.assertEqual(self.coordinator._pending[record_id].notes, "Discard this draft")
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(record_id)
+        self.assertEqual(saved.notes, "Original notes")
+        self.assertEqual(self.coordinator.current.notes, "Original notes")
+        self.assertEqual(self.window.session_canvas.current_notes(), "Original notes")
+        self.assertNotIn(record_id, self.coordinator._pending)
+
+    def test_undo_to_saved_title_clears_failed_autosave_draft(self):
+        self.coordinator.ensure_current()
+        record_id = self.coordinator.current.id
+        original_title = self.coordinator.current.title
+        self.assertTrue(self.coordinator.flush())
+        self.window.session_strip.set_session_title("Discard this draft title")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        self.window.session_strip.set_session_title(original_title)
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(record_id)
+        self.assertEqual(saved.title, original_title)
+        self.assertEqual(self.coordinator.current.title, original_title)
+        self.assertNotIn(record_id, self.coordinator._pending)
+
     def test_competing_notes_stay_in_editor_and_pending_without_a_disk_overwrite(self):
         self.window.session_canvas.set_notes("Base Notes")
         self.coordinator.ensure_current()
