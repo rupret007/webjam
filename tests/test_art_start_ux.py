@@ -290,16 +290,18 @@ def test_the_page_names_what_host_and_join_do_with_the_card_choice(qapp, tmp_pat
             elsewhere.deleteLater()
 
 
-def test_a_profile_without_cards_keeps_its_headline_and_helper(
+def test_music_door_explains_host_and_join_without_repeating_the_headline(
     qapp, tmp_path: Path
 ):
     dialog = _dialog(tmp_path, "music")
     try:
-        # Art | Music cards carry the first choice. The leftover headline
-        # and helper are chrome on that door.
+        # Art | Music cards carry the first choice; the helper explains roles.
         assert dialog._choice_title.isVisibleTo(dialog._choice_page) is False
         assert dialog._choice_subtitle.isVisibleTo(dialog._choice_page) is False
-        assert dialog._choice_helper.text() == ""
+        assert dialog._choice_helper.text() == (
+            "Host starts the room. Join uses the host's invite."
+        )
+        assert dialog._choice_helper.isVisibleTo(dialog._choice_page)
         assert dialog._music_profile_card.description() == "Write songs or play live together."
         assert dialog._creator_profile_label.isVisibleTo(dialog._choice_page) is False
         assert dialog._creator_profile_selector.isVisibleTo(dialog._choice_page) is False
