@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Art invitation switching uses room wording in its confirmation, progress,
+  and failure messages, with End Room / Leave Room cleanup retries.
+  If cleanup finishes but the invitation cannot be applied, the disabled
+  control keeps the established Start Session label.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual
