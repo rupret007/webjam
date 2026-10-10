@@ -250,6 +250,7 @@ class ConductorWindow(QMainWindow):
         self.workspace_stack.setCurrentWidget(self.center_splitter)
         self._paint_along_widget: QWidget | None = None
         self._paint_along_return_widget: QWidget = self.center_splitter
+        self.workspace_stack.currentChanged.connect(self._sync_session_hud_visibility)
 
         body_container = QWidget()
         body_layout = QHBoxLayout(body_container)
@@ -1068,6 +1069,18 @@ class ConductorWindow(QMainWindow):
         self.workspace_stack.setCurrentWidget(panel)
         panel.show()
 
+    def _sync_session_hud_visibility(self, *_args) -> None:
+        # Paint along supplies Art's next action. Keep the HUD's state current
+        # underneath it so returning to Room restores the latest guidance.
+        paint_along_active = (
+            self._creator_profile.key == "art"
+            and self._paint_along_widget is not None
+            and self.workspace_stack.currentWidget() is self._paint_along_widget
+        )
+        self.session_hud.setVisible(
+            not self._reference_studio_only and not paint_along_active
+        )
+
     def hide_paint_along(self, panel: QWidget | None = None) -> None:
         """Return from the embedded Paint along surface to the prior workspace."""
 
@@ -1139,6 +1152,7 @@ class ConductorWindow(QMainWindow):
 
         profile_changed = profile != self._creator_profile
         self._creator_profile = profile
+        self._sync_session_hud_visibility()
         if profile.key != "art":
             self.art_room_overview.clear_room_connections()
         suffix = " · Preview" if profile.is_preview else ""
