@@ -210,6 +210,65 @@ def test_choosing_a_card_binds_host_to_that_card(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+@pytest.mark.parametrize("profile_key", ["art", "music"])
+def test_host_copy_places_invite_copy_inside_the_room(profile_key: str):
+    assert _CREATOR_LAUNCH_COPY[profile_key].host_description == (
+        "Start the room. You can copy an invite inside the room."
+    )
+
+
+@pytest.mark.parametrize("initial_profile", ["art", "music"])
+def test_host_accessibility_places_invite_copy_inside_the_room(
+    qapp, tmp_path: Path, initial_profile: str
+):
+    dialog = _dialog(tmp_path, initial_profile)
+    try:
+        selector = dialog._creator_profile_selector
+        for profile_key in (initial_profile, "music", "art", "music"):
+            selector.setCurrentIndex(selector.findData(profile_key))
+            for card in _visible_cards(dialog) or [None]:
+                if card is not None:
+                    card.click()
+                described = dialog._host_button.accessibleDescription()
+                assert "Start the room." in described
+                assert "You can copy an invite inside the room." in described
+                assert "Copy an invite for your guests." not in described
+                assert "Start the room and copy an invite." not in described
+                if card is not None:
+                    assert f"Start {card.accessibleName()} as the host." in described
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize(
+    ("profile_key", "start_key"),
+    [("art", "talk_and_make"), ("art", "paint_along"), ("music", "")],
+)
+def test_host_leaves_clipboard_unchanged_at_launch(
+    qapp, tmp_path: Path, profile_key: str, start_key: str
+):
+    dialog = _dialog(tmp_path, profile_key)
+    clipboard = qapp.clipboard()
+    original_text = clipboard.text()
+    try:
+        for card in _visible_cards(dialog):
+            if card.start_key == start_key:
+                card.click()
+        dialog._name_input.setText("Sam")
+        clipboard.setText("Existing clipboard text")
+        with patch.object(clipboard, "setText", wraps=clipboard.setText) as copy_text:
+            dialog._host_button.click()
+            assert dialog.selected_role == "host"
+            assert dialog.result() == LaunchDialog.DialogCode.Accepted
+            assert dialog.band_invite is None
+            assert dialog.remote_invitation is None
+            assert clipboard.text() == "Existing clipboard text"
+            copy_text.assert_not_called()
+    finally:
+        clipboard.setText(original_text)
+        dialog.deleteLater()
+
+
 def test_the_first_screen_names_no_component(qapp, tmp_path: Path):
     """The ten-second door is about what you are making, not what runs it.
 

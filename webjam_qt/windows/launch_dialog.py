@@ -94,7 +94,7 @@ _CREATOR_LAUNCH_COPY = {
         host="Host",
         join="Join",
         local="New Music Project",
-        host_description="Start the room and copy an invite.",
+        host_description="Start the room. You can copy an invite inside the room.",
         join_description="Paste the invite you were sent.",
         local_description=(
             "Create a local multitrack music project without starting or joining "
@@ -140,9 +140,7 @@ _CREATOR_LAUNCH_COPY = {
         host="Host",
         join="Join",
         local="Standalone Art Unavailable",
-        host_description=(
-            "Copy an invite for your guests."
-        ),
+        host_description="Start the room. You can copy an invite inside the room.",
         join_description=(
             "Paste the host's invite to join their activity."
         ),
