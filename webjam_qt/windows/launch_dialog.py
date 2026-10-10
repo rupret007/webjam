@@ -75,6 +75,12 @@ _JOIN_INVITATION_GUIDANCE = (
     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
 )
 
+# Single door line when Paint along is the checked Art start (harvest + UX tests).
+PAINT_ALONG_DOOR_HELPER = (
+    "Host starts Paint along, then chooses a file or lesson link. "
+    "Join uses the host's invite."
+)
+
 
 @dataclass(frozen=True)
 class _CreatorLaunchCopy:
@@ -696,6 +702,13 @@ class LaunchDialog(QDialog):
         # stretch at the bottom of this page is enough.
         layout.addWidget(self._build_start_cards())
 
+        self._choice_helper = QLabel()
+        self._choice_helper.setObjectName("LaunchHelper")
+        self._choice_helper.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._choice_helper.setWordWrap(True)
+        self._choice_helper.setVisible(False)
+        layout.addWidget(self._choice_helper)
+
         self._host_button = QPushButton()
         self._host_button.setObjectName("LaunchPrimary")
         self._host_button.setMinimumHeight(52)
@@ -718,13 +731,6 @@ class LaunchDialog(QDialog):
         layout.addWidget(self._host_reason)
         layout.addWidget(self._join_button)
         layout.addWidget(self._studio_button)
-
-        self._choice_helper = QLabel()
-        self._choice_helper.setObjectName("LaunchHelper")
-        self._choice_helper.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self._choice_helper.setWordWrap(True)
-        self._choice_helper.setVisible(False)
-        layout.addWidget(self._choice_helper)
 
         self._choice_error = QLabel("")
         self._choice_error.setObjectName("LaunchError")
@@ -908,7 +914,7 @@ class LaunchDialog(QDialog):
         available = self._can_host()
         restriction = "" if available else "Hosting is available in the macOS app."
         next_step = (
-            "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
+            PAINT_ALONG_DOOR_HELPER
             if start.key == "paint_along" else
             f"Host starts {start.label}. Join uses the host's invite."
         )
@@ -1157,6 +1163,19 @@ class LaunchDialog(QDialog):
         helper = str(text or "").strip()
         self._choice_helper.setText(helper)
         self._choice_helper.setVisible(bool(helper))
+        self._sync_choice_helper_height()
+
+    def _sync_choice_helper_height(self) -> None:
+        """Reserve the wrapped height so Paint along's door line cannot clip."""
+
+        helper = self._choice_helper
+        if not helper.isVisible() or not helper.text().strip():
+            helper.setMinimumHeight(0)
+            return
+        width = helper.width()
+        if width <= 0:
+            width = max(helper.sizeHint().width(), 280)
+        helper.setMinimumHeight(helper.heightForWidth(width))
 
     def _keep_door_cards_tabbable(self) -> None:
         """Restore Tab focus after setTabOrder, which can drop it on command-links."""
@@ -1170,7 +1189,9 @@ class LaunchDialog(QDialog):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._keep_door_cards_tabbable()
+        self._sync_choice_helper_height()
         QTimer.singleShot(0, self, self._keep_door_cards_tabbable)
+        QTimer.singleShot(0, self, self._sync_choice_helper_height)
 
     def _build_menu(self, root: QVBoxLayout) -> None:
         self._menu_bar = QMenuBar(self)
