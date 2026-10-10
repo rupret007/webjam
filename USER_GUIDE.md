@@ -561,6 +561,9 @@ For the existing **silent local-file option**, the host chooses one video file:
    **Pause**—and may drag the position. Change video, restart from the
    beginning, and stop sharing stay under **More**. Everyone follows; a guest
    joining partway through lands where the host currently is.
+   When the local video finishes, the host's status becomes **Paused.** and
+   keeps the last position. To watch again, choose **More → Restart from the
+   beginning**, then **Play**. Playback does not restart automatically.
 
 Things worth knowing:
 

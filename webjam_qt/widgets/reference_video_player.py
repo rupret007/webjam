@@ -149,6 +149,27 @@ class QtReferenceVideoPlayer:
         self._require_healthy()
         return position_s
 
+    def playback_state(self) -> str:
+        """Observe completion without waiting or issuing transport commands.
+
+        Only EndOfMedia proves completion. A stopped player or a position at
+        the duration can also occur while opening, seeking or buffering.
+        Other statuses leave transport ownership with the host controller.
+        """
+
+        from PySide6.QtMultimedia import QMediaPlayer
+
+        self._require_healthy()
+        status = self._player.mediaStatus()
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            return "ended"
+        if status in {
+            QMediaPlayer.MediaStatus.BufferingMedia,
+            QMediaPlayer.MediaStatus.StalledMedia,
+        }:
+            return "buffering"
+        return "unknown"
+
     def close(self) -> None:
         if self._closed:
             return

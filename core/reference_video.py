@@ -688,7 +688,7 @@ class ReferenceVideoHostController:
             return self._notify(self._snapshot_locked())
 
     def refresh(self) -> ReferenceVideoSnapshot:
-        """Sample the local player's position without changing transport."""
+        """Sample position and reconcile completion without driving transport."""
 
         with self._lock:
             if self._state is not ReferenceVideoState.PLAYING:
@@ -696,14 +696,20 @@ class ReferenceVideoHostController:
             try:
                 self._position_s = self._clamp(self._player.position_s())
                 playback_state = getattr(self._player, "playback_state", None)
-                if self._source_kind == "youtube" and callable(playback_state):
+                if callable(playback_state):
                     observed = playback_state()
-                    if observed in {"paused", "ended"}:
+                    # Local completion must be explicit backend evidence;
+                    # buffering or reaching the duration alone is not EOF.
+                    # Retain the last position until the host acts again.
+                    if observed == "ended" or (
+                        self._source_kind == "youtube" and observed == "paused"
+                    ):
                         self._state = ReferenceVideoState.PAUSED
-                    self._error = (
-                        "The lesson is buffering. Playback will follow when it is ready."
-                        if observed == "buffering" else ""
-                    )
+                    if self._source_kind == "youtube":
+                        self._error = (
+                            "The lesson is buffering. Playback will follow when it is ready."
+                            if observed == "buffering" else ""
+                        )
             except Exception:
                 return self._fail_locked(
                     "WebJam lost track of that video on this computer."
