@@ -2113,17 +2113,19 @@ class ApplicationController(QObject):
 
     @property
     def creator_start(self):
-        """Return the start card this artist chose, or ``None``.
+        """Return the host's room start, or the local card outside a guest room.
 
         The value is re-resolved against the active profile every time, so a
         key saved under another profile can never arm a capability this one
-        does not have; it falls back to the profile's room-first door.
+        does not have. Guests have no start until host state supplies one;
+        only local choices fall back to the profile's room-first door.
         """
 
         room = getattr(self, "_room_participant", None)
-        borrowed = room.borrowed_start if room is not None else ""
+        if room is not None and room.role == "guest":
+            return self.creator_profile.get_start(room.borrowed_start)
         return self.creator_profile.start_or_default(
-            borrowed or getattr(getattr(self, "settings", None), "last_creator_start_key", "")
+            getattr(getattr(self, "settings", None), "last_creator_start_key", "")
         )
 
     def _art_room_runs_paint_along(self) -> bool:

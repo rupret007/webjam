@@ -35,7 +35,7 @@ def qapp():
 def controllers(qapp, tmp_path):
     made = []
 
-    def create(*, invite=None, profile="music", hosting=False):
+    def create(*, invite=None, profile="music", hosting=False, start=""):
         root = tmp_path / str(len(made))
         root.mkdir()
         settings = AppSettings(
@@ -43,6 +43,7 @@ def controllers(qapp, tmp_path):
             takes_directory=str(root / "takes"),
             host_server_enabled=hosting,
             last_creator_profile_key=profile,
+            last_creator_start_key=start,
         )
         window = ConductorWindow(
             mode_entries=ApplicationController.mode_entries(),
@@ -239,6 +240,93 @@ def test_paint_along_guest_room_names_the_next_click_before_the_video_arrives(
     assert overview.activity_action == "video"
     assert overview.activity_action_label == "Open Paint along"
     assert overview.activity_enabled is True
+
+
+@pytest.mark.parametrize("transport", ["lan", "native"])
+@pytest.mark.parametrize("saved_start,host_start", [
+    ("paint_along", "talk_and_make"),
+    ("talk_and_make", "paint_along"),
+])
+def test_guest_creator_start_comes_only_from_host_until_leave(
+    qapp, controllers, monkeypatch, transport, saved_start, host_start,
+):
+    if transport == "lan":
+        invite = invitation()
+        arm_lan(monkeypatch, invite)
+        app = controllers(invite=invite, profile="art", start=saved_start)
+        assert app.creator_start is None
+        assert app.begin_startup_journey()
+    else:
+        monkeypatch.setattr(
+            "services.native_remote_transport.NativeGuestTransportBackend", RoomBackend,
+        )
+        app = controllers(profile="art", start=saved_start, hosting=True)
+        assert app.creator_start.key == saved_start
+        assert app.accept_invitation(remote())
+        drain(qapp, lambda: app._remote_session.snapshot.phase is RemoteSessionPhase.CONNECTED)
+
+    room = app._room_participant
+    assert room.probing and room.borrowed_start == ""
+    assert app.creator_start is None
+    overview = app._sync_art_room_overview()
+    assert overview.connection_label == "Checking the host's room"
+    assert not overview.activity_actions
+    app._maybe_open_paint_along()
+    assert app._reference_video_dialog is None
+
+    if transport == "lan":
+        offer = SessionStateSnapshot(
+            invite.session_id, 0, RecordingSignal.IDLE,
+            creator_profile_key="art", art_start_key=host_start,
+        )
+        room.lan_guest.client.state = lambda *_: offer
+        room.lan_guest.poll_once()
+    else:
+        # Receipt alone is not an applied room fact. Hold the apply boundary
+        # to inspect a queued host snapshot before admitting its start.
+        with monkeypatch.context() as pending:
+            pending.setattr(room, "apply_native", mock.Mock())
+            RoomBackend.instances[-1].emit(RoomState(1, "art", host_start))
+            drain(qapp, lambda: room.native_state is not None)
+            assert room.borrowed_start == ""
+            assert app.creator_start is None
+        room.apply_native(app._remote_session, app._remote_session.snapshot)
+    drain(qapp, lambda: not room.probing)
+    assert room.borrowed_start == host_start
+    assert app.creator_start.key == host_start
+    assert app.settings.last_creator_start_key == saved_start
+    overview = app._sync_art_room_overview()
+    if host_start == "paint_along":
+        assert overview.activity_label == "Paint along is starting"
+        assert overview.activity_action_label == "Open Paint along"
+        assert overview.activity_enabled
+    else:
+        assert "video" not in overview.activity_actions
+    app._maybe_open_paint_along()
+    assert app._reference_video_dialog is None
+
+    app.audio._begin_session_stop(False, art_room=True)
+    drain(qapp, lambda: not app.audio.stopping)
+    assert not app.audio.cleanup_retry_required
+    assert room.role == "" and room.borrowed_start == ""
+    assert app.creator_start.key == saved_start
+    assert app.settings.last_creator_start_key == saved_start
+
+
+def test_guest_creator_start_stays_unknown_when_lan_host_omits_start(
+    qapp, controllers, monkeypatch,
+):
+    invite = invitation()
+    arm_lan(monkeypatch, invite)
+    app = controllers(invite=invite, profile="art", start="paint_along")
+    assert app.begin_startup_journey()
+    room = app._room_participant
+    room.lan_guest.poll_once()
+    drain(qapp, lambda: not room.probing)
+    assert room.borrowed_start == ""
+    assert app.creator_start is None
+    assert not app._sync_art_room_overview().activity_actions
+    assert app.settings.last_creator_start_key == "paint_along"
 
 
 def test_native_missing_profile_has_bounded_update_rejoin_action(

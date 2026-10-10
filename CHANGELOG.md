@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Guests use only the host's room start, including on LAN. Joining waits for
+  confirmed room details instead of borrowing a saved Art door card; Leave
+  restores that personal card for the next Host choice.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual
