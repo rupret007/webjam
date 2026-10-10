@@ -93,6 +93,16 @@ class FakePlayer:
     def position_s(self) -> float:
         return self.position
 
+    def playback_state(self) -> str:
+        return {
+            "playing": "playing",
+            "paused": "paused",
+            "ended": "ended",
+            "buffering": "buffering",
+            "ready": "ready",
+            "idle": "ready",
+        }.get(self.state, "ready")
+
     def close(self) -> None:
         self._maybe_fail("close")
         self.closed = True
@@ -346,6 +356,29 @@ def test_host_transport_moves_through_play_pause_stop_and_seek(tmp_path):
     assert stopped.state is ReferenceVideoState.READY
     assert stopped.position_s == 0.0
     assert stopped.shared is True
+
+
+def test_host_local_end_of_media_leaves_transport_paused(tmp_path):
+    controller, player, _ = make_host(tmp_path, duration=10.0)
+    controller.share(write_video(tmp_path / "lesson.mp4"))
+    controller.play()
+    player.position = 10.0
+    player.state = "ended"
+    paused = controller.refresh()
+    assert paused.state is ReferenceVideoState.PAUSED
+    assert paused.position_s == pytest.approx(10.0)
+    assert controller.play().state is ReferenceVideoState.PLAYING
+
+
+def test_host_refresh_keeps_playing_when_buffering_near_duration(tmp_path):
+    controller, player, _ = make_host(tmp_path, duration=10.0)
+    controller.share(write_video(tmp_path / "lesson.mp4"))
+    controller.play()
+    player.position = 10.0
+    player.state = "buffering"
+    snapshot = controller.refresh()
+    assert snapshot.state is ReferenceVideoState.PLAYING
+    assert snapshot.error == ""
 
 
 def test_seek_is_clamped_to_the_shared_duration(tmp_path):

@@ -149,6 +149,29 @@ class QtReferenceVideoPlayer:
         self._require_healthy()
         return position_s
 
+    def playback_state(self) -> str:
+        """Mirror the YouTube lesson player's coarse states for host refresh."""
+
+        from PySide6.QtMultimedia import QMediaPlayer
+
+        if self._closed:
+            return "ended"
+        self._require_healthy()
+        status = self._player.mediaStatus()
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            return "ended"
+        playback = self._player.playbackState()
+        if playback == QMediaPlayer.PlaybackState.PlayingState:
+            return "playing"
+        if playback == QMediaPlayer.PlaybackState.PausedState:
+            return "paused"
+        if status in {
+            QMediaPlayer.MediaStatus.BufferingMedia,
+            QMediaPlayer.MediaStatus.StalledMedia,
+        }:
+            return "buffering"
+        return "ready"
+
     def close(self) -> None:
         if self._closed:
             return

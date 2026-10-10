@@ -66,6 +66,17 @@ class FakePlayer:
     def position_s(self) -> float:
         return self.position
 
+    def playback_state(self) -> str:
+        return {
+            "playing": "playing",
+            "paused": "paused",
+            "ended": "ended",
+            "buffering": "buffering",
+            "ready": "ready",
+            "idle": "ready",
+            "closed": "ended",
+        }.get(self.state, "ready")
+
     def close(self) -> None:
         self.state = "closed"
 
@@ -274,6 +285,24 @@ def test_host_tick_republishes_the_moving_position(tmp_path):
     coordinator.tick()
 
     assert peer.published[-1]["position_s"] == pytest.approx(9.5)
+
+
+def test_host_tick_publishes_paused_after_local_end_of_media(tmp_path):
+    peer = FakeHostPeer()
+    player = FakePlayer(duration_s=10.0)
+    coordinator, _, _, _ = make_coordinator(peer=peer, players=[player])
+    coordinator.begin_host(session_id=SESSION_ID, session_key=SESSION_KEY)
+    coordinator.share(str(write_video(tmp_path / "lesson.mp4")))
+    coordinator.play()
+
+    player.position = 10.0
+    player.state = "ended"
+    coordinator.tick()
+
+    assert coordinator.host_snapshot.state is ReferenceVideoState.PAUSED
+    assert peer.published[-1]["state"] == "paused"
+    coordinator.play()
+    assert coordinator.host_snapshot.state is ReferenceVideoState.PLAYING
 
 
 # ---------------------------------------------------------------------------
