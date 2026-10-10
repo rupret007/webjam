@@ -365,6 +365,172 @@ def _reordered_project_take(tmp_path):
     return take, (bass, drums, guitar), (bass_audio, drums_audio, guitar_audio)
 
 
+@pytest.mark.parametrize("phase", ["reader_open", "render", "publication"])
+@pytest.mark.parametrize("change", ["rewrite", "replace", "remove", "restore"])
+def test_project_export_rejects_source_changes(tmp_path, monkeypatch, phase, change):
+    from core import take_export
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    source = sources[0]
+    original_bytes = source.read_bytes()
+    original_stat = source.stat()
+    changed = False
+
+    def mutate():
+        nonlocal changed
+        if changed:
+            return
+        changed = True
+        if change == "remove":
+            source.unlink()
+        elif change == "replace":
+            replacement = source.with_suffix(".replacement")
+            replacement.write_bytes(original_bytes)
+            replacement.replace(source)
+        else:
+            _write(source, np.full(2048, 0.8), rate=48_000)
+            if change == "restore":
+                source.write_bytes(original_bytes)
+            # Size and mtime alone cannot establish source continuity.
+            os.utime(source, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+    owner, method = {
+        "reader_open": (sf, "SoundFile"),
+        "render": (take_export, "_render_segment_block"),
+        "publication": (take_export, "_write_checksum_manifest"),
+    }[phase]
+    original = getattr(owner, method)
+
+    def change_during_call(*args, **kwargs):
+        if phase == "reader_open":
+            # First decoder open follows the initial declared-content check.
+            # Do not recurse through SoundFile when the fixture rewrites audio.
+            if not changed:
+                mutate()
+            return original(*args, **kwargs)
+        result = original(*args, **kwargs)
+        mutate()
+        return result
+
+    monkeypatch.setattr(owner, method, change_during_call)
+    destination = tmp_path / "exports"
+    with pytest.raises(TakeExportError, match="source recording.*changed") as error:
+        export_track_package(take, destination_root=destination, chunk_frames=1024)
+
+    assert changed
+    assert str(tmp_path) not in str(error.value)
+    assert len(str(error.value)) < 160
+    assert not list(destination.iterdir())
+
+
+def test_project_export_compares_observed_source_hash_to_declaration(tmp_path, monkeypatch):
+    from core import take_export
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    source = sources[0]
+    identity = take_export._source_identity(source)
+    original_identity = take_export._source_identity
+    original_render = take_export._write_project_track
+
+    def rewrite_after_render(*args, **kwargs):
+        result = original_render(*args, **kwargs)
+        _write(source, np.full(2048, 0.8), rate=48_000)
+        os.utime(source, ns=(source.stat().st_atime_ns, identity[3]))
+        return result
+
+    # Simulate path metadata that does not reveal a same-size rewrite. The
+    # second content check must still reject the newly observed source hash.
+    monkeypatch.setattr(take_export, "_source_identity", lambda path: (
+        identity if path == source else original_identity(path)
+    ))
+    monkeypatch.setattr(take_export, "_write_project_track", rewrite_after_render)
+    destination = tmp_path / "exports"
+    with pytest.raises(TakeExportError, match="source recording.*changed"):
+        export_track_package(take, destination_root=destination)
+    assert not list(destination.iterdir())
+
+
+def test_project_export_unchanged_sources_use_two_bounded_hash_passes(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    from core import take_export
+    from core.export_receipt import verify_export_receipt
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    before = {path: path.read_bytes() for path in sources}
+    reads = {path: [] for path in sources}
+    original_open = take_export._open_source
+
+    class CountingReader:
+        def __init__(self, handle, path):
+            self.handle = handle
+            self.path = path
+
+        def __getattr__(self, name):
+            return getattr(self.handle, name)
+
+        def read(self, size=-1):
+            assert 0 < size <= 1024 * 1024
+            block = self.handle.read(size)
+            reads[self.path].append(len(block))
+            return block
+
+    @contextmanager
+    def count_reads(snapshot):
+        with original_open(snapshot) as handle:
+            # SoundFile uses readinto; read() is the source hashing I/O.
+            yield CountingReader(handle, snapshot.path)
+
+    monkeypatch.setattr(take_export, "_open_source", count_reads)
+    result = export_track_package(take, destination_root=tmp_path / "exports")
+
+    assert {path: path.read_bytes() for path in sources} == before
+    for path in sources:
+        assert reads[path] == [len(before[path]), len(before[path])]
+    payload = json.loads(result.manifest.read_text())
+    for track in payload["tracks"]:
+        for segment in track["segments"]:
+            assert segment["declared_sha256"] == segment["observed_sha256"]
+    assert verify_export_receipt(result.folder).folder == result.folder
+    audio, rate = sf.read(result.stems[0])
+    assert rate == 48_000
+    assert audio == pytest.approx(np.full(2048, 0.2), abs=0.0001)
+
+
+def test_source_hash_stops_at_initial_size_when_source_grows(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    from core import take_export
+
+    source = tmp_path / "growing.wav"
+    source.write_bytes(b"x" * (2 * 1024 * 1024))
+    snapshot = take_export._SourceSnapshot(source, take_export._source_identity(source))
+    original_open = take_export._open_source
+    bytes_read = 0
+
+    class GrowingReader:
+        def __init__(self, handle):
+            self.handle = handle
+
+        def read(self, size):
+            nonlocal bytes_read
+            assert 0 < size <= 1024 * 1024
+            block = self.handle.read(size)
+            bytes_read += len(block)
+            with source.open("ab") as writer:
+                writer.write(b"y" * len(block))
+            assert bytes_read <= snapshot.identity[2]
+            return block
+
+    @contextmanager
+    def grow_on_read(current):
+        with original_open(current) as handle:
+            yield GrowingReader(handle)
+
+    monkeypatch.setattr(take_export, "_open_source", grow_on_read)
+    with pytest.raises(TakeExportError, match="source recording.*changed"):
+        take_export._source_sha256(snapshot, "")
+    assert bytes_read == snapshot.identity[2]
+
+
 @pytest.mark.parametrize(
     "damage", ["missing", "directory", "dangling_symlink", "symlink", "oversized"]
 )

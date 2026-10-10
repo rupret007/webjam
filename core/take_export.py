@@ -16,6 +16,7 @@ import shutil
 import stat
 import uuid
 from collections.abc import Mapping
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -150,11 +151,90 @@ def _require_unchanged_take_manifest(
         )
 
 
+_SOURCE_CHANGED = (
+    "A source recording changed during export. Reopen the take and retry."
+)
+
+
+@dataclass(frozen=True)
+class _SourceSnapshot:
+    path: Path
+    identity: tuple[int, int, int, int, int]
+
+
+def _source_identity(path: Path) -> tuple[int, int, int, int, int]:
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            raise TakeExportError(_SOURCE_CHANGED)
+        return _manifest_identity(info)
+    except OSError as exc:
+        raise TakeExportError(_SOURCE_CHANGED) from exc
+
+
+def _require_unchanged_source(snapshot: _SourceSnapshot) -> None:
+    if _source_identity(snapshot.path) != snapshot.identity:
+        raise TakeExportError(_SOURCE_CHANGED)
+
+
+@contextmanager
+def _open_source(snapshot: _SourceSnapshot):
+    """Pin reads to a regular file and check path/handle continuity separately."""
+    _require_unchanged_source(snapshot)
+    descriptor = -1
+    try:
+        descriptor = os.open(
+            snapshot.path,
+            os.O_RDONLY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+            | getattr(os, "O_BINARY", 0),
+        )
+        info = os.fstat(descriptor)
+        identity = _manifest_identity(info)
+        # Windows path and handle APIs can report different stable ctimes.
+        # Compare ctime only against later observations from the same API.
+        if not stat.S_ISREG(info.st_mode) or identity[:4] != snapshot.identity[:4]:
+            raise TakeExportError(_SOURCE_CHANGED)
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            try:
+                _require_unchanged_source(snapshot)
+                yield handle
+            finally:
+                if _manifest_identity(os.fstat(handle.fileno())) != identity:
+                    raise TakeExportError(_SOURCE_CHANGED)
+                _require_unchanged_source(snapshot)
+    except OSError as exc:
+        raise TakeExportError(_SOURCE_CHANGED) from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _source_sha256(snapshot: _SourceSnapshot, declared: str) -> str:
+    """Reuse each existing hash pass, bounded by the initial source size."""
+    digest = hashlib.sha256()
+    with _open_source(snapshot) as handle:
+        remaining = snapshot.identity[2]
+        while remaining:
+            block = handle.read(min(1024 * 1024, remaining))
+            if not block:
+                raise TakeExportError(_SOURCE_CHANGED)
+            remaining -= len(block)
+            digest.update(block)
+    observed = digest.hexdigest()
+    if declared and observed != declared:
+        raise TakeExportError(_SOURCE_CHANGED)
+    return observed
+
+
 def _publish_track_package(
     temporary: Path,
     destination: Path,
     take_root: Path,
     snapshot: _TakeManifestSnapshot | None,
+    source_snapshots: tuple[_SourceSnapshot, ...] = (),
 ) -> None:
     from core.take_project import take_project_manifest_lock
 
@@ -162,6 +242,8 @@ def _publish_track_package(
     # Rendering stays outside this short lock so recording updates can proceed.
     with take_project_manifest_lock(take_root):
         _require_unchanged_take_manifest(take_root, snapshot)
+        for source in source_snapshots:
+            _require_unchanged_source(source)
         temporary.rename(destination)
 
 
@@ -456,6 +538,7 @@ def _write_project_track(
     project_rate: int,
     total_frames: int,
     chunk_frames: int,
+    source_snapshots: dict[Path, _SourceSnapshot],
 ) -> int:
     """Render explicit immutable segments through alignment/drift metadata."""
     import numpy as np
@@ -474,6 +557,7 @@ def _write_project_track(
     offset_frames = round(float(track.alignment.effective_offset_s) * project_rate)
     prepared: list[tuple[object, object, int, int]] = []
     intervals: list[tuple[int, int]] = []
+    source_handles = ExitStack()
     try:
         for segment in sorted(
             track.segments, key=lambda item: (item.project_start_frame, item.segment_id)
@@ -485,13 +569,17 @@ def _write_project_track(
                 raise TakeExportError(
                     f"{track.name} points outside its take folder."
                 ) from exc
-            if not source.is_file():
-                raise TakeExportError(f"{track.name} is missing {segment.path}.")
-            if segment.size_bytes and source.stat().st_size != segment.size_bytes:
+            source_path = take_root / segment.path
+            snapshot = source_snapshots.get(source_path)
+            if snapshot is None:
+                snapshot = _SourceSnapshot(source_path, _source_identity(source_path))
+                source_snapshots[source_path] = snapshot
+            if segment.size_bytes and snapshot.identity[2] != segment.size_bytes:
                 raise TakeExportError(f"{track.name} changed size after validation.")
-            if segment.sha256 and _sha256(source) != segment.sha256:
-                raise TakeExportError(f"{track.name} changed after validation.")
-            reader = sf.SoundFile(str(source))
+            if segment.sha256:
+                _source_sha256(snapshot, segment.sha256)
+            handle = source_handles.enter_context(_open_source(snapshot))
+            reader = sf.SoundFile(handle)
             observed = (
                 int(reader.samplerate),
                 int(reader.channels),
@@ -556,8 +644,11 @@ def _write_project_track(
                 writer.write(block)
                 output_start += count
     finally:
-        for _segment, reader, _start, _end in prepared:
-            reader.close()
+        try:
+            for _segment, reader, _start, _end in prepared:
+                reader.close()
+        finally:
+            source_handles.close()
     os.chmod(destination, 0o600)
     return channel_count
 
@@ -862,6 +953,7 @@ def _export_project_track_package(
     track_evidence: list[dict] = []
     used_names: set[str] = set()
     reference_indexes: list[int] = []
+    source_snapshots: dict[Path, _SourceSnapshot] = {}
     try:
         for export_index, track in enumerate(selected):
             base = _safe_name(track.name, f"Track {export_index + 1}")
@@ -879,6 +971,7 @@ def _export_project_track_package(
                 project_rate=project_rate,
                 total_frames=total_frames,
                 chunk_frames=chunk_frames,
+                source_snapshots=source_snapshots,
             )
             state = _project_track_mix_settings(
                 settings_map,
@@ -892,7 +985,7 @@ def _export_project_track_package(
             person = participant_map.get(track.participant_id)
             source_files = []
             for segment in track.segments:
-                source_path = take.path / segment.path
+                source_path = take.path.resolve() / segment.path
                 source_files.append(
                     {
                         "segment_id": segment.segment_id,
@@ -903,7 +996,9 @@ def _export_project_track_package(
                         "project_start_frame": segment.project_start_frame,
                         "media_status": segment.media_status.value,
                         "declared_sha256": segment.sha256,
-                        "observed_sha256": _sha256(source_path),
+                        "observed_sha256": _source_sha256(
+                            source_snapshots[source_path], segment.sha256
+                        ),
                         "gaps": [gap.to_dict() for gap in segment.gaps],
                     }
                 )
@@ -1144,7 +1239,10 @@ def _export_project_track_package(
 
         checksums = temporary / "CHECKSUMS.sha256"
         _write_checksum_manifest(temporary, checksums)
-        _publish_track_package(temporary, final_folder, take.path, manifest_snapshot)
+        _publish_track_package(
+            temporary, final_folder, take.path, manifest_snapshot,
+            tuple(source_snapshots.values()),
+        )
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
