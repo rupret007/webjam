@@ -39,6 +39,8 @@ clock and room timer do not certify recording time. **Open in take** rechecks
 the saved take before navigation; a moved or changed recording needs attention.
 The **Summary** tab and **Export summary** collect progress and next steps;
 ending a rehearsal retains its recap with the workspace.
+**Export summary** includes the latest live Notes and saved recap even if the
+library editor has no new edits. Conflicting drafts must be resolved before export.
 
 For Art, open **More → Session library… → Art project**. Keep a **Project brief**, **Progress**,
 and **Next steps** alongside references added with **Add file…** or **Add

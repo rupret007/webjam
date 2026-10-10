@@ -753,8 +753,23 @@ class SessionLibraryDialog(QDialog):
             self.status.setText(f"Take was not relinked: {error}")
 
     def _export(self):
-        if self.record is None or not self.save_current():
+        if self.record is None or self._import_in_progress:
             return
+        if self._save_record is not None:
+            try:
+                # Reconcile even a clean editor with owned live Notes and
+                # late recap/take facts. Keep this snapshot separate: advancing
+                # the editor baseline behind unchanged controls loses edits.
+                edited = self._edited_record() if self._dirty else deepcopy(self._base_record)
+                snapshot = deepcopy(self._save_record(deepcopy(self._base_record), edited))
+            except (OSError, ValueError) as error:
+                self.status.setText(f"Changes are still here but not saved: {error} Use Save to retry or Save as copy.")
+                return
+        else:
+            if not self.save_current():
+                return
+            snapshot = deepcopy(self.record)
+        # A modal picker pumps events; export the workspace chosen at invocation.
         path, _ = QFileDialog.getSaveFileName(self, "Export workspace summary", "workspace-summary.md", "Markdown (*.md)")
         if not path:
             return
@@ -765,7 +780,7 @@ class SessionLibraryDialog(QDialog):
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             try:
                 with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                    handle.write(workspace_summary(self.record))
+                    handle.write(workspace_summary(snapshot))
                     handle.flush()
                     os.fsync(handle.fileno())
             except BaseException:

@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QObject  # noqa: E402
-from PySide6.QtWidgets import QApplication, QInputDialog  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog  # noqa: E402
 from core.creative_modes import get_creator_profile_by_key_or_default  # noqa: E402
 from core.session_library import SessionLibrary  # noqa: E402
 from webjam_qt.controllers.session_library import (  # noqa: E402
@@ -139,6 +139,139 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertEqual(saved.recaps[0]["take_ids"], ["late-take"])
         self.assertNotIn(saved.id, self.coordinator._pending)
         self.assertEqual(self.window.session_canvas.current_notes(), saved.notes)
+
+    def test_summary_export_reconciles_saved_and_pending_live_notes_with_clean_editor(self):
+        self.window.session_canvas.set_notes("Decision: initial")
+        self.coordinator.start_session()
+        self.assertTrue(self.coordinator.flush())
+        editor = self._editor()
+        baseline = editor._base_record
+        self.window.session_canvas.set_notes("Decision: NEW LIVE DECISION")
+        self.assertTrue(self.coordinator.flush())
+        self.coordinator.capture_summary()
+        self.coordinator.finish_session()
+        self.assertEqual(len(self.library.load(baseline.id).recaps), 1)
+        # Another live edit has not reached the canvas autosave timer yet.
+        self.window.session_canvas.set_notes("Decision: newest pending decision")
+        self.assertFalse(editor._dirty)
+        destination = self.root / "summary.md"
+        with patch.object(QFileDialog, "getSaveFileName", return_value=(str(destination), "")):
+            editor._export()
+        summary = destination.read_text()
+        self.assertIn("newest pending decision", summary)
+        self.assertIn("## Session history", summary)
+        self.assertIn("NEW LIVE DECISION", summary)
+        self.assertEqual(self.library.load(baseline.id).notes, "Decision: newest pending decision")
+        # Export must not advance the baseline behind unchanged controls (W04).
+        self.assertEqual(editor._base_record, baseline)
+        self.assertEqual(editor.notes.toPlainText(), baseline.notes)
+        self.assertFalse(editor._dirty)
+        editor.title.setText("Renamed after export")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self.library.load(baseline.id).notes, "Decision: newest pending decision")
+
+    def test_summary_export_includes_late_pending_take_and_recap(self):
+        self.coordinator.start_session()
+        self.coordinator.recording_started("late-take", "recording-session")
+        editor = self._editor()
+        self.window.session_canvas.set_notes("Decision: keep the late take")
+        self._late_take_and_recap()
+        self.assertFalse(editor._dirty)
+        destination = self.root / "summary.md"
+        with patch.object(QFileDialog, "getSaveFileName", return_value=(str(destination), "")):
+            editor._export()
+        self.assertIn("keep the late take", destination.read_text().split("## Session history")[1])
+        saved = self.library.load(editor.record.id)
+        self.assertEqual(saved.take_links[0]["status"], "complete")
+        self.assertEqual(saved.recaps[0]["take_ids"], ["late-take"])
+
+    def test_summary_export_conflict_retains_both_drafts_without_opening_picker(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        baseline = editor._base_record
+        editor.notes.setPlainText("Decision: editor draft")
+        self.window.session_canvas.set_notes("Decision: live draft")
+        with patch.object(QFileDialog, "getSaveFileName") as picker:
+            editor._export()
+        picker.assert_not_called()
+        self.assertEqual(editor.notes.toPlainText(), "Decision: editor draft")
+        self.assertTrue(editor._dirty)
+        self.assertEqual(editor._base_record, baseline)
+        self.assertEqual(self.coordinator._pending[baseline.id].notes, "Decision: live draft")
+        self.assertEqual(self.library.load(baseline.id).notes, baseline.notes)
+        self.assertIn("both retained", editor.status.text())
+
+    def test_summary_export_stays_bound_to_selection_before_picker(self):
+        self.window.session_canvas.set_notes("Decision: export this workspace")
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        other = self.library.create("music", "Other workspace", notes="Do not export this")
+        editor.refresh()
+        destination = self.root / "summary.md"
+
+        def choose_path(*_args):
+            editor.select_id(other.id)
+            return str(destination), ""
+
+        with patch.object(QFileDialog, "getSaveFileName", side_effect=choose_path):
+            editor._export()
+        self.assertEqual(editor.record.id, other.id)
+        self.assertIn("export this workspace", destination.read_text())
+        self.assertNotIn("Do not export this", destination.read_text())
+
+    def test_summary_export_canceled_picker_creates_nothing(self):
+        self.window.session_canvas.set_notes("Decision: initial")
+        self.assertTrue(self.coordinator.ensure_current())
+        self.assertTrue(self.coordinator.flush())
+        editor = self._editor()
+        files_before = set(self.root.rglob("*"))
+        with patch.object(QFileDialog, "getSaveFileName", return_value=("", "")):
+            editor._export()
+        self.assertEqual(set(self.root.rglob("*")), files_before)
+        self.assertNotIn("Summary exported", editor.status.text())
+
+    def test_summary_export_of_browsed_workspace_can_repeat_and_save_later_edits(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        other = self.library.create("music", "Browsed workspace")
+        editor = self._editor()
+        editor.select_id(other.id)
+        editor.notes.setPlainText("Decision: keep this draft")
+        for name in ("first.md", "second.md"):
+            destination = self.root / name
+            with patch.object(QFileDialog, "getSaveFileName", return_value=(str(destination), "")):
+                editor._export()
+            self.assertTrue(destination.exists(), editor.status.text())
+            self.assertIn("keep this draft", destination.read_text())
+        editor.title.setText("Renamed browsed workspace")
+        self.assertTrue(editor.save_current(), editor.status.text())
+        saved = self.library.load(other.id)
+        self.assertEqual(saved.title, "Renamed browsed workspace")
+        self.assertEqual(saved.notes, "Decision: keep this draft")
+
+    def test_summary_export_still_blocks_unknown_external_write_after_export(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        other = self.library.create("music", "Browsed workspace")
+        editor = self._editor()
+        editor.select_id(other.id)
+        with patch.object(QFileDialog, "getSaveFileName", return_value=(str(self.root / "first.md"), "")):
+            editor._export()
+        external = self.library.save(replace(self.library.load(other.id), notes="External edit"))
+        with patch.object(QFileDialog, "getSaveFileName") as picker:
+            editor._export()
+        picker.assert_not_called()
+        self.assertIn("changed since it was opened", editor.status.text())
+        self.assertEqual(self.library.load(other.id), external)
+
+    def test_summary_export_write_failure_retains_live_notes_and_blocks_picker(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        self.window.session_canvas.set_notes("Decision: retained live draft")
+        with patch.object(self.library, "save", side_effect=OSError("write unavailable")), \
+                patch.object(QFileDialog, "getSaveFileName") as picker:
+            editor._export()
+        picker.assert_not_called()
+        self.assertIn("not saved", editor.status.text())
+        self.assertEqual(self.coordinator._pending[editor.record.id].notes, "Decision: retained live draft")
 
     def test_copy_of_older_pending_snapshot_keeps_newer_take_and_recap_owned(self):
         self.coordinator.start_session()
