@@ -525,3 +525,126 @@ def test_overdub_cycle_records_dialog_free_and_stacks_take_lanes(
     assert "Overdub passes are stacked" in controller._status
     assert controller.save()
     assert controller.shutdown()
+
+
+@pytest.mark.parametrize("fail_flush", [False, True])
+def test_drain_timeout_keeps_owner_and_stop_retries_once(
+    tmp_path, qapp, monkeypatch, fail_flush,
+):
+    import threading
+    import core.project_recording as recording
+    import webjam_qt.controllers.reference_studio_application as application
+
+    release = threading.Event()
+    writer_factory = recording._default_wave_writer
+
+    class SlowWriter:
+        def __init__(self, path, channels):
+            self.inner = writer_factory(path, channels)
+
+        def write(self, data):
+            return self.inner.write(data)
+
+        def flush(self):
+            assert release.wait(5)
+            if fail_flush:
+                raise OSError("private writer failure")
+            return self.inner.flush()
+
+        def close(self):
+            return self.inner.close()
+
+    monkeypatch.setattr(recording, "_default_wave_writer", SlowWriter)
+    controller, factory, bundle = _recording_controller(tmp_path, qapp, monkeypatch)
+    commit_calls = []
+    real_commit = application.commit_project_recording
+
+    def commit(*args, **kwargs):
+        commit_calls.append(args[3])
+        return real_commit(*args, **kwargs)
+
+    monkeypatch.setattr(application, "commit_project_recording", commit)
+    controller._start_recording()
+    recorder = controller._recorder
+    recorder._join_timeout_s = 0.1
+    session = recorder._session
+    capture = controller._recording_temp
+    project = controller._recording_source_project
+    document = controller._recording_source_document
+    tokens = (controller._recording_project_token, controller._recording_studio_token)
+    factory.instances[0].pump()
+    try:
+        controller._stop_and_refresh()
+        pending_future = controller._recording_commit_future
+        controller._stop_and_refresh()
+        assert controller._recording_commit_future is pending_future
+        _wait_until(qapp, lambda: controller._recording_commit_future is None)
+        assert controller._recorder is recorder
+        assert controller._recording_temp == capture
+        assert controller._recording_source_project is project
+        assert controller._recording_source_document is document
+        assert (controller._recording_project_token, controller._recording_studio_token) == tokens
+        assert controller._recording_busy
+        assert controller._status == "Recording is still finishing. Press Stop to retry."
+        assert controller.workspace.stop_button.isEnabled()
+        assert controller.workspace.actions["stop"].isEnabled()
+        assert not controller.workspace.record_button.isEnabled()
+        assert not controller.workspace.presentation.recording
+        assert not controller.save()
+        assert not controller.close_project(choice="discard")
+        assert not controller.shutdown()
+        controller._record_command()
+        controller._start_recording()
+        assert len(factory.instances) == 1
+        assert not commit_calls
+
+        def reject_submit(*_args, **_kwargs):
+            raise RuntimeError("executor unavailable")
+
+        with monkeypatch.context() as submission:
+            submission.setattr(controller._executor, "submit", reject_submit)
+            controller._stop_and_refresh()
+        assert controller._recording_commit_future is None
+        assert controller._recording_progress is None
+        assert controller._recorder is recorder
+        assert controller._recording_temp == capture
+        assert controller._recording_busy
+        assert factory.instances[0].aborted == 0
+        assert "Press Stop to retry" in controller._status
+        controller._stop_and_refresh()
+        _wait_until(qapp, lambda: controller._recording_commit_future is None)
+        assert controller._recorder is recorder
+    finally:
+        release.set()
+        session.thread.join(5)
+    controller._stop_and_refresh()
+    terminal_future = controller._recording_commit_future
+    # Replayed completion from the first attempt cannot retire the retry owner.
+    controller._accept_recording_completion(
+        session.generation, project.project_id, pending_future,
+    )
+    assert controller._recording_commit_future is terminal_future
+    _wait_until(qapp, lambda: controller._recording_commit_future is None)
+    assert not controller._recording_busy
+    assert factory.instances[0].stopped == 1
+    assert len(commit_calls) == (0 if fail_flush else 1)
+    if fail_flush:
+        assert controller._recorder is recorder
+        assert recorder.result.state is recording.ProjectRecorderState.FAILED
+        assert recorder.result.recovery_dir.is_dir()
+        assert recorder.result.tracks[0].file.is_file()
+        assert controller._recording_temp == capture
+        assert "preserved for recovery" in controller._status
+        # Remove only this test's retained recovery data.
+        import shutil
+        shutil.rmtree(recorder.result.recovery_dir)
+    else:
+        assert controller._recorder is None
+        assert controller._recording_temp is None
+        assert len(controller.project_controller.snapshot.project.media) == 1
+        assert (bundle / RECORDING_EVIDENCE_FILENAME).is_file()
+        assert not capture.exists()
+    controller._stop_and_refresh()
+    controller._accept_recording_completion(session.generation, project.project_id, terminal_future)
+    assert len(commit_calls) == (0 if fail_flush else 1)
+    assert controller.shutdown()

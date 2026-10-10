@@ -111,6 +111,12 @@ could not finish publication, WebJam presents an explicit recovery candidate
 on the next open. Recover or discard it deliberately; do not assume an
 interrupted commit is already part of the arrangement.
 
+If finishing takes longer than expected, the status says **Recording is still
+finishing. Press Stop to retry.** Keep the project open and press **Stop**
+again. WebJam keeps the same capture until it can verify the result; another
+recording and project edits stay blocked while it finishes. A timeout does
+not mean the take has been added to the project.
+
 Count-in is pre-roll and is not represented as recorded program material.
 Punch limits the kept performance range. Cycle recording creates bounded
 passes that can be auditioned and comped; it does not destructively overwrite
