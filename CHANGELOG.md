@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Join keeps one short paste instruction; **Help → Joining…** holds the
+  conditional same-network guidance. Offscreen tests cover the invite field,
+  Join, and Back at 800×600 with normal and larger text, including invalid input.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual
