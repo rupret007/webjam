@@ -107,9 +107,7 @@ class SimpleSettingsDialog(QDialog):
 
         title = QLabel("WebJam Settings")
         title.setObjectName("SimpleSettingsTitle")
-        subtitle = QLabel(
-            "Jamulus carries the music. WebJam keeps your jam organized."
-        )
+        subtitle = QLabel("Set your name and optional meeting link.")
         subtitle.setObjectName("SimpleSettingsSubtitle")
         subtitle.setWordWrap(True)
         root.addWidget(title)
@@ -122,11 +120,11 @@ class SimpleSettingsDialog(QDialog):
         self._name.setAccessibleName("Your musician name")
         identity.layout().addWidget(name_label)
         identity.layout().addWidget(self._name)
-        self._name_preview = JamulusNamePreview(self._name)
-        identity.layout().addWidget(self._name_preview)
         root.addWidget(identity)
 
         music = self._section("Live music")
+        self._name_preview = JamulusNamePreview(self._name)
+        music.layout().addWidget(self._name_preview)
         music_note = QLabel(
             "Choose your interface, input channels, headphones, and buffer in Jamulus."
         )
