@@ -3417,6 +3417,39 @@ def test_studio_visible_enabled_focus_chain_covers_complete_workflow(tmp_path):
         studio.shutdown()
 
 
+def test_source_change_export_failure_offers_reopen_without_receipt(tmp_path):
+    take = tmp_path / "Take 01"
+    take.mkdir()
+    _wav(take / "guitar.wav")
+    _mark_verified(take, "guitar.wav")
+    studio = RecordingStudio(
+        str(tmp_path), player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        studio._exporting = True
+        studio._take_list.setEnabled(False)
+        studio._review_dialog.set_receipt("Earlier export receipt")
+        studio._finish_export(
+            None, "A source recording changed during export. Reopen the take and retry.",
+        )
+        expected = (
+            "Track export stopped because a source recording changed. "
+            "No package was created. Reopen the take and retry."
+        )
+        assert studio._hint.text() == expected
+        assert studio._review_dialog.status.text() == expected
+        assert not studio._review_dialog.receipt_button.isEnabled()
+        assert studio._review_dialog._receipt_details == ""
+        assert studio._take_list.isEnabled()
+        assert studio._export_btn.isEnabled()
+        assert studio._reveal_btn.isEnabled()
+        assert studio._reveal_btn.text() == "Show Take"
+        assert studio._reveal_path == take
+    finally:
+        studio.shutdown()
+
+
 def test_track_export_failure_keeps_take_available_and_actionable():
     with tempfile.TemporaryDirectory() as tmp:
         take = Path(tmp) / "Take 01"

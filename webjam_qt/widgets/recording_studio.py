@@ -163,11 +163,16 @@ def _track_export_failure_message(error: str) -> str:
     """Return safe, musician-facing copy for a failed track export.
 
     Export workers can surface implementation exceptions containing local paths
-    or other diagnostic details.  A small, fixed allowlist preserves the two
+    or other diagnostic details.  A small, fixed allowlist preserves the
     recording-safety actions that a musician can resolve in Studio while every
     other failure remains a general retry message.
     """
     message = (error or "").strip()
+    if message.startswith("A source recording changed during export."):
+        return (
+            "Track export stopped because a source recording changed. "
+            "No package was created. Reopen the take and retry."
+        )
     if message.startswith(
         "WebJam found explicitly silent segments in selected performance tracks:"
     ):
@@ -4004,6 +4009,8 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
         if result is None:
             self._review_dialog.set_receipt()
             self._review_dialog.status.setText("Export did not complete verification. No verified receipt is available; the recording is unchanged.")
+            if (error or "").strip().startswith("A source recording changed during export."):
+                self._review_dialog.status.setText(_track_export_failure_message(error))
             LOGGER.error("Track export did not complete: %s", error or "unknown error")
             if published_folder is not None:
                 self._reveal_path = published_folder
