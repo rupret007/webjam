@@ -630,6 +630,17 @@ class SessionLibraryDialog(QDialog):
             return False
         self._dirty = False
         self._base_record = deepcopy(self.record)
+        # A reconciled merge may keep a newer live Notes/title than this
+        # editor's own draft. Resync the controls so they match what was
+        # actually written, or a later save could bounce it back to stale text.
+        self._loading = True
+        try:
+            if self.title.text() != self.record.title:
+                self.title.setText(self.record.title)
+            if self.notes.toPlainText() != self.record.notes:
+                self.notes.setPlainText(self.record.notes)
+        finally:
+            self._loading = False
         self.pending_records.pop(self.record.id, None)
         self.summary.setPlainText(workspace_summary(self.record))
         self._render_takes()

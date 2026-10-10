@@ -140,6 +140,29 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertNotIn(saved.id, self.coordinator._pending)
         self.assertEqual(self.window.session_canvas.current_notes(), saved.notes)
 
+    def test_merge_save_resyncs_notes_control_so_a_later_save_does_not_revert_it(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.ensure_current()
+        original_id = self.coordinator.current.id
+        editor = self._editor()
+        self.assertEqual(editor.notes.toPlainText(), "Original notes")
+        # Disjoint edit: the main window's live Notes move on while the editor
+        # itself makes no notes edit, so the merge keeps the newer live value.
+        self.window.session_canvas.set_notes("Newer live notes")
+        self.assertTrue(editor.save_current(force=True))
+        self.assertEqual(self.library.load(original_id).notes, "Newer live notes")
+        # The visible Notes control must reflect what was actually saved,
+        # not the stale pre-merge text.
+        self.assertEqual(editor.notes.toPlainText(), "Newer live notes")
+        self.assertFalse(editor._dirty)
+        # A later save that only touches the title must not bounce Notes
+        # back to the stale text the control held before the resync.
+        editor.title.setText("Renamed workspace")
+        self.assertTrue(editor.save_current())
+        saved = self.library.load(original_id)
+        self.assertEqual(saved.notes, "Newer live notes")
+        self.assertEqual(saved.title, "Renamed workspace")
+
     def test_copy_of_older_pending_snapshot_keeps_newer_take_and_recap_owned(self):
         self.coordinator.start_session()
         self.coordinator.recording_started("late-take", "recording-session")
