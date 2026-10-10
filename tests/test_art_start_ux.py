@@ -59,6 +59,15 @@ def _dialog(tmp_path: Path, profile_key: str = "art") -> LaunchDialog:
     return dialog
 
 
+def _assert_blocked_empty_join_announcement(announce_mock, *, dialog: LaunchDialog) -> None:
+    """Empty Join must re-announce the shared paste prompt and focus the invite field."""
+    announce_mock.assert_called_once()
+    label = announce_mock.call_args.args[0]
+    assert label is dialog._join_status
+    assert label.text() == _JOIN_PASTE_PROMPT
+    assert announce_mock.call_args.kwargs.get("focus") is dialog._invite_input
+
+
 def _visible_cards(dialog: LaunchDialog) -> list[StartCard]:
     return [card for card in dialog._visible_start_cards() if not card.isHidden()]
 
@@ -485,12 +494,19 @@ def test_empty_join_primary_focuses_invite_and_announces_paste_prompt(
         dialog._invite_input.clear()
         dialog._on_invite_text_changed()
         assert dialog._join_button_primary.property("joinBlocked") is True
-        initial_result = dialog.result()
-        QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
+        dialog._join_button_primary.setFocus(Qt.FocusReason.TabFocusReason)
         qapp.processEvents()
+        assert dialog._join_button_primary.hasFocus()
+        initial_result = dialog.result()
+        with patch.object(
+            LaunchDialog, "_announce_error", wraps=LaunchDialog._announce_error
+        ) as announce:
+            QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
+            qapp.processEvents()
         assert dialog.result() == initial_result
         assert dialog._invite_input.hasFocus()
         assert dialog._join_status.text() == _JOIN_PASTE_PROMPT
+        _assert_blocked_empty_join_announcement(announce, dialog=dialog)
     finally:
         dialog.deleteLater()
 
@@ -507,11 +523,15 @@ def test_empty_join_return_in_invite_field_announces_paste_prompt(
         dialog._on_invite_text_changed()
         dialog._invite_input.setFocus()
         initial_result = dialog.result()
-        QTest.keyClick(dialog._invite_input, Qt.Key.Key_Return)
-        qapp.processEvents()
+        with patch.object(
+            LaunchDialog, "_announce_error", wraps=LaunchDialog._announce_error
+        ) as announce:
+            QTest.keyClick(dialog._invite_input, Qt.Key.Key_Return)
+            qapp.processEvents()
         assert dialog.result() == initial_result
         assert dialog._invite_input.hasFocus()
         assert dialog._join_status.text() == _JOIN_PASTE_PROMPT
+        _assert_blocked_empty_join_announcement(announce, dialog=dialog)
     finally:
         dialog.deleteLater()
 
@@ -529,12 +549,19 @@ def test_whitespace_only_invite_stays_blocked_and_empty_join_on_submit(
         dialog._on_invite_text_changed()
         assert dialog._join_button_primary.property("joinBlocked") is True
         assert dialog._join_status.text() == _JOIN_PASTE_PROMPT
-        initial_result = dialog.result()
-        QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
+        dialog._join_button_primary.setFocus(Qt.FocusReason.TabFocusReason)
         qapp.processEvents()
+        assert dialog._join_button_primary.hasFocus()
+        initial_result = dialog.result()
+        with patch.object(
+            LaunchDialog, "_announce_error", wraps=LaunchDialog._announce_error
+        ) as announce:
+            QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
+            qapp.processEvents()
         assert dialog.result() == initial_result
         assert dialog._join_status.text() == _JOIN_PASTE_PROMPT
         assert dialog._invite_input.hasFocus()
+        _assert_blocked_empty_join_announcement(announce, dialog=dialog)
     finally:
         dialog.deleteLater()
 
