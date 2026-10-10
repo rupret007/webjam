@@ -90,7 +90,7 @@ def test_initial_art_entry_keeps_both_routes_readable(room, qapp, hosting):
     pair = room(role="host" if hosting else "native", profile="art", configured=True)
     dialog = _paint_along(pair, qapp)
     assert_reachable(pair.app, dialog, qapp, (720, 560))
-    assert dialog._watch_lesson_button.y() < dialog._headline.y()
+    assert dialog._headline.y() < dialog._watch_lesson_button.y()
 
 
 @pytest.mark.parametrize("size", [(720, 560), (1040, 720)])

@@ -39,10 +39,11 @@ from core.youtube_lesson import YouTubeLesson, parse_youtube_lesson_url
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.scrollable_content import ScrollableContent
 
-_HOST_EMPTY_HEADLINE = "Or choose a silent reference"
-_GUEST_EMPTY_HEADLINE = "Optional silent reference"
+_HOST_EMPTY_HEADLINE = "Pick a shared lesson or a silent video file."
+_GUEST_EMPTY_HEADLINE = _HOST_EMPTY_HEADLINE
+_HOST_SILENT_SECTION = "Silent reference in WebJam"
 _HOST_EMPTY_STATUS = (
-    "Choose a local video or YouTube link below for silent playback inside WebJam. You control it."
+    "Choose a local video or YouTube link for silent playback. You control it in WebJam."
 )
 _EMPTY_SURFACE = "Your silent process video appears here"
 _SYNC_HONESTY = (
@@ -235,18 +236,8 @@ class ReferenceVideoDialog(QDialog):
             _HOST_EMPTY_HEADLINE if self._hosting else _GUEST_EMPTY_HEADLINE
         )
         self._headline.setObjectName("PaintAlongHeadline")
-        self._headline.setAccessibleName("Paint along video")
+        self._headline.setAccessibleName("Paint along next step")
         layout.addWidget(self._headline)
-
-        self._status = QLabel(
-            _HOST_EMPTY_STATUS
-            if self._hosting
-            else _FOLLOW_STATUS[ReferenceVideoFollowState.NO_VIDEO]
-        )
-        self._status.setWordWrap(True)
-        self._status.setObjectName("PaintAlongStatus")
-        self._status.setAccessibleName("Paint along status")
-        layout.addWidget(self._status)
 
         lesson_row = QVBoxLayout()
         lesson_row.setSpacing(Space.SM)
@@ -270,6 +261,25 @@ class ReferenceVideoDialog(QDialog):
         self._lesson_hint.setWordWrap(True)
         self._lesson_hint.setObjectName("PaintAlongHint")
         lesson_row.addWidget(self._lesson_hint, stretch=1)
+        layout.addLayout(lesson_row)
+
+        self._silent_section = QLabel(
+            _HOST_SILENT_SECTION if self._hosting else "Silent reference"
+        )
+        self._silent_section.setWordWrap(True)
+        self._silent_section.setObjectName("PaintAlongSilentSection")
+        self._silent_section.setAccessibleName("Silent reference options")
+        layout.addWidget(self._silent_section)
+
+        self._status = QLabel(
+            _HOST_EMPTY_STATUS
+            if self._hosting
+            else _FOLLOW_STATUS[ReferenceVideoFollowState.NO_VIDEO]
+        )
+        self._status.setWordWrap(True)
+        self._status.setObjectName("PaintAlongStatus")
+        self._status.setAccessibleName("Paint along status")
+        layout.addWidget(self._status)
 
         self._surface_holder = QFrame()
         self._surface_holder.setObjectName("PaintAlongSurface")
@@ -396,7 +406,6 @@ class ReferenceVideoDialog(QDialog):
         self._hint.setAccessibleDescription(_SYNC_DETAIL)
         self._hint.setToolTip(_SYNC_DETAIL)
         layout.addWidget(self._hint)
-        layout.insertLayout(1, lesson_row)
         self._scroll.setWidget(body)
 
         self._hidden = False
@@ -432,6 +441,11 @@ class ReferenceVideoDialog(QDialog):
             for action in self._more_menu.actions()
         )
         self._more_button.setVisible(offered)
+
+    def _set_silent_reference_block_visible(self, visible: bool) -> None:
+        """Keep the optional silent path visually below the shared-lesson route."""
+
+        self._silent_section.setVisible(bool(visible))
 
     def set_embedded(self, embedded: bool) -> None:
         """Adapt the surface for WebJam's single-window workspace stack."""
@@ -650,6 +664,7 @@ class ReferenceVideoDialog(QDialog):
             self._position.setEnabled(False)
             self._position.setVisible(False)
             self._clock.setVisible(False)
+            self._set_silent_reference_block_visible(False)
             self.attach_surface(None)
             return
         self._return_button.setVisible(False)
@@ -672,10 +687,15 @@ class ReferenceVideoDialog(QDialog):
         if not can_seek:
             # Hidden/disabled sliders may never receive the held release.
             self._cancel_scrub()
+        empty_host = not shared and not loading and not snapshot.error
         self._headline.setText(
             ("Opening YouTube lesson…" if youtube else "Opening process video…") if loading else
             snapshot.source_display_name if shared else _HOST_EMPTY_HEADLINE
         )
+        self._headline.setAccessibleName(
+            "Paint along next step" if empty_host else "Paint along video"
+        )
+        self._set_silent_reference_block_visible(empty_host)
         self._surface_placeholder.setText(
             "Opening your silent process video" if loading else
             "Video unavailable" if snapshot.error else _EMPTY_SURFACE
@@ -784,6 +804,7 @@ class ReferenceVideoDialog(QDialog):
             self._sync_more_button()
             self._position.setVisible(False)
             self._clock.setVisible(False)
+            self._set_silent_reference_block_visible(False)
             return
         self._return_button.setVisible(False)
         if self._copy_opening:
@@ -801,14 +822,20 @@ class ReferenceVideoDialog(QDialog):
             self._position.setVisible(False)
             self._position.setEnabled(False)
             self._clock.setVisible(False)
+            self._set_silent_reference_block_visible(False)
             return
         state = snapshot.state
         self._hidden = state is ReferenceVideoFollowState.HIDDEN
         sharing = state is not ReferenceVideoFollowState.NO_VIDEO
         self._duration_s = float(snapshot.duration_s or 0.0)
+        guest_empty = state is ReferenceVideoFollowState.NO_VIDEO and not self._copy_opening
         self._headline.setText(
             snapshot.source_display_name if sharing else _GUEST_EMPTY_HEADLINE
         )
+        self._headline.setAccessibleName(
+            "Paint along next step" if guest_empty and not snapshot.local_copy_prepared else "Paint along video"
+        )
+        self._set_silent_reference_block_visible(guest_empty and not snapshot.local_copy_prepared)
         self._status.setText(snapshot.message if youtube else _FOLLOW_STATUS[state])
         if state is ReferenceVideoFollowState.NO_VIDEO:
             if snapshot.local_copy_prepared:
