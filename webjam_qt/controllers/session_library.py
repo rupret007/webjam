@@ -84,6 +84,7 @@ class SessionLibraryCoordinator(QObject):
         self.library = library or default_session_library()
         self.current = None
         self.dialog = None
+        self._saved_editor_record = None
         self._pending = {}
         self._applying = False
         self._run_id = ""
@@ -388,9 +389,16 @@ class SessionLibraryCoordinator(QObject):
         latest = self._pending.get(base.id)
         if latest is None and self.current is not None and self.current.id == base.id:
             latest = self.current
+        if (latest is None and self._saved_editor_record is not None
+                and self._saved_editor_record.id == base.id
+                and self._saved_editor_record.revision > base.revision):
+            # Summary export retains the editor's original baseline. Keep the
+            # revision we saved even when it belongs to a browsed workspace.
+            latest = self._saved_editor_record
         latest = deepcopy(latest or base)
         merged = _merge_editor_changes(base, edited, latest)
         saved = self.library.save(merged)
+        self._saved_editor_record = deepcopy(saved)
         if _same_snapshot(self._pending.get(saved.id), latest):
             self._pending.pop(saved.id, None)
         self._record_saved(saved)
