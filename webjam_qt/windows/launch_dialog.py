@@ -1119,9 +1119,11 @@ class LaunchDialog(QDialog):
         helper = copy.helper
         if not host_available and not music_reason:
             helper += " Hosting is available in the macOS app."
-        # The Music card already says "Write songs or play live together." Repeating it
-        # under Host is chrome. Art cards already say what they do.
-        if first_screen_door:
+        # Explain Music's roles without repeating its card description.
+        # Art's selected start supplies its own helper below.
+        if music_door:
+            helper = "Host starts the room. Join uses the host's invite."
+        elif art_door:
             helper = ""
         self._set_choice_helper(helper)
         if hasattr(self, "_start_cards"):
