@@ -18,7 +18,11 @@ from webjam_qt.invitation_ingress import (
     InvitationIngressErrorCode,
 )
 from webjam_qt.theme import load_stylesheet
-from webjam_qt.windows.launch_dialog import LaunchDialog
+from webjam_qt.windows.launch_dialog import (
+    LaunchDialog,
+    _JOIN_INVITATION_GUIDANCE,
+    _JOIN_NETWORK_GUIDANCE,
+)
 
 
 @pytest.fixture(scope="module")
@@ -80,9 +84,12 @@ def test_all_entry_profiles_explain_whole_message_and_conditional_network(
     dialog = join_door(profile)
     guidance = dialog._join_subtitle.text()
     assert "whole message" in guidance
-    assert "If your invitation says “same network,”" in guidance
-    assert "your host’s Wi-Fi or local network" in guidance
-    assert dialog._invite_input.accessibleDescription() == guidance
+    assert "same network" not in guidance.casefold()
+    assert not dialog._join_network_guidance.isVisibleTo(dialog)
+    assert dialog._join_network_guidance.text() == _JOIN_NETWORK_GUIDANCE
+    assert "If your invitation says “same network,”" in _JOIN_NETWORK_GUIDANCE
+    assert "your host’s Wi-Fi or local network" in _JOIN_NETWORK_GUIDANCE
+    assert dialog._invite_input.accessibleDescription() == _JOIN_INVITATION_GUIDANCE
     assert dialog._invite_input.echoMode() == QLineEdit.EchoMode.Password
     assert dialog._invite_input.hasFocus()
     assert len(dialog._join_page.findChildren(QLineEdit)) == 1
@@ -144,7 +151,7 @@ def test_join_keyboard_route_keeps_field_action_and_back_reachable(
     parse.assert_called_once()
     assert field.isEnabled()
     assert field.hasFocus()
-    assert dialog._invite_input.accessibleDescription() == dialog._join_subtitle.text()
+    assert dialog._invite_input.accessibleDescription() == _JOIN_INVITATION_GUIDANCE
     assert dialog._join_status.text() == "Needs attention"
     assert dialog._join_error.isVisibleTo(dialog)
     assert not dialog.showing_choices
@@ -185,6 +192,16 @@ def test_whole_art_invitation_message_joins_without_another_profile_choice(
     assert dialog._invite_input.text() == ""
 
 
+@pytest.mark.parametrize("profile", ["music", "art"])
+def test_join_network_guidance_stays_behind_need_help_until_expanded(join_door, profile):
+    dialog = join_door(profile, size=(800, 600))
+    assert dialog._join_help_toggle.text() == "Need help?"
+    assert not dialog._join_network_guidance.isVisibleTo(dialog)
+    dialog._join_help_toggle.click()
+    assert dialog._join_network_guidance.isVisibleTo(dialog)
+    assert "same network" in dialog._join_network_guidance.text()
+
+
 @pytest.mark.parametrize(
     "profile,size",
     [
@@ -192,6 +209,8 @@ def test_whole_art_invitation_message_joins_without_another_profile_choice(
         ("art", (460, 480)),
         ("music", (620, 520)),
         ("art", (620, 520)),
+        ("music", (800, 600)),
+        ("art", (800, 600)),
         ("podcast_voice", (620, 520)),
         ("review_rehearsal", (620, 520)),
     ],
@@ -219,25 +238,32 @@ def test_join_guidance_and_actions_fit_supported_window_sizes(
         )
     qapp.processEvents()
     assert (dialog.width(), dialog.height()) == size
-    assert dialog.height() + 40 <= 600
+    assert dialog.height() <= 600
+    if dialog.height() < 600:
+        assert dialog.height() + 40 <= 600
     assert dialog._join_error.isVisibleTo(dialog) == (state == "error")
     labels = [dialog._join_subtitle, dialog._join_error, dialog._join_privacy]
     for label in labels:
-        if label.text():
+        if label.text() and label.isVisibleTo(dialog):
             assert label.height() >= label.heightForWidth(label.width())
+    assert dialog._join_subtitle.height() <= dialog._join_subtitle.heightForWidth(
+        dialog._join_subtitle.width()
+    ) + 2
+    back = next(
+        button
+        for button in dialog._join_page.findChildren(QPushButton)
+        if button.text() == "Back"
+    )
     controls = [
         dialog._join_title,
         dialog._join_subtitle,
+        dialog._join_help_toggle,
         dialog._join_status,
         dialog._invite_input,
         dialog._join_privacy,
         *([dialog._join_error] if state == "error" else []),
         dialog._join_button_primary,
-        next(
-            button
-            for button in dialog._join_page.findChildren(QPushButton)
-            if button.text() == "Back"
-        ),
+        back,
     ]
     rects = [QRect(control.mapTo(dialog, QPoint()), control.size()) for control in controls]
     for control, rect in zip(controls, rects):
