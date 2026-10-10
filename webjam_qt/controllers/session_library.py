@@ -158,9 +158,9 @@ class SessionLibraryCoordinator(QObject):
                 observed = (self.current.title, self.current.mode_key, self.current.notes)
             last_title, last_mode, last_notes = observed
             changes = {}
-            if title != last_title:
+            if title != last_title or title != self.current.title or title != latest.title:
                 changes["title"] = title or latest.title
-            if mode != last_mode:
+            if mode != last_mode or mode != self.current.mode_key or mode != latest.mode_key:
                 changes["mode_key"] = mode
             if notes != last_notes or notes != self.current.notes or notes == latest.notes:
                 pulse = build_session_pulse(creator_profile_key=self._profile(), title=title, notes=notes)

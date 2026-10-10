@@ -198,6 +198,25 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertEqual(self.coordinator.current.title, original_title)
         self.assertNotIn(record_id, self.coordinator._pending)
 
+    def test_failed_save_title_survives_recording_started(self):
+        self.coordinator.ensure_current()
+        record_id = self.coordinator.current.id
+        self.assertEqual(self.coordinator.current.title, "Wednesday")
+        self.assertTrue(self.coordinator.flush())
+        retained_title = "Keep my edited title"
+        self.window.session_strip.set_session_title(retained_title)
+        real_save = self.library.save
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        self.assertEqual(self.window.session_strip.current_title(), retained_title)
+        with patch.object(self.library, "save", wraps=real_save):
+            self.coordinator.recording_started("lifecycle-take", "recording-session")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(record_id)
+        self.assertEqual(saved.title, retained_title)
+        self.assertEqual(self.coordinator.current.title, retained_title)
+        self.assertEqual(self.window.session_strip.current_title(), retained_title)
+
     def test_competing_notes_stay_in_editor_and_pending_without_a_disk_overwrite(self):
         self.window.session_canvas.set_notes("Base Notes")
         self.coordinator.ensure_current()
