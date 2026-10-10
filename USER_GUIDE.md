@@ -24,6 +24,9 @@ back into the app; it does not connect a room or start recording. **Save as
 copy…** makes a separate workspace. Invitations and meeting credentials are
 not a reusable workspace template.
 
+After a successful save, the library editor shows the saved values, including
+newer Notes from the room. Renaming the workspace keeps those Notes.
+
 For Music, **More → Session library… → Rehearsal plan** opens the ordered setlist. Add song titles,
 key, tempo, goals, notes, and next steps. **Previous** / **Next** selects a song;
 **Move earlier** / **Move later** changes its order. Selection preserves each

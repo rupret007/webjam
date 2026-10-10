@@ -628,6 +628,23 @@ class SessionLibraryDialog(QDialog):
         except (OSError, ValueError) as error:
             self.status.setText(f"Changes are still here but not saved: {error} Use Save to retry or Save as copy.")
             return False
+        # Reconciliation can save newer live values than this editor supplied.
+        # Match controls to that snapshot before advancing their baseline, or
+        # the next edit can write stale values back. Leave unchanged controls
+        # alone to preserve their cursor, selection, and panel recovery state.
+        self._loading = True
+        try:
+            if self.title.text() != self.record.title:
+                self.title.setText(self.record.title)
+            if self.notes.toPlainText() != self.record.notes:
+                self.notes.setPlainText(self.record.notes)
+            if self.rehearsal.payload() != self.record.rehearsal:
+                self.rehearsal.load_payload(self.record.rehearsal)
+            if self.art.payload() != self.record.art:
+                self.art.load_payload(self.record.art,
+                    defer_reference_checks=bool(self.record.import_provenance))
+        finally:
+            self._loading = False
         self._dirty = False
         self._base_record = deepcopy(self.record)
         self.pending_records.pop(self.record.id, None)

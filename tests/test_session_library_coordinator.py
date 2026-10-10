@@ -89,6 +89,100 @@ class TestSessionLibraryCoordinator(TestCase):
             self.coordinator.finish_session()
         return self.coordinator._pending[self.coordinator.current.id]
 
+    def _assert_editor_matches_saved(self, editor):
+        saved = self.library.load(editor.record.id)
+        self.assertEqual(editor.title.text(), saved.title)
+        self.assertEqual(editor.notes.toPlainText(), saved.notes)
+        self.assertEqual(editor.rehearsal.payload(), saved.rehearsal)
+        self.assertEqual(editor.art.payload(), saved.art)
+        self.assertEqual(editor.record, saved)
+        self.assertEqual(editor._base_record, saved)
+        self.assertEqual(editor._base_record._store_token, saved._store_token)
+        self.assertFalse(editor._dirty)
+        self.assertFalse(editor.timer.isActive())
+        self.assertFalse(editor._loading)
+        return saved
+
+    def test_reconciled_save_refreshes_live_notes_and_preserves_them_on_rename(self):
+        self.window.session_canvas.set_notes("Original Notes")
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        editor.title.setText("Library title")
+        editor.title.setSelection(0, 7)
+        self.window.session_canvas.set_notes("Decision: Keep the newer live Notes")
+        published = []
+        editor.record_saved.connect(lambda saved: published.append(
+            (editor.notes.toPlainText(), editor._base_record.notes, editor._dirty)))
+        with patch.object(editor.rehearsal, "load_payload") as load_plan, \
+                patch.object(editor.art, "load_payload") as load_art:
+            self.assertTrue(editor.save_current())
+        load_plan.assert_not_called()
+        load_art.assert_not_called()
+        saved = self._assert_editor_matches_saved(editor)
+        self.assertEqual(saved.notes, "Decision: Keep the newer live Notes")
+        self.assertEqual(saved.title, "Library title")
+        self.assertEqual(editor.title.selectedText(), "Library")
+        self.assertEqual(published, [(saved.notes, saved.notes, False)])
+        editor.title.setText("Renamed again")
+        self.assertTrue(editor.save_current())
+        renamed = self._assert_editor_matches_saved(editor)
+        self.assertEqual(renamed.notes, saved.notes)
+        self.assertEqual(renamed.decisions, saved.decisions)
+
+    def test_reconciled_save_from_backup_refreshes_clean_editor_before_rename(self):
+        from PySide6.QtWidgets import QDialog
+        from webjam_qt.windows.workspace_backup import WorkspaceBackupChoicesDialog
+
+        self.window.session_canvas.set_notes("Original Notes")
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        self.window.session_canvas.set_notes("Newer live Notes")
+        self.window.session_strip.set_session_title("Newer live title")
+        self.assertFalse(editor._dirty)
+        # Cancel after Backup's forced reconciliation; no export is needed.
+        with patch.object(WorkspaceBackupChoicesDialog, "exec",
+                          return_value=QDialog.DialogCode.Rejected):
+            editor.backup_button.click()
+        saved = self._assert_editor_matches_saved(editor)
+        self.assertEqual(saved.notes, "Newer live Notes")
+        self.assertEqual(saved.title, "Newer live title")
+        editor.title.setText("Renamed after backup")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self._assert_editor_matches_saved(editor).notes, saved.notes)
+
+    def test_reconciled_save_refreshes_newer_rehearsal_controls(self):
+        from core.rehearsal_plan import RehearsalPlan
+
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        self.assertTrue(editor.save_current(force=True))
+        plan = RehearsalPlan.from_payload(self.coordinator.current.rehearsal)
+        plan.add_song("New song from the room")
+        self.coordinator._pending[editor.record.id] = replace(
+            self.coordinator.current, rehearsal=plan.payload())
+        editor.title.setText("Library title")
+        self.assertTrue(editor.save_current())
+        saved = self._assert_editor_matches_saved(editor)
+        self.assertEqual(saved.rehearsal, plan.payload())
+        editor.title.setText("Another title")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self._assert_editor_matches_saved(editor).rehearsal, saved.rehearsal)
+
+    def test_reconciled_save_refreshes_newer_art_controls(self):
+        self.owner._apply_creator_profile_key("art")
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        self.assertTrue(editor.save_current(force=True))
+        art = dict(editor.art.payload(), brief="New brief from the room")
+        self.coordinator._pending[editor.record.id] = replace(self.coordinator.current, art=art)
+        editor.title.setText("Library title")
+        self.assertTrue(editor.save_current())
+        saved = self._assert_editor_matches_saved(editor)
+        self.assertEqual(editor.art.brief.toPlainText(), "New brief from the room")
+        editor.title.setText("Another title")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self._assert_editor_matches_saved(editor).art, saved.art)
+
     def test_remember_lesson_preserves_art_draft_and_saves_canonical_position_once(self):
         self.owner._apply_creator_profile_key("art")
         self.assertTrue(self.coordinator.ensure_current())
