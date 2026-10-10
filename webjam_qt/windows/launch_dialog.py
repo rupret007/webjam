@@ -18,7 +18,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QSize, QTimer, Qt
-from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeyEvent, QKeySequence, QImage, QPixmap
+from PySide6.QtGui import (
+    QAccessible,
+    QAccessibleEvent,
+    QAction,
+    QIcon,
+    QImage,
+    QKeyEvent,
+    QKeySequence,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -27,7 +36,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMenuBar,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -932,6 +940,7 @@ class LaunchDialog(QDialog):
         if not _is_pinned_jamulus_installer(self._jamulus_installer):
             self._jamulus_installer = ""
             self._install_jamulus_button.setEnabled(False)
+            self._update_music_setup_offer()
             self._installer_error.setText(
                 "The included Jamulus installer failed its integrity check. "
                 "Re-extract an official WebJam download and try again."
@@ -1173,29 +1182,44 @@ class LaunchDialog(QDialog):
         QTimer.singleShot(0, self, self._keep_door_cards_tabbable)
 
     def _build_menu(self, root: QVBoxLayout) -> None:
-        self._menu_bar = QMenuBar(self)
-        self._menu_bar.setAccessibleName("WebJam menu")
-        root.setMenuBar(self._menu_bar)
+        # The door stays Host / Join / paste-invite only. Offline workspace
+        # routes remain on hidden actions for tests and recovery flows, not
+        # as File / Help menu chrome on the first screen.
+        self._menu_bar = None
         self._workspace_actions = {}
         if self._allow_workspace_choices:
-            file_menu = self._menu_bar.addMenu("&File")
-            self._session_library_action = file_menu.addAction("Session library…")
+            self._session_library_action = QAction("Session library…", self)
             self._session_library_action.triggered.connect(self._open_session_library)
-            file_menu.addSeparator()
-            for key, label in (("music", "New Music Project…"),
-                               ("podcast_voice", "Podcast & Voice…"),
-                               ("review_rehearsal", "Review & Rehearsal…")):
-                action = file_menu.addAction(label.replace("&", "&&"))
+            for key, label in (
+                ("music", "New Music Project…"),
+                ("podcast_voice", "Podcast & Voice…"),
+                ("review_rehearsal", "Review & Rehearsal…"),
+            ):
+                action = QAction(label.replace("&", "&&"), self)
                 action.setData(key)
-                action.triggered.connect(lambda checked=False, key=key: self._open_workspace(key))
+                action.triggered.connect(
+                    lambda checked=False, key=key: self._open_workspace(key)
+                )
                 self._workspace_actions[key] = action
             new = self._workspace_actions["music"]
             new.setShortcut(QKeySequence.StandardKey.New)
             new.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        help_menu = self._menu_bar.addMenu("&Help")
-        self._setup_action = help_menu.addAction("Music setup…")
+        self._setup_action = QAction("Music setup…", self)
         self._setup_action.triggered.connect(self._show_music_setup)
-        self._setup_action.setEnabled(bool(self._jamulus_installer))
+        help_row = QHBoxLayout()
+        help_row.setContentsMargins(0, 0, 0, 0)
+        help_row.addStretch(1)
+        self._music_setup_link = QPushButton("Help")
+        self._music_setup_link.setObjectName("LaunchDoorHelp")
+        self._music_setup_link.setFlat(True)
+        self._music_setup_link.setAccessibleName("Help")
+        self._music_setup_link.setAccessibleDescription(
+            "Open Music setup for this Windows download."
+        )
+        self._music_setup_link.clicked.connect(self._show_music_setup)
+        help_row.addWidget(self._music_setup_link)
+        root.addLayout(help_row)
+        self._update_music_setup_offer()
 
     def _open_session_library(self) -> None:
         if self._submitting or not self._allow_workspace_choices:
@@ -1305,6 +1329,15 @@ class LaunchDialog(QDialog):
         layout.addWidget(back)
         layout.addStretch(1)
         return page
+
+    def _update_music_setup_offer(self) -> None:
+        offered = bool(self._jamulus_installer) and not self._submitting
+        if hasattr(self, "_setup_action"):
+            self._setup_action.setEnabled(offered)
+        link = getattr(self, "_music_setup_link", None)
+        if link is not None:
+            link.setVisible(bool(self._jamulus_installer))
+            link.setEnabled(offered)
 
     def _show_music_setup(self) -> None:
         if not self._submitting:
@@ -1594,6 +1627,8 @@ class LaunchDialog(QDialog):
         for action in self._workspace_actions.values():
             action.setEnabled(False)
         self._setup_action.setEnabled(False)
+        if hasattr(self, "_music_setup_link"):
+            self._music_setup_link.setEnabled(False)
         self._invite_input.clear()
         super().done(result)
 
@@ -1608,6 +1643,8 @@ class LaunchDialog(QDialog):
         for action in self._workspace_actions.values():
             action.setEnabled(False)
         self._setup_action.setEnabled(False)
+        if hasattr(self, "_music_setup_link"):
+            self._music_setup_link.setEnabled(False)
         self._join_button_primary.set_submission_locked(True)
         self._invite_input.setEnabled(False)
         self._creator_profile_selector.setEnabled(False)
@@ -1625,8 +1662,7 @@ class LaunchDialog(QDialog):
         self._submitting = False
         for action in getattr(self, "_workspace_actions", {}).values():
             action.setEnabled(True)
-        if hasattr(self, "_setup_action"):
-            self._setup_action.setEnabled(bool(self._jamulus_installer))
+        self._update_music_setup_offer()
         self._creator_profile_selector.setEnabled(True)
         self._apply_creator_profile_presentation()
         self._name_input.setEnabled(True)

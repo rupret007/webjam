@@ -121,13 +121,11 @@ def test_launch_hierarchy_is_one_primary_then_two_clear_alternatives(
         dialog = LaunchDialog(_settings(tmp_path))
     assert dialog.height() <= 540
     dialog.resize(460, 600)
-    dialog._menu_bar.setNativeMenuBar(False)
     dialog.show()
     styled_qapp.processEvents()
     try:
-        assert [action.text() for action in dialog._menu_bar.actions()] == ["&File", "&Help"]
-        assert dialog._menu_bar.isVisibleTo(dialog)
-        assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
+        assert dialog._menu_bar is None
+        assert not dialog._music_setup_link.isVisibleTo(dialog)
         assert dialog.minimumWidth() <= 460
         assert dialog.minimumHeight() <= 600
         assert dialog._host_button.objectName() == "LaunchPrimary"
@@ -181,13 +179,11 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
 ):
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(_settings(tmp_path))
-    dialog._menu_bar.setNativeMenuBar(False)
     dialog.show()
     styled_qapp.processEvents()
     try:
-        assert [action.text() for action in dialog._menu_bar.actions()] == ["&File", "&Help"]
-        assert dialog._menu_bar.isVisibleTo(dialog)
-        assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
+        assert dialog._menu_bar is None
+        assert not dialog._music_setup_link.isVisibleTo(dialog)
         assert dialog.width() <= 760
         assert dialog.height() <= 520
         assert dialog.height() + 40 <= 600
@@ -236,13 +232,11 @@ def test_art_door_keeps_two_starts_and_host_join_inside_760_by_600(
     settings.last_creator_profile_key = "art"
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(settings)
-    dialog._menu_bar.setNativeMenuBar(False)
     dialog.show()
     styled_qapp.processEvents()
     try:
-        assert [action.text() for action in dialog._menu_bar.actions()] == ["&File", "&Help"]
-        assert dialog._menu_bar.isVisibleTo(dialog)
-        assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
+        assert dialog._menu_bar is None
+        assert not dialog._music_setup_link.isVisibleTo(dialog)
         assert dialog.width() <= 760
         assert dialog.height() + 40 <= 600
         assert dialog._choice_helper.isVisibleTo(dialog)
@@ -283,13 +277,12 @@ def test_windows_launch_name_roles_and_installer_do_not_overlap_at_default_size(
         ),
     ):
         dialog = LaunchDialog(_settings(tmp_path))
-    dialog._menu_bar.setNativeMenuBar(False)
     dialog.show()
     styled_qapp.processEvents()
     try:
-        assert [action.text() for action in dialog._menu_bar.actions()] == ["&File", "&Help"]
-        assert dialog._menu_bar.isVisibleTo(dialog)
-        assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
+        assert dialog._menu_bar is None
+        assert dialog._music_setup_link.isVisibleTo(dialog)
+        assert dialog.rect().contains(_rect_in(dialog._music_setup_link, dialog))
         for hidden in (
             dialog._name_label,
             dialog._name_input,
