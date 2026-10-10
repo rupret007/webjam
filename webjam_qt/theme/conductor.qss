@@ -813,8 +813,8 @@ QLineEdit#CanvasChatInput {
 }
 
 #LaunchHelper {
-    color: ${COLOR_TEXT_MUTED};
-    font-size: ${FONT_SIZE_SM}px;
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_MD}px;
     padding-top: ${SPACE_XS}px;
 }
 
