@@ -2481,14 +2481,14 @@ class ApplicationController(QObject):
         profile_key: object,
         *,
         host_owned: bool = False,
-    ) -> None:
-        """Apply one canonical profile; authenticated host state wins for guests."""
+    ) -> bool:
+        """Return whether the profile and its ownership were successfully adopted."""
 
         if getattr(self, "_shutdown", False):
-            return
+            return False
         canonical = canonical_creator_profile_key(profile_key)
         if canonical is None:
-            return
+            return False
         owner_changed = bool(host_owned) != bool(
             getattr(self, "_creator_profile_host_owned", False)
         )
@@ -2507,11 +2507,11 @@ class ApplicationController(QObject):
             or "music"
         )
         if canonical == active_key and not owner_changed:
-            return
+            return True
         library = getattr(self, "session_library", None)
         if canonical != active_key and library is not None:
             if library.profile_changing() is False:
-                return
+                return False
         with ApplicationController._defer_session_pulse_refresh(self):
             if canonical != active_key:
                 self._chat_profile_generation = (
@@ -2544,6 +2544,7 @@ class ApplicationController(QObject):
             shared_track_available = getattr(self, "_shared_track_host_available", None)
             if callable(set_shared_track) and callable(shared_track_available):
                 set_shared_track(shared_track_available())
+        return True
 
     def _guest_media_state(self) -> tuple[GuestMediaState, EvidenceState]:
         """Map the guest transfer owner's finite facts without exposing errors."""

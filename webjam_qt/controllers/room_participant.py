@@ -169,6 +169,7 @@ class RoomParticipantController:
         self.native_state = None
         self.native_received_at = 0.0
         self.native_applied = None
+        self._native_admission_pending = False
         self.native_wait_started = 0.0
         self.publisher = None
         self.stopping = False
@@ -654,6 +655,7 @@ class RoomParticipantController:
         self.native_source = None
         self.native_state = None
         self.native_applied = None
+        self._native_admission_pending = False
         self.native_generation = 0
         self.native_wait_started = 0.0
         self.probing = role == "guest"
@@ -706,6 +708,14 @@ class RoomParticipantController:
         if (self.probing and source is self.app._remote_session
                 and generation == self.generation and not self.blocked
                 and getattr(source.snapshot, "generation", 0) == native_generation):
+            if (self._native_admission_pending
+                    and self._native_state_current(source, source.snapshot, self.native_state)):
+                # A fresh authenticated profile was received. Local media work
+                # vetoed adoption; that is not an unsupported peer protocol.
+                QTimer.singleShot(1000, lambda: self.check_native_timeout(
+                    source, native_generation, generation,
+                ))
+                return
             from services.remote_session_runtime import RemoteSessionErrorCode
             source.mark_connection_lost(expected_generation=native_generation,
                                         error_code=RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED)
@@ -713,20 +723,36 @@ class RoomParticipantController:
                 guest_enrollment=True, error_code=RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED,
             )
 
+    def _native_state_current(self, source, snapshot, state):
+        current = getattr(source, "snapshot", None)
+        return bool(
+            state is not None and state is self.native_state
+            and source is self.native_source and source is self.app._remote_session
+            and not self.blocked and current is not None
+            and snapshot.generation == current.generation == self.native_generation
+            and snapshot.role.value == current.role.value == "guest"
+            and snapshot.phase.value == current.phase.value == "connected"
+            and 0 <= time.monotonic() - self.native_received_at < 5.0
+        )
+
     def apply_native(self, source, snapshot):
         state = self.native_state
-        if (state is None or snapshot.generation != self.native_generation
-                or source is not self.app._remote_session or self.blocked):
+        if not self._native_state_current(source, snapshot, state):
             return
         key = (source, snapshot.generation, state.revision)
         if key == self.native_applied:
             return
-        if time.monotonic() - self.native_received_at >= 5.0:
+        if self.app._apply_creator_profile_key(state.creator_profile_key, host_owned=True) is not True:
+            self._native_admission_pending = True
             return
+        # Profile adoption refreshes UI owners. Leaving or a newer room receipt
+        # during that work must win over this callback's admission.
+        if not self._native_state_current(source, snapshot, state):
+            return
+        self._native_admission_pending = False
         self.native_applied = key
         self.probing = False
         self.borrowed_start = state.art_start_key
-        self.app._apply_creator_profile_key(state.creator_profile_key, host_owned=True)
         if state.creator_profile_key == "art":
             self.state = ArtRoomState.CONNECTED
             self.app._remote_invitation = None
@@ -1037,6 +1063,15 @@ class RoomParticipantController:
         if self.blocked:
             self.retire_lesson_requests()
             return
+        if self._native_admission_pending:
+            library = getattr(self.app, "session_library", None)
+            if not (library is not None and (
+                library.media_operation_pending or library.studio_media_pending
+            )):
+                source = self.native_source
+                snapshot = getattr(source, "snapshot", None)
+                if snapshot is not None:
+                    self.apply_native(source, snapshot)
         if self.role == "host" and self.app.creator_profile.key == "art":
             owner = self.app._remote_invite_owner
             if owner is not None:
@@ -1106,6 +1141,7 @@ class RoomParticipantController:
         self.probe_failed = False
         self.native_state = None
         self.native_source = None
+        self._native_admission_pending = False
         self.publisher = None
         self.borrowed_start = ""
         self.state = ArtRoomState.NONE
