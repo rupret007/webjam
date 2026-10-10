@@ -61,7 +61,7 @@ def test_empty_paint_along_offers_shared_lesson_without_requiring_a_file(qapp, h
         assert len(offered) == 1
         assert offered[0].objectName() == "PrimaryButton"
         # The audible route comes first; silent reference controls remain.
-        assert offered[0].y() < panel._headline.y()
+        assert panel._headline.y() < offered[0].y()
         assert offered[0].geometry().bottom() <= panel.height()
     finally:
         panel.close()

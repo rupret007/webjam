@@ -239,9 +239,16 @@ QLabel#PaintAlongRole {
 }
 
 QLabel#PaintAlongHeadline {
-    color: ${COLOR_TEXT_SECONDARY};
-    font-size: ${FONT_SIZE_MD}px;
+    color: ${COLOR_TEXT_PRIMARY};
+    font-size: ${FONT_SIZE_LG}px;
     font-weight: ${FONT_WEIGHT_SEMIBOLD};
+}
+
+QLabel#PaintAlongSilentSection {
+    color: ${COLOR_TEXT_MUTED};
+    font-size: ${FONT_SIZE_XS}px;
+    font-weight: ${FONT_WEIGHT_SEMIBOLD};
+    font-family: ${FONT_FAMILY_MONO};
 }
 
 QLabel#PaintAlongStatus, QLabel#PaintAlongHint, QLabel#PaintAlongClock {
@@ -261,8 +268,8 @@ QFrame#PaintAlongSurface {
 QLabel#PaintAlongPlaceholder {
     color: ${COLOR_TEXT_MUTED};
     background-color: transparent;
-    font-size: ${FONT_SIZE_LG}px;
-    font-weight: ${FONT_WEIGHT_MEDIUM};
+    font-size: ${FONT_SIZE_SM}px;
+    font-weight: ${FONT_WEIGHT_NORMAL};
     /* Embedded video surfaces can be only 40px tall. Reserve room for the
        status text instead of clipping it between two 24px padding bands. */
     padding: ${SPACE_XS}px ${SPACE_XL}px;

@@ -94,10 +94,11 @@ def test_the_host_panel_opens_on_the_no_video_path(host_dialog):
     assert host_dialog.windowTitle() == "Paint along"
     assert host_dialog.minimumWidth() == 720
     assert host_dialog.minimumHeight() == 520
-    assert host_dialog._headline.text() == "Or choose a silent reference"
+    assert host_dialog._headline.text() == "Pick a shared lesson or a silent video file."
     assert host_dialog._status.text() == (
-        "Choose a local video or YouTube link below for silent playback inside WebJam. You control it."
+        "Choose a local video or YouTube link for silent playback. You control it in WebJam."
     )
+    assert not host_dialog._silent_section.isHidden()
     assert host_dialog._surface_holder.isHidden() is False
     assert host_dialog._surface_placeholder.text() == (
         "Your silent process video appears here"
@@ -156,7 +157,7 @@ def test_the_host_panel_shows_a_failure_instead_of_a_stale_source(host_dialog):
         )
     )
 
-    assert host_dialog._headline.text() == "Or choose a silent reference"
+    assert host_dialog._headline.text() == "Pick a shared lesson or a silent video file."
     assert "couldn't open that video" in host_dialog._status.text()
     assert host_dialog._play_button.isEnabled() is False
     assert host_dialog._clock.text() == "0:00 / 0:00"
@@ -225,7 +226,7 @@ def test_a_follower_panel_offers_no_transport_at_all(guest_dialog):
 
 def test_a_follower_panel_starts_on_the_no_video_path(guest_dialog):
     assert guest_dialog.windowTitle() == "Paint along"
-    assert guest_dialog._headline.text() == "Optional silent reference"
+    assert guest_dialog._headline.text() == "Pick a shared lesson or a silent video file."
     assert "Open your copy" in guest_dialog._status.text()
     assert guest_dialog._surface_placeholder.text() == (
         "Your silent process video appears here"
