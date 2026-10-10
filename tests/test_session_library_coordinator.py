@@ -192,6 +192,28 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertEqual(self.library.load(base.id).take_links[0]["status"], "complete")
         self.assertIsNone(self.library.load(copied.id).take_links[0].get("status"))
 
+    def test_copy_refuses_to_corrupt_opaque_legacy_historical_origins(self):
+        # Version-1 records permit arbitrary bounded link metadata under
+        # `historical_origins` (core.session_library only assigns it meaning
+        # once import_provenance is non-empty, which a plain copy never has).
+        # A pending reservation's live ownership fields still need detaching
+        # on copy; that must never reinterpret this legacy value as a list
+        # it can merge into.
+        self.coordinator.start_session()
+        self.coordinator.recording_started("legacy-take", "legacy-session")
+        base = self.coordinator.current
+        legacy_link = dict(base.take_links[0], historical_origins={"note": "keep"})
+        base = self.library.save(replace(base, take_links=(legacy_link,)))
+        self.coordinator.current = base
+        editor = self._editor()
+        with patch.object(QInputDialog, "getText", return_value=("Separate copy", True)):
+            editor._copy()
+        self.assertIn("could not be saved", editor.status.text())
+        unchanged = self.library.load(base.id)
+        self.assertEqual(unchanged.take_links[0]["historical_origins"], {"note": "keep"})
+        self.assertEqual(unchanged.take_links[0]["recording_session_id"], "legacy-session")
+        self.assertEqual([record.id for record in self.library.list()], [base.id])
+
     def test_competing_notes_stay_in_editor_and_pending_without_a_disk_overwrite(self):
         self.window.session_canvas.set_notes("Base Notes")
         self.coordinator.ensure_current()

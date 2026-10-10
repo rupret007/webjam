@@ -28,6 +28,7 @@ from core.session_library import (
     SessionRecord,
     decode_session_record,
     encode_session_record,
+    validate_historical_origins,
 )
 
 MAX_WORKSPACE_BACKUP_BYTES = MAX_SESSION_RECORD_BYTES + 1024
@@ -65,6 +66,18 @@ def detach_take_ownership(take_links, source_workspace_id: str) -> tuple[dict, .
         historical = {key: reference[key] for key in _OWNERSHIP_FIELDS if key in reference}
         if historical:
             origins = reference.get("historical_origins", [])
+            # A bare `[]` default is fine to extend. Anything else present
+            # must already match the supported shape before it is merged
+            # into — opaque pre-v2 legacy data (a string, a dict, null) must
+            # never be reinterpreted as a list; refuse instead of corrupting
+            # or discarding it.
+            if origins or not isinstance(origins, list):
+                try:
+                    validate_historical_origins(origins)
+                except SessionLibraryError as exc:
+                    raise WorkspaceBackupError(
+                        "Historical take origins have an unsupported legacy shape; preserve the original."
+                    ) from exc
             if len(origins) >= MAX_IMPORT_HISTORY:
                 raise WorkspaceBackupError("Historical take origins are full; no history was discarded.")
             reference["historical_origins"] = [*origins, {"source_workspace_id": source_workspace_id, **historical}]
@@ -88,13 +101,17 @@ def _portable(record: SessionRecord) -> None:
         if not set(reference) <= _TAKE_FIELDS:
             raise WorkspaceBackupError("Workspace take link contains unsupported fields.")
         if "historical_origins" in reference:
-            origins = reference["historical_origins"]
             # A copy's detached ownership (detach_take_ownership) is well-formed
             # without import_provenance; only truly opaque/legacy (pre-v2) shapes
-            # have no supported meaning here.
-            if (not isinstance(origins, list) or not 1 <= len(origins) <= MAX_IMPORT_HISTORY
-                    or any(not isinstance(origin, dict) or "source_workspace_id" not in origin for origin in origins)):
-                raise WorkspaceBackupError("Legacy historical take fields have no supported provenance; preserve the original.")
+            # have no supported meaning here. Use the exact same shape rules
+            # core.session_library enforces once import_provenance is non-empty,
+            # so nothing can export here that would fail validation on import.
+            try:
+                validate_historical_origins(reference["historical_origins"])
+            except SessionLibraryError as exc:
+                raise WorkspaceBackupError(
+                    "Legacy historical take fields have no supported provenance; preserve the original."
+                ) from exc
         if "validated" in reference and type(reference["validated"]) is not bool:
             raise WorkspaceBackupError("Workspace take validation must be boolean.")
     for recap in record.recaps:
