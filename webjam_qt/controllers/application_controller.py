@@ -8091,6 +8091,10 @@ class ApplicationController(QObject):
     def _accept_band_invitation(self, invite: BandInvite, *, meeting_url: str = "") -> bool:
         """Preserve the existing v1/v2 same-LAN join flow."""
 
+        # Keep the current room's vocabulary through asynchronous cleanup,
+        # even if applying the incoming invitation replaces the profile.
+        switch_is_art = _creator_profile_for_controller(self).key == "art"
+        session_noun = "room" if switch_is_art else "jam"
         busy = bool(self._is_jamulus_running() or self.bridge.hosted_server_alive()
                     or self._room_is_busy_for_invitation())
         switch_was_hosting = bool(getattr(self.settings, "host_server_enabled", False))
@@ -8116,8 +8120,8 @@ class ApplicationController(QObject):
         if busy:
             reply = QMessageBox.question(
                 self.window,
-                "Join this jam?",
-                "WebJam will safely end your current jam, then join the new one.",
+                f"Join this {session_noun}?",
+                f"WebJam will safely end your current {session_noun}, then join the new one.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -8142,10 +8146,12 @@ class ApplicationController(QObject):
             switch_generation = self._invite_switch_generation
 
         self.window.session_hud.set_state(
-            "Joining your jam…",
-            "WebJam is switching the band connection safely."
+            f"Joining your {session_noun}…",
+            ("WebJam is switching the room connection safely."
+             if switch_is_art else "WebJam is switching the band connection safely.")
             if busy
-            else "WebJam is connecting your music.",
+            else ("WebJam is connecting your room."
+                  if switch_is_art else "WebJam is connecting your music."),
         )
 
         def _apply_and_launch(invitation: BandInvite, conversation_url: str) -> bool:
@@ -8165,7 +8171,7 @@ class ApplicationController(QObject):
                         "connection. Try ending or leaving again, then reopen "
                         "the invitation."
                     ),
-                    title="WebJam couldn’t open the new jam safely",
+                    title=f"WebJam couldn’t open the new {session_noun} safely",
                     detail=(
                         "The previous private connection is still protected. "
                         "Finish cleanup before opening the new invitation."
@@ -8269,28 +8275,31 @@ class ApplicationController(QObject):
             self._complete_pocket_stage_session_end(succeeded=not cleanup_unresolved)
             self.window.participant_grid.set_session_state(SessionUiState.stop_failed())
             self.window.session_hud.set_state(
-                "WebJam couldn’t open the new jam safely",
+                f"WebJam couldn’t open the new {session_noun} safely",
                 (
                     "Some previous session services still need to stop. Try "
                     "ending or leaving again before opening the invitation."
                     if cleanup_unresolved
-                    else "The previous music connection was stopped, but the "
+                    else f"The previous {'room' if switch_is_art else 'music'} "
+                    "connection was stopped, but the "
                     "new invitation could not be applied safely. Quit and "
                     "reopen WebJam, then open the invitation again."
                 ),
             )
             self.window.session_strip.set_audio_state(
-                ("Try End Session" if switch_was_hosting else "Try Leave Jam")
+                (("Try End Room" if switch_was_hosting else "Try Leave Room")
+                 if switch_is_art
+                 else ("Try End Session" if switch_was_hosting else "Try Leave Jam"))
                 if cleanup_unresolved
-                else "Start Session",
+                else ("Start Room" if switch_is_art else "Start Session"),
                 enabled=cleanup_unresolved,
             )
             self.window.flash_message(
                 (
-                    "The jam switch did not finish safely. Try ending or "
+                    f"The {session_noun} switch did not finish safely. Try ending or "
                     "leaving again, then reopen the invitation."
                     if cleanup_unresolved
-                    else "The jam switch did not finish. Quit and reopen "
+                    else f"The {session_noun} switch did not finish. Quit and reopen "
                     "WebJam, then open the invitation again."
                 ),
                 ms=8000,
