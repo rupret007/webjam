@@ -916,12 +916,12 @@ QPushButton#LaunchSecondary:disabled:hover {
     border-color: ${COLOR_BORDER_SUBTLE};
 }
 
-/* Orange marks the selected profile/activity. Keyboard focus on a different
-   choice is white, so moving focus never looks like changing the room. */
+/* Profile selection is a filled surface; keyboard focus is a white outline,
+   including on the selected profile. Reserve its width to avoid text shifts. */
 QCommandLinkButton#LaunchProfileCard {
     background-color: ${COLOR_BG_INPUT};
     color: ${COLOR_TEXT_PRIMARY};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border: 2px solid ${COLOR_BORDER_SUBTLE};
     border-radius: ${RADIUS_LG}px;
     text-align: left;
     padding: ${SPACE_XS}px ${SPACE_MD}px;
@@ -934,13 +934,13 @@ QCommandLinkButton#LaunchProfileCard:hover {
 }
 
 QCommandLinkButton#LaunchProfileCard:checked {
-    background-color: ${COLOR_BG_CARD};
+    background-color: ${COLOR_ACCENT_PRIMARY};
     color: ${COLOR_TEXT_PRIMARY};
-    border: 2px solid ${COLOR_ACCENT_PRIMARY};
+    border-color: ${COLOR_ACCENT_PRIMARY};
 }
 
-QCommandLinkButton#LaunchProfileCard:focus:!checked {
-    border: 2px solid ${COLOR_TEXT_PRIMARY};
+QCommandLinkButton#LaunchProfileCard:focus {
+    border-color: ${COLOR_TEXT_PRIMARY};
 }
 
 QCommandLinkButton#LaunchProfileCard:disabled {
