@@ -631,6 +631,17 @@ class SessionLibraryDialog(QDialog):
         self._dirty = False
         self._base_record = deepcopy(self.record)
         self.pending_records.pop(self.record.id, None)
+        if self.record.title != edited.title or self.record.notes != edited.notes:
+            # The save reconciled newer live Notes/title into the saved record;
+            # reflect that here so a later edit-and-save starts from the saved
+            # content instead of reverting disk and the live workspace to this
+            # editor's stale text.
+            self._loading = True
+            try:
+                self.title.setText(self.record.title)
+                self.notes.setPlainText(self.record.notes)
+            finally:
+                self._loading = False
         self.summary.setPlainText(workspace_summary(self.record))
         self._render_takes()
         self.status.setText("Saved on this computer.")
