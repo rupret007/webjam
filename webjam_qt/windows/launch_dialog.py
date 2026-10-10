@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QSize, QTimer, Qt
-from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeyEvent, QKeySequence, QImage, QPixmap
+from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeyEvent, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -165,6 +165,17 @@ _ART_PROFILE_SUMMARY = "Make art together."
 _MUSIC_PROFILE_SUMMARY = "Write songs or play live together."
 _START_CARD_HEIGHT = 64
 _PAINT_ALONG_MARK_SIZE = QSize(72, 48)
+
+
+class _HelpLinkButton(QPushButton):
+    """Enter opens focused Help without taking Host/Join's default action."""
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.click()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class _InvitationInput(QLineEdit):
@@ -555,6 +566,14 @@ class LaunchDialog(QDialog):
         brand_row.addWidget(self._logo)
         brand_row.addWidget(self._wordmark)
         brand_row.addStretch(1)
+        self._help_link = _HelpLinkButton("Help")
+        self._help_link.setObjectName("QuietButton")
+        self._help_link.setAccessibleName("Help")
+        self._help_link.setFlat(True)
+        self._help_link.setAutoDefault(False)
+        self._help_link.setVisible(bool(self._jamulus_installer))
+        self._help_link.clicked.connect(self._show_music_setup)
+        brand_row.addWidget(self._help_link)
         root.addLayout(brand_row)
 
         name_row = QHBoxLayout()
@@ -597,7 +616,7 @@ class LaunchDialog(QDialog):
         self._setup_page = self._build_setup_page()
         self._pages.addWidget(self._setup_page)
         root.addWidget(self._pages, 1)
-        self._build_menu(root)
+        self._build_menu()
         self.setTabOrder(self._name_input, self._art_profile_card)
         self.setTabOrder(self._art_profile_card, self._music_profile_card)
         previous: QWidget = self._music_profile_card
@@ -1172,10 +1191,12 @@ class LaunchDialog(QDialog):
         self._keep_door_cards_tabbable()
         QTimer.singleShot(0, self, self._keep_door_cards_tabbable)
 
-    def _build_menu(self, root: QVBoxLayout) -> None:
+    def _build_menu(self) -> None:
+        # Retain the internal workspace dispatch actions for existing owners,
+        # but give the live door no File menu, native menu, or New shortcut.
         self._menu_bar = QMenuBar(self)
-        self._menu_bar.setAccessibleName("WebJam menu")
-        root.setMenuBar(self._menu_bar)
+        self._menu_bar.setNativeMenuBar(False)
+        self._menu_bar.hide()
         self._workspace_actions = {}
         if self._allow_workspace_choices:
             file_menu = self._menu_bar.addMenu("&File")
@@ -1189,13 +1210,16 @@ class LaunchDialog(QDialog):
                 action.setData(key)
                 action.triggered.connect(lambda checked=False, key=key: self._open_workspace(key))
                 self._workspace_actions[key] = action
-            new = self._workspace_actions["music"]
-            new.setShortcut(QKeySequence.StandardKey.New)
-            new.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         help_menu = self._menu_bar.addMenu("&Help")
         self._setup_action = help_menu.addAction("Music setup…")
         self._setup_action.triggered.connect(self._show_music_setup)
         self._setup_action.setEnabled(bool(self._jamulus_installer))
+        self._help_link.setEnabled(self._setup_action.isEnabled())
+        self._setup_action.changed.connect(
+            lambda: self._help_link.setEnabled(self._setup_action.isEnabled())
+        )
+        for action in self._menu_bar.actions():
+            action.setVisible(False)
 
     def _open_session_library(self) -> None:
         if self._submitting or not self._allow_workspace_choices:
