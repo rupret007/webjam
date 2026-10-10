@@ -606,6 +606,32 @@ class SessionLibraryDialog(QDialog):
             actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
             blockers=pulse.blockers, rehearsal=self.rehearsal.payload(), art=self.art.payload())
 
+    def _sync_saved_editor(self):
+        """Show accepted merge values before they become the next edit baseline."""
+        self._loading = True
+        try:
+            # Leave unchanged widgets alone to retain selection and undo state.
+            if self.title.text() != self.record.title:
+                self.title.setText(self.record.title)
+            if self.notes.toPlainText() != self.record.notes:
+                cursor = self.notes.textCursor()
+                anchor, position = cursor.anchor(), cursor.position()
+                scroll = self.notes.verticalScrollBar().value()
+                self.notes.setPlainText(self.record.notes)
+                cursor = self.notes.textCursor()
+                end = self.notes.document().characterCount() - 1
+                cursor.setPosition(min(anchor, end))
+                cursor.setPosition(min(position, end), cursor.MoveMode.KeepAnchor)
+                self.notes.setTextCursor(cursor)
+                self.notes.verticalScrollBar().setValue(scroll)
+            if self.rehearsal.payload() != self.record.rehearsal:
+                self.rehearsal.load_payload(self.record.rehearsal)
+            if self.art.payload() != self.record.art:
+                self.art.load_payload(self.record.art,
+                    defer_reference_checks=bool(self.record.import_provenance))
+        finally:
+            self._loading = False
+
     def save_current(self, *, force: bool = False, _operation_token=None) -> bool:
         """Persist editor changes; ``force`` reconciles even a clean editor.
 
@@ -628,6 +654,7 @@ class SessionLibraryDialog(QDialog):
         except (OSError, ValueError) as error:
             self.status.setText(f"Changes are still here but not saved: {error} Use Save to retry or Save as copy.")
             return False
+        self._sync_saved_editor()
         self._dirty = False
         self._base_record = deepcopy(self.record)
         self.pending_records.pop(self.record.id, None)

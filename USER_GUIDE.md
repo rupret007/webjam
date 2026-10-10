@@ -19,6 +19,8 @@ or **More → Session library…** in a room. Choose the new workspace's profile
 then **New workspace…** and a title. The **Notes**, **Rehearsal plan**, **Art project**,
 **Summary**, and **Takes** tabs keep the work appropriate to that profile.
 Changes save locally; check the save status and use **Save** before leaving.
+When a save combines Library edits with changes from the room, the Library
+shows the saved values so your next edit keeps that work.
 Search finds previous work. **Continue** brings its saved context
 back into the app; it does not connect a room or start recording. **Save as
 copy…** makes a separate workspace. Invitations and meeting credentials are
