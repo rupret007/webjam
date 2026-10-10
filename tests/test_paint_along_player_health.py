@@ -315,3 +315,127 @@ def test_backend_teardown_details_are_not_logged(player, caplog):
     records = [r for r in caplog.records if r.name == "webjam.qt.reference_video_player"]
     assert len(records) == 1
     assert records[0].exc_info is None
+
+
+@pytest.mark.parametrize("status, expected", [
+    (_QT_STATUS.EndOfMedia, "ended"),
+    (_QT_STATUS.BufferingMedia, "buffering"),
+    (_QT_STATUS.StalledMedia, "buffering"),
+    (_QT_STATUS.LoadingMedia, "unknown"),
+    (_QT_STATUS.LoadedMedia, "unknown"),
+    (_QT_STATUS.BufferedMedia, "unknown"),
+    (_QT_STATUS.NoMedia, "unknown"),
+])
+def test_local_completion_observation_uses_media_status_not_position(player, status, expected):
+    player.load(Path("lesson.mp4"))
+    backend = player.media_player
+    backend.position_ms = backend.duration_ms
+    backend.status = status
+    calls_before = list(backend.calls)
+
+    assert player.playback_state() == expected
+    assert backend.calls == calls_before  # Observation never drives transport.
+    assert player.muted
+
+
+@pytest.mark.parametrize("fault", ["error", "invalid_media", "closed"])
+def test_local_completion_observation_fails_closed(player, fault):
+    player.load(Path("lesson.mp4"))
+    player.media_player.status = _QT_STATUS.EndOfMedia
+    if fault == "error":
+        _fail(player.media_player)
+    elif fault == "invalid_media":
+        player.media_player.status = _QT_STATUS.InvalidMedia
+    else:
+        player.close()
+    with pytest.raises(ReferenceVideoPlayerError):
+        player.playback_state()
+
+
+@pytest.mark.parametrize("final_position_ms", [8_950, 9_000])
+def test_local_completion_reaches_host_guest_and_explicit_transport(player, tmp_path, final_position_ms):
+    from core.reference_video import ReferenceVideoState
+    from core.session_transfer import SessionControlState
+    from tests.test_reference_video_coordinator import (
+        Clock, FakeHostPeer, FakePlayer, HostState, SESSION_ID, SESSION_KEY,
+        make_coordinator, write_video,
+    )
+    from webjam_qt.controllers.reference_video_coordinator import ReferenceVideoCoordinator
+    from webjam_qt.windows.reference_video import ReferenceVideoDialog
+
+    clock = Clock()
+    peer = FakeHostPeer()
+    dialog = ReferenceVideoDialog(hosting=True)
+    host = ReferenceVideoCoordinator(
+        player_factory=lambda: player, host_peer_provider=lambda: peer,
+        clock=clock, on_host_snapshot=dialog.set_host_snapshot,
+    )
+    guest_player = FakePlayer(duration_s=9.0)
+    guest, _, _, _ = make_coordinator(players=[guest_player], clock=clock)
+    control = SessionControlState(tmp_path, SESSION_ID)
+
+    def deliver():
+        guest.observe_host_state(HostState(control.publish_reference_video(**peer.published[-1])))
+        guest.tick()
+
+    try:
+        path = write_video(tmp_path / "lesson.mp4")
+        host.begin_host(session_id=SESSION_ID, session_key=SESSION_KEY)
+        guest.begin_guest(session_id=SESSION_ID, session_key=SESSION_KEY)
+        host.share(str(path))
+        host.play()
+        deliver()
+        guest.open_local_copy(str(path))
+        guest.tick()
+        assert guest_player.state == "playing"
+        generation = host.host_snapshot.playback_generation
+
+        backend = player.media_player
+        backend.position_ms = final_position_ms
+        backend.status = _QT_STATUS.EndOfMedia
+        calls_before = list(backend.calls)
+        host.tick()
+
+        assert host.host_snapshot.state is ReferenceVideoState.PAUSED
+        assert host.host_snapshot.playback_generation == generation
+        assert peer.published[-1]["state"] == "paused"
+        assert peer.published[-1]["shared"] is True
+        assert peer.published[-1]["position_s"] == final_position_ms / 1000
+        assert not peer.published[-1]["needs_attention"]
+        assert backend.calls == calls_before + ["position"]
+        assert dialog._status.text() == "Paused."
+        assert dialog._play_button.text() == "Play"
+        assert not dialog._play_button.isHidden() and dialog._play_button.isEnabled()
+        assert dialog._pause_button.isHidden()
+        assert dialog._stop_action.text() == "Restart from the beginning"
+        assert dialog._stop_action.isVisible() and dialog._stop_action.isEnabled()
+        assert dialog._position.isEnabled()
+        deliver()
+        assert not guest.follow_snapshot.should_play
+        assert guest.follow_snapshot.target_position_s == final_position_ms / 1000
+        assert guest_player.state == "paused"
+
+        # Heartbeats retain the final frame; neither side restarts on its own.
+        clock.now += 1
+        host.tick()
+        deliver()
+        assert peer.published[-1]["position_s"] == final_position_ms / 1000
+        assert not guest.follow_snapshot.should_play
+        assert backend.calls == calls_before + ["position"]
+
+        dialog.stop_requested.connect(host.stop)
+        dialog.play_requested.connect(host.play)
+        dialog._stop_action.trigger()
+        assert host.host_snapshot.position_s == 0
+        assert host.host_snapshot.state is ReferenceVideoState.READY
+        dialog._play_button.click()
+        assert host.host_snapshot.state is ReferenceVideoState.PLAYING
+        assert host.host_snapshot.playback_generation == generation + 1
+        deliver()
+        assert guest.follow_snapshot.should_play
+        assert guest_player.position == 0
+        assert guest_player.state == "playing"
+    finally:
+        guest.end()
+        host.end()
+        dialog.deleteLater()

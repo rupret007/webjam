@@ -276,6 +276,31 @@ def test_host_tick_republishes_the_moving_position(tmp_path):
     assert peer.published[-1]["position_s"] == pytest.approx(9.5)
 
 
+@pytest.mark.parametrize("observed", ["ended", "buffering", "paused", "stopped", "unknown"])
+def test_local_host_only_publishes_completion_on_explicit_backend_end(tmp_path, observed):
+    peer = FakeHostPeer()
+    player = FakePlayer()
+    observations = []
+
+    def playback_state():
+        observations.append(observed)
+        return observed
+
+    player.playback_state = playback_state
+    coordinator, _, _, _ = make_coordinator(peer=peer, players=[player])
+    coordinator.begin_host(session_id=SESSION_ID, session_key=SESSION_KEY)
+    coordinator.share(str(write_video(tmp_path / "lesson.mp4")))
+    coordinator.play()
+    player.position = player.duration_s
+    coordinator.tick()
+
+    assert observations == [observed]  # One bounded sample per playing tick.
+    assert peer.published[-1]["state"] == ("paused" if observed == "ended" else "playing")
+    assert peer.published[-1]["position_s"] == player.duration_s
+    assert not peer.published[-1]["needs_attention"]
+    assert player.seeks == []
+
+
 # ---------------------------------------------------------------------------
 # Following
 # ---------------------------------------------------------------------------
