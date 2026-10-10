@@ -14005,7 +14005,17 @@ class ApplicationController(QObject):
                 if video_available and coordinator.following:
                     dialog.set_follow_snapshot(coordinator.follow_snapshot)
         if not room_available:
-            self._clear_shared_lesson_context()
+            room = getattr(self, "_room_participant", None)
+            if (
+                coordinator.following and room is not None
+                and self._reference_video_binding == self._reference_video_identity()
+                and room._lesson_current(room._lesson_binding)
+            ):
+                # A temporary observation loss disables requests without
+                # retiring this guest's same-room lesson ownership.
+                room.project_lesson_requests()
+            else:
+                self._clear_shared_lesson_context()
         if not video_available:
             self._clear_reference_video_notice()
         return video_available
