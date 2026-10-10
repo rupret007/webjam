@@ -482,6 +482,38 @@ class ReferenceVideoHostController:
         self._source = None
         return self._notify(self._snapshot_locked())
 
+    def _check_local_source_locked(self) -> ReferenceVideoSnapshot | None:
+        """Retire changed local proof without re-reading the video bytes."""
+
+        if (self._state not in _HOST_LOADED_STATES
+                or not isinstance(self._source, ReferenceVideoSource)):
+            return None
+        try:
+            if file_identity_token(self._source.path) == self._source._identity_token:
+                return None
+        except OSError:
+            pass
+        self._load_generation += 1
+        operation = self._load_generation
+        # Stop may dispatch Qt events. Retire the proof first so a nested
+        # tick cannot publish it or try to stop the same source again.
+        self._state = ReferenceVideoState.FAILED
+        self._source = None
+        self._identity_digest = ""
+        self._position_s = self._duration_s = 0.0
+        self._error = "WebJam lost track of that video on this computer."
+        try:
+            self._player.stop()
+        except Exception:
+            if operation == self._load_generation:
+                self._error = (
+                    "WebJam couldn't stop that video on this computer, so it "
+                    "needs attention before sharing again."
+                )
+        if operation != self._load_generation:
+            return self._snapshot_locked()
+        return self._fail_locked(self._error)
+
     # -- host transport ------------------------------------------------
 
     def share(self, path: str | os.PathLike[str]) -> ReferenceVideoSnapshot:
@@ -599,6 +631,9 @@ class ReferenceVideoHostController:
         self._require_host()
         with self._lock:
             self._require_loaded()
+            invalidated = self._check_local_source_locked()
+            if invalidated is not None:
+                return invalidated
             self._load_generation += 1
             operation = self._load_generation
             try:
@@ -688,9 +723,12 @@ class ReferenceVideoHostController:
             return self._notify(self._snapshot_locked())
 
     def refresh(self) -> ReferenceVideoSnapshot:
-        """Sample the local player's position without changing transport."""
+        """Check source continuity, then sample the local player's position."""
 
         with self._lock:
+            invalidated = self._check_local_source_locked()
+            if invalidated is not None:
+                return invalidated
             if self._state is not ReferenceVideoState.PLAYING:
                 return self._snapshot_locked()
             try:
