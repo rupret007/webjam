@@ -6,6 +6,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Keep the Join invitation field, Join and Back together at compact heights;
+  move same-network guidance into **Help → Joining a room…**.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual
