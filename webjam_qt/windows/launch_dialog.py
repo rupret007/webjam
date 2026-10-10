@@ -534,6 +534,11 @@ class LaunchDialog(QDialog):
         # A 520 px client area plus a conservative 40 px native-title-bar
         # allowance remains inside the supported physical 760×600 floor.
         self.resize(620, 520)
+        # Cap growth near the designed size so maximizing/dragging can't
+        # strand the Host/Join cards top-left in hundreds of px of dead
+        # space. 800x600 matches the compact-screen floor this dialog is
+        # already required to fill exactly (see W02).
+        self.setMaximumSize(800, 600)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(Space.XXL, Space.MD, Space.XXL, Space.MD)
