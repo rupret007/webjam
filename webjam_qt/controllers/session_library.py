@@ -85,6 +85,7 @@ class SessionLibraryCoordinator(QObject):
         self.current = None
         self.dialog = None
         self._pending = {}
+        self._captured = None
         self._applying = False
         self._run_id = ""
         self._live_take_ids = set()
@@ -147,17 +148,26 @@ class SessionLibraryCoordinator(QObject):
             return
         if self.current is not None and self.current.profile == self._profile():
             latest = self._pending.get(self.current.id, self.current)
+            if self._captured is None or self._captured[0] != self.current.id:
+                self._captured = (self.current.id, self.current.title,
+                                   self.current.mode_key, self.current.notes)
             title, mode, notes = self._context()
+            context = (self.current.id, title, mode, notes)
+            if context == self._captured:
+                return
+            # The live control, not the pending draft, is the source of truth
+            # for a real change: this also lets a reverted edit (back to the
+            # last captured value) override a stale draft a failed autosave
+            # left behind, instead of silently keeping the failed draft.
+            self._captured = context
             changes = {}
-            if title != self.current.title:
-                changes["title"] = title or latest.title
-            if mode != self.current.mode_key:
-                changes["mode_key"] = mode
-            if notes != self.current.notes or notes == latest.notes:
-                pulse = build_session_pulse(creator_profile_key=self._profile(), title=title, notes=notes)
-                changes.update(notes=notes, decisions=pulse.decisions,
-                    actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
-                    blockers=pulse.blockers)
+            if title:
+                changes["title"] = title
+            changes["mode_key"] = mode
+            pulse = build_session_pulse(creator_profile_key=self._profile(), title=title, notes=notes)
+            changes.update(notes=notes, decisions=pulse.decisions,
+                actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
+                blockers=pulse.blockers)
             candidate = replace(latest, **changes)
             if candidate != self.current or self.current.id in self._pending:
                 self._pending[candidate.id] = candidate
@@ -502,7 +512,7 @@ class SessionLibraryCoordinator(QObject):
             return
         owner = self._recap_owner
         if self.current is not None and self.current.id == owner.id:
-            owner = self.current
+            owner = self._pending.get(owner.id, self.current)
             recap = dict(self._pending_recap, take_ids=sorted(self._live_take_ids))
         else:
             recap = self._pending_recap
@@ -532,7 +542,8 @@ class SessionLibraryCoordinator(QObject):
         entry = {"take_id": take_id, "take_path": "", "run_id": self._run_id,
                  "recording_session_id": session_id, "validated": False,
                  "status": "pending", "title": "Recording requested"}
-        self.current = replace(self.current, take_links=(*self.current.take_links, entry))
+        latest = self._pending.get(self.current.id, self.current)
+        self.current = replace(latest, take_links=(*latest.take_links, entry))
         self._pending[self.current.id] = self.current
         self.flush()
 
@@ -546,7 +557,7 @@ class SessionLibraryCoordinator(QObject):
         if binding is not None:
             owner_id, run_id = binding
             if self.current is not None and self.current.id == owner_id:
-                owner = self.current
+                owner = self._pending.get(owner_id, self.current)
             else:
                 try:
                     owner = self._pending.get(owner_id) or self.library.load(owner_id)
