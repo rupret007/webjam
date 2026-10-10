@@ -12960,6 +12960,7 @@ class ApplicationController(QObject):
             parent=self.window,
             settings_provider=lambda: self.settings,
             show_band_check_action=not show_meeting_link,
+            creator_profile_key=self.creator_profile.key,
         )
         wizard.audio_settings_requested.connect(self._bring_jamulus_forward)
         wizard.install_webex_requested.connect(
