@@ -116,6 +116,24 @@ def _coerce_input_maps(value: object) -> list:
     return cleaned
 
 
+def _persisted_input_maps_malformed(present: bool, raw: object) -> bool:
+    """True when ``input_maps`` was supplied but is not a valid configuration.
+
+    A missing key and a legitimate empty list are both valid and retain the
+    legacy two-input default when local capture is enabled. Present but
+    non-list values (``{}``, ``false``, ``0``, ``""``) and lists that fail
+    strict validation must never degrade into that default.
+    """
+
+    if not present:
+        return False
+    if not isinstance(raw, list):
+        return True
+    if not raw:
+        return False
+    return not bool(_coerce_input_maps(raw))
+
+
 def _coerce_settings_data(data: dict) -> None:
     """Coerce config values to expected types; fall back to defaults on invalid data."""
     defaults = asdict(AppSettings())
@@ -171,10 +189,10 @@ def _coerce_settings_data(data: dict) -> None:
     if "input_maps" in data:
         raw_input_maps = data["input_maps"]
         data["input_maps"] = _coerce_input_maps(raw_input_maps)
-        # A non-empty malformed/over-capacity map must never degrade into the
-        # empty-list compatibility default and unexpectedly record inputs 1–2.
-        # Disable supplemental capture until the musician repairs the map.
-        if raw_input_maps and not data["input_maps"]:
+        # Malformed or over-capacity maps must never degrade into the empty-list
+        # compatibility default and unexpectedly record inputs 1–2. Disable
+        # supplemental capture until the musician repairs the map.
+        if _persisted_input_maps_malformed(True, raw_input_maps):
             data["local_capture_enabled"] = False
     # String fields: ensure str
     for key in ("jamulus_server", "webex_url", "config_file", "mix_file",
@@ -347,9 +365,10 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         except Exception as exc:
             _logger.warning("Failed to parse settings file %s: %s - using defaults", file_path, exc)
 
-    persisted_input_map_invalid = bool(
-        loaded_data.get("input_maps")
-    ) and not bool(_coerce_input_maps(loaded_data.get("input_maps")))
+    persisted_input_map_invalid = _persisted_input_maps_malformed(
+        "input_maps" in loaded_data,
+        loaded_data.get("input_maps"),
+    )
 
     # Migrate the one-release legacy bridge flag before coercion.  Explicit
     # new fields always win over their legacy-derived values.
