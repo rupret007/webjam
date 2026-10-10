@@ -376,6 +376,63 @@ def test_native_admission_retry_rejects_retired_transport(
     app._activate_remote_guest_route.assert_not_called()
 
 
+@pytest.mark.parametrize("pending_native_admission", ["art", "music"], indirect=True)
+@pytest.mark.parametrize("retired", ["generation", "leave"])
+def test_native_admission_revalidates_transport_after_profile_adoption(
+    pending_native_admission, monkeypatch, retired, qapp,
+):
+    from dataclasses import replace
+
+    app, dialog, _backend, invite = pending_native_admission
+    room, source = app._room_participant, app._remote_session
+    snapshot = source.snapshot
+    target = room.native_state.creator_profile_key
+    adopt = app._apply_creator_profile_key
+    adopted = []
+
+    def adopt_then_retire(key, *, host_owned):
+        result = adopt(key, host_owned=host_owned)
+        assert result is True
+        assert app.creator_profile.key == target
+        adopted.append(key)
+        # Adoption refreshes UI owners; retirement during that work must win.
+        if retired == "leave":
+            app.audio._begin_session_stop(False)
+            assert app.audio.stopping
+        else:
+            replacement = replace(snapshot, generation=snapshot.generation + 1)
+            monkeypatch.setattr(type(source), "snapshot", property(lambda self: replacement))
+        return result
+
+    monkeypatch.setattr(app, "_apply_creator_profile_key", adopt_then_retire)
+    observe = mock.Mock(wraps=room.observe_creative_state)
+    monkeypatch.setattr(room, "observe_creative_state", observe)
+    dialog._set_workspace_busy(False)
+    room.apply_native(source, snapshot)
+    if retired == "leave":
+        try:
+            assert room.native_applied is None
+            assert room.state is not ArtRoomState.CONNECTED
+            observe.assert_not_called()
+            app._activate_remote_guest_route.assert_not_called()
+        finally:
+            drain(qapp, lambda: not app.audio.stopping)
+        assert not app.audio.cleanup_retry_required
+
+    assert adopted == [target]
+    assert room.native_applied is None
+    assert room.state is not ArtRoomState.CONNECTED
+    assert room.borrowed_start == ""
+    observe.assert_not_called()
+    app._activate_remote_guest_route.assert_not_called()
+    if retired == "generation":
+        assert room.probing
+        assert app._remote_invitation is invite
+    else:
+        assert room.state is ArtRoomState.NONE
+        assert app._remote_invitation is None
+
+
 def test_native_missing_profile_has_bounded_update_rejoin_action(
     qapp, controllers, monkeypatch,
 ):
