@@ -20,6 +20,46 @@ from webjam_qt.theme import load_stylesheet
 from webjam_qt.widgets import art_workspace as art_ui
 
 
+def test_local_locate_take_relinks_matching_moments_in_one_save(
+    app, tmp_path, make_dialog, monkeypatch,
+):
+    from tests.test_workspace_media_backup import _digest, _take
+
+    originals = tmp_path / "takes"
+    originals.mkdir()
+    root, project = _take(originals, label="live")
+    reference = {
+        "take_id": project.take_id,
+        "take_path": str(root),
+        "source_identity": _digest((root / "webjam-take.json").read_bytes()),
+    }
+    library = SessionLibrary(tmp_path / "library")
+    record = library.create("music", "Local rehearsal", take_links=(reference,))
+    assert not record.import_provenance and not record.media_provenance
+    dialog = make_dialog(library, current_id=record.id)
+    panel = dialog.rehearsal
+    panel.add_song("First song")
+    panel.add_bookmark("Keep this entrance", **reference, position_seconds=0.04, timing_verified=True)
+    assert dialog.save_current()
+    moved = tmp_path / "relocated-take"
+    Path(reference["take_path"]).rename(moved)
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *_a, **_k: str(moved))
+    dialog.takes.setCurrentRow(0)
+    dialog.relink_take_button.click()
+    for _ in range(6):
+        app.processEvents()
+    assert dialog.record.take_links[0]["take_path"] == str(moved)
+    bookmark = panel.payload()["songs"][0]["bookmarks"][0]
+    assert bookmark["take_path"] == str(moved)
+    saved = library.load(record.id)
+    assert saved.rehearsal["songs"][0]["bookmarks"][0]["take_path"] == str(moved)
+    opened = []
+    dialog.bookmark_open_requested.connect(opened.append)
+    panel._bookmarks.setCurrentRow(0)
+    panel._open_moment.click()
+    assert len(opened) == 1 and opened[0]["take_path"] == str(moved)
+
+
 @pytest.mark.parametrize("conflict", [False, True])
 def test_take_relink_preserves_song_moment_drafts_and_exact_matching_bookmarks(
     app, portable_takes, make_dialog, tmp_path, monkeypatch, conflict,
