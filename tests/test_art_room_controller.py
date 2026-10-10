@@ -515,9 +515,10 @@ def test_lan_host_membership_uses_fresh_room_readers_and_actual_bind(
     app.host_peer.active = False
 
 
-def test_stale_first_native_state_keeps_a_bounded_profile_deadline(
+def test_stale_first_native_state_applies_after_connected_handshake(
     qapp, controllers, monkeypatch,
 ):
+    """Room state can arrive before CONNECTED; age alone must not block apply."""
     monkeypatch.setattr("services.native_remote_transport.NativeGuestTransportBackend", RoomBackend)
     app = controllers()
     assert app.accept_invitation(remote())
@@ -528,16 +529,13 @@ def test_stale_first_native_state_keeps_a_bounded_profile_deadline(
     room.native_generation = source.snapshot.generation
     room.native_received_at = time.monotonic() - 6.0
     room.native_wait_started = 0
-    scheduled = []
-    monkeypatch.setattr("webjam_qt.controllers.room_participant.QTimer.singleShot", lambda delay, fn: scheduled.append((delay, fn)))
     room.connected_native(source, source.snapshot)
-    assert room.probing
-    assert len(scheduled) == 1 and scheduled[0][0] == 5000
-    room.connected_native(source, source.snapshot)
-    assert len(scheduled) == 1
-    scheduled[0][1]()
-    assert app._remote_invitation_requires_replacement
-    assert "Update WebJam" in app._remote_fresh_invitation_detail()
+    assert not room.probing
+    assert room.state is ArtRoomState.CONNECTED
+    assert app.creator_profile.key == "art"
+    assert not app._remote_invitation_requires_replacement
+    room.check_native_timeout(source, source.snapshot.generation, room.generation)
+    assert not app._remote_invitation_requires_replacement
 
 
 def test_real_art_leave_worker_releases_room_then_restores_saved_profile(
