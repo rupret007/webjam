@@ -38,8 +38,8 @@ class SessionUiState:
         return cls(
             SessionPhase.NOT_CONNECTED,
             "Ready when you are",
-            "Start the session and invite your band."
-            if hosting else "Start the session to join your band.",
+            "Start the session and invite others."
+            if hosting else "Start the session to play together.",
             primary_text="Start Session",
             show_ready_check=False,
             show_practice=False,
