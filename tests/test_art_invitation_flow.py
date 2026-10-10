@@ -68,6 +68,57 @@ def _lan_link():
     )
 
 
+@pytest.mark.parametrize("start", ["paint_along", "talk_and_make"])
+@pytest.mark.parametrize("native", [False, True], ids=["lan", "native"])
+@pytest.mark.parametrize("meeting", ["", "https://example.webex.com/meet/artist"])
+def test_host_copy_invite_describes_selected_art_start(
+    controllers, monkeypatch, start, native, meeting,
+):
+    app = controllers(profile="art", hosting=True)
+    app.settings.last_creator_start_key = start
+    app.settings.webex_url = meeting
+    if native:
+        issued = issue_remote_invitation(
+            "reference-local", allowed_profiles={"reference-local"},
+            host_spki_sha256=b"p" * 32,
+        )
+        link = issued.private_link.reveal_for_clipboard()
+        app._remote_invite_owner = SimpleNamespace(copy_for_clipboard=lambda: link)
+    else:
+        link = _lan_link()
+        app._host_share_readiness = Mock(return_value=SimpleNamespace(address="192.168.1.20"))
+        app._current_invite_url = Mock(return_value=link)
+    clipboard = Mock()
+    monkeypatch.setattr(QApplication, "clipboard", lambda: clipboard)
+    try:
+        app._copy_band_invite()
+    finally:
+        app._remote_invite_owner = None
+    assert clipboard.setText.call_count == 1
+    message = clipboard.setText.call_args.args[0]
+    if start == "paint_along":
+        assert "Paint along: follow a process video silently in WebJam; talk stays in the meeting." in message
+        assert "Make from your own space" not in message
+    else:
+        assert "Make from your own space with paper, clay, a model, a printer, or your usual app." in message
+        assert "Paint along" not in message
+    assert ("same Wi-Fi" in message) is (not native)
+    if meeting:
+        assert "Optional Webex conversation and work sharing (example.webex.com):" in message
+    # Copy still enters through the same parser with exactly the original bearer.
+    parse_kwargs = dict(source=InvitationSource.PASTE, allowed_remote_profiles=frozenset({"reference-local"}))
+    parsed = parse_invitation_at_ingress(message, **parse_kwargs)
+    expected = parse_invitation_at_ingress(link, **parse_kwargs)
+    preserved = (
+        parsed.profile_id == expected.profile_id
+        and parsed.session_reference == expected.session_reference
+        and parsed.invite_reference == expected.invite_reference
+        and parsed.host_spki_sha256 == expected.host_spki_sha256
+        and parsed.capability_for_enrollment() == expected.capability_for_enrollment()
+    ) if native else parsed == expected
+    assert preserved
+
+
 @pytest.mark.parametrize(
     "meeting", ["", "https://example.webex.com/meet/artist"], ids=["without-meeting", "with-meeting"],
 )
