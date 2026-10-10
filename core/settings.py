@@ -171,10 +171,14 @@ def _coerce_settings_data(data: dict) -> None:
     if "input_maps" in data:
         raw_input_maps = data["input_maps"]
         data["input_maps"] = _coerce_input_maps(raw_input_maps)
-        # A non-empty malformed/over-capacity map must never degrade into the
+        # A malformed/over-capacity map must never degrade into the
         # empty-list compatibility default and unexpectedly record inputs 1–2.
+        # This must catch falsy-but-present values too ({}, False, 0, "") —
+        # checking truthiness of raw_input_maps would let every one of those
+        # slip past (they're all falsy) straight into the compat default.
+        # Only a literal [] is the legitimate valid-empty compatibility path.
         # Disable supplemental capture until the musician repairs the map.
-        if raw_input_maps and not data["input_maps"]:
+        if raw_input_maps != [] and not data["input_maps"]:
             data["local_capture_enabled"] = False
     # String fields: ensure str
     for key in ("jamulus_server", "webex_url", "config_file", "mix_file",
@@ -347,9 +351,14 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         except Exception as exc:
             _logger.warning("Failed to parse settings file %s: %s - using defaults", file_path, exc)
 
-    persisted_input_map_invalid = bool(
-        loaded_data.get("input_maps")
-    ) and not bool(_coerce_input_maps(loaded_data.get("input_maps")))
+    # Same presence/validity check as _coerce_settings_data above, applied to
+    # the raw file content: a falsy-but-present value ({}, False, 0, "") must
+    # count as malformed, not as the absent/valid-empty compatibility case, so
+    # an env-var opt-in below can't resurrect the legacy default for it.
+    persisted_input_maps = loaded_data.get("input_maps") if "input_maps" in loaded_data else []
+    persisted_input_map_invalid = (
+        persisted_input_maps != [] and not _coerce_input_maps(persisted_input_maps)
+    )
 
     # Migrate the one-release legacy bridge flag before coercion.  Explicit
     # new fields always win over their legacy-derived values.

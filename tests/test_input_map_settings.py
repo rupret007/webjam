@@ -165,6 +165,43 @@ def test_resolver_never_records_opted_out_rows_or_truncates_capacity():
     )
 
 
+def test_falsy_but_present_input_maps_disable_capture_instead_of_defaulting(
+    tmp_path,
+):
+    # {} / False / 0 / "" are all falsy, but a *present* malformed value —
+    # unlike an absent key or a genuinely valid [] — must never be coerced
+    # down into the empty-list compat default that then silently arms the
+    # legacy two-input capture.
+    for hostile in ({}, False, 0, ""):
+        config = tmp_path / "config.json"
+        config.write_text(
+            json.dumps(
+                {"local_capture_enabled": True, "input_maps": hostile}
+            ),
+            encoding="utf-8",
+        )
+        loaded = load_settings(str(config))
+        assert loaded.input_maps == [], hostile
+        assert loaded.local_capture_enabled is False, hostile
+
+
+def test_absent_or_valid_empty_input_maps_preserve_compat_default(tmp_path):
+    # The legitimate compatibility path (no key at all, or an actual empty
+    # list) must still leave local_capture_enabled alone so the legacy
+    # two-input default can be claimed as before.
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps({"local_capture_enabled": True}), encoding="utf-8"
+    )
+    assert load_settings(str(config)).local_capture_enabled is True
+
+    config.write_text(
+        json.dumps({"local_capture_enabled": True, "input_maps": []}),
+        encoding="utf-8",
+    )
+    assert load_settings(str(config)).local_capture_enabled is True
+
+
 def test_over_capacity_persisted_map_disables_capture_instead_of_defaulting(
     tmp_path,
     monkeypatch,
