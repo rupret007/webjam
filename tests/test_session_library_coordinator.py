@@ -203,6 +203,24 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertEqual(self.coordinator._pending[editor.record.id].notes, "Live draft before autosave")
         self.assertEqual(editor.notes.toPlainText(), "Editor draft")
 
+    def test_second_save_does_not_revert_live_notes_after_a_reconciled_save(self):
+        self.window.session_canvas.set_notes("original notes")
+        self.coordinator.ensure_current()
+        editor = self._editor()
+        editor.title.setText("Renamed once")
+        self.window.session_canvas.set_notes("new live notes")
+        self.assertTrue(editor.save_current())
+        # The save reconciled newer live Notes into the saved record; the
+        # editor's own Notes/title controls must reflect that, not the
+        # stale text the user had typed before saving.
+        self.assertEqual(editor.notes.toPlainText(), "new live notes")
+        self.assertEqual(editor.title.text(), "Renamed once")
+        self.assertEqual(self.library.load(editor.record.id).notes, "new live notes")
+        editor.title.setText("Renamed twice")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self.library.load(editor.record.id).notes, "new live notes")
+        self.assertEqual(self.window.session_canvas.current_notes(), "new live notes")
+
     def test_separate_copy_keeps_live_notes_typed_before_canvas_timer(self):
         self.window.session_canvas.set_notes("Base Notes")
         self.coordinator.ensure_current()
