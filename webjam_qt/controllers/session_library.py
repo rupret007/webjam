@@ -148,12 +148,18 @@ class SessionLibraryCoordinator(QObject):
             return
         if self.current is not None and self.current.profile == self._profile():
             latest = self._pending.get(self.current.id, self.current)
-            if self._captured is None or self._captured[0] != self.current.id:
-                self._captured = (self.current.id, self.current.title,
-                                   self.current.mode_key, self.current.notes)
             title, mode, notes = self._context()
             context = (self.current.id, title, mode, notes)
-            if context == self._captured:
+            first_capture = self._captured is None or self._captured[0] != self.current.id
+            if not first_capture and context == self._captured:
+                return
+            own_fields = (self.current.id, self.current.title, self.current.mode_key, self.current.notes)
+            if first_capture and latest is not self.current and context == own_fields:
+                # Nothing moved in the live controls since this workspace's
+                # last disk save; preserve a draft owned by someone else
+                # (e.g. an open editor) instead of clobbering it with a
+                # recompute seeded from the unrelated live value.
+                self._captured = context
                 return
             # The live control, not the pending draft, is the source of truth
             # for a real change: this also lets a reverted edit (back to the
@@ -415,6 +421,11 @@ class SessionLibraryCoordinator(QObject):
             self._pending.pop(record.id, None)
         if self.current is not None and self.current.id == record.id:
             self.current = record
+            # The live controls are about to be rewritten to the editor's
+            # saved content; advance the capture baseline to match so a
+            # later revert of the live control back to its pre-edit value
+            # reads as a real change instead of "unchanged since capture".
+            self._captured = (record.id, record.title, record.mode_key, record.notes)
             self._applying = True
             try:
                 self._c.window.session_strip.set_session_title(record.title)

@@ -306,6 +306,44 @@ class TestSessionLibraryCoordinator(TestCase):
             owner.deleteLater()
             _app.processEvents()
 
+    def test_reverted_notes_edit_overrides_editor_save(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.ensure_current()
+        record_id = self.coordinator.current.id
+        self.assertTrue(self.coordinator.flush())
+        editor = self._editor()
+        editor.notes.setPlainText("Editor notes")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self.library.load(record_id).notes, "Editor notes")
+        self.assertEqual(self.window.session_canvas.current_notes(), "Editor notes")
+        # Revert the live control back to the value captured before the
+        # editor's save: this must override the editor's save, not be
+        # swallowed by a stale capture baseline.
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(record_id).notes, "Original notes")
+
+    def test_reverted_title_edit_overrides_editor_save(self):
+        self.coordinator.ensure_current()
+        record_id = self.coordinator.current.id
+        self.assertEqual(self.coordinator.current.title, "Wednesday")
+        self.assertTrue(self.coordinator.flush())
+        editor = self._editor()
+        editor.title.setText("Editor title")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self.library.load(record_id).title, "Editor title")
+        self.assertEqual(self.window.session_strip.current_title(), "Editor title")
+        self.window.session_strip._title_input.setText("Wednesday")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(record_id).title, "Wednesday")
+
+    def test_preloaded_notes_derive_decisions_on_first_capture(self):
+        self.window.session_canvas.set_notes("Decision: keep the chorus")
+        self.assertTrue(self.coordinator.ensure_current())
+        record_id = self.coordinator.current.id
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(record_id).decisions, ("keep the chorus",))
+
     def test_active_room_blocks_switch_but_keeps_saved_workspace(self):
         self.coordinator.ensure_current()
         previous = self.coordinator.current.id
