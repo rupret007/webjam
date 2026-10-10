@@ -189,6 +189,8 @@ send a request to a model, or contact a service. Topics match the current
 creator profile and distinguish session takes from standalone local projects.
 An open Help window updates when the profile changes, keeping your search
 without taking focus from your work.
+The first topic, **Current workspace**, explains your profile's next actions
+using live audio and Shared Track terms rather than audio engine names.
 
 Selecting a topic only changes the instructions. Its explicit button, such
 as **Open Session library**, **Open Rehearsal plan**, **Open Art project** or

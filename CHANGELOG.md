@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Help's Current workspace and follow-along instructions describe live audio
+  and Shared Track actions without naming the audio engine. Help navigation
+  and recording-boundary guidance are unchanged.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual
