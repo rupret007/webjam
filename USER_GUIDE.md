@@ -309,6 +309,10 @@ Invite**. The guest pastes that complete invitation once; WebJam follows the
 host's Art activity when the room responds. **You’re in** means the Art room
 connection is current, not that a meeting or drawing app has joined.
 
+When a local invitation replaces an active Art room, **Join this room?** asks
+before closing the current room. Choose **No** to stay. If the switch fails,
+follow the room's cleanup or reopen instructions before trying the invite again.
+
 If the full invitation includes an optional conversation link, **Conversation**
 uses that link for this room. You do not need to paste it again. Joining never
 opens it automatically: choose **Join / Open Meeting** when ready. An invitation
