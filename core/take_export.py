@@ -893,6 +893,13 @@ def _export_project_track_package(
             source_files = []
             for segment in track.segments:
                 source_path = take.path / segment.path
+                observed_sha256 = _sha256(source_path)
+                # Recheck after rendering: the source can change between its
+                # initial validation and the audio reader opening the file.
+                if segment.sha256 and observed_sha256 != segment.sha256:
+                    raise TakeExportError(
+                        f"{track.name} changed during export. Reopen the take and retry."
+                    )
                 source_files.append(
                     {
                         "segment_id": segment.segment_id,
@@ -903,7 +910,7 @@ def _export_project_track_package(
                         "project_start_frame": segment.project_start_frame,
                         "media_status": segment.media_status.value,
                         "declared_sha256": segment.sha256,
-                        "observed_sha256": _sha256(source_path),
+                        "observed_sha256": observed_sha256,
                         "gaps": [gap.to_dict() for gap in segment.gaps],
                     }
                 )

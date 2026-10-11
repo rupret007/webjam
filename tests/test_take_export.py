@@ -365,6 +365,78 @@ def _reordered_project_take(tmp_path):
     return take, (bass, drums, guitar), (bass_audio, drums_audio, guitar_audio)
 
 
+@pytest.mark.parametrize("phase", ["validation", "render"])
+@pytest.mark.parametrize("change", ["rewrite", "replace"])
+def test_project_export_rejects_source_changes_during_export(
+    tmp_path, monkeypatch, phase, change
+):
+    from core import take_export
+
+    take, (bass, _drums, _guitar), sources = _reordered_project_take(tmp_path)
+    source = sources[0]
+    segment = bass.segments[0]
+    untouched = {
+        path: path.read_bytes()
+        for path in (*sources[1:], take.path / "webjam-take.json")
+    }
+    replacement = tmp_path / "replacement.wav"
+    _write(replacement, np.full(segment.frame_count, 0.8), rate=segment.sample_rate)
+    replacement_bytes = replacement.read_bytes()
+    assert len(replacement_bytes) == segment.size_bytes
+    assert _digest(replacement) != segment.sha256
+    info = sf.info(replacement)
+    assert (info.frames, info.samplerate, info.channels, info.subtype) == (
+        segment.frame_count, segment.sample_rate, segment.channels, segment.sample_format
+    )
+    changed = False
+
+    def change_source():
+        nonlocal changed
+        if changed:
+            return
+        changed = True
+        if change == "rewrite":
+            source.write_bytes(replacement_bytes)
+        else:
+            replacement.replace(source)
+
+    if phase == "validation":
+        original_hash = take_export._sha256
+
+        def change_after_hash(path):
+            digest = original_hash(path)
+            if path == source:
+                change_source()
+            return digest
+
+        monkeypatch.setattr(take_export, "_sha256", change_after_hash)
+    else:
+        original_render = take_export._write_project_track
+
+        def change_after_render(*args, **kwargs):
+            result = original_render(*args, **kwargs)
+            change_source()
+            return result
+
+        monkeypatch.setattr(take_export, "_write_project_track", change_after_render)
+
+    destination = tmp_path / "exports"
+    destination.mkdir()
+    existing_package = destination / "Track Export"
+    existing_package.mkdir()
+    sentinel = existing_package / "existing.txt"
+    sentinel.write_text("Previous export", encoding="utf-8")
+
+    with pytest.raises(TakeExportError, match="Bass changed during export"):
+        export_track_package(take, destination_root=destination)
+
+    assert changed
+    assert list(destination.iterdir()) == [existing_package]
+    assert sentinel.read_text(encoding="utf-8") == "Previous export"
+    assert source.read_bytes() == replacement_bytes
+    assert {path: path.read_bytes() for path in untouched} == untouched
+
+
 @pytest.mark.parametrize(
     "damage", ["missing", "directory", "dangling_symlink", "symlink", "oversized"]
 )

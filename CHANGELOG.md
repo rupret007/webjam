@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Aligned-originals track exports now reject source audio whose checksum
+  changes during rendering, removing the unfinished package and preserving
+  earlier exports. Same-format source rewrites and replacements are covered
+  by synthetic-file regressions; physical audio checks remain **NOT RUN**.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual

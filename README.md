@@ -767,6 +767,10 @@ removes the unfinished package. Reopen the take before retrying. Existing
 destination folders retain their permissions, while new export folders and
 files remain private.
 
+For schema-v2 takes, a source whose post-render checksum differs from its
+declared checksum also stops export and removes the unfinished package.
+Reopen the take and retry; earlier exports remain untouched.
+
 ## Jamulus profile and privacy
 
 On macOS WebJam launches Jamulus with the supported filename-only argument:
