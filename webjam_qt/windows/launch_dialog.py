@@ -239,6 +239,21 @@ class _JoinPrimaryButton(QPushButton):
         self.update()
 
 
+class _DoorHelpButton(QPushButton):
+    """Header Help link: Return must open setup, not the dialog default."""
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() in (
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Enter,
+        ):
+            if self.isEnabled() and self.isVisibleTo(self.window()):
+                self.clicked.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class ProfileCard(QCommandLinkButton):
     """One equal first-screen choice: Art or Music.
 
@@ -563,7 +578,7 @@ class LaunchDialog(QDialog):
         brand_row.addWidget(self._logo)
         brand_row.addWidget(self._wordmark)
         brand_row.addStretch(1)
-        self._door_help_button = QPushButton("Help")
+        self._door_help_button = _DoorHelpButton("Help")
         self._door_help_button.setObjectName("LaunchDoorHelp")
         self._door_help_button.setFlat(True)
         self._door_help_button.setAutoDefault(False)
