@@ -13,13 +13,13 @@ from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication
 from shiboken6 import isValid
 
-from core.network_invite import BandInvite
+from core.network_invite import BandInvite, parse_invite_link
 from core.remote_invitation import issue_remote_invitation
 from core.room_state import RoomIdentity, RoomState
 from core.session_conductor import ArtRoomState, EvidenceState, SessionConductorPhase
 from core.session_transfer import RecordingSignal, SessionCredentials, SessionStateSnapshot
 from core.session_transport import ConnectionQuality, TransportPath
-from core.settings import AppSettings
+from core.settings import AppSettings, load_settings, save_settings
 from services.remote_session_runtime import RemoteGuestConnection, RemoteSessionPhase
 from services.transport_runtime import TransportEvent
 from webjam_qt.controllers.application_controller import ApplicationController
@@ -92,8 +92,65 @@ def arm_lan(monkeypatch, invite, profile="art"):
     ))
 
 
+@pytest.mark.parametrize("entry", ["cold", "recovery"])
+def test_art_door_legacy_invite_starts_music_guest_without_paste_loop(
+    controllers, monkeypatch, entry,
+):
+    from webjam_qt.windows.launch_dialog import LaunchDialog, apply_join_invite
+
+    link = "webjam://join?v=1&host=192.168.1.42&port=22124&session=Band+Rehearsal"
+    invite = parse_invite_link(link)
+    assert not invite.peer_enabled
+    app = controllers(invite=invite if entry == "cold" else None, profile="art")
+    if entry == "cold":
+        apply_join_invite(app.settings, invite)
+    save_settings(app.settings)
+    launch = mock.Mock()
+    host = mock.Mock()
+    paste = mock.Mock()
+    probe = mock.Mock()
+    monkeypatch.setattr(app, "_launch_native_jamulus_for_startup", launch)
+    monkeypatch.setattr(app, "_start_hosted_server_for_startup", host)
+    monkeypatch.setattr(app, "_paste_new_invitation", paste)
+    monkeypatch.setattr(app._room_participant, "start_lan_guest", probe)
+
+    if entry == "cold":
+        assert app.begin_startup_journey()
+    else:
+        def paste_and_join(dialog):
+            assert dialog.selected_creator_profile_key == "art"
+            dialog._invite_input.setText(link)
+            dialog._join_button_primary.click()
+            assert dialog.band_invite == invite
+            assert dialog._invite_input.text() == ""
+            assert dialog.result() == dialog.DialogCode.Accepted
+            return dialog.result()
+
+        monkeypatch.setattr(LaunchDialog, "exec", paste_and_join)
+        ApplicationController._paste_new_invitation(app)
+
+    launch.assert_called_once_with(app._startup_generation)
+    host.assert_not_called()
+    paste.assert_not_called()
+    probe.assert_not_called()
+    assert app.creator_profile.key == "music"
+    assert app._startup_attempt["role"] == "guest"
+    assert app._startup_attempt["phase"] == "launching_client"
+    assert app.settings.host_server_enabled is False
+    assert (app.settings.jamulus_server, app.settings.jamulus_port) == (invite.host, invite.port)
+    assert app._guest_invite is None
+    assert app.guest_peer is None
+    assert not app._room_participant.probing
+    assert not app._jamulus_connected
+    assert app.settings.last_creator_profile_key == "art"
+    assert load_settings(app.settings.config_file).last_creator_profile_key == "art"
+    assert app._stop_session_peer(clear_invite=True)
+    assert app.creator_profile.key == "art"
+
+
+@pytest.mark.parametrize("profile", ["music", "art"])
 def test_cold_music_guest_enters_art_from_first_idle_state_without_audio(
-    qapp, controllers, monkeypatch,
+    qapp, controllers, monkeypatch, profile,
 ):
     invite = invitation()
     arm_lan(monkeypatch, invite)
@@ -101,7 +158,7 @@ def test_cold_music_guest_enters_art_from_first_idle_state_without_audio(
     permission = mock.Mock(side_effect=AssertionError("Art must not probe microphone permission"))
     monkeypatch.setattr("webjam_qt.controllers.application_controller.GuestPeerSession", recording_guest)
     monkeypatch.setattr("webjam_qt.platform_permissions.microphone_permission_status", permission)
-    app = controllers(invite=invite)
+    app = controllers(invite=invite, profile=profile)
     app._launch_native_jamulus_for_startup = mock.Mock()
     app._start_hosted_server_for_startup = mock.Mock()
     assert app.guest_peer is None
@@ -110,7 +167,7 @@ def test_cold_music_guest_enters_art_from_first_idle_state_without_audio(
     owner.poll_once()
     drain(qapp, lambda: app._room_participant.state is ArtRoomState.CONNECTED)
     assert app.creator_profile.key == "art"
-    assert app.settings.last_creator_profile_key == "music"
+    assert app.settings.last_creator_profile_key == profile
     assert app._last_session_conductor.phase is SessionConductorPhase.CONNECTED
     assert app._last_session_conductor.title == "You’re in"
     assert app._session_conductor_facts().local_participant is EvidenceState.NOT_STARTED

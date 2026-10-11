@@ -373,10 +373,16 @@ class ApplicationController(QObject):
             or "music"
         )
         self._creator_profile_host_owned = False
+        if session_invite is not None and not session_invite.peer_enabled:
+            # Legacy invites carry only a Music endpoint, with no room peer
+            # to discover a profile from. Borrow Music for this join without
+            # changing the artist's saved door choice.
+            self._active_creator_profile_key = "music"
+            self._creator_profile_host_owned = True
         self._chat_profile_generation = 0
         creator_setter = getattr(self.window, "set_creator_profile", None)
         if callable(creator_setter):
-            creator_setter(self.creator_profile, locked=False)
+            creator_setter(self.creator_profile, locked=self._creator_profile_host_owned)
         if not isinstance(offline_reference_studio, bool):
             raise TypeError("offline_reference_studio must be true or false")
         self._offline_reference_studio = offline_reference_studio
@@ -8215,6 +8221,10 @@ class ApplicationController(QObject):
                 self._guest_invite = invitation
                 self._room_participant.probing = True
                 self._room_participant.role = "guest"
+            else:
+                # As on cold entry, a legacy endpoint starts the existing
+                # Music guest journey instead of Art's paste-invite prompt.
+                self._apply_creator_profile_key("music", host_owned=True)
             # The invitation's name labels this session, but it belongs to
             # whoever sent it. Marking it borrowed keeps it out of the
             # musician's persisted default, so a joined session's name cannot
