@@ -8123,6 +8123,12 @@ class ApplicationController(QObject):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return False
+            # Freeze the outgoing jam's Library recap before any teardown
+            # starts, exactly as normal End/Leave does, so the replacement
+            # jam below does not inherit this run's ID or live take set.
+            switch_library = getattr(self, "session_library", None)
+            if switch_library is not None:
+                switch_library.capture_summary()
             self._invite_switch_generation += 1
             switch_generation = self._invite_switch_generation
             self._invite_switch_in_flight = True
@@ -8306,6 +8312,13 @@ class ApplicationController(QObject):
             )
             self._pending_invitation = None
             self._pending_invitation_meeting_url = ""
+            # The old jam's cleanup has fully finished by this point. Finish
+            # its Library run now, exactly once, before any replacement
+            # startup below calls start_session() and could otherwise reuse
+            # this run's ID and live take set for an unrelated jam.
+            switch_library = getattr(self, "session_library", None)
+            if switch_library is not None:
+                switch_library.finish_session()
             if isinstance(selected, RemoteInvitation):
                 # The old jam is now fully retired. Release the switch latch
                 # before entering the normal v3 path so its own cleanup
