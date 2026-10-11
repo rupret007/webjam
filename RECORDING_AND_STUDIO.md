@@ -183,6 +183,11 @@ recording, stopping, or finalizing. **Stop Recording** is one host action,
 but recorder and Shared Track teardown remain independently proved owners; a
 clean result for one does not manufacture success for the other.
 
+If a start reply times out, **Recording Start Unconfirmed** means WebJam
+couldn't confirm that recording started. The server may still be recording;
+use **Finish Stop** to resolve it. WebJam preserves local capture and retries
+Stop before allowing another recording.
+
 ## Shared Track in a recorded take
 
 When a Shared Track is loaded and route-ready, confirmed recorder start owns
