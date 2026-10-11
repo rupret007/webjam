@@ -10125,6 +10125,10 @@ class ApplicationController(QObject):
 
     @staticmethod
     def _conductor_stage_phase(phase: SessionConductorPhase) -> SessionPhase:
+        # The empty roster is not evidence of a disconnected session. Use
+        # the same accepted connection phase as the HUD, even before cards arrive.
+        if phase in {SessionConductorPhase.CONNECTED, SessionConductorPhase.LIVE}:
+            return SessionPhase.CONNECTED
         if phase in {
             SessionConductorPhase.RECONNECTING,
             SessionConductorPhase.FAILED,

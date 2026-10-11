@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -34,6 +35,13 @@ from PySide6.QtWidgets import (  # noqa: E402
 )
 
 from core.network_invite import create_invite_link  # noqa: E402
+from core.session_conductor import (  # noqa: E402
+    EvidenceState,
+    MusicPathState,
+    SessionConductorFacts,
+    SessionConductorPhase,
+    SessionRole,
+)
 from core.session_transfer import SessionCredentials  # noqa: E402
 from core.settings import AppSettings  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
@@ -96,6 +104,55 @@ def _destroy(widget: QWidget) -> None:
 
 def _rect_in(child: QWidget, ancestor: QWidget) -> QRect:
     return QRect(child.mapTo(ancestor, QPoint(0, 0)), child.size())
+
+
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+@pytest.mark.parametrize("role", [SessionRole.HOST, SessionRole.GUEST])
+def test_music_hud_and_empty_stage_connection_agree(styled_qapp, tmp_path, size, role):
+    window = _window()
+    controller = ApplicationController(
+        window, settings=_settings(tmp_path, host_server_enabled=role is SessionRole.HOST)
+    )
+    idle = SessionConductorFacts(role=role)
+    live = replace(
+        idle,
+        setup_requested=True,
+        music_path=MusicPathState.AUTHENTICATED,
+        local_participant=EvidenceState.VERIFIED,
+        remote_participant=EvidenceState.VERIFIED,
+        participant_identity=EvidenceState.VERIFIED,
+        had_authenticated_connection=True,
+    )
+    connected = replace(live, participant_identity=EvidenceState.UNKNOWN)
+    reconnecting = replace(live, music_path=MusicPathState.RECONNECTING)
+    sequence = [
+        (idle, SessionConductorPhase.IDLE, "Ready when you are", "NOT CONNECTED"),
+        (live, SessionConductorPhase.LIVE, "Band connected", "CONNECTED"),
+        (reconnecting, SessionConductorPhase.RECONNECTING, "Reconnecting", "NEEDS ATTENTION"),
+        (connected, SessionConductorPhase.CONNECTED, "Connected to the jam", "CONNECTED"),
+        (live, SessionConductorPhase.LIVE, "Band connected", "CONNECTED"),
+        (idle, SessionConductorPhase.IDLE, "Ready when you are", "NOT CONNECTED"),
+    ]
+    try:
+        window.resize(*size)
+        window.show()
+        grid = window.participant_grid
+        for facts, phase, title, eyebrow in sequence:
+            with patch.object(controller, "_session_conductor_facts", return_value=facts):
+                controller._update_session_hud()
+                styled_qapp.processEvents()
+            assert controller._last_session_conductor.phase is phase
+            assert window.session_hud._status.text() == title
+            assert grid._empty_state.isVisibleTo(window)
+            assert grid._empty_title.text() == title
+            assert grid._empty_eyebrow.text() == eyebrow
+            assert (grid._empty_state.property("sessionState") == "connected") == (
+                phase in {SessionConductorPhase.CONNECTED, SessionConductorPhase.LIVE}
+            )
+            assert grid._empty_state.rect().contains(grid._empty_eyebrow.geometry())
+    finally:
+        controller.shutdown()
+        _destroy(window)
 
 
 def _visible_focus_chain(window: QWidget, start: QWidget) -> list[QWidget]:

@@ -718,6 +718,10 @@ you can hear each other—WebJam never treats a meter or connection as proof of
 that. Use Music's **Band Check**, Podcast's **Sound Check**, or Review's
 **Session Check (Preview)** if you need help.
 
+In unreleased builds, Music's empty stage shows **CONNECTED** alongside
+**Band connected** or **Connected to the jam**, even before participant cards
+appear. This confirms the connection; play a note to check that you hear each other.
+
 If setup is interrupted, WebJam keeps only a private, bounded recovery record.
 It reuses progress only when the role and dedicated Jamulus profile fingerprint
 still match. Otherwise it returns safely to native Jamulus setup.
