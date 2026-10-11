@@ -110,8 +110,47 @@ def test_paste_does_not_parse_or_claim_a_network_type(join_door, profile):
             assert dialog.selected_role == ""
         parse.assert_not_called()
     dialog._invite_input.clear()
-    assert dialog._join_status.text() == "Paste your invitation"
+    assert dialog._join_status.text() == "Paste an invite to continue"
     assert dialog._join_subtitle.text() == guidance
+
+
+@pytest.mark.parametrize("profile", ["music", "art", "podcast_voice", "review_rehearsal"])
+@pytest.mark.parametrize("empty_text", ["", "   ", "\t\n"])
+def test_empty_join_explains_next_step_before_activation(
+    join_door, qapp, profile, empty_text
+):
+    dialog = join_door(profile)
+    field = dialog._invite_input
+    button = dialog._join_button_primary
+    with patch("webjam_qt.windows.launch_dialog.parse_invitation_at_ingress") as parse:
+        # Check both arrival and returning to empty after a paste.
+        for returning_to_empty in (False, True):
+            if returning_to_empty:
+                field.setText("An unchecked invitation")
+                assert button.isEnabled()
+                assert dialog._join_status.text() == "Invitation pasted — choose Join"
+                field.setFocus()
+                QTest.keyClick(field, Qt.Key.Key_Tab)
+                assert button.hasFocus()
+                QTest.keyClick(button, Qt.Key.Key_Tab)
+                assert dialog._join_back_button.hasFocus()
+            field.setText(empty_text)
+            qapp.processEvents()
+            assert dialog._join_status.text() == "Paste an invite to continue"
+            assert dialog._join_status.isVisibleTo(dialog)
+            assert not button.isEnabled()
+            assert button.property("joinBlocked") is True
+            assert dialog.selected_role == ""
+            assert not dialog._join_error.isVisibleTo(dialog)
+            field.setFocus()
+            QTest.keyClick(field, Qt.Key.Key_Tab)
+            assert button.hasFocus()
+            QTest.keyClick(button, Qt.Key.Key_Tab)
+            assert dialog._join_back_button.hasFocus()
+        dialog.show_choices()
+        dialog.show_join()
+        assert dialog._join_status.text() == "Paste an invite to continue"
+        parse.assert_not_called()
 
 
 @pytest.mark.parametrize("profile", ["music", "art", "podcast_voice", "review_rehearsal"])

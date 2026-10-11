@@ -732,7 +732,9 @@ preserved only while it is safe to retry; WebJam never pretends an uncertain
 invitation succeeded.
 
 The Join door contains one masked invitation field, one **Join** button, and a
-privacy reminder. Paste the complete invitation copied from the host. Harmless
+privacy reminder. When the field is empty, “Paste an invite to continue” explains
+the next step. Tab moves from the field to **Join**, then **Back**.
+Paste the complete invitation copied from the host. Harmless
 message whitespace and surrounding punctuation are accepted; incomplete,
 expired, malformed, incompatible, and unsupported invitations are rejected
 with a plain explanation. If the invitation says same network, use the
