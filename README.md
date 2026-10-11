@@ -167,6 +167,8 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    **Join**. **Make together** keeps people working locally and lets the host
    open one shared canvas from inside the room. Music uses **Host** / **Join**; Podcast & Voice
    and Review & Rehearsal retain their profile-specific Host/Join labels.
+   Art's footer beside **Join** explains what Host starts and that Join uses
+   the host's invite, including in compact windows.
 3. For Music ensemble playing, configure interface, channels, headphones, and buffer in Jamulus. Confirm
    the authenticated audio connection, then use the profile-specific
    **Band Check**, **Sound Check**, or **Session Check** if needed. In Art,
