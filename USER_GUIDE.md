@@ -12,6 +12,12 @@
 > macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
 > gates remain **NOT RUN**. A source checkout is not a published package.
 
+## Connection status
+
+In Music, **Band connected** and **CONNECTED** describe the confirmed session
+connection, even while the participant grid is empty. They do not verify sound:
+play a note and confirm you can hear each other before recording.
+
 ## Save a session and continue later
 
 In v0.29.0, open **File → Session library…** at launch,

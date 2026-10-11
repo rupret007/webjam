@@ -10125,6 +10125,8 @@ class ApplicationController(QObject):
 
     @staticmethod
     def _conductor_stage_phase(phase: SessionConductorPhase) -> SessionPhase:
+        if phase in {SessionConductorPhase.CONNECTED, SessionConductorPhase.LIVE}:
+            return SessionPhase.CONNECTED
         if phase in {
             SessionConductorPhase.RECONNECTING,
             SessionConductorPhase.FAILED,
@@ -10288,6 +10290,7 @@ class ApplicationController(QObject):
         self._last_guidance_display_override = display_override
         self._last_session_conductor_snapshot = snapshot
         self._last_session_conductor = presentation
+        self._sync_conductor_connection_chips(presentation.phase)
         self._record_pilot_conductor_presentation(presentation)
         self._publish_musician_guidance(snapshot, display_override=display_override)
         self._sync_art_room_overview()
@@ -10397,6 +10400,47 @@ class ApplicationController(QObject):
         # reset command remains under More when a v3 host owns that invite.
         if action is SessionPrimaryAction.COPY_INVITE:
             self.window.session_strip.set_invite_available(False)
+
+    def _sync_conductor_connection_chips(self, phase: SessionConductorPhase) -> None:
+        """Refresh connection milestones even before a roster callback arrives."""
+        if self.creator_profile.key == "art" or self.bridge.practice_mode:
+            return
+        if phase in {SessionConductorPhase.CONNECTED, SessionConductorPhase.LIVE}:
+            self.window.set_status_audio("Connected")
+            count = len(self.participants)
+            if not count:
+                label = "Connected"
+            elif count == 1:
+                label = "1 participant · waiting for others"
+            else:
+                label = f"{count} participants"
+            self.window.set_status_latency(label)
+        elif phase in {
+            SessionConductorPhase.STARTING_HOST,
+            SessionConductorPhase.WAITING_FOR_HOST_READINESS,
+            SessionConductorPhase.JOINING,
+        }:
+            self.window.set_status_audio("Connecting…")
+            self.window.set_status_latency("Connecting…")
+        elif phase is SessionConductorPhase.RECONNECTING:
+            self.window.set_status_audio("Reconnecting…")
+            self.window.set_status_latency("Reconnecting")
+        elif phase is SessionConductorPhase.IDLE:
+            audio = self.bridge.jamulus_state
+            if audio in {"Running", "Already running"}:
+                audio = "Connecting…"
+            self.window.set_status_audio(audio)
+            self.window.set_status_latency("Not connected")
+        elif phase in {
+            SessionConductorPhase.FAILED, SessionConductorPhase.BLOCKED,
+            SessionConductorPhase.INDETERMINATE,
+        }:
+            self.window.set_status_audio("Needs attention")
+            self.window.set_status_latency("Needs attention")
+        elif phase in {SessionConductorPhase.ENDING, SessionConductorPhase.ENDED}:
+            label = "Ending…" if phase is SessionConductorPhase.ENDING else "Not connected"
+            self.window.set_status_audio(label)
+            self.window.set_status_latency(label)
 
     def _publish_musician_guidance(
         self,
