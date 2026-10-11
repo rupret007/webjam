@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Late peer reconciliation that republishes a take's terminal validation now
+  also forwards the accepted manifest to the Session Library, so a saved
+  take's status and source identity track the new manifest instead of the
+  initial validation.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual
