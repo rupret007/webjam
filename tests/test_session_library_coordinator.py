@@ -240,6 +240,26 @@ class TestSessionLibraryCoordinator(TestCase):
         self.owner.audio.start.assert_not_called()
         self.owner.recording.start.assert_not_called()
 
+    def test_borrowed_strip_title_does_not_rename_existing_workspace_on_flush(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        workspace_id = self.coordinator.current.id
+        self.owner._persistence = SimpleNamespace(_borrowed_title="Guest room")
+        self.window.session_strip.set_session_title("Guest room")
+        self.window.session_canvas.set_notes("Decision: keep the bridge")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(workspace_id)
+        self.assertEqual(saved.title, "Wednesday")
+        self.assertEqual(saved.notes, "Decision: keep the bridge")
+
+    def test_explicit_title_change_still_renames_workspace_on_flush(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        workspace_id = self.coordinator.current.id
+        self.owner._persistence = SimpleNamespace(_borrowed_title=None)
+        self.window.session_strip.set_session_title("Thursday")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(workspace_id)
+        self.assertEqual(saved.title, "Thursday")
+
     def test_failed_save_blocks_switch_and_keeps_draft(self):
         self.coordinator.ensure_current()
         other = self.library.create("music", "Other")
