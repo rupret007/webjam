@@ -774,7 +774,6 @@ def test_every_visible_door_button_matches_owner_lock(qapp, tmp_path, profile, i
     with patch("webjam_qt.windows.launch_dialog._windows_jamulus_installer", return_value=installer):
         dialog = _dialog(tmp_path, profile)
     try:
-        dialog._menu_bar.setNativeMenuBar(False)
         dialog.resize(620, 520)
         dialog.show()
         qapp.processEvents()
@@ -810,7 +809,6 @@ def test_windows_door_with_missing_music_component_stays_compact(qapp, tmp_path,
     ):
         dialog = LaunchDialog(AppSettings(config_file=str(tmp_path / "settings.json"), last_creator_profile_key=profile))
     try:
-        dialog._menu_bar.setNativeMenuBar(False)
         dialog.setStyleSheet(load_stylesheet())
         dialog.resize(620, 520)
         dialog.show()
