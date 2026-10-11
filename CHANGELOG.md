@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Aligned-originals export now rejects source audio changed after hashing,
+  while rendering, or before publication. Source digests must match the saved
+  take; failed attempts remove the unfinished package and preserve prior exports.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual

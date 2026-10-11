@@ -366,6 +366,132 @@ def _reordered_project_take(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "phase", ["hash", "open", "render", "after_render", "publication"]
+)
+@pytest.mark.parametrize("change", ["rewrite", "replace_identical", "remove"])
+def test_project_export_rejects_source_changes_during_export(
+    tmp_path, monkeypatch, phase, change
+):
+    from core import take_export
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    source = sources[0]
+    manifest_bytes = (take.path / "webjam-take.json").read_bytes()
+    other_sources = {path: path.read_bytes() for path in sources[1:]}
+    destination = tmp_path / "exports"
+    destination.mkdir()
+    existing = destination / "Track Export"
+    existing.mkdir()
+    (existing / "keep.txt").write_text("Previous export", encoding="utf-8")
+    changed = False
+
+    def change_source():
+        nonlocal changed
+        if changed:
+            return
+        changed = True
+        if change == "rewrite":
+            before = source.stat()
+            _write(source, np.full(2048, 0.8), rate=48_000)
+            # Same format, size and mtime: identity must also cover ctime/inode.
+            os.utime(source, ns=(before.st_atime_ns, before.st_mtime_ns))
+            assert source.stat().st_size == before.st_size
+        elif change == "replace_identical":
+            replacement = take.path / "replacement.wav"
+            replacement.write_bytes(source.read_bytes())
+            replacement.replace(source)
+        else:
+            source.unlink()
+
+    owner, method = {
+        "hash": (take_export, "_sha256"),
+        "open": (sf, "SoundFile"),
+        "render": (take_export, "_render_segment_block"),
+        "after_render": (take_export, "_write_project_track"),
+        "publication": (take_export, "_write_checksum_manifest"),
+    }[phase]
+    original = getattr(owner, method)
+
+    def change_after_call(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if phase != "hash" or Path(args[0]) == source:
+            change_source()
+        return result
+
+    monkeypatch.setattr(owner, method, change_after_call)
+    with pytest.raises(TakeExportError, match="changed|could not be verified"):
+        export_track_package(take, destination_root=destination, chunk_frames=1024)
+
+    assert changed
+    assert list(destination.iterdir()) == [existing]
+    assert (existing / "keep.txt").read_text(encoding="utf-8") == "Previous export"
+    assert (take.path / "webjam-take.json").read_bytes() == manifest_bytes
+    assert {path: path.read_bytes() for path in sources[1:]} == other_sources
+
+
+def test_project_export_source_digests_match_declared_bytes(tmp_path):
+    from core.export_receipt import verify_export_receipt
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    before = {path: path.read_bytes() for path in sources}
+    result = export_track_package(take, destination_root=tmp_path / "exports")
+    payload = json.loads(result.manifest.read_text(encoding="utf-8"))
+
+    for track in payload["tracks"]:
+        for segment in track["segments"]:
+            assert segment["observed_sha256"] == segment["declared_sha256"]
+            assert segment["observed_sha256"] == _digest(take.path / segment["path"])
+    assert {path: path.read_bytes() for path in sources} == before
+    assert verify_export_receipt(result.folder).file_count == 11
+
+
+@pytest.mark.parametrize("hash_call", [2, 3])
+def test_project_export_rejects_observed_source_digest_mismatch(
+    tmp_path, monkeypatch, hash_call
+):
+    from core import take_export
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    original = take_export._sha256
+    source_calls = 0
+
+    def mismatched_digest(path):
+        nonlocal source_calls
+        digest = original(path)
+        if path == sources[0]:
+            source_calls += 1
+            if source_calls == hash_call:
+                # Exercise digest comparison independently of stat identity,
+                # both in the evidence and final publication checks.
+                return "0" * 64
+        return digest
+
+    monkeypatch.setattr(take_export, "_sha256", mismatched_digest)
+    destination = tmp_path / "exports"
+    with pytest.raises(TakeExportError, match="Source audio changed"):
+        export_track_package(take, destination_root=destination)
+    assert source_calls == hash_call
+    assert list(destination.iterdir()) == []
+
+
+def test_project_export_requires_declared_source_digest(tmp_path):
+    from core.take_project import load_take_project
+
+    take, (bass, drums, guitar), _sources = _reordered_project_take(tmp_path)
+    project = load_take_project(take.path)
+    bass = replace(bass, segments=(replace(bass.segments[0], sha256=""),))
+    write_take_project(
+        take.path,
+        replace(project, tracks=(bass, drums, guitar), revision=project.revision + 1),
+    )
+    destination = tmp_path / "exports"
+
+    with pytest.raises(TakeExportError, match="does not match the saved take"):
+        export_track_package(take, destination_root=destination)
+    assert list(destination.iterdir()) == []
+
+
+@pytest.mark.parametrize(
     "damage", ["missing", "directory", "dangling_symlink", "symlink", "oversized"]
 )
 def test_loaded_project_cannot_fall_back_to_legacy_export(tmp_path, damage):

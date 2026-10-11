@@ -16,6 +16,7 @@ import shutil
 import stat
 import uuid
 from collections.abc import Mapping
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -81,6 +82,46 @@ _MAX_TAKE_MANIFEST_BYTES = 16 * 1024 * 1024
 class _TakeManifestSnapshot:
     identity: tuple[int, int, int, int, int]
     sha256: str
+
+
+@dataclass(frozen=True)
+class _SourceSnapshot:
+    identity: tuple[int, int, int, int, int]
+    sha256: str
+
+
+_SOURCE_CHANGED = "Source audio changed during export. Reopen the take and retry."
+
+
+def _source_identity(path: Path) -> tuple[int, int, int, int, int]:
+    try:
+        info = path.lstat()
+    except OSError as exc:
+        raise TakeExportError(
+            "Source audio could not be verified. Reopen the take and retry."
+        ) from exc
+    if not stat.S_ISREG(info.st_mode):
+        raise TakeExportError(_SOURCE_CHANGED)
+    return _manifest_identity(info)
+
+
+def _snapshot_source(path: Path) -> _SourceSnapshot:
+    identity = _source_identity(path)
+    try:
+        digest = _sha256(path)
+    except OSError as exc:
+        raise TakeExportError(
+            "Source audio could not be verified. Reopen the take and retry."
+        ) from exc
+    if _source_identity(path) != identity:
+        raise TakeExportError(_SOURCE_CHANGED)
+    return _SourceSnapshot(identity, digest)
+
+
+def _require_unchanged_source(path: Path, snapshot: _SourceSnapshot) -> str:
+    if _snapshot_source(path) != snapshot:
+        raise TakeExportError(_SOURCE_CHANGED)
+    return snapshot.sha256
 
 
 def _manifest_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
@@ -155,13 +196,20 @@ def _publish_track_package(
     destination: Path,
     take_root: Path,
     snapshot: _TakeManifestSnapshot | None,
+    source_snapshots: Mapping[Path, _SourceSnapshot] | None = None,
 ) -> None:
     from core.take_project import take_project_manifest_lock
 
+    # Rehash outside the metadata lock; then check identities at publication.
+    for path, source_snapshot in (source_snapshots or {}).items():
+        _require_unchanged_source(path, source_snapshot)
     # Serialize the final check and publication with WebJam's metadata writers.
     # Rendering stays outside this short lock so recording updates can proceed.
     with take_project_manifest_lock(take_root):
         _require_unchanged_take_manifest(take_root, snapshot)
+        for path, source_snapshot in (source_snapshots or {}).items():
+            if _source_identity(path) != source_snapshot.identity:
+                raise TakeExportError(_SOURCE_CHANGED)
         temporary.rename(destination)
 
 
@@ -456,6 +504,7 @@ def _write_project_track(
     project_rate: int,
     total_frames: int,
     chunk_frames: int,
+    source_snapshots: dict[Path, _SourceSnapshot],
 ) -> int:
     """Render explicit immutable segments through alignment/drift metadata."""
     import numpy as np
@@ -474,13 +523,15 @@ def _write_project_track(
     offset_frames = round(float(track.alignment.effective_offset_s) * project_rate)
     prepared: list[tuple[object, object, int, int]] = []
     intervals: list[tuple[int, int]] = []
+    resources = ExitStack()
+    opened_sources: list[tuple[Path, int, _SourceSnapshot]] = []
     try:
         for segment in sorted(
             track.segments, key=lambda item: (item.project_start_frame, item.segment_id)
         ):
-            source = (take_root / segment.path).resolve()
+            source = take_root / segment.path
             try:
-                source.relative_to(take_root)
+                source.resolve().relative_to(take_root)
             except ValueError as exc:
                 raise TakeExportError(
                     f"{track.name} points outside its take folder."
@@ -489,9 +540,36 @@ def _write_project_track(
                 raise TakeExportError(f"{track.name} is missing {segment.path}.")
             if segment.size_bytes and source.stat().st_size != segment.size_bytes:
                 raise TakeExportError(f"{track.name} changed size after validation.")
-            if segment.sha256 and _sha256(source) != segment.sha256:
-                raise TakeExportError(f"{track.name} changed after validation.")
-            reader = sf.SoundFile(str(source))
+            snapshot = _snapshot_source(source)
+            if snapshot.sha256 != segment.sha256:
+                raise TakeExportError(
+                    "Source audio does not match the saved take. Reopen the take and retry."
+                )
+            previous = source_snapshots.setdefault(source, snapshot)
+            if previous != snapshot:
+                raise TakeExportError(_SOURCE_CHANGED)
+            try:
+                descriptor = os.open(
+                    source,
+                    os.O_RDONLY
+                    | getattr(os, "O_NOFOLLOW", 0)
+                    | getattr(os, "O_NONBLOCK", 0)
+                    | getattr(os, "O_BINARY", 0),
+                )
+            except OSError as exc:
+                raise TakeExportError(_SOURCE_CHANGED) from exc
+            resources.callback(os.close, descriptor)
+            if _manifest_identity(os.fstat(descriptor)) != snapshot.identity:
+                raise TakeExportError(_SOURCE_CHANGED)
+            # Pin the verified file while libsndfile reads it. Path replacement
+            # must not redirect rendering to different bytes.
+            reader = resources.enter_context(sf.SoundFile(descriptor, closefd=False))
+            if (
+                _source_identity(source) != snapshot.identity
+                or _manifest_identity(os.fstat(descriptor)) != snapshot.identity
+            ):
+                raise TakeExportError(_SOURCE_CHANGED)
+            opened_sources.append((source, descriptor, snapshot))
             observed = (
                 int(reader.samplerate),
                 int(reader.channels),
@@ -503,7 +581,6 @@ def _write_project_track(
                 int(segment.frame_count),
             )
             if observed != declared:
-                reader.close()
                 raise TakeExportError(
                     f"{track.name} media facts changed after validation."
                 )
@@ -516,7 +593,6 @@ def _write_project_track(
                 )
             end = start + max(0, rendered_frames)
             if intervals and start < intervals[-1][1]:
-                reader.close()
                 raise TakeExportError(
                     f"{track.name} contains overlapping reconnect segments."
                 )
@@ -555,9 +631,14 @@ def _write_project_track(
                         )
                 writer.write(block)
                 output_start += count
+        for source, descriptor, snapshot in opened_sources:
+            if (
+                _manifest_identity(os.fstat(descriptor)) != snapshot.identity
+                or _source_identity(source) != snapshot.identity
+            ):
+                raise TakeExportError(_SOURCE_CHANGED)
     finally:
-        for _segment, reader, _start, _end in prepared:
-            reader.close()
+        resources.close()
     os.chmod(destination, 0o600)
     return channel_count
 
@@ -862,6 +943,7 @@ def _export_project_track_package(
     track_evidence: list[dict] = []
     used_names: set[str] = set()
     reference_indexes: list[int] = []
+    source_snapshots: dict[Path, _SourceSnapshot] = {}
     try:
         for export_index, track in enumerate(selected):
             base = _safe_name(track.name, f"Track {export_index + 1}")
@@ -879,6 +961,7 @@ def _export_project_track_package(
                 project_rate=project_rate,
                 total_frames=total_frames,
                 chunk_frames=chunk_frames,
+                source_snapshots=source_snapshots,
             )
             state = _project_track_mix_settings(
                 settings_map,
@@ -892,7 +975,12 @@ def _export_project_track_package(
             person = participant_map.get(track.participant_id)
             source_files = []
             for segment in track.segments:
-                source_path = take.path / segment.path
+                source_path = take.path.resolve() / segment.path
+                observed_sha256 = _require_unchanged_source(
+                    source_path, source_snapshots[source_path]
+                )
+                if observed_sha256 != segment.sha256:
+                    raise TakeExportError(_SOURCE_CHANGED)
                 source_files.append(
                     {
                         "segment_id": segment.segment_id,
@@ -903,7 +991,7 @@ def _export_project_track_package(
                         "project_start_frame": segment.project_start_frame,
                         "media_status": segment.media_status.value,
                         "declared_sha256": segment.sha256,
-                        "observed_sha256": _sha256(source_path),
+                        "observed_sha256": observed_sha256,
                         "gaps": [gap.to_dict() for gap in segment.gaps],
                     }
                 )
@@ -1144,7 +1232,9 @@ def _export_project_track_package(
 
         checksums = temporary / "CHECKSUMS.sha256"
         _write_checksum_manifest(temporary, checksums)
-        _publish_track_package(temporary, final_folder, take.path, manifest_snapshot)
+        _publish_track_package(
+            temporary, final_folder, take.path, manifest_snapshot, source_snapshots
+        )
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise

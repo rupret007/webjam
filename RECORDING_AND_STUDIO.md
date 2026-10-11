@@ -439,6 +439,11 @@ repeated take lanes; export those recordings from their own takes. A failure
 after an edited Studio export begins never silently falls back to aligned
 originals.
 
+Aligned-originals export also verifies that each source still matches its saved
+digest and file identity through rendering and before publication. If source
+audio changes, export stops with **Source audio changed during export. Reopen
+the take and retry.** No unfinished package is kept; earlier exports stay intact.
+
 ## Non-destructive boundary
 
 The take manifest and every source WAV are recording evidence. Studio never
