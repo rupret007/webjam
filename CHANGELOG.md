@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Session library honors Undo after a failed save: restoring the live Notes,
+  title, or mode to its last saved value replaces the older retained edit on
+  retry, while pending take and recap information stays intact.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual

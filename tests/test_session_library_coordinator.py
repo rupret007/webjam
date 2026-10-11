@@ -251,6 +251,88 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertTrue(self.coordinator.flush())
         self.assertEqual(self.library.load(self.coordinator.current.id).notes, "must survive")
 
+    def test_undo_notes_after_failed_save_preserves_pending_take_and_recap(self):
+        for original in ("Original notes", ""):
+            with self.subTest(original=original):
+                self.window.session_canvas.set_notes(original)
+                self.coordinator.start_session()
+                self.assertTrue(self.coordinator.flush())
+                self.coordinator.recording_started("late-take", "recording-session")
+                notes = self.window.session_canvas._notes
+                notes.selectAll()
+                notes.insertPlainText("Decision: temporary\nAction: @Lee retry\nBlocker: disk")
+                with patch.object(self.library, "save", side_effect=OSError("full")):
+                    self.assertFalse(self.coordinator.flush())
+                late = self._late_take_and_recap()
+                self.assertTrue(late.decisions)
+                self.assertTrue(late.actions)
+                self.assertTrue(late.blockers)
+                notes.undo()
+                self.assertEqual(notes.toPlainText(), original)
+                # Capturing the Undo must survive another failed write too.
+                with patch.object(self.library, "save", side_effect=OSError("still full")):
+                    self.assertFalse(self.coordinator.flush())
+                self.assertTrue(self.coordinator.flush())
+                saved = self.library.load(self.coordinator.current.id)
+                self.assertEqual(saved.notes, original)
+                self.assertEqual(saved.decisions, ())
+                self.assertEqual(saved.actions, ())
+                self.assertEqual(saved.blockers, ())
+                self.assertEqual(saved.take_links, late.take_links)
+                self.assertEqual(saved.recaps, late.recaps)
+                self.assertNotIn(saved.id, self.coordinator._pending)
+
+    def test_undo_title_after_failed_save(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        original = self.coordinator.current.title
+        self.window.session_strip.set_session_title("Temporary title")
+        with patch.object(self.library, "save", side_effect=OSError("full")):
+            self.assertFalse(self.coordinator.flush())
+        self.window.session_strip.set_session_title(original)
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(self.coordinator.current.id).title, original)
+
+    def test_undo_mode_after_failed_save(self):
+        picker = self.window.session_strip._mode_picker
+        picker.addItem("Review", "review")
+        self.assertTrue(self.coordinator.ensure_current())
+        original = self.coordinator.current.mode_key
+        picker.setCurrentIndex(picker.findData("review"))
+        with patch.object(self.library, "save", side_effect=OSError("full")):
+            self.assertFalse(self.coordinator.flush())
+        picker.setCurrentIndex(picker.findData(original))
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(self.coordinator.current.id).mode_key, original)
+
+    def test_undo_title_leaves_untouched_pending_notes_and_mode(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.ensure_current())
+        original = self.coordinator.current
+        pending = replace(original, notes="Another owner's notes", mode_key="review",
+                          decisions=("Keep the pending decision",))
+        self.coordinator._pending[original.id] = pending
+        self.window.session_strip.set_session_title("Temporary title")
+        with patch.object(self.library, "save", side_effect=OSError("full")):
+            self.assertFalse(self.coordinator.flush())
+        self.window.session_strip.set_session_title(original.title)
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(original.id)
+        self.assertEqual(saved.title, original.title)
+        self.assertEqual(saved.notes, pending.notes)
+        self.assertEqual(saved.mode_key, pending.mode_key)
+        self.assertEqual(saved.decisions, pending.decisions)
+
+    def test_editor_applied_notes_do_not_count_as_a_later_live_edit(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        editor.notes.setPlainText("Accepted editor notes")
+        self.assertTrue(editor.save_current())
+        original = self.coordinator.current
+        self.coordinator._pending[original.id] = replace(original, notes="Retained notes")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(original.id).notes, "Retained notes")
+
     def test_active_room_blocks_switch_but_keeps_saved_workspace(self):
         self.coordinator.ensure_current()
         previous = self.coordinator.current.id
