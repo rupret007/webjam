@@ -656,6 +656,40 @@ def test_every_profile_still_has_launch_copy():
     assert set(_CREATOR_LAUNCH_COPY) == {profile.key for profile in CREATOR_PROFILES}
 
 
+def test_art_host_copy_describes_starting_the_room():
+    assert _CREATOR_LAUNCH_COPY["art"].host_description == "Start the room."
+
+
+@pytest.mark.parametrize("start_key", ["talk_and_make", "paint_along"])
+def test_art_host_accessibility_matches_launch_without_copying_invite(
+    qapp, tmp_path: Path, start_key: str
+):
+    dialog = _dialog(tmp_path)
+    clipboard = qapp.clipboard()
+    original_text = clipboard.text()
+    try:
+        next(card for card in _visible_cards(dialog) if card.start_key == start_key).click()
+        start = dialog.selected_start
+        description = dialog._host_button.accessibleDescription()
+        assert description.startswith(f"Start {start.label} as the host.")
+        assert "copy" not in description.casefold()
+        assert "clipboard" not in description.casefold()
+        assert description.endswith("Start the room.")
+
+        clipboard.setText("Existing clipboard content")
+        dialog._host_button.click()
+
+        assert dialog.result() == dialog.DialogCode.Accepted
+        assert dialog.selected_role == "host"
+        assert dialog.selected_start_key == start_key
+        assert dialog.band_invite is None
+        assert dialog.remote_invitation is None
+        assert clipboard.text() == "Existing clipboard content"
+    finally:
+        clipboard.setText(original_text)
+        dialog.deleteLater()
+
+
 def test_no_launch_copy_still_says_studio_visit():
     for key, copy in _CREATOR_LAUNCH_COPY.items():
         spoken = " ".join(

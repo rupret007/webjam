@@ -140,9 +140,7 @@ _CREATOR_LAUNCH_COPY = {
         host="Host",
         join="Join",
         local="Standalone Art Unavailable",
-        host_description=(
-            "Copy an invite for your guests."
-        ),
+        host_description="Start the room.",
         join_description=(
             "Paste the host's invite to join their activity."
         ),

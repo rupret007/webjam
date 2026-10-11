@@ -164,7 +164,8 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
 1. Open WebJam and choose **Art** or **Music**. Use **Podcast or review** only
    when that is the room you came to make.
 2. For Art, choose **Make together** or **Paint along**, then **Host** /
-   **Join**. **Make together** keeps people working locally and lets the host
+   **Join**. Art **Host** starts the room; copy an invite from inside the room
+   once it is ready to share. **Make together** keeps people working locally and lets the host
    open one shared canvas from inside the room. Music uses **Host** / **Join**; Podcast & Voice
    and Review & Rehearsal retain their profile-specific Host/Join labels.
 3. For Music ensemble playing, configure interface, channels, headphones, and buffer in Jamulus. Confirm
