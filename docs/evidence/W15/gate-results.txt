@@ -1,0 +1,79 @@
+.....                                                                    [100%]
+5 passed, 23 deselected in 1.28s
+All checks passed!
+WARNING: The directory '/Users/jeffstory/Library/Caches/pip' or its parent directory is not owned or is not writable by the current user. The cache has been disabled. Check the permissions and owner of that directory. If executing pip with sudo, you should use sudo's -H flag.
+No broken requirements found.
+UX smoke gate passed.
+Testing tests/test_art_cold_invitation_context.py
+............................                                             [100%]
+28 passed in 3.58s
+Testing tests/test_art_start_ux.py
+.......................................................                  [100%]
+55 passed in 1.10s
+Testing tests/test_art_invitation_entry.py
+.................................                                        [100%]
+33 passed in 0.10s
+Testing tests/test_art_invitation_flow.py
+..............................                                           [100%]
+30 passed in 2.03s
+Testing tests/test_art_room_controller.py
+.................                                                        [100%]
+17 passed in 1.67s
+Testing tests/test_art_pending_profile_facts.py
+.................                                                        [100%]
+17 passed in 2.83s
+Testing tests/test_art_profile.py
+...............................................                          [100%]
+47 passed in 0.56s
+Testing tests/test_creator_profile_guidance.py
+.................                                                        [100%]
+17 passed in 1.44s
+Testing tests/test_jamulus_native_startup.py
+........................................................................ [ 92%]
+......                                                                   [100%]
+78 passed in 0.56s
+Testing tests/test_host_share_join_flow.py
+.....................................................................    [100%]
+69 passed in 2.27s
+Testing tests/test_invitation_ingress.py
+............................                                             [100%]
+28 passed in 0.10s
+Testing tests/test_offline_invitation_gate.py
+...........                                                              [100%]
+11 passed in 0.90s
+Testing tests/test_invitation_conversation_lifetime.py
+.........                                                                [100%]
+9 passed in 1.47s
+Testing tests/test_rejected_invitation_journey.py
+..........                                                               [100%]
+10 passed in 3.53s
+Testing tests/test_controller_remote_transport.py
+...............................                                          [100%]
+31 passed in 2.19s
+Testing tests/test_remote_host_loopback_binding.py
+............                                                             [100%]
+12 passed in 0.77s
+Testing tests/test_remote_launch_ingress.py
+..........                                                               [100%]
+10 passed in 0.78s
+Testing tests/test_composed_invitation_music_mix.py
+....                                                                     [100%]
+4 passed in 1.15s
+Testing tests/test_music_lan_guest_handoff_recovery.py
+......................                                                   [100%]
+22 passed in 1.81s
+Testing tests/test_local_originals_choice_profiles.py
+....................                                                     [100%]
+20 passed in 0.70s
+Testing tests/test_session_library_launch.py
+........................                                                 [100%]
+24 passed in 4.19s
+Testing tests/test_session_library_coordinator.py
+............................                                             [100%]
+28 passed in 1.56s
+Testing tests/test_application_controller_band_check_gate.py
+......................................                                   [100%]
+38 passed in 0.83s
+Testing tests/test_recovery_lifecycle_contract.py
+..................................                                       [100%]
+34 passed in 2.10s

@@ -1,0 +1,103 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+_ ArtLanHostPortableTest.test_full_art_invite_bootstrap_keeps_conversation_temporary_and_notes_local _
+
+self = <tests.test_art_lan_host_portable.ArtLanHostPortableTest testMethod=test_full_art_invite_bootstrap_keeps_conversation_temporary_and_notes_local>
+
+    def test_full_art_invite_bootstrap_keeps_conversation_temporary_and_notes_local(self):
+        from core.session_conductor import ArtRoomState
+        from core.settings import load_settings, save_settings
+        from webjam_qt import app as app_module
+    
+        # Both in-process windows use the same isolated local Notes root. A
+        # shared sentinel tests preservation without pretending two accounts
+        # have separate global persistence factories in this process.
+        note = "Local clay study notes stay on this computer."
+        music_note = "Local rehearsal notes stay separate."
+        notes_path = self.root / "notes" / ".webjam_notes.art.md"
+        notes_path.write_text(note, encoding="utf-8")
+        original_notes = notes_path.read_bytes()
+        music_notes_path = self.root / "notes" / ".webjam_notes.md"
+        music_notes_path.write_text(music_note, encoding="utf-8")
+        original_music_notes = music_notes_path.read_bytes()
+        host = self._host("talk_and_make", meeting=_ROOM_MEETING)
+>       self._assert_waiting(host)
+
+tests/test_art_lan_host_portable.py:458: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_art_lan_host_portable.py:345: in _assert_waiting
+    self.assertTrue(host.host_peer.active, "Host start failed: " + ",".join(self.listener_errors))
+E   AssertionError: False is not true : Host start failed: PermissionError
+----------------------------- Captured stderr call -----------------------------
+qt.qpa.fonts: Populating font family aliases took 38 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+2026-10-11T05:31:12 WARNING webjam.qt.application_controller Art LAN room listener could not start
+______ ArtLanHostPortableTest.test_make_together_host_copy_join_and_leave ______
+
+self = <tests.test_art_lan_host_portable.ArtLanHostPortableTest testMethod=test_make_together_host_copy_join_and_leave>
+
+    def test_make_together_host_copy_join_and_leave(self):
+        host = self._host("talk_and_make")
+>       self._assert_waiting(host)
+
+tests/test_art_lan_host_portable.py:433: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_art_lan_host_portable.py:345: in _assert_waiting
+    self.assertTrue(host.host_peer.active, "Host start failed: " + ",".join(self.listener_errors))
+E   AssertionError: False is not true : Host start failed: PermissionError
+----------------------------- Captured stderr call -----------------------------
+2026-10-11T05:31:12 WARNING webjam.qt.application_controller Art LAN room listener could not start
+_ ArtLanHostPortableTest.test_missing_address_then_bind_failure_retry_keeps_host_fail_closed _
+
+self = <tests.test_art_lan_host_portable.ArtLanHostPortableTest testMethod=test_missing_address_then_bind_failure_retry_keeps_host_fail_closed>
+
+    def test_missing_address_then_bind_failure_retry_keeps_host_fail_closed(self):
+        from core.session_conductor import ArtRoomState
+    
+        self.address = ""
+        host = self._host("talk_and_make")
+        self.assertFalse(host.host_peer.active)
+        self.assertIs(host._room_participant.state, ArtRoomState.FAILED)
+        host._copy_band_invite()
+        self.assertEqual(self.clipboard.setText.call_count, 0)
+        self.address = _LOGICAL_HOST
+        self.fail_next_bind = True
+        host._on_conductor_action_requested("retry_startup")
+        self.assertFalse(host.host_peer.active)
+        self.assertIs(host._room_participant.state, ArtRoomState.FAILED)
+        self.assertFalse(self.fail_next_bind, "Retry must attempt the real host owner")
+        host._copy_band_invite()
+        self.assertEqual(self.clipboard.setText.call_count, 0)
+        host._on_conductor_action_requested("retry_startup")
+        host._room_participant.tick()
+>       self._assert_waiting(host)
+
+tests/test_art_lan_host_portable.py:589: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_art_lan_host_portable.py:345: in _assert_waiting
+    self.assertTrue(host.host_peer.active, "Host start failed: " + ",".join(self.listener_errors))
+E   AssertionError: False is not true : Host start failed: PermissionError
+----------------------------- Captured stderr call -----------------------------
+2026-10-11T05:31:12 INFO webjam.qt.room_participant Art LAN room start deferred: network unavailable
+2026-10-11T05:31:12 WARNING webjam.qt.application_controller Art LAN room listener could not start
+2026-10-11T05:31:12 WARNING webjam.qt.application_controller Art LAN room listener could not start
+_ ArtLanHostPortableTest.test_paint_along_host_copy_join_and_leave_without_opening_media _
+
+self = <tests.test_art_lan_host_portable.ArtLanHostPortableTest testMethod=test_paint_along_host_copy_join_and_leave_without_opening_media>
+
+    def test_paint_along_host_copy_join_and_leave_without_opening_media(self):
+        host = self._host("paint_along")
+>       self._assert_waiting(host)
+
+tests/test_art_lan_host_portable.py:438: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_art_lan_host_portable.py:345: in _assert_waiting
+    self.assertTrue(host.host_peer.active, "Host start failed: " + ",".join(self.listener_errors))
+E   AssertionError: False is not true : Host start failed: PermissionError
+----------------------------- Captured stderr call -----------------------------
+2026-10-11T05:31:12 WARNING webjam.qt.application_controller Art LAN room listener could not start
+=========================== short test summary info ============================
+FAILED tests/test_art_lan_host_portable.py::ArtLanHostPortableTest::test_full_art_invite_bootstrap_keeps_conversation_temporary_and_notes_local
+FAILED tests/test_art_lan_host_portable.py::ArtLanHostPortableTest::test_make_together_host_copy_join_and_leave
+FAILED tests/test_art_lan_host_portable.py::ArtLanHostPortableTest::test_missing_address_then_bind_failure_retry_keeps_host_fail_closed
+FAILED tests/test_art_lan_host_portable.py::ArtLanHostPortableTest::test_paint_along_host_copy_join_and_leave_without_opening_media
+4 failed in 1.92s
