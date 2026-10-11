@@ -723,10 +723,16 @@ class RoomParticipantController:
             return
         if time.monotonic() - self.native_received_at >= 5.0:
             return
+        if not self.app._apply_creator_profile_key(state.creator_profile_key, host_owned=True):
+            # A Library media operation is still pending. Retry shortly
+            # without declaring admission complete; the 5s deadline above
+            # bounds how long these retries can run.
+            generation = self.generation
+            QTimer.singleShot(200, lambda: self._retry_apply_native(source, key, generation))
+            return
         self.native_applied = key
         self.probing = False
         self.borrowed_start = state.art_start_key
-        self.app._apply_creator_profile_key(state.creator_profile_key, host_owned=True)
         if state.creator_profile_key == "art":
             self.state = ArtRoomState.CONNECTED
             self.app._remote_invitation = None
@@ -735,6 +741,17 @@ class RoomParticipantController:
         else:
             self.state = ArtRoomState.NONE
             self.app._activate_remote_guest_route(snapshot, source=source)
+
+    def _retry_apply_native(self, source, key, generation):
+        state = self.native_state
+        if (state is None or self.blocked or generation != self.generation
+                or source is not self.app._remote_session
+                or (source, self.native_generation, state.revision) != key):
+            return
+        snapshot = getattr(source, "snapshot", None)
+        if snapshot is None or snapshot.generation != self.native_generation:
+            return
+        self.apply_native(source, snapshot)
 
     def observe_creative_state(self, state):
         for method, field in (("_reference_video_coordinator", "reference_video"),
