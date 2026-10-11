@@ -86,7 +86,8 @@ helper that removes quarantine from WebJam only.
 ## Start creating
 
 1. Choose **Art** or **Music**. The launch **File** menu contains local Music
-   projects, Podcast & Voice, and Review & Rehearsal.
+   projects, Podcast & Voice, and Review & Rehearsal. The hidden profile
+   selector does not announce those extra profiles on the Art/Music door.
 2. In Art, choose **Make together** or **Paint along**, then **Host** or
    **Join**. Make from your own space; a shared canvas is optional.
 3. An Art host waits for **Your room is open**, then chooses **Copy Invite**.
