@@ -1019,8 +1019,9 @@ class LaunchDialog(QDialog):
         self._join_button_primary.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._join_button_primary.clicked.connect(self._join)
         layout.addWidget(self._join_button_primary)
-        layout.addStretch(2)
-
+        # Back follows Join at the layout's normal fixed spacing (no stretch
+        # here) so it never drifts into a dead gap on tall windows; any extra
+        # window height instead goes below Back, matching _build_setup_page.
         self._join_back_button = QPushButton("Back")
         self._join_back_button.setObjectName("GhostButton")
         self._join_back_button.setAccessibleName("Back")
@@ -1030,6 +1031,7 @@ class LaunchDialog(QDialog):
         self._join_back_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._join_back_button.clicked.connect(self.show_choices)
         layout.addWidget(self._join_back_button, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addStretch(1)
         self._apply_creator_profile_presentation()
         self._on_invite_text_changed()
         return page
