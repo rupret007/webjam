@@ -12,6 +12,12 @@
 > macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
 > gates remain **NOT RUN**. A source checkout is not a published package.
 
+## Install the included music component on Windows
+
+When **Help → Music setup…** is available at launch, choose
+**Install the music component** to open the installer included with WebJam.
+Finish the installer, then choose **Back** to continue.
+
 ## Save a session and continue later
 
 In v0.29.0, open **File → Session library…** at launch,

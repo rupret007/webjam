@@ -828,6 +828,41 @@ def test_windows_door_with_missing_music_component_stays_compact(qapp, tmp_path,
         dialog.deleteLater()
 
 
+@pytest.mark.parametrize(
+    ("property_name", "expected"),
+    [
+        ("text", "Install the music component"),
+        ("accessibleName", "Install the music component"),
+        (
+            "accessibleDescription",
+            "Open the music component installer included with this Windows build.",
+        ),
+    ],
+)
+def test_music_setup_button_uses_engine_neutral_copy(
+    qapp, tmp_path, property_name, expected
+):
+    with patch("webjam_qt.windows.launch_dialog.sys.platform", "win32"), patch(
+        "webjam_qt.windows.launch_dialog._windows_jamulus_installer",
+        return_value="C:/WebJam/setup.exe",
+    ):
+        dialog = LaunchDialog(_settings(tmp_path))
+    try:
+        dialog.show()
+        qapp.processEvents()
+        assert dialog._setup_action.isEnabled()
+        dialog._setup_action.trigger()
+        button = dialog._install_jamulus_button
+        assert button.isVisibleTo(dialog)
+        assert button.isEnabled()
+        copy = getattr(button, property_name)()
+        assert copy == expected
+        _assert_first_screen_has_no_banned_words(copy)
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_paint_along_mark_stays_neutral_in_every_native_icon_state(qapp, tmp_path):
     from PySide6.QtGui import QIcon
 
