@@ -631,12 +631,38 @@ class SessionLibraryDialog(QDialog):
         self._dirty = False
         self._base_record = deepcopy(self.record)
         self.pending_records.pop(self.record.id, None)
+        self._sync_accepted_fields(edited)
         self.summary.setPlainText(workspace_summary(self.record))
         self._render_takes()
         self.status.setText("Saved on this computer.")
         self.record_saved.emit(self.record)
         self.refresh()
         return True
+
+    def _sync_accepted_fields(self, edited):
+        """Pull back a merged save's accepted content into these widgets.
+
+        A three-way merge can keep a newer live value instead of this
+        editor's own draft for a field (e.g. Notes updated elsewhere while
+        this dialog was open). Leaving the stale draft in the widget would
+        let the next unrelated save (e.g. a title-only edit) resubmit it and
+        revert the accepted value right back on disk.
+        """
+        self._loading = True
+        try:
+            if self.record.title != edited.title:
+                self.title.setText(self.record.title)
+            if self.record.notes != edited.notes:
+                self.notes.setPlainText(self.record.notes)
+            if self.record.rehearsal != edited.rehearsal:
+                from core.rehearsal_plan import RehearsalPlan
+                self.rehearsal.load_payload(RehearsalPlan.from_payload(self.record.rehearsal).payload())
+            if self.record.art != edited.art:
+                from core.art_workspace import normalize_art_workspace
+                self.art.load_payload(normalize_art_workspace(self.record.art),
+                                       defer_reference_checks=bool(self.record.import_provenance))
+        finally:
+            self._loading = False
 
     def _new(self):
         if not self.save_current():

@@ -140,6 +140,29 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertNotIn(saved.id, self.coordinator._pending)
         self.assertEqual(self.window.session_canvas.current_notes(), saved.notes)
 
+    def test_second_unrelated_save_cannot_revert_notes_merged_from_live_canvas(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.ensure_current()
+        editor = self._editor()
+        self.assertEqual(editor.notes.toPlainText(), "Original notes")
+        # Live Notes move on while the editor stays open with its own stale copy.
+        self.window.session_canvas.set_notes("Newer live notes")
+        editor.title.setText("Renamed workspace")
+        self.assertTrue(editor.save_current())
+        saved = self.library.load(editor.record.id)
+        self.assertEqual(saved.notes, "Newer live notes")
+        self.assertEqual(saved.title, "Renamed workspace")
+        # The editor's own Notes widget must now show the accepted merge,
+        # not the pre-merge draft it still held.
+        self.assertEqual(editor.notes.toPlainText(), "Newer live notes")
+        # A second, unrelated save (title only) must not resubmit the stale
+        # pre-merge draft and revert the merged Notes back on disk.
+        editor.title.setText("Renamed workspace again")
+        self.assertTrue(editor.save_current())
+        saved_again = self.library.load(editor.record.id)
+        self.assertEqual(saved_again.notes, "Newer live notes")
+        self.assertEqual(saved_again.title, "Renamed workspace again")
+
     def test_copy_of_older_pending_snapshot_keeps_newer_take_and_recap_owned(self):
         self.coordinator.start_session()
         self.coordinator.recording_started("late-take", "recording-session")
