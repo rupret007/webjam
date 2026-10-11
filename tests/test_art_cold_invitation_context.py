@@ -10,7 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtWidgets import QMessageBox
 
-from core.network_invite import create_invite_link
+from core.network_invite import create_invite_link, parse_invite_link
 from core.remote_invitation import issue_remote_invitation
 from core.room_state import RoomState
 from core.session_conductor import ArtRoomState
@@ -105,6 +105,95 @@ def cold_join(settings, transport):
     assert door.selected_role == "join"
     assert door._invite_input.text() == ""
     return door
+
+
+@pytest.mark.parametrize("entry", ("cold", "running"))
+@pytest.mark.parametrize("profile", ("art", "music"))
+def test_legacy_invite_starts_music_without_reopening_join(
+    context, tmp_path, monkeypatch, entry, profile,
+):
+    create, _retire, _home = context
+    settings = settings_for(tmp_path, profile)
+    save_settings(settings)
+    door = LaunchDialog(settings)
+    try:
+        door.show_join()
+        assert door.accept_invite(
+            "webjam://join?v=1&host=192.168.1.42&port=22124&session=Band+Rehearsal"
+        )
+        invite = door.band_invite
+        assert invite is not None and not invite.peer_enabled
+        app = create(
+            load_settings(settings.config_file),
+            invite=invite if entry == "cold" else None,
+        )
+        paste = mock.Mock()
+        launch = mock.Mock()
+        host = mock.Mock()
+        monkeypatch.setattr(app, "_paste_new_invitation", paste)
+        monkeypatch.setattr(app, "_launch_native_jamulus_for_startup", launch)
+        monkeypatch.setattr(app, "_start_hosted_server_for_startup", host)
+        if entry == "cold":
+            _apply_launch_session_context(app, door)
+            started = app.begin_startup_journey()
+        else:
+            started = app.accept_invitation(invite)
+        paste.assert_not_called()
+        assert started
+        assert app.creator_profile.key == "music"
+        assert app._creator_profile_host_owned
+        assert app._startup_attempt["role"] == "guest"
+        assert app._startup_attempt["phase"] == "launching_client"
+        launch.assert_called_once_with(app._startup_attempt["generation"])
+        host.assert_not_called()
+        assert app._room_participant.lan_guest is None
+        assert app.guest_peer is None
+        assert not app._local_originals_available()
+        assert app.settings.jamulus_server == "192.168.1.42"
+        assert app.window.session_strip.current_title() == "Band Rehearsal"
+        assert app.settings.last_creator_profile_key == profile
+        assert load_settings(settings.config_file).last_creator_profile_key == profile
+        assert not app.begin_startup_journey()
+        launch.assert_called_once()
+        paste.assert_not_called()
+        assert app._stop_session_peer(clear_invite=True)
+        assert app.creator_profile.key == profile
+    finally:
+        door.deleteLater()
+
+
+def test_legacy_invite_waits_for_workspace_operation_before_music_startup(
+    context, tmp_path, monkeypatch,
+):
+    create, _retire, _home = context
+    settings = settings_for(tmp_path, "art")
+    save_settings(settings)
+    app = create(settings)
+    invite = parse_invite_link(create_invite_link("192.168.1.42"))
+    paste = mock.Mock()
+    launch = mock.Mock()
+    flash = mock.Mock()
+    monkeypatch.setattr(app, "_paste_new_invitation", paste)
+    monkeypatch.setattr(app, "_launch_native_jamulus_for_startup", launch)
+    monkeypatch.setattr(app.window, "flash_message", flash)
+    with mock.patch.object(
+        type(app.session_library), "media_operation_pending",
+        new_callable=mock.PropertyMock, return_value=True,
+    ):
+        assert not app.accept_invitation(invite)
+    assert app.creator_profile.key == "art"
+    assert app._startup_attempt is None
+    paste.assert_not_called()
+    launch.assert_not_called()
+    flash.assert_any_call(
+        "This invite is for a music jam. Finish the workspace operation, then join again.",
+        ms=7000,
+    )
+    assert app.accept_invitation(invite)
+    assert app.creator_profile.key == "music"
+    launch.assert_called_once()
+    paste.assert_not_called()
+    assert load_settings(settings.config_file).last_creator_profile_key == "art"
 
 
 def enter_art(qapp, monkeypatch, app, transport):

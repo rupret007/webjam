@@ -881,6 +881,10 @@ class ApplicationController(QObject):
         self.session_library = SessionLibraryCoordinator(self)
         self.window.session_canvas.notes_changed.connect(self.session_library.changed)
         self.window.session_strip._title_input.editingFinished.connect(self.session_library.changed)
+        if session_invite is not None and not session_invite.peer_enabled:
+            # v1 predates room profiles and always joins Music. Borrow that
+            # profile without changing the guest's saved Art/workspace choice.
+            self._apply_creator_profile_key("music", host_owned=True)
         from webjam_qt.controllers.workflow_help import WorkflowHelpCoordinator
 
         self.workflow_help = WorkflowHelpCoordinator(self)
@@ -8215,6 +8219,14 @@ class ApplicationController(QObject):
                 self._guest_invite = invitation
                 self._room_participant.probing = True
                 self._room_participant.role = "guest"
+            else:
+                self._apply_creator_profile_key("music", host_owned=True)
+                if self.creator_profile.key != "music":
+                    self.window.flash_message(
+                        "This invite is for a music jam. Finish the workspace operation, then join again.",
+                        ms=7000,
+                    )
+                    return False
             # The invitation's name labels this session, but it belongs to
             # whoever sent it. Marking it borrowed keeps it out of the
             # musician's persisted default, so a joined session's name cannot

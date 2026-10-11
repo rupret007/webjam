@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Legacy v1 invitations pasted from Art open the existing Music guest journey
+  instead of reopening Join. The session borrows Music without changing the
+  guest's saved profile; leaving restores their own workspace profile.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual
