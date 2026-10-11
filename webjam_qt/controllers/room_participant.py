@@ -24,6 +24,7 @@ from core.session_transfer import (
     SharedCanvasSessionSnapshot,
 )
 from services.lan_room_guest import LanRoomTerminalReason, LessonRequestGuestState
+from services.remote_session_runtime import RemoteSessionPhase
 
 
 LOGGER = logging.getLogger("webjam.qt.room_participant")
@@ -716,7 +717,8 @@ class RoomParticipantController:
     def apply_native(self, source, snapshot):
         state = self.native_state
         if (state is None or snapshot.generation != self.native_generation
-                or source is not self.app._remote_session or self.blocked):
+                or source is not self.app._remote_session or self.blocked
+                or snapshot.phase is not RemoteSessionPhase.CONNECTED):
             return
         key = (source, snapshot.generation, state.revision)
         if key == self.native_applied:
