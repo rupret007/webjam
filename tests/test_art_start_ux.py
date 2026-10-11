@@ -524,7 +524,7 @@ def test_whitespace_only_invite_stays_blocked_and_empty_join_on_submit(
         dialog._invite_input.setText(whitespace)
         dialog._on_invite_text_changed()
         assert dialog._join_button_primary.property("joinBlocked") is True
-        assert dialog._join_status.text() == "Paste your invitation"
+        assert dialog._join_status.text() == "Paste an invite to continue"
         initial_result = dialog.result()
         QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
         qapp.processEvents()
@@ -556,7 +556,7 @@ def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
 
         dialog._invite_input.clear()
         dialog._on_invite_text_changed()
-        assert dialog._join_status.text() == "Paste your invitation"
+        assert dialog._join_status.text() == "Paste an invite to continue"
         assert dialog._join_status.text() != LaunchDialog._EMPTY_JOIN_PROMPT
     finally:
         dialog.deleteLater()
