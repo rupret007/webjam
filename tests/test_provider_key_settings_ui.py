@@ -147,6 +147,20 @@ def test_a_computer_with_no_store_is_told_the_truth_not_given_a_dead_button(app)
 # ----------------------------------------------------------------------
 # The dialog around them
 # ----------------------------------------------------------------------
+def test_optional_keys_accessible_name_matches_visible_label(app, store):
+    dialog = SimpleSettingsDialog(AppSettings(), show_band_check_action=False)
+    try:
+        toggle = dialog._keys_toggle
+        for expanded in (False, True, False):
+            toggle.setChecked(expanded)
+            assert toggle.text() == "Song tools and writing help keys (optional)"
+            assert toggle.accessibleName() == toggle.text()
+            assert "music ai" not in toggle.accessibleName().casefold()
+            assert dialog._keys_panel.isHidden() is not expanded
+    finally:
+        dialog.deleteLater()
+
+
 def test_settings_offers_the_keys_collapsed_and_last(app, store):
     dialog = SimpleSettingsDialog(AppSettings(), show_band_check_action=False)
     try:

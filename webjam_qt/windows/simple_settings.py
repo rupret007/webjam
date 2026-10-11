@@ -232,9 +232,7 @@ class SimpleSettingsDialog(QDialog):
             Qt.ToolButtonStyle.ToolButtonTextBesideIcon
         )
         self._keys_toggle.setArrowType(Qt.ArrowType.RightArrow)
-        self._keys_toggle.setAccessibleName(
-            "Optional Music AI and writing help keys"
-        )
+        self._keys_toggle.setAccessibleName(self._keys_toggle.text())
         keys.layout().addWidget(self._keys_toggle)
         self._keys_panel = ProviderKeyPanel(
             (*AUDIO_PROVIDER_IDS, *TEXT_PROVIDER_IDS),
