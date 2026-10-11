@@ -81,6 +81,9 @@ def harvest_first_screen(dialog: QWidget) -> str:
     menu = getattr(dialog, "_menu_bar", None)
     if menu is not None:
         spoken += " " + " ".join(action.text() for action in menu.actions() if action.isVisible()).casefold()
+    help_button = getattr(dialog, "_door_help_button", None)
+    if help_button is not None and help_button.isVisibleTo(dialog):
+        spoken += " " + help_button.text().casefold()
     return spoken
 
 

@@ -18,7 +18,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QSize, QTimer, Qt
-from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeyEvent, QKeySequence, QImage, QPixmap
+from PySide6.QtGui import (
+    QAccessible,
+    QAccessibleEvent,
+    QAction,
+    QIcon,
+    QImage,
+    QKeyEvent,
+    QKeySequence,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -27,7 +36,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QMenuBar,
     QPushButton,
     QStackedWidget,
     QVBoxLayout,
@@ -555,6 +563,17 @@ class LaunchDialog(QDialog):
         brand_row.addWidget(self._logo)
         brand_row.addWidget(self._wordmark)
         brand_row.addStretch(1)
+        self._door_help_button = QPushButton("Help")
+        self._door_help_button.setObjectName("LaunchDoorHelp")
+        self._door_help_button.setFlat(True)
+        self._door_help_button.setAutoDefault(False)
+        self._door_help_button.setDefault(False)
+        self._door_help_button.setAccessibleName("Help")
+        self._door_help_button.setAccessibleDescription(
+            "Open music setup for this Windows build."
+        )
+        self._door_help_button.setVisible(False)
+        brand_row.addWidget(self._door_help_button)
         root.addLayout(brand_row)
 
         name_row = QHBoxLayout()
@@ -597,7 +616,7 @@ class LaunchDialog(QDialog):
         self._setup_page = self._build_setup_page()
         self._pages.addWidget(self._setup_page)
         root.addWidget(self._pages, 1)
-        self._build_menu(root)
+        self._build_door_actions()
         self.setTabOrder(self._name_input, self._art_profile_card)
         self.setTabOrder(self._art_profile_card, self._music_profile_card)
         previous: QWidget = self._music_profile_card
@@ -1172,30 +1191,35 @@ class LaunchDialog(QDialog):
         self._keep_door_cards_tabbable()
         QTimer.singleShot(0, self, self._keep_door_cards_tabbable)
 
-    def _build_menu(self, root: QVBoxLayout) -> None:
-        self._menu_bar = QMenuBar(self)
-        self._menu_bar.setAccessibleName("WebJam menu")
-        root.setMenuBar(self._menu_bar)
+    def _build_door_actions(self) -> None:
+        """Offline workspaces stay off the door; Help is one link, not a menu bar."""
+
+        self._menu_bar = None
         self._workspace_actions = {}
         if self._allow_workspace_choices:
-            file_menu = self._menu_bar.addMenu("&File")
-            self._session_library_action = file_menu.addAction("Session library…")
+            self._session_library_action = QAction("Session library…", self)
             self._session_library_action.triggered.connect(self._open_session_library)
-            file_menu.addSeparator()
-            for key, label in (("music", "New Music Project…"),
-                               ("podcast_voice", "Podcast & Voice…"),
-                               ("review_rehearsal", "Review & Rehearsal…")):
-                action = file_menu.addAction(label.replace("&", "&&"))
+            for key, label in (
+                ("music", "New Music Project…"),
+                ("podcast_voice", "Podcast & Voice…"),
+                ("review_rehearsal", "Review & Rehearsal…"),
+            ):
+                action = QAction(label.replace("&", "&&"), self)
                 action.setData(key)
-                action.triggered.connect(lambda checked=False, key=key: self._open_workspace(key))
+                action.triggered.connect(
+                    lambda checked=False, key=key: self._open_workspace(key)
+                )
                 self._workspace_actions[key] = action
             new = self._workspace_actions["music"]
             new.setShortcut(QKeySequence.StandardKey.New)
             new.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        help_menu = self._menu_bar.addMenu("&Help")
-        self._setup_action = help_menu.addAction("Music setup…")
+        self._setup_action = QAction("Music setup…", self)
         self._setup_action.triggered.connect(self._show_music_setup)
-        self._setup_action.setEnabled(bool(self._jamulus_installer))
+        setup_available = bool(self._jamulus_installer)
+        self._setup_action.setEnabled(setup_available)
+        self._door_help_button.setVisible(setup_available)
+        if setup_available:
+            self._door_help_button.clicked.connect(self._show_music_setup)
 
     def _open_session_library(self) -> None:
         if self._submitting or not self._allow_workspace_choices:
