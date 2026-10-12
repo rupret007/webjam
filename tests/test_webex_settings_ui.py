@@ -443,3 +443,38 @@ def test_settings_keeps_live_music_section_pixel_identical_for_music_profile(
             "in Jamulus." in labels
         )
         assert dialog._open_jamulus.text() == "Open Jamulus Audio Settings"
+
+
+def test_settings_hero_is_profile_neutral(tmp_path):
+    music_dialog = SimpleSettingsDialog(
+        AppSettings(config_file=str(tmp_path / "music-settings.json")),
+        webex_opener=lambda _url: True,
+        creator_profile_key="music",
+    )
+    art_dialog = SimpleSettingsDialog(
+        AppSettings(config_file=str(tmp_path / "art-settings.json")),
+        webex_opener=lambda _url: True,
+        creator_profile_key="art",
+    )
+
+    for dialog in (music_dialog, art_dialog):
+        subtitle = dialog.findChild(QLabel, "SimpleSettingsSubtitle")
+        assert subtitle.text() == "Your name and optional meeting link."
+        assert "Jamulus" not in subtitle.text()
+
+    # The explanation of what Jamulus does stays scoped to the Live music
+    # section: present for music, absent (section hidden) for art.
+    music_labels = " ".join(
+        label.text() for label in music_dialog.findChildren(QLabel)
+    )
+    art_labels = " ".join(
+        label.text() for label in art_dialog.findChildren(QLabel)
+    )
+    assert (
+        "Choose your interface, input channels, headphones, and buffer "
+        "in Jamulus." in music_labels
+    )
+    assert (
+        "Choose your interface, input channels, headphones, and buffer "
+        "in Jamulus." not in art_labels
+    )
