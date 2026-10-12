@@ -29,6 +29,8 @@ from tests.support.start_ux import (
 )
 from webjam_qt.windows.launch_dialog import (
     _CREATOR_LAUNCH_COPY,
+    PAINT_ALONG_DOOR_HELPER,
+    PAINT_ALONG_DOOR_HELPER_DETAIL,
     LaunchDialog,
     ProfileCard,
     StartCard,
@@ -315,10 +317,14 @@ def test_the_page_names_what_host_and_join_do_with_the_card_choice(qapp, tmp_pat
             card.click()
             assert dialog._choice_helper.isVisibleTo(dialog._choice_page)
             assert dialog._choice_helper.text() == (
-                "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
+                PAINT_ALONG_DOOR_HELPER
                 if card.accessibleName() == "Paint along" else
                 f"Host starts {card.accessibleName()}. Join uses the host's invite."
             )
+            if card.accessibleName() == "Paint along":
+                assert dialog._choice_helper.accessibleDescription() == (
+                    PAINT_ALONG_DOOR_HELPER_DETAIL
+                )
         # The two cards carry the instruction, so the headline and the
         # subtitle above them step aside rather than crowd them.
         assert dialog._choice_title.isVisibleTo(dialog._choice_page) is False

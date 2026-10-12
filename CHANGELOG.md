@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- The Art door's Paint along helper is one short line at 800×600; the full
+  sentence stays in the accessible description so Host and Join stay fully
+  visible. Physical audio, two-Mac, and Webex checks remain **NOT RUN**.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

@@ -75,8 +75,10 @@ _JOIN_INVITATION_GUIDANCE = (
     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
 )
 
-# Single door line when Paint along is the checked Art start (harvest + UX tests).
-PAINT_ALONG_DOOR_HELPER = (
+# Visible one-line helper when Paint along is the checked Art start.
+PAINT_ALONG_DOOR_HELPER = "Host picks a file or link, then shares the invite."
+# Full sentence stays in accessible description only (800×600 door).
+PAINT_ALONG_DOOR_HELPER_DETAIL = (
     "Host starts Paint along, then chooses a file or lesson link. "
     "Join uses the host's invite."
 )
@@ -969,14 +971,15 @@ class LaunchDialog(QDialog):
         copy = _CREATOR_LAUNCH_COPY[self._selected_creator_profile.key]
         available = self._can_host()
         restriction = "" if available else "Hosting is available in the macOS app."
-        next_step = (
-            PAINT_ALONG_DOOR_HELPER
-            if start.key == "paint_along" else
-            f"Host starts {start.label}. Join uses the host's invite."
-        )
+        if start.key == "paint_along":
+            next_step = PAINT_ALONG_DOOR_HELPER
+            detail = PAINT_ALONG_DOOR_HELPER_DETAIL
+        else:
+            next_step = f"Host starts {start.label}. Join uses the host's invite."
+            detail = next_step
         self._set_choice_helper(
-            next_step
-            if available else restriction
+            next_step if available else restriction,
+            description=detail if available else restriction,
         )
         self._host_button.setEnabled(available and not self._submitting)
         self._host_button.setAccessibleDescription(
@@ -1224,16 +1227,19 @@ class LaunchDialog(QDialog):
         root.setStretch(root.count() - 1, int(centered))
         root.setStretch(root.indexOf(self._pages), int(not centered))
 
-    def _set_choice_helper(self, text: str) -> None:
+    def _set_choice_helper(self, text: str, *, description: str = "") -> None:
         """Show a helper line only when it has something to say.
 
         An empty label still occupies a text-line of height. On the Art door
         that is the difference between Host staying on screen and falling off
-        the supported window.
+        the supported window. Paint along keeps the full sentence in the
+        accessible description so the visible line can stay one short line.
         """
 
         helper = str(text or "").strip()
+        spoken = str(description or helper).strip()
         self._choice_helper.setText(helper)
+        self._choice_helper.setAccessibleDescription(spoken)
         self._choice_helper.setVisible(bool(helper))
         self._sync_choice_helper_height()
 

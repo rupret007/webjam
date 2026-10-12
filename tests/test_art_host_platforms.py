@@ -101,10 +101,14 @@ def test_art_host_click_selects_only_the_chosen_room_without_a_music_install(doo
     _select_start(dialog, start)
     assert dialog._host_button.isEnabled()
     assert dialog._choice_helper.text() == (
-        "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
+        launch.PAINT_ALONG_DOOR_HELPER
         if start == "paint_along" else
         f"Host starts {dialog.selected_start.label}. Join uses the host's invite."
     )
+    if start == "paint_along":
+        assert dialog._choice_helper.accessibleDescription() == (
+            launch.PAINT_ALONG_DOOR_HELPER_DETAIL
+        )
     assert dialog._join_button.isEnabled()
     assert_no_banned_first_screen_words(harvest_first_screen(dialog))
 
@@ -227,7 +231,10 @@ def test_failed_save_recovers_same_art_action_and_retry_submits_once(door):
     assert not dialog._submitting
     assert dialog._host_button.isEnabled()
     assert dialog._join_button.isEnabled()
-    assert dialog._choice_helper.text() == "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
+    assert dialog._choice_helper.text() == launch.PAINT_ALONG_DOOR_HELPER
+    assert dialog._choice_helper.accessibleDescription() == (
+        launch.PAINT_ALONG_DOOR_HELPER_DETAIL
+    )
     assert dialog._choice_error.isVisibleTo(dialog)
     assert "private path" not in dialog._choice_error.text()
     assert "Paint along" in dialog._host_button.accessibleDescription()
