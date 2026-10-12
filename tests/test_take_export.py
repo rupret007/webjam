@@ -366,6 +366,152 @@ def _reordered_project_take(tmp_path):
     return take, (bass, drums, guitar), (bass_audio, drums_audio, guitar_audio)
 
 
+@pytest.mark.parametrize("phase", [
+    "open", "render", "restore", "evidence", "publication",
+    "publication_identical", "publication_remove",
+])
+def test_project_export_blocks_source_changes_mid_render(tmp_path, monkeypatch, phase):
+    from core import take_export
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    source = sources[0]
+    original_bytes = source.read_bytes()
+    replacement = tmp_path / "replacement.wav"
+    _write(replacement, np.full(2048, 0.7), rate=48_000)
+    replacement_bytes = replacement.read_bytes()
+    assert len(original_bytes) == len(replacement_bytes)
+    original_stat = source.stat()
+    before = {path: path.read_bytes() for path in sources[1:]}
+    manifest_before = (take.path / "webjam-take.json").read_bytes()
+    changed = False
+
+    def change_source():
+        nonlocal changed
+        changed = True
+        if phase == "publication_remove":
+            source.unlink()
+            return
+        if phase == "publication_identical":
+            replacement.write_bytes(original_bytes)
+        if phase in {"render", "restore"}:
+            source.write_bytes(replacement_bytes)
+        else:
+            replacement.replace(source)
+        # Same format, length and mtime must not hide a content/identity change.
+        os.utime(source, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+    if phase == "open":
+        original_open = sf.SoundFile
+
+        def open_after_replacement(file, *args, **kwargs):
+            is_source = (
+                os.fstat(file).st_ino == original_stat.st_ino
+                if isinstance(file, int) else
+                os.fstat(file.fileno()).st_ino == original_stat.st_ino
+                if hasattr(file, "fileno") else str(file) == str(source)
+            )
+            if is_source and not changed:
+                change_source()
+            return original_open(file, *args, **kwargs)
+
+        monkeypatch.setattr(sf, "SoundFile", open_after_replacement)
+    else:
+        method = {
+            "render": "_render_segment_block",
+            "restore": "_render_segment_block",
+            "evidence": "_write_project_track",
+            "publication": "_write_checksum_manifest",
+            "publication_identical": "_write_checksum_manifest",
+            "publication_remove": "_write_checksum_manifest",
+        }[phase]
+        original_method = getattr(take_export, method)
+
+        def change_during_call(*args, **kwargs):
+            if phase in {"render", "restore"} and not changed:
+                change_source()
+                result = original_method(*args, **kwargs)
+                if phase == "restore":
+                    source.write_bytes(original_bytes)
+                    os.utime(source, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+                return result
+            result = original_method(*args, **kwargs)
+            if not changed:
+                change_source()
+            return result
+
+        monkeypatch.setattr(take_export, method, change_during_call)
+
+    destination = tmp_path / "exports"
+    destination.mkdir()
+    existing = destination / "Track Export"
+    existing.mkdir()
+    sentinel = existing / "keep.txt"
+    sentinel.write_text("Earlier export", encoding="utf-8")
+    with pytest.raises(TakeExportError, match="changed"):
+        export_track_package(take, destination_root=destination, chunk_frames=1024)
+
+    assert changed
+    assert list(destination.iterdir()) == [existing]
+    assert sentinel.read_text(encoding="utf-8") == "Earlier export"
+    if phase == "publication_remove":
+        assert not source.exists()
+    else:
+        expected = original_bytes if phase in {"restore", "publication_identical"} else replacement_bytes
+        assert source.read_bytes() == expected
+    assert {path: path.read_bytes() for path in sources[1:]} == before
+    assert (take.path / "webjam-take.json").read_bytes() == manifest_before
+
+
+def test_project_export_unchanged_sources_have_verified_receipt(tmp_path):
+    from core.export_receipt import verify_export_receipt
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    before = {path: path.read_bytes() for path in sources}
+    result = export_track_package(take, destination_root=tmp_path / "exports", chunk_frames=1024)
+    assert verify_export_receipt(result.folder).folder == result.folder
+    manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
+    for track in manifest["tracks"]:
+        for segment in track["segments"]:
+            assert segment["observed_sha256"] == segment["declared_sha256"]
+    assert {path: path.read_bytes() for path in sources} == before
+
+
+@pytest.mark.parametrize("render_fails", [False, True])
+def test_project_export_closes_pinned_sources(tmp_path, monkeypatch, render_fails):
+    from core import take_export
+
+    take, _tracks, _sources = _reordered_project_take(tmp_path)
+    original_open = sf.SoundFile
+    handles = []
+    readers = []
+
+    def remember_reader(file, *args, **kwargs):
+        reader = original_open(file, *args, **kwargs)
+        if hasattr(file, "fileno"):
+            handles.append(file)
+            readers.append(reader)
+        return reader
+
+    monkeypatch.setattr(sf, "SoundFile", remember_reader)
+    if render_fails:
+        def fail_render(*args, **kwargs):
+            raise OSError("output disk full")
+
+        monkeypatch.setattr(take_export, "_render_segment_block", fail_render)
+
+    destination = tmp_path / "exports"
+    if render_fails:
+        # A writer failure must not be relabeled as a changed source.
+        with pytest.raises(OSError, match="output disk full"):
+            export_track_package(take, destination_root=destination)
+        assert not list(destination.iterdir())
+    else:
+        export_track_package(take, destination_root=destination)
+    assert handles
+    assert all(handle.closed for handle in handles)
+    assert all(reader.closed for reader in readers)
+
+
 @pytest.mark.parametrize(
     "damage", ["missing", "directory", "dangling_symlink", "symlink", "oversized"]
 )

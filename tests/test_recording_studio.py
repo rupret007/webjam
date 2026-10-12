@@ -3417,6 +3417,34 @@ def test_studio_visible_enabled_focus_chain_covers_complete_workflow(tmp_path):
         studio.shutdown()
 
 
+def test_track_export_source_change_gives_reopen_guidance(tmp_path):
+    from core.take_export import SOURCE_CHANGED_MESSAGE
+
+    take = tmp_path / "Take 01"
+    take.mkdir()
+    _wav(take / "guitar.wav")
+    _mark_verified(take, "guitar.wav")
+    studio = RecordingStudio(
+        str(tmp_path), player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    finished = []
+    studio.export_finished.connect(finished.append)
+    try:
+        studio._take_list.setCurrentRow(0)
+        studio._exporting = True
+        studio._take_list.setEnabled(False)
+        studio._finish_export(None, SOURCE_CHANGED_MESSAGE)
+        assert studio._hint.text() == (
+            "Track export stopped because a source recording changed. "
+            "Reopen the take and review it before exporting again."
+        )
+        assert finished == [False]
+        assert studio._take_list.isEnabled()
+        assert studio._export_btn.isEnabled()
+    finally:
+        studio.shutdown()
+
+
 def test_track_export_failure_keeps_take_available_and_actionable():
     with tempfile.TemporaryDirectory() as tmp:
         take = Path(tmp) / "Take 01"

@@ -439,6 +439,12 @@ repeated take lanes; export those recordings from their own takes. A failure
 after an edited Studio export begins never silently falls back to aligned
 originals.
 
+Aligned-originals export also stops if a source recording changes during
+rendering or before the export folder is published. WebJam removes the
+unfinished export and shows: “Track export stopped because a source recording
+changed. Reopen the take and review it before exporting again.” Earlier exports
+remain available; WebJam does not rewrite or delete source recordings.
+
 ## Non-destructive boundary
 
 The take manifest and every source WAV are recording evidence. Studio never

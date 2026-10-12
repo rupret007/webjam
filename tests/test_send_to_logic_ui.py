@@ -21,6 +21,12 @@ from core.logic_handoff_adapter import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolate_handoff_home(tmp_path, monkeypatch):
+    """Exercise the default export location without writing real user files."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+
+
 def _write_mono_wav(path: Path, sample_rate: int, frames: int) -> None:
     """Write a minimal mono WAV file."""
     with wave.open(str(path), "wb") as handle:

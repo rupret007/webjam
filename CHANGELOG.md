@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Track export stops if a source recording changes while rendering or before
+  publication, removes unpublished staging, and asks the musician to reopen
+  and review the take. Hashing and rendering use the same open source file.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

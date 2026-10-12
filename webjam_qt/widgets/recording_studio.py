@@ -77,6 +77,7 @@ from core.studio_export import (
 from core.studio_project import StudioDocument, default_studio_document
 from core.studio_source_catalog import StudioSourceCatalog, StudioSourceCatalogError
 from core.take_export import (
+    SOURCE_CHANGED_MESSAGE,
     TrackExportResult,
     TrackMixSettings,
     export_track_package,
@@ -163,11 +164,16 @@ def _track_export_failure_message(error: str) -> str:
     """Return safe, musician-facing copy for a failed track export.
 
     Export workers can surface implementation exceptions containing local paths
-    or other diagnostic details.  A small, fixed allowlist preserves the two
+    or other diagnostic details.  A small, fixed allowlist preserves known
     recording-safety actions that a musician can resolve in Studio while every
     other failure remains a general retry message.
     """
     message = (error or "").strip()
+    if message == SOURCE_CHANGED_MESSAGE:
+        return (
+            "Track export stopped because a source recording changed. "
+            "Reopen the take and review it before exporting again."
+        )
     if message.startswith(
         "WebJam found explicitly silent segments in selected performance tracks:"
     ):
