@@ -58,6 +58,8 @@ def parse_youtube_lesson_url(value: str) -> YouTubeLesson:
         value = "https://" + value
     try:
         url = urlsplit(value)
+        if url.scheme == "http" and url.hostname in _HOSTS:
+            url = urlsplit("https://" + value[len("http://") :])
         if (url.scheme != "https" or url.hostname not in _HOSTS
                 or url.username is not None or url.password is not None
                 or url.port not in {None, 443}):
