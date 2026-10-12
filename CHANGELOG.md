@@ -9,6 +9,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Art Host's accessible description says "Start the room." without promising
   an invitation clipboard write at launch.
 
+- Connected Art rooms keep making guidance beside the Conversation action;
+  the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual

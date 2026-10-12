@@ -286,6 +286,7 @@ def build_invite_message(
     participant_noun: str = "musician",
     song_line: str = "",
     creator_profile_key: str = "music",
+    art_start_key: str = "",
     same_network_required: bool = False,
 ) -> InviteMessage:
     """Return one paste that carries the jam link and, if set, the meeting.
@@ -294,10 +295,10 @@ def build_invite_message(
     clipboard holds, not the invitation protocol. A meeting link is included
     only when it passes the same validation the rest of WebJam applies, so a
     malformed or unsupported link is dropped. Art copy describes the making
-    room and optional work sharing. Art and canonical v2/v3 invitations name
-    the supported manual-paste route. The network requirement comes from the
-    host's actual sharing path via ``same_network_required``, never from
-    inspecting the serialized link.
+    room's chosen start and optional work sharing. Art and canonical v2/v3
+    invitations name the supported manual-paste route. The network requirement
+    comes from the host's actual sharing path via ``same_network_required``,
+    never from inspecting the serialized link.
     """
 
     link = str(join_link or "").strip()
@@ -307,6 +308,13 @@ def build_invite_message(
     name = " ".join(str(session_name or "").split())[:80]
     noun = str(participant_noun or "musician").strip() or "musician"
     art = str(creator_profile_key or "").strip().casefold() == "art"
+    art_activity = (
+        "Paint along: follow a process video silently in WebJam; "
+        "talk stays in the meeting."
+        if art_start_key == "paint_along"
+        else "WebJam opens the art room. Make from your own space with paper, "
+        "clay, a model, a printer, or your usual app."
+    )
     headline = f"Join {name} on WebJam:" if name else (
         "Join this art room on WebJam:" if art else "Join this jam on WebJam:"
     )
@@ -343,8 +351,7 @@ def build_invite_message(
                     f"Optional {service} conversation and work sharing ({site}):",
                     candidate,
                     "",
-                    "WebJam opens the art room. Make from your own space with paper, "
-                    "clay, a model, a printer, or your usual app. The meeting is "
+                    f"{art_activity} The meeting is "
                     "separate and optional; WebJam does not run it.",
                 ]
             )
@@ -365,9 +372,7 @@ def build_invite_message(
         lines.extend(
             [
                 "",
-                "WebJam opens the art room. Make from your own space with paper, "
-                "clay, a model, a printer, or your usual app. You can make "
-                "together without a meeting.",
+                f"{art_activity} You can make together without a meeting.",
             ]
         )
     elif not manual_paste:
