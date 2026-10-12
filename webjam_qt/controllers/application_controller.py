@@ -10316,7 +10316,15 @@ class ApplicationController(QObject):
         self._last_guidance_display_override = display_override
         self._last_session_conductor_snapshot = snapshot
         self._last_session_conductor = presentation
-        if self.creator_profile.key == "music" and not self.window.participant_grid.cards():
+        roster = getattr(
+            getattr(self.window, "participant_grid", None), "cards", None
+        )
+        if (
+            self.creator_profile.key == "music"
+            and callable(roster)
+            and not roster()
+            and callable(getattr(self.window, "set_status_latency", None))
+        ):
             # Without a roster, the footer must follow the same accepted
             # session truth as the empty stage, including recovery overrides.
             # Populated sessions retain the audio coordinator's roster count.
