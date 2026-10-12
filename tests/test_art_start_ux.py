@@ -95,6 +95,57 @@ def test_art_shows_exactly_two_start_cards(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+@pytest.mark.parametrize("profile_key", ["art", "music"])
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_join_title_tracks_visible_profile_and_back_navigation(
+    qapp, tmp_path: Path, profile_key: str, size: tuple[int, int]
+):
+    from webjam_qt.theme import load_stylesheet
+
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        dialog._menu_bar.setNativeMenuBar(False)
+        dialog.setStyleSheet(load_stylesheet())
+        dialog.resize(*size)
+        dialog.show()
+        qapp.processEvents()
+
+        # Check the saved profile first, then real card clicks in both
+        # directions. Each Art start must lead to the same invitation door.
+        other_profile = "music" if profile_key == "art" else "art"
+        for key in (profile_key, other_profile, profile_key):
+            dialog._profile_cards[key].click()
+            assert dialog.selected_creator_profile_key == key
+            for card in _visible_cards(dialog) or [None]:
+                if card is not None:
+                    card.click()
+                dialog._join_button.click()
+                qapp.processEvents()
+
+                expected = "Join the room." if key == "art" else "Join Music."
+                assert dialog._pages.currentWidget() is dialog._join_page
+                assert dialog._join_title.isVisible()
+                assert dialog._join_title.text() == expected
+                assert dialog._join_title.accessibleName() == expected
+                assert dialog._join_title.contentsRect().width() >= (
+                    dialog._join_title.fontMetrics().horizontalAdvance(expected)
+                )
+                assert dialog._join_subtitle.text() == (
+                    "Paste the invite or the whole message.\n"
+                    "If your invitation says “same network,” use your host’s Wi-Fi or local network."
+                )
+                assert dialog._join_button_primary.text() == "Join"
+                assert not dialog._join_button_primary.isEnabled()
+                assert_no_banned_first_screen_words(harvest_join_page(dialog))
+
+                dialog._join_back_button.click()
+                qapp.processEvents()
+                assert dialog.showing_choices
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_art_adds_no_start_action_beyond_the_cards_and_host_join(
     qapp, tmp_path: Path
 ):
