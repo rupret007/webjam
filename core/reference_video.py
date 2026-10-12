@@ -540,6 +540,20 @@ class ReferenceVideoHostController:
                     )
                     if not current():
                         return self._snapshot_locked()
+                    if isinstance(source, ReferenceVideoSource):
+                        candidate_token = source._identity_token
+                        try:
+                            current_token = file_identity_token(source.path)
+                        except OSError:
+                            return (self._fail_locked(
+                                "WebJam couldn't read that video file. Check that it is a regular "
+                                "local video file that has not moved or changed."
+                            ) if current() else self._snapshot_locked())
+                        if current_token != candidate_token:
+                            return (self._fail_locked(
+                                "WebJam couldn't read that video file. Check that it is a regular "
+                                "local video file that has not moved or changed."
+                            ) if current() else self._snapshot_locked())
                     if isinstance(source, YouTubeLesson) and source.start_s and duration > 0:
                         self._player.seek(min(source.start_s, duration))
                 except ReferenceVideoError as exc:

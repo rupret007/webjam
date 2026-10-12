@@ -801,6 +801,23 @@ def test_every_visible_door_button_matches_owner_lock(qapp, tmp_path, profile, i
 
 
 @pytest.mark.parametrize("profile", ["art", "music"])
+def test_launch_dialog_cannot_grow_past_its_designed_footprint(qapp, tmp_path, profile):
+    dialog = _dialog(tmp_path, profile)
+    try:
+        dialog.show()
+        qapp.processEvents()
+        assert dialog.maximumWidth() <= 800
+        assert dialog.maximumHeight() <= 600
+        dialog.resize(2000, 2000)
+        qapp.processEvents()
+        assert dialog.width() <= 800
+        assert dialog.height() <= 600
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize("profile", ["art", "music"])
 def test_windows_door_with_missing_music_component_stays_compact(qapp, tmp_path, profile):
     from webjam_qt.theme import load_stylesheet
     from unittest.mock import patch
