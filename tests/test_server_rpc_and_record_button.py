@@ -5662,7 +5662,16 @@ class TestRecordButtonWiring(unittest.TestCase):
         )
         self.assertTrue(self.window.session_strip._record_clock.isActive())
         self.assertIn("CLEANUP PENDING", self.window.recording_studio._phase.text())
-        _args, kwargs = c._show_actionable_error.call_args
+        args, kwargs = c._show_actionable_error.call_args
+        self.assertEqual(args[0], "Recording Could Not Stop")
+        self.assertEqual(
+            kwargs["what_failed"],
+            "WebJam couldn't confirm that recording stopped.",
+        )
+        self.assertEqual(
+            kwargs["next_action"],
+            "The server may still be recording. Try Stop Again now.",
+        )
         self.assertEqual(kwargs["retry_callback"], c.recording.on_record_requested)
 
         c._recorder_armed = False
@@ -6305,8 +6314,43 @@ class TestRecordButtonWiring(unittest.TestCase):
         self.assertEqual(
             self.window.session_strip._record_button.text(), "■ Finish Stop"
         )
-        _args, kwargs = c._show_actionable_error.call_args
-        self.assertIn("may still be recording", kwargs["next_action"])
+        c._show_actionable_error.assert_called_once()
+        args, kwargs = c._show_actionable_error.call_args
+        self.assertEqual(args[0], "Recording Could Not Start")
+        self.assertEqual(
+            kwargs["what_failed"],
+            "WebJam couldn't confirm that recording started.",
+        )
+        self.assertEqual(
+            kwargs["next_action"],
+            "The server may still be recording. Try Stop Again now.",
+        )
+        self.assertEqual(kwargs["retry_callback"], c.recording.on_record_requested)
+
+        with (
+            patch.object(c.settings, "server_rpc_secret_file", "/tmp/secret"),
+            patch(
+                "webjam_qt.controllers.recording_coordinator.threading.Thread",
+                side_effect=_Immediate,
+            ),
+            patch.object(c, "_record_toggle_worker") as worker,
+        ):
+            kwargs["retry_callback"]()
+        worker.assert_called_once_with(False, "/tmp/secret")
+        self.assertEqual(c.recording.phase, RecorderPhase.STOPPING)
+        self.assertIs(c.recording._local_capture, capture)
+        capture.abort.assert_not_called()
+        capture.stop_into.assert_not_called()
+
+        # A failure of the recovery Stop must now identify Stop, not Start.
+        c.recording.apply_toggle_failure("Stop confirmation timed out")
+        self.assertEqual(c.recording.phase, RecorderPhase.STOP_FAILED)
+        args, kwargs = c._show_actionable_error.call_args
+        self.assertEqual(args[0], "Recording Could Not Stop")
+        self.assertEqual(
+            kwargs["what_failed"],
+            "WebJam couldn't confirm that recording stopped.",
+        )
 
         c.recording._local_capture = None
         c._recorder_armed = False

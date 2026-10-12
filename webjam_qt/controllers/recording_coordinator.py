@@ -6073,6 +6073,9 @@ class RecordingCoordinator:
         if not self._toggle_callback_is_current(take_id):
             LOGGER.debug("Ignoring stale recorder RPC failure for a retired take")
             return
+        # Name the failed action before recovery marks an unconfirmed start
+        # as possibly armed so the next attempt safely requests Stop.
+        start_failed = not self._c._recorder_armed
         ambiguous_start = (
             self.phase is RecorderPhase.STARTING and not self._c._recorder_armed
         )
@@ -6097,11 +6100,11 @@ class RecordingCoordinator:
         )
         self._c._show_actionable_error(
             "Recording Could Not Start"
-            if not self._c._recorder_armed
+            if start_failed
             else "Recording Could Not Stop",
             what_failed=(
                 "WebJam couldn't confirm that recording started."
-                if not self._c._recorder_armed
+                if start_failed
                 else "WebJam couldn't confirm that recording stopped."
             ),
             likely_cause=(

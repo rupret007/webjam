@@ -6,6 +6,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- An unconfirmed recording start now says “Recording Could Not Start” while
+  preserving local capture and the safe Stop retry. Stop failures still name Stop.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

@@ -1186,6 +1186,11 @@ choice is open, review Studio and choose **Record Session** again. Returning
 through **New live take** shows the current live recording guidance; a save
 failure keeps the selected take open until its choices are safe.
 
+If **Recording Could Not Start** says WebJam could not confirm that recording
+started, the server may still be recording. Use the dialog's retry or
+**Finish Stop** to request a safe stop; WebJam keeps local capture for recovery
+and does not start another take.
+
 Before any recorder starts, WebJam freezes one take-scoped plan with the exact
 roster/server stem IDs, Shared Track fingerprint and playback generation, host
 mono/stereo topology, each guest's path-free Local Original count/map
