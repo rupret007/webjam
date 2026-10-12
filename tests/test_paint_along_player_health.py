@@ -26,6 +26,7 @@ from webjam_qt.widgets.reference_video_player import (  # noqa: E402
 
 _QT_ERROR = QtMultimedia.QMediaPlayer.Error
 _QT_STATUS = QtMultimedia.QMediaPlayer.MediaStatus
+_QT_PLAYBACK = QtMultimedia.QMediaPlayer.PlaybackState
 _PRIVATE_DETAIL = "private-local-video-path-and-backend-detail"
 _PLAYBACK_FAILURE = "WebJam couldn't play that video on this computer."
 
@@ -33,6 +34,7 @@ _PLAYBACK_FAILURE = "WebJam couldn't play that video on this computer."
 class _MediaBackend:
     Error = _QT_ERROR
     MediaStatus = _QT_STATUS
+    PlaybackState = _QT_PLAYBACK
 
     def __init__(self, parent=None):
         self.current_error = self.Error.NoError
@@ -45,6 +47,7 @@ class _MediaBackend:
         self.after_call = {}
         self.on_load = None
         self.stop_error = None
+        self.playback = self.PlaybackState.StoppedState
 
     def setAudioOutput(self, output):
         self.audio = output
@@ -76,6 +79,9 @@ class _MediaBackend:
 
     def mediaStatus(self):
         return self.status
+
+    def playbackState(self):
+        return self.playback
 
     def duration(self):
         return self.duration_ms
@@ -315,3 +321,24 @@ def test_backend_teardown_details_are_not_logged(player, caplog):
     records = [r for r in caplog.records if r.name == "webjam.qt.reference_video_player"]
     assert len(records) == 1
     assert records[0].exc_info is None
+
+
+@pytest.mark.parametrize("status, playback, expected", [
+    (_QT_STATUS.EndOfMedia, _QT_PLAYBACK.StoppedState, "ended"),
+    (_QT_STATUS.LoadedMedia, _QT_PLAYBACK.StoppedState, "ready"),
+    (_QT_STATUS.BufferedMedia, _QT_PLAYBACK.PlayingState, "playing"),
+    (_QT_STATUS.BufferedMedia, _QT_PLAYBACK.PausedState, "paused"),
+])
+def test_local_playback_state_reports_natural_end(player, status, playback, expected):
+    player.load(Path("lesson.mp4"))
+    player.media_player.status = status
+    player.media_player.playback = playback
+    assert player.playback_state() == expected
+
+
+def test_local_end_observation_does_not_hide_a_backend_failure(player):
+    player.load(Path("lesson.mp4"))
+    player.media_player.status = _QT_STATUS.EndOfMedia
+    player.media_player.current_error = _QT_ERROR.ResourceError
+    with pytest.raises(ReferenceVideoPlayerError, match="couldn't play"):
+        player.playback_state()

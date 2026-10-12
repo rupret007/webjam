@@ -149,6 +149,20 @@ class QtReferenceVideoPlayer:
         self._require_healthy()
         return position_s
 
+    def playback_state(self) -> str:
+        """Report natural completion separately from a stopped player."""
+
+        from PySide6.QtMultimedia import QMediaPlayer
+
+        self._require_healthy()
+        if self._player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia:
+            return "ended"
+        return {
+            QMediaPlayer.PlaybackState.PlayingState: "playing",
+            QMediaPlayer.PlaybackState.PausedState: "paused",
+            QMediaPlayer.PlaybackState.StoppedState: "ready",
+        }[self._player.playbackState()]
+
     def close(self) -> None:
         if self._closed:
             return

@@ -616,6 +616,13 @@ class ReferenceVideoHostController:
             self._load_generation += 1
             operation = self._load_generation
             try:
+                if self._source_kind == "local" and self._position_s >= self._duration_s:
+                    # EOF remains shared at the final position. Explicit Play
+                    # starts a new pass, with the same position sent to guests.
+                    self._player.seek(0.0)
+                    if operation != self._load_generation:
+                        return self._snapshot_locked()
+                    self._position_s = 0.0
                 self._player.play()
                 if operation != self._load_generation:
                     return self._snapshot_locked()
@@ -702,7 +709,7 @@ class ReferenceVideoHostController:
             return self._notify(self._snapshot_locked())
 
     def refresh(self) -> ReferenceVideoSnapshot:
-        """Sample the local player's position without changing transport."""
+        """Sample position and reconcile transport with observed completion."""
 
         with self._lock:
             if self._state is not ReferenceVideoState.PLAYING:
@@ -710,8 +717,11 @@ class ReferenceVideoHostController:
             try:
                 self._position_s = self._clamp(self._player.position_s())
                 playback_state = getattr(self._player, "playback_state", None)
+                observed = playback_state() if callable(playback_state) else None
+                if self._source_kind == "local" and observed == "ended":
+                    self._state = ReferenceVideoState.PAUSED
+                    self._position_s = self._duration_s
                 if self._source_kind == "youtube" and callable(playback_state):
-                    observed = playback_state()
                     if observed in {"paused", "ended"}:
                         self._state = ReferenceVideoState.PAUSED
                     self._error = (

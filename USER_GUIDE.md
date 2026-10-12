@@ -385,6 +385,11 @@ WebJam does not open a meeting merely because the room or panel appeared.
 In **Paint along**, **Watch a shared lesson** reaches these same controls.
 The local-file option below is separate and silent.
 
+When a local Paint along video finishes, the host sees **Paused.** and
+**Play**. Choose **Play** to replay from the beginning, or choose an earlier
+position before playing. Followers receive the host's paused position and
+follow again when the host plays.
+
 ### Painting together
 
 WebJam does not paint. Drawpile does — it is the open-source collaborative

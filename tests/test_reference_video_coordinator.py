@@ -276,6 +276,53 @@ def test_host_tick_republishes_the_moving_position(tmp_path):
     assert peer.published[-1]["position_s"] == pytest.approx(9.5)
 
 
+def test_local_natural_end_and_replay_reach_followers_through_wire_schema(tmp_path):
+    peer = FakeHostPeer()
+    host_player = FakePlayer(duration_s=2.0)
+    host_player.playback_state = lambda: host_player.state
+    host, _, _, _ = make_coordinator(peer=peer, players=[host_player])
+    guest, guest_players, _, _ = make_coordinator()
+    control = SessionControlState(tmp_path, SESSION_ID)
+    host.begin_host(session_id=SESSION_ID, session_key=SESSION_KEY)
+    guest.begin_guest(session_id=SESSION_ID, session_key=SESSION_KEY)
+    path = write_video(tmp_path / "lesson.mp4")
+
+    def deliver():
+        projection = control.publish_reference_video(**peer.published[-1])
+        guest.observe_host_state(HostState(projection))
+        guest.tick()
+
+    try:
+        host.share(str(path))
+        host.play()
+        deliver()
+        guest.open_local_copy(str(path))
+        guest.tick()
+        assert guest_players[0].state == "playing"
+
+        host_player.position = 2.0
+        host_player.state = "ended"
+        host.tick()
+        assert peer.published[-1]["state"] == "paused"
+        assert peer.published[-1]["shared"] is True
+        assert peer.published[-1]["position_s"] == 2.0
+        deliver()
+        assert guest.follow_snapshot.should_play is False
+        assert guest_players[0].state == "paused"
+        assert guest_players[0].position == 2.0
+
+        host.play()
+        assert peer.published[-1]["position_s"] == 0.0
+        assert peer.published[-1]["state"] == "playing"
+        deliver()
+        assert guest.follow_snapshot.should_play is True
+        assert guest_players[0].state == "playing"
+        assert guest_players[0].position == 0.0
+    finally:
+        host.end()
+        guest.end()
+
+
 # ---------------------------------------------------------------------------
 # Following
 # ---------------------------------------------------------------------------

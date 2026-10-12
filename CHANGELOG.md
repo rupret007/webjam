@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Local Paint along video completion now shows Paused with Play available.
+  Play from the end rewinds to the beginning, and followers receive both the
+  paused final position and the replay. Real codec playback remains **NOT RUN**.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

@@ -360,6 +360,81 @@ def test_seek_is_clamped_to_the_shared_duration(tmp_path):
         controller.seek(-1.0)
 
 
+@pytest.mark.parametrize("reported_position", [0.0, 1.98, 2.0])
+def test_local_natural_end_pauses_and_play_rewinds_before_restarting(tmp_path, reported_position):
+    controller, player, events = make_host(tmp_path, duration=2.0)
+    player.playback_state = lambda: player.state
+    controller.share(write_video(tmp_path / "lesson.mp4"))
+    playing = controller.play()
+    player.position = reported_position
+    player.state = "ended"
+
+    ended = controller.refresh()
+    assert ended.state is ReferenceVideoState.PAUSED
+    assert ended.shared and not ended.active and not ended.needs_attention
+    assert ended.position_s == 2.0
+    assert ended.playback_generation == playing.playback_generation
+    assert events[-1] == ended
+    assert controller.refresh() == ended
+
+    replay = controller.play()
+    assert player.calls[-2:] == ["seek", "play"]
+    assert player.position == replay.position_s == 0.0
+    assert replay.state is ReferenceVideoState.PLAYING
+    assert replay.playback_generation == playing.playback_generation + 1
+    assert replay.identity_digest == ended.identity_digest
+
+
+def test_local_completion_requires_backend_eof_not_just_duration(tmp_path):
+    controller, player, _ = make_host(tmp_path, duration=2.0)
+    player.playback_state = lambda: player.state
+    controller.share(write_video(tmp_path / "lesson.mp4"))
+    controller.play()
+    player.position = 2.0
+    assert controller.refresh().state is ReferenceVideoState.PLAYING
+
+
+def test_local_seek_after_natural_end_resumes_from_chosen_position(tmp_path):
+    controller, player, _ = make_host(tmp_path, duration=2.0)
+    player.playback_state = lambda: player.state
+    controller.share(write_video(tmp_path / "lesson.mp4"))
+    controller.play()
+    player.state = "ended"
+    controller.refresh()
+    controller.seek(1.0)
+    assert controller.play().position_s == 1.0
+    assert player.position == 1.0
+    assert player.seeks == [1.0]
+
+
+def test_local_pause_mid_video_resumes_without_rewinding(tmp_path):
+    controller, player, _ = make_host(tmp_path)
+    controller.share(write_video(tmp_path / "lesson.mp4"))
+    controller.play()
+    player.position = 25.0
+    controller.pause()
+    assert controller.play().position_s == 25.0
+    assert player.seeks == []
+
+
+@pytest.mark.parametrize("outcome", ["failure", "withdraw"])
+def test_local_replay_cannot_play_after_rewind_fails_or_retires_share(tmp_path, outcome):
+    controller, player, _ = make_host(tmp_path, duration=2.0)
+    controller.share(write_video(tmp_path / "lesson.mp4"))
+    controller.seek(2.0)
+    if outcome == "failure":
+        player.fail_on.add("seek")
+    else:
+        player.seek = lambda position: controller.withdraw()
+
+    snapshot = controller.play()
+    assert "play" not in player.calls
+    assert snapshot.state is (
+        ReferenceVideoState.FAILED if outcome == "failure" else ReferenceVideoState.IDLE
+    )
+    assert not snapshot.shared
+
+
 def test_playback_generation_marks_each_new_play_attempt(tmp_path):
     controller, _, _ = make_host(tmp_path)
     controller.share(write_video(tmp_path / "lesson.mp4"))

@@ -147,6 +147,32 @@ def test_the_host_panel_swaps_play_and_pause_with_the_transport(host_dialog):
     assert host_dialog._pause_button.isEnabled() is False
 
 
+def test_local_natural_end_exposes_working_play_in_the_host_panel(host_dialog, tmp_path):
+    from tests.test_reference_video import make_host, write_video
+
+    host, player, _ = make_host(tmp_path, duration=2.0)
+    player.playback_state = lambda: player.state
+    host.share(write_video(tmp_path / "lesson.mp4"))
+    host_dialog.set_host_snapshot(host.play())
+    player.position = 2.0
+    player.state = "ended"
+    host_dialog.set_host_snapshot(host.refresh())
+
+    assert host_dialog._status.text() == "Paused."
+    assert host_dialog._clock.text() == "0:02 / 0:02"
+    assert not host_dialog._play_button.isHidden()
+    assert host_dialog._play_button.isEnabled()
+    assert host_dialog._pause_button.isHidden()
+    host_dialog.play_requested.connect(lambda: host_dialog.set_host_snapshot(host.play()))
+    host_dialog._play_button.click()
+    assert host_dialog._status.text() == "Playing."
+    assert host_dialog._clock.text() == "0:00 / 0:02"
+    assert player.position == 0.0
+    assert host_dialog._play_button.isHidden()
+    assert not host_dialog._pause_button.isHidden()
+    host.close()
+
+
 def test_the_host_panel_shows_a_failure_instead_of_a_stale_source(host_dialog):
     host_dialog.set_host_snapshot(_shared())
     host_dialog.set_host_snapshot(
