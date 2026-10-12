@@ -140,6 +140,29 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertNotIn(saved.id, self.coordinator._pending)
         self.assertEqual(self.window.session_canvas.current_notes(), saved.notes)
 
+    def test_merge_save_resyncs_notes_control_so_a_later_save_does_not_revert_it(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.ensure_current()
+        original_id = self.coordinator.current.id
+        editor = self._editor()
+        self.assertEqual(editor.notes.toPlainText(), "Original notes")
+        # Disjoint edit: the main window's live Notes move on while the editor
+        # itself makes no notes edit, so the merge keeps the newer live value.
+        self.window.session_canvas.set_notes("Newer live notes")
+        self.assertTrue(editor.save_current(force=True))
+        self.assertEqual(self.library.load(original_id).notes, "Newer live notes")
+        # The visible Notes control must reflect what was actually saved,
+        # not the stale pre-merge text.
+        self.assertEqual(editor.notes.toPlainText(), "Newer live notes")
+        self.assertFalse(editor._dirty)
+        # A later save that only touches the title must not bounce Notes
+        # back to the stale text the control held before the resync.
+        editor.title.setText("Renamed workspace")
+        self.assertTrue(editor.save_current())
+        saved = self.library.load(original_id)
+        self.assertEqual(saved.notes, "Newer live notes")
+        self.assertEqual(saved.title, "Renamed workspace")
+
     def test_copy_of_older_pending_snapshot_keeps_newer_take_and_recap_owned(self):
         self.coordinator.start_session()
         self.coordinator.recording_started("late-take", "recording-session")
@@ -202,6 +225,24 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertEqual(self.library.load(editor.record.id).notes, "Base Notes")
         self.assertEqual(self.coordinator._pending[editor.record.id].notes, "Live draft before autosave")
         self.assertEqual(editor.notes.toPlainText(), "Editor draft")
+
+    def test_second_save_does_not_revert_live_notes_after_a_reconciled_save(self):
+        self.window.session_canvas.set_notes("original notes")
+        self.coordinator.ensure_current()
+        editor = self._editor()
+        editor.title.setText("Renamed once")
+        self.window.session_canvas.set_notes("new live notes")
+        self.assertTrue(editor.save_current())
+        # The save reconciled newer live Notes into the saved record; the
+        # editor's own Notes/title controls must reflect that, not the
+        # stale text the user had typed before saving.
+        self.assertEqual(editor.notes.toPlainText(), "new live notes")
+        self.assertEqual(editor.title.text(), "Renamed once")
+        self.assertEqual(self.library.load(editor.record.id).notes, "new live notes")
+        editor.title.setText("Renamed twice")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self.library.load(editor.record.id).notes, "new live notes")
+        self.assertEqual(self.window.session_canvas.current_notes(), "new live notes")
 
     def test_separate_copy_keeps_live_notes_typed_before_canvas_timer(self):
         self.window.session_canvas.set_notes("Base Notes")
