@@ -122,7 +122,10 @@ class SimpleSettingsDialog(QDialog):
         self._name.setAccessibleName("Your musician name")
         identity.layout().addWidget(name_label)
         identity.layout().addWidget(self._name)
-        self._name_preview = JamulusNamePreview(self._name)
+        # The "You" section is identity, not engine setup: it must read the
+        # same for every profile, including Art, which has no Jamulus path.
+        # The engine-specific explanation lives only in Live music below.
+        self._name_preview = JamulusNamePreview(self._name, plain_words=True)
         identity.layout().addWidget(self._name_preview)
         root.addWidget(identity)
 
