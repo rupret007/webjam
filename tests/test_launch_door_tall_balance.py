@@ -47,13 +47,22 @@ def _door_anchor_widgets(dialog: LaunchDialog) -> list:
     return anchors
 
 
-def _vertical_slack_in_pages(dialog: LaunchDialog) -> tuple[int, int]:
+def _vertical_slack(dialog: LaunchDialog) -> tuple[int, int]:
     pages = _rect_in(dialog._pages, dialog)
-    rects = [_rect_in(widget, dialog) for widget in _door_anchor_widgets(dialog)]
-    content_top = min(rect.top() for rect in rects)
-    content_bottom = max(rect.bottom() for rect in rects)
-    top_slack = max(0, content_top - pages.top())
-    bottom_slack = max(0, pages.bottom() - content_bottom)
+    if dialog._visible_start_cards():
+        # Art: the choice page stretches; slack lives inside _pages.
+        frame = pages
+        rects = [_rect_in(widget, dialog) for widget in _door_anchor_widgets(dialog)]
+        content_top = min(rect.top() for rect in rects)
+        content_bottom = max(rect.bottom() for rect in rects)
+    else:
+        # Music: pages hug the choice block; root stretches center it
+        # in the dialog. Measuring inside _pages is always 0.
+        frame = dialog.rect()
+        content_top = pages.top()
+        content_bottom = pages.bottom()
+    top_slack = max(0, content_top - frame.top())
+    bottom_slack = max(0, frame.bottom() - content_bottom)
     return top_slack, bottom_slack
 
 
@@ -77,9 +86,9 @@ def test_launch_door_centers_in_tall_windows(qapp, tmp_path: Path, profile_key: 
             rect = _rect_in(widget, dialog)
             assert dialog.rect().contains(rect), widget.accessibleName()
 
-        top_slack, bottom_slack = _vertical_slack_in_pages(dialog)
+        top_slack, bottom_slack = _vertical_slack(dialog)
         extra = top_slack + bottom_slack
-        assert extra >= 40, "tall sizes should leave slack inside the pages stack"
+        assert extra >= 40, "tall sizes should leave slack around the door choices"
         # Before centering, essentially all slack sat below Host/Join.
         assert top_slack >= 24
         assert bottom_slack >= 24
