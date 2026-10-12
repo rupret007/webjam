@@ -1535,11 +1535,14 @@ class LaunchDialog(QDialog):
             return
         if not primary.isEnabled():
             return
-        self._invite_input.clear()
         self.accept_invite(value)
 
     def accept_invite(self, value: str) -> bool:
         """Compatibility wrapper for an explicit paste into the one field."""
+        # Name is unrelated to the paste. Validate it before locking Join or
+        # clearing the field so a later name fix can submit the same invite.
+        if self._validated_musician_name() is None:
+            return False
         if not self._begin_submission(self._join_button_primary, "Checking…"):
             return False
         self.invitation_meeting_url = ""
