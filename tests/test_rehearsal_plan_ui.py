@@ -90,6 +90,31 @@ def test_keyboard_moment_and_take_open_retain_evidence(panel, qapp):
     assert len(panel.payload()["songs"][0]["bookmarks"]) == 1
 
 
+def test_relink_take_updates_only_matching_bookmark_paths(panel):
+    panel.add_song("Tune")
+    panel.add_bookmark(
+        "Chorus",
+        timing_verified=True,
+        take_id="take-1",
+        take_path="/old/take",
+        source_identity="sha256:one",
+        position_seconds=4.0,
+    )
+    panel.add_bookmark(
+        "Other identity",
+        timing_verified=True,
+        take_id="take-1",
+        take_path="/old/take",
+        source_identity="sha256:two",
+        position_seconds=8.0,
+    )
+    panel.relink_take("take-1", "sha256:one", "/new/take")
+    bookmarks = panel.payload()["songs"][0]["bookmarks"]
+    assert bookmarks[0]["take_path"] == "/new/take"
+    assert bookmarks[0]["position_seconds"] == 4.0
+    assert bookmarks[1]["take_path"] == "/old/take"
+
+
 def test_template_save_and_add_keep_notes_and_no_recording_claims(panel, monkeypatch, tmp_path):
     panel.add_song("A tune")
     panel._goals.setPlainText("Keep time")
