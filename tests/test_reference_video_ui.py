@@ -572,7 +572,7 @@ def test_each_role_state_offers_one_plain_primary_action(qapp):
         assert host._pause_button.isHidden() is False
 
         guest.set_follow_snapshot(_follow(ReferenceVideoFollowState.NEEDS_FILE))
-        assert guest._open_button.text() == "Open my copy…"
+        assert guest._open_button.text() == "Open my copy"
         assert guest._open_button.isHidden() is False
 
         guest.set_follow_snapshot(_follow(ReferenceVideoFollowState.FOLLOWING))

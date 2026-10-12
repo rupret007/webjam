@@ -139,7 +139,9 @@ def test_retired_video_callback_cannot_replace_the_new_rooms_notice(guest, qapp)
     current.observe_host_state(offer)
     app._tick_reference_video()
     notice = window.statusBar().currentMessage()
-    assert "Open my copy…" in notice
+    assert "Open my copy" in notice
+    assert "Open my copy…" not in notice
+    assert "Open my copy..." not in notice
 
     old_callback(old_snapshot)
 

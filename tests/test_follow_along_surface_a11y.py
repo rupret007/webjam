@@ -190,7 +190,7 @@ def test_paint_along_missing_file_keeps_named_next_action(qapp):
     settle(qapp)
     try:
         assert panel._open_button.isVisibleTo(panel)
-        assert panel._open_button.accessibleName() == "Open my copy…"
+        assert panel._open_button.accessibleName() == "Open my copy"
         assert panel._open_button.accessibleDescription()
         spoken = " ".join(
             (

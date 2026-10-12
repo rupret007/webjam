@@ -668,7 +668,7 @@ class ConductorWindow(QMainWindow):
                 "optional external meeting controls; <b>Join / Open Meeting</b> "
                 "opens the configured link.<br>"
                 "<b>5.</b> The optional silent reference uses <b>Choose process video…</b> "
-                "or <b>YouTube link…</b>. Guests use <b>Open my copy…</b> or <b>Open lesson</b>. "
+                "or <b>YouTube link…</b>. Guests use <b>Open my copy</b> or <b>Open lesson</b>. "
                 "Local files are not transferred. <b>Back to room</b> keeps the room open; "
                 "<b>Conversation</b> returns to your lesson setup after Notes.<br>"
                 "<b>6.</b> The host chooses <b>End Room</b>; guests choose "

@@ -108,7 +108,7 @@ def test_guest_opening_suppresses_another_chooser_then_uses_current_truth(
         assert dialog._hide_button.isEnabled() and not dialog._open_button.isVisibleTo(dialog)
     elif outcome == "decode_error":
         assert app._reference_video.follow_snapshot.state is ReferenceVideoFollowState.LOCAL_ATTENTION
-        assert dialog._open_button.isEnabled() and dialog._open_button.text() == "Open my copy…"
+        assert dialog._open_button.isEnabled() and dialog._open_button.text() == "Open my copy"
     else:
         assert app._reference_video.follow_snapshot.state is ReferenceVideoFollowState.NO_VIDEO
         assert not dialog._open_button.isVisibleTo(dialog)

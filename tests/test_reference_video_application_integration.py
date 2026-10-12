@@ -556,7 +556,9 @@ def test_an_artist_is_told_when_their_copy_stops_matching(state, marker):
     assert marker in controller.window.flash_message.call_args.args[0]
     if state is ReferenceVideoFollowState.MISMATCHED_FILE:
         message = controller.window.flash_message.call_args.args[0]
-        assert "Open my copy…" in message
+        assert "Open my copy" in message
+        assert "Open my copy…" not in message
+        assert "Open my copy..." not in message
         assert "your copy of the same file" in message
 
 

@@ -80,8 +80,8 @@ ABSENT = ArtRoomPresence()
 #: Video states where this computer cannot follow what the host is showing.
 #: Each has its own recovery inside the panel; the room only needs to say
 #: that the panel is where to go.
-#: Guest copy recovery next click matches Paint along's "Open my copy…" button.
-_OPEN_MY_COPY = "Open my copy…"
+#: Guest copy recovery next click matches Paint along's "Open my copy" button.
+_OPEN_MY_COPY = "Open my copy"
 
 _VIDEO_ATTENTION = {
     VideoCompanionState.NEEDS_FILE: (

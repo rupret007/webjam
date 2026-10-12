@@ -1680,7 +1680,7 @@ class TestConductorWindow(unittest.TestCase):
                         for token in (
                             "— Art", "Make together", "Paint along", "<b>More</b>",
                             "Shared Canvas…", "Choose process video…",
-                            "YouTube link…", "Open my copy…", "Open lesson",
+                            "YouTube link…", "<b>Open my copy</b>", "Open lesson",
                             "silent", "Local files are not transferred", "Conversation",
                             "Back to room", "Notes", "End Room", "Leave Room",
                         ):

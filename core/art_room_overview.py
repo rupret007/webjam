@@ -224,7 +224,7 @@ def art_room_overview(
 def _activity_action(presence: ArtRoomPresence) -> tuple[str, str]:
     """Return panel target and button words.
 
-    Guest Paint along copy recovery names **Open my copy…** so Room matches
+    Guest Paint along copy recovery names **Open my copy** so Room matches
     the exact control inside the Paint along panel. Other video states keep
     the generic Open Paint along door label.
     """

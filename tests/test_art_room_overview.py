@@ -106,19 +106,19 @@ def test_guest_paint_along_needs_file_names_open_my_copy_button():
     """Room overview must name the same next click as Paint along's panel button.
 
     Presence used to say "Open your Paint along copy" while the overview button
-    said "Open Paint along" and the panel said "Open my copy…". One named click.
+    said "Open Paint along" and the panel said "Open my copy". One named click.
     """
 
     presence = paint_along()
     overview = art_room_overview(
         state=ArtRoomState.CONNECTED, hosting=False, presence=presence,
     )
-    assert presence.label == "Open my copy…"
-    assert presence.next_click == "Open my copy…"
+    assert presence.label == "Open my copy"
+    assert presence.next_click == "Open my copy"
     assert overview.activity_enabled
     assert overview.activity_action == "video"
-    assert overview.activity_action_label == "Open my copy…"
-    assert overview.activity_label == "Open my copy…"
+    assert overview.activity_action_label == "Open my copy"
+    assert overview.activity_label == "Open my copy"
 
 
 @pytest.mark.parametrize("hosting", [False, True])
@@ -201,10 +201,10 @@ def test_both_offered_panels_keep_their_status_and_action(primary, secondary):
     assert overview.secondary_activity_label == secondary.label
     assert overview.secondary_activity_detail == secondary.description
     assert overview.activity_action_label == (
-        "Open my copy…" if primary.target is ArtPresenceTarget.VIDEO else "Open workspace"
+        "Open my copy" if primary.target is ArtPresenceTarget.VIDEO else "Open workspace"
     )
     assert overview.secondary_activity_action_label == (
-        "Open workspace" if secondary.target is ArtPresenceTarget.CANVAS else "Open my copy…"
+        "Open workspace" if secondary.target is ArtPresenceTarget.CANVAS else "Open my copy"
     )
     assert overview.activity_actions == (primary.target.value, secondary.target.value)
     assert overview.conversation_enabled

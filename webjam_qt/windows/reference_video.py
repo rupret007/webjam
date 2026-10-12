@@ -69,10 +69,10 @@ _FOLLOW_STATUS = {
         f"That is not the same file. {OPEN_LOCAL_COPY_GUIDANCE}"
     ),
     ReferenceVideoFollowState.FILE_UNAVAILABLE: (
-        "Your copy moved or changed. Choose Open my copy… to find it again."
+        "Your copy moved or changed. Choose Open my copy to find it again."
     ),
     ReferenceVideoFollowState.LOCAL_ATTENTION: (
-        "Your copy could not play here. Choose Open my copy… to try again."
+        "Your copy could not play here. Choose Open my copy to try again."
     ),
     ReferenceVideoFollowState.HOST_ATTENTION: (
         "The host needs to check the video before it can continue."
@@ -335,7 +335,7 @@ class ReferenceVideoDialog(QDialog):
         else:
             self._open_button = self._add_button(
                 controls,
-                "Open my copy…",
+                "Open my copy",
                 "Open your copy of the same file the host is using to follow along.",
                 self._choose_local_copy,
             )
@@ -754,7 +754,7 @@ class ReferenceVideoDialog(QDialog):
         youtube = snapshot.source_kind == "youtube"
         self._watch_lesson_button.setVisible(True)
         self._lesson_hint.setVisible(True)
-        self._open_button.setText("Open lesson" if youtube else "Open my copy…")
+        self._open_button.setText("Open lesson" if youtube else "Open my copy")
         self._open_button.setAccessibleName(self._open_button.text())
         self._open_button.setAccessibleDescription(
             "Open the host's YouTube lesson silently and follow their playback."

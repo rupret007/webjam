@@ -544,7 +544,7 @@ For the existing **silent local-file option**, the host chooses one video file:
    video, and it will not open anything from a streaming service.
 3. If Room shows **Paint along is starting**, choose **Open Paint along**.
    Before the host shares, the panel shows **Optional silent reference**.
-   If you already have the video, choose **Open my copy…**. **Your copy is
+   If you already have the video, choose **Open my copy**. **Your copy is
    open** means it is waiting locally: WebJam still needs to check it against
    the host's offer before following. No picture or playback starts early.
    You can use **Back to room** and keep making while you wait. If your copy
@@ -553,11 +553,11 @@ For the existing **silent local-file option**, the host chooses one video file:
    available. A first offer opens it from the untouched Room. If you are using
    Notes, Conversation, or a dialog, your current work stays visible; choose
    **Open Paint along** in Room when ready. Returning to Room alone does not
-   open a deferred offer. Choose **Open my copy…** and point at your own copy
+   open a deferred offer. Choose **Open my copy** and point at your own copy
    of the same file. WebJam checks that it really is the same file. If it is
    not, it says so and plays nothing rather than showing the wrong thing.
    **Opening your copy** describes the pending local check; a second chooser
-   is unavailable until it finishes. A failed copy offers **Open my copy…**
+   is unavailable until it finishes. A failed copy offers **Open my copy**
    again.
 5. The host gets one primary transport action at a time—**Play** or
    **Pause**—and may drag the position. Change video, restart from the
@@ -577,7 +577,7 @@ Things worth knowing:
 - **Back to room** shows the full current Art room. Escape returns to the
   previous workspace, which may be Notes. Neither action stops sharing or
   leaves the room. The optional meeting app stays open.
-- **If the host changes videos or your copy moves**, choose **Open my copy…**
+- **If the host changes videos or your copy moves**, choose **Open my copy**
   again and select the matching file. You stay in the same room.
 - **If your copy cannot play here**, WebJam shows that local problem instead
   of claiming you are following. Open your copy again to retry, or use

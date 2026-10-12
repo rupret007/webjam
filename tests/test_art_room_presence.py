@@ -137,8 +137,8 @@ def test_a_paint_along_room_fact_is_ignored_once_the_host_has_shared():
         hosting=False,
         paint_along_room=True,
     )
-    assert needs_file.label == "Open my copy…"
-    assert needs_file.next_click == "Open my copy…"
+    assert needs_file.label == "Open my copy"
+    assert needs_file.next_click == "Open my copy"
 
 
 def test_a_host_is_never_shown_the_guest_waiting_line():
@@ -188,10 +188,10 @@ def test_a_missing_painting_program_is_the_line_even_beside_a_live_video():
 @pytest.mark.parametrize(
     ("state", "label", "next_click"),
     (
-        (VideoCompanionState.NEEDS_FILE, "Open my copy…", "Open my copy…"),
-        (VideoCompanionState.MISMATCHED_FILE, "Paint along needs a look", "Open my copy…"),
-        (VideoCompanionState.FILE_UNAVAILABLE, "Paint along needs a look", "Open my copy…"),
-        (VideoCompanionState.LOCAL_ATTENTION, "Your video needs attention", "Open my copy…"),
+        (VideoCompanionState.NEEDS_FILE, "Open my copy", "Open my copy"),
+        (VideoCompanionState.MISMATCHED_FILE, "Paint along needs a look", "Open my copy"),
+        (VideoCompanionState.FILE_UNAVAILABLE, "Paint along needs a look", "Open my copy"),
+        (VideoCompanionState.LOCAL_ATTENTION, "Your video needs attention", "Open my copy"),
         (VideoCompanionState.STALLED, "Paint along is out of step", ""),
         (VideoCompanionState.HOST_ATTENTION, "Paint along needs a look", ""),
     ),
