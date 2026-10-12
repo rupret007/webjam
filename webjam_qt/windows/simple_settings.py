@@ -66,10 +66,12 @@ class SimpleSettingsDialog(QDialog):
         show_band_check_action: bool = True,
         webex_opener: Callable[[str], bool] | None = None,
         settings_provider: Callable[[], AppSettings] | None = None,
+        creator_profile_key: str = "music",
     ) -> None:
         super().__init__(parent)
         # Keep edits isolated until the settings file is saved successfully.
         self._settings = deepcopy(settings)
+        self._creator_profile_key = creator_profile_key
         self._settings_provider = settings_provider or (lambda: settings)
         self._run_band_check_after_save = False
         self._meeting_link_focus_requested = False
@@ -126,24 +128,25 @@ class SimpleSettingsDialog(QDialog):
         identity.layout().addWidget(self._name_preview)
         root.addWidget(identity)
 
-        music = self._section("Live music")
-        music_note = QLabel(
-            "Choose your interface, input channels, headphones, and buffer in Jamulus."
-        )
-        music_note.setObjectName("SimpleSettingsHint")
-        music_note.setWordWrap(True)
-        music.layout().addWidget(music_note)
-        self._open_jamulus = QPushButton("Open Jamulus Audio Settings")
-        self._open_jamulus.setObjectName("QuietButton")
-        self._open_jamulus.setAccessibleName("Open Jamulus audio settings")
-        self._open_jamulus.setAccessibleDescription(
-            "Brings the current Jamulus client forward. In Jamulus, choose Settings then Audio/Network Settings."
-        )
-        self._open_jamulus.clicked.connect(self.audio_settings_requested.emit)
-        music.layout().addWidget(
-            self._open_jamulus, alignment=Qt.AlignmentFlag.AlignLeft
-        )
-        root.addWidget(music)
+        if self._creator_profile_key != "art":
+            music = self._section("Live music")
+            music_note = QLabel(
+                "Choose your interface, input channels, headphones, and buffer in Jamulus."
+            )
+            music_note.setObjectName("SimpleSettingsHint")
+            music_note.setWordWrap(True)
+            music.layout().addWidget(music_note)
+            self._open_jamulus = QPushButton("Open Jamulus Audio Settings")
+            self._open_jamulus.setObjectName("QuietButton")
+            self._open_jamulus.setAccessibleName("Open Jamulus audio settings")
+            self._open_jamulus.setAccessibleDescription(
+                "Brings the current Jamulus client forward. In Jamulus, choose Settings then Audio/Network Settings."
+            )
+            self._open_jamulus.clicked.connect(self.audio_settings_requested.emit)
+            music.layout().addWidget(
+                self._open_jamulus, alignment=Qt.AlignmentFlag.AlignLeft
+            )
+            root.addWidget(music)
 
         conversation = self._section("Conversation")
         self._conversation_toggle = QToolButton()

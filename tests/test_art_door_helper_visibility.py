@@ -1,4 +1,4 @@
-"""The selected Art start's consequence stays readable beside Join."""
+"""The selected Art start's consequence stays readable beside Host/Join."""
 
 from unittest.mock import patch
 
@@ -25,7 +25,7 @@ def qapp():
     ("paint_along", "Host starts Paint along, then chooses a file or lesson link. "
      "Join uses the host's invite."),
 ])
-def test_art_consequence_is_readable_beside_join(qapp, tmp_path, size, start_key, expected):
+def test_art_consequence_is_readable_beside_host_join(qapp, tmp_path, size, start_key, expected):
     settings = AppSettings(
         config_file=str(tmp_path / "settings.json"),
         last_creator_profile_key="art",
@@ -43,8 +43,10 @@ def test_art_consequence_is_readable_beside_join(qapp, tmp_path, size, start_key
                 card.click()
         qapp.processEvents()
 
-        assert (dialog.width(), dialog.height()) == size
+        # Master caps the door footprint even when a larger size is requested.
+        assert (dialog.width(), dialog.height()) == (min(size[0], 800), min(size[1], 600))
         helper = dialog._choice_helper
+        host = dialog._host_button
         join = dialog._join_button
         assert helper.isVisibleTo(dialog)
         assert helper.text() == expected
@@ -52,9 +54,12 @@ def test_art_consequence_is_readable_beside_join(qapp, tmp_path, size, start_key
         # polished widget so the test catches stylesheet regressions too.
         assert helper.font().pixelSize() >= Font.SIZE_MD
         assert helper.palette().color(QPalette.ColorRole.WindowText) == QColor(Color.TEXT_SECONDARY)
-        assert 0 <= helper.y() - (join.y() + join.height()) <= 24
+        # Keep the readable consequence next to both actions, in master's
+        # above-Host position so the longer Paint along copy stays in view.
+        assert 0 <= host.y() - (helper.y() + helper.height()) <= 24
+        assert 0 <= join.y() - (host.y() + host.height()) <= 24
         assert helper.height() >= helper.heightForWidth(helper.width())
-        for widget in (dialog._host_button, join, helper):
+        for widget in (host, join, helper):
             assert widget.isVisibleTo(dialog)
             bounds = QRect(widget.mapTo(dialog, QPoint()), widget.size())
             assert dialog.rect().contains(bounds)

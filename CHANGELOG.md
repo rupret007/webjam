@@ -6,8 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-- Art's Host/Join consequence footer uses larger, brighter text beside Join,
+- Art's Host/Join consequence helper uses larger, brighter text above Host,
   with compact layout coverage for both Make together and Paint along.
+
+- Connected Art rooms keep making guidance beside the Conversation action;
+  the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
