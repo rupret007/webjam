@@ -1678,16 +1678,18 @@ class TestConductorWindow(unittest.TestCase):
                     self.assertIs(window.workspace_stack.currentWidget(), workspace)
                     if profile_key == "art":
                         for token in (
-                            "— Art", "Make together", "Paint along", "<b>More</b>",
-                            "Shared Canvas…", "Choose process video…",
-                            "YouTube link…", "Open my copy…", "Open lesson",
-                            "silent", "Local files are not transferred", "Conversation",
-                            "Back to room", "Notes", "End Room", "Leave Room",
+                            "— Art", "Make together", "Paint along", "<b>Host</b>",
+                            "Copy Invite", "<b>Join</b>", "own tools", "Conversation",
+                            "Webex", "Choose process video…", "Open my copy",
+                            "silent", "Local files are not transferred",
+                            "Back to room",
                         ):
                             self.assertIn(token, body)
                         for token in (
                             "musician", "Record Session", "Studio", "Shared Track",
                             "Band Check", "monitor mix", "fader", "F2", "Song", "AI Image",
+                            "Shared Canvas…", "YouTube link…", "Open lesson",
+                            "End Room", "Leave Room",
                         ):
                             self.assertNotIn(token, body)
                     else:
