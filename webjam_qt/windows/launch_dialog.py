@@ -534,6 +534,11 @@ class LaunchDialog(QDialog):
         # A 520 px client area plus a conservative 40 px native-title-bar
         # allowance remains inside the supported physical 760×600 floor.
         self.resize(620, 520)
+        # Cap growth near the designed size so maximizing/dragging can't
+        # strand the Host/Join cards top-left in hundreds of px of dead
+        # space. 800x600 matches the compact-screen floor this dialog is
+        # already required to fill exactly (see W02).
+        self.setMaximumSize(800, 600)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(Space.XXL, Space.MD, Space.XXL, Space.MD)
@@ -642,6 +647,11 @@ class LaunchDialog(QDialog):
         # choice page compact enough for the editable Jamulus-name preview and
         # the optional Windows installer without squeezing role buttons.
         layout.setSpacing(Space.XS)
+        # Tall windows give the choice page extra height. Bookend the door with
+        # equal stretch so profile cards and Host/Join stay centered instead of
+        # hugging the top. Stretch minimum size is zero, so the 760×600 floor
+        # still fits when the dialog is only as tall as its content.
+        layout.addStretch(1)
 
         self._choice_title = QLabel("Create together.")
         title = self._choice_title
