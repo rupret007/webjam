@@ -90,6 +90,61 @@ def _follow(state, **changes) -> ReferenceVideoFollowSnapshot:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("action, message", [
+    ("share", "Shared video update is not confirmed. WebJam is retrying."),
+    ("pause", "Pausing the shared video is not confirmed. WebJam is retrying."),
+    ("withdraw", "Stopping the shared video is not confirmed. WebJam is retrying."),
+])
+def test_unconfirmed_publication_is_visible_until_current_retry_succeeds(
+    host_dialog, tmp_path, action, message,
+):
+    from tests.test_reference_video_coordinator import (
+        FakeHostPeer, FakePlayer, SESSION_ID, SESSION_KEY, write_video,
+    )
+    from webjam_qt.controllers.reference_video_coordinator import ReferenceVideoCoordinator
+
+    peer = FakeHostPeer()
+    coordinator = ReferenceVideoCoordinator(
+        player_factory=FakePlayer, host_peer_provider=lambda: peer,
+        on_host_snapshot=host_dialog.set_host_snapshot,
+    )
+    coordinator.begin_host(session_id=SESSION_ID, session_key=SESSION_KEY)
+    path = str(write_video(tmp_path / "lesson.mp4"))
+    coordinator.share(path)
+    coordinator.play()
+    peer.raises = True
+    try:
+        if action == "share":
+            coordinator.share(path)
+        else:
+            getattr(coordinator, action)()
+        host_dialog.resize(800, 600)
+        host_dialog.show()
+        QApplication.processEvents()
+        assert host_dialog._status.text() == message
+        assert host_dialog._status.isVisible()
+        assert host_dialog._status.height() >= host_dialog._status.heightForWidth(
+            host_dialog._status.width()
+        )
+        if action == "withdraw":
+            assert host_dialog._share_button.isVisible()
+            assert host_dialog._share_button.isEnabled()
+            assert host_dialog._surface_placeholder.text() != "Video unavailable"
+        else:
+            assert host_dialog._play_button.isVisible()
+            assert host_dialog._play_button.isEnabled()
+        peer.raises = False
+        coordinator.tick()
+        assert "not confirmed" not in host_dialog._status.text()
+        assert host_dialog._status.text() == {
+            "share": "Ready.", "pause": "Paused.",
+            "withdraw": "Choose a local video or YouTube link below for silent playback inside WebJam. You control it.",
+        }[action]
+    finally:
+        coordinator.end()
+        host_dialog.close()
+
+
 def test_the_host_panel_opens_on_the_no_video_path(host_dialog):
     assert host_dialog.windowTitle() == "Paint along"
     assert host_dialog.minimumWidth() == 720

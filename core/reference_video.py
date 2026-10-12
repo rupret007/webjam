@@ -383,6 +383,8 @@ class ReferenceVideoSnapshot:
     error: str = ""
     source_kind: str = "local"
     video_id: str = ""
+    # Coordinator-owned feedback; never a playback error or wire field.
+    publication_warning: str = ""
 
     @property
     def active(self) -> bool:

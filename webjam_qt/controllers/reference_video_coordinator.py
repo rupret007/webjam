@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
 from core.reference_video import (
@@ -203,7 +204,16 @@ class ReferenceVideoCoordinator:
     @property
     def host_snapshot(self) -> ReferenceVideoSnapshot:
         host = self._host
-        return host.snapshot if host is not None else ReferenceVideoSnapshot()
+        snapshot = host.snapshot if host is not None else ReferenceVideoSnapshot()
+        if host is None or not self._publish_failed:
+            return snapshot
+        if snapshot.state in {ReferenceVideoState.IDLE, ReferenceVideoState.CLOSED}:
+            message = "Stopping the shared video is not confirmed. WebJam is retrying."
+        elif snapshot.state is ReferenceVideoState.PAUSED:
+            message = "Pausing the shared video is not confirmed. WebJam is retrying."
+        else:
+            message = "Shared video update is not confirmed. WebJam is retrying."
+        return replace(snapshot, publication_warning=message)
 
     def _host_operation(
         self, operation: Callable[[ReferenceVideoHostController], ReferenceVideoSnapshot],
@@ -235,7 +245,7 @@ class ReferenceVideoCoordinator:
         # wins before the old result gets anywhere near the visible controls.
         if (self._current_host(host, generation) and notice == self._host_notice
                 and self._on_host_snapshot is not None):
-            self._on_host_snapshot(snapshot)
+            self._on_host_snapshot(self.host_snapshot)
 
     def _host_controller(self, source_kind: str | None = None) -> ReferenceVideoHostController:
         if self._host is not None and (source_kind is None or source_kind == self._player_kind):
@@ -442,9 +452,8 @@ class ReferenceVideoCoordinator:
     # -- peer plane ----------------------------------------------------
 
     def _publish(self, snapshot: ReferenceVideoSnapshot) -> None:
+        host, generation, notice = self._host, self._generation, self._host_notice
         publish = self._peer_publisher()
-        if publish is None:
-            return
         shared = bool(snapshot.shared)
         state = _PEER_STATES.get(snapshot.state, "failed")
         if state in {"idle", "failed"}:
@@ -452,7 +461,7 @@ class ReferenceVideoCoordinator:
         try:
             source = ({"source_kind": "youtube", "video_id": snapshot.video_id}
                       if shared and snapshot.source_kind == "youtube" else {})
-            publish(
+            receipt = None if publish is None else publish(
                 state=state,
                 shared=shared,
                 source_display_name=snapshot.source_display_name if shared else "",
@@ -463,11 +472,16 @@ class ReferenceVideoCoordinator:
                 **source,
             )
         except Exception:  # noqa: BLE001 - peer boundary stays UI-optional
-            if not self._publish_failed:
-                LOGGER.warning("Reference video peer state could not be published")
-            self._publish_failed = True
+            failed = True
         else:
-            self._publish_failed = False
+            failed = receipt is None
+        # The peer can dispatch a newer operation or replace the room before
+        # returning. Its old result must neither set nor clear that feedback.
+        if not self._current_host(host, generation) or notice != self._host_notice:
+            return
+        if failed and not self._publish_failed:
+            LOGGER.warning("Reference video peer state could not be published")
+        self._publish_failed = failed
 
     def _publish_unshared(self) -> None:
         publish = self._peer_publisher()

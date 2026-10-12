@@ -262,6 +262,152 @@ def test_a_peer_plane_failure_never_breaks_host_transport(tmp_path):
     assert snapshot.state is ReferenceVideoState.PLAYING
 
 
+@pytest.mark.parametrize("action, state, message", [
+    ("share", ReferenceVideoState.READY,
+     "Shared video update is not confirmed. WebJam is retrying."),
+    ("pause", ReferenceVideoState.PAUSED,
+     "Pausing the shared video is not confirmed. WebJam is retrying."),
+    ("withdraw", ReferenceVideoState.IDLE,
+     "Stopping the shared video is not confirmed. WebJam is retrying."),
+])
+def test_unconfirmed_publication_keeps_local_intent_and_recovers(
+    tmp_path, action, state, message,
+):
+    peer = FakeHostPeer()
+    coordinator, players, notices, _ = make_coordinator(peer=peer)
+    coordinator.begin_host(session_id=SESSION_ID, session_key=SESSION_KEY)
+    path = str(write_video(tmp_path / "lesson.mp4"))
+    coordinator.share(path)
+    coordinator.play()
+    accepted = peer.published[-1]
+    peer.raises = True
+
+    snapshot = coordinator.share(path) if action == "share" else getattr(coordinator, action)()
+
+    assert snapshot.state is state
+    assert snapshot.shared is (action != "withdraw")
+    assert snapshot.publication_warning == message
+    assert snapshot.error == ""
+    assert not snapshot.needs_attention
+    assert notices[-1] == coordinator.host_snapshot == snapshot
+    assert peer.published[-1] is accepted
+    assert players[0].muted
+    coordinator.tick()
+    assert notices[-1].publication_warning == message
+
+    peer.raises = False
+    coordinator.tick()
+
+    assert notices[-1] == coordinator.host_snapshot
+    assert notices[-1].publication_warning == ""
+    assert notices[-1].state is state
+    assert peer.published[-1]["state"] == state.value
+    assert peer.published[-1]["shared"] is snapshot.shared
+    assert peer.published[-1]["needs_attention"] is False
+    assert "publication_warning" not in peer.published[-1]
+
+
+@pytest.mark.parametrize("unavailable", ["inactive", "missing", "no_receipt"])
+def test_unconfirmed_publication_without_a_receipt_retries(tmp_path, unavailable):
+    peer = FakeHostPeer(active=unavailable != "inactive")
+    publish = peer.publish_reference_video_state
+    if unavailable == "missing":
+        peer.publish_reference_video_state = None
+    elif unavailable == "no_receipt":
+        peer.publish_reference_video_state = lambda **kwargs: None
+    coordinator, _, notices, _ = make_coordinator(peer=peer)
+    coordinator.begin_host(session_id=SESSION_ID, session_key=SESSION_KEY)
+    snapshot = coordinator.share(str(write_video(tmp_path / "lesson.mp4")))
+    assert snapshot.publication_warning
+    assert notices[-1] == snapshot
+    peer.active = True
+    peer.publish_reference_video_state = publish
+    coordinator.tick()
+    assert coordinator.host_snapshot.publication_warning == ""
+
+
+@pytest.mark.parametrize("replace_room", [False, True])
+@pytest.mark.parametrize("old_fails", [False, True])
+def test_late_publication_result_cannot_change_new_owner_warning(
+    tmp_path, replace_room, old_fails,
+):
+    peer = FakeHostPeer()
+    coordinator, _, notices, _ = make_coordinator(peer=peer)
+    coordinator.begin_host(session_id=SESSION_ID, session_key=SESSION_KEY)
+    path = str(write_video(tmp_path / "lesson.mp4"))
+    coordinator.share(path)
+    publish = peer.publish_reference_video_state
+
+    def reentrant_publish(**kwargs):
+        peer.publish_reference_video_state = publish
+        if replace_room:
+            coordinator.begin_host(session_id=SESSION_ID, session_key="new-room")
+            coordinator.share(path)
+        peer.raises = not old_fails
+        coordinator.withdraw()
+        if old_fails:
+            raise RuntimeError("private path / invitation must not appear")
+        return kwargs
+
+    peer.publish_reference_video_state = reentrant_publish
+    snapshot = coordinator.play()
+
+    assert snapshot.state is ReferenceVideoState.IDLE
+    assert bool(snapshot.publication_warning) is (not old_fails)
+    assert notices[-1] == coordinator.host_snapshot == snapshot
+    coordinator.end()
+    assert coordinator.host_snapshot.publication_warning == ""
+
+
+def test_publication_warning_does_not_replace_player_error(tmp_path, caplog):
+    peer = FakeHostPeer()
+    coordinator, _, notices, _ = make_coordinator(peer=peer)
+    coordinator.begin_host(session_id=SESSION_ID, session_key=SESSION_KEY)
+
+    def fail(**kwargs):
+        raise RuntimeError("private-invite-token /private/path/lesson.mp4")
+
+    publish = peer.publish_reference_video_state
+    peer.publish_reference_video_state = fail
+    coordinator.share(str(tmp_path / "missing.mp4"))
+    failed = notices[-1]
+    assert failed.state is ReferenceVideoState.FAILED
+    assert failed.error
+    assert failed.publication_warning
+    assert failed.needs_attention
+    assert "private-invite-token" not in caplog.text
+    assert "/private/path" not in caplog.text
+    assert "private-invite-token" not in failed.publication_warning
+
+    peer.publish_reference_video_state = publish
+    coordinator.tick()
+    assert notices[-1].publication_warning == ""
+    assert notices[-1].error == failed.error
+    assert notices[-1].needs_attention
+    assert peer.published[-1]["needs_attention"] is True
+
+
+def test_leaving_during_failed_publication_does_not_restore_warning(tmp_path):
+    peer = FakeHostPeer()
+    coordinator, players, notices, _ = make_coordinator(peer=peer)
+    coordinator.begin_host(session_id=SESSION_ID, session_key=SESSION_KEY)
+    coordinator.share(str(write_video(tmp_path / "lesson.mp4")))
+    count = len(notices)
+    publish = peer.publish_reference_video_state
+
+    def leave(**kwargs):
+        peer.publish_reference_video_state = publish
+        coordinator.end()
+        raise RuntimeError("old publication failed")
+
+    peer.publish_reference_video_state = leave
+    snapshot = coordinator.play()
+    assert coordinator.role == ""
+    assert players[0].state == "closed"
+    assert snapshot.publication_warning == ""
+    assert len(notices) == count
+
+
 def test_host_tick_republishes_the_moving_position(tmp_path):
     peer = FakeHostPeer()
     player = FakePlayer()

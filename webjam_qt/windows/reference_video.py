@@ -680,7 +680,9 @@ class ReferenceVideoDialog(QDialog):
             "Opening your silent process video" if loading else
             "Video unavailable" if snapshot.error else _EMPTY_SURFACE
         )
-        if loading:
+        if snapshot.publication_warning:
+            self._status.setText(snapshot.publication_warning)
+        elif loading:
             self._status.setText(
                 "Loading the silent lesson. Stay here while it opens, or go back to cancel."
                 if youtube else "Checking the video. You can go back to the room while it opens."

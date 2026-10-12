@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Paint along shows a short retry message when sharing, pausing, or stopping
+  the shared video is not confirmed. Local controls remain usable; a successful
+  room update clears the message without claiming what guests are watching.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

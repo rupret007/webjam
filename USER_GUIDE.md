@@ -566,6 +566,10 @@ For the existing **silent local-file option**, the host chooses one video file:
 
 Things worth knowing:
 
+- If sharing, pausing, or stopping the shared video is not confirmed, Paint
+  along says **WebJam is retrying**. Local controls still work. The message
+  clears when the current room update succeeds; it does not confirm what
+  guests are watching.
 - **Only the host controls playback.** Guests have no play, pause, stop, or
   scrub control, by design.
 - **The video is silent from its first frame.** Use an optional meeting app
