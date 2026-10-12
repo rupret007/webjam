@@ -650,9 +650,9 @@ class SessionLibraryDialog(QDialog):
         """
         self._loading = True
         try:
-            if self.record.title != edited.title:
+            if self.title.text() != self.record.title:
                 self.title.setText(self.record.title)
-            if self.record.notes != edited.notes:
+            if self.notes.toPlainText() != self.record.notes:
                 self.notes.setPlainText(self.record.notes)
             if self.record.rehearsal != edited.rehearsal:
                 from core.rehearsal_plan import RehearsalPlan
@@ -772,6 +772,7 @@ class SessionLibraryDialog(QDialog):
             links = [dict(item) for item in self.record.take_links]
             links[row]["take_path"] = path
             self.record = replace(self.record, take_links=tuple(links))
+            self.rehearsal.relink_take(ref["take_id"], ref.get("source_identity"), path)
             self._dirty = True
             self.save_current()
             self._render_takes()
