@@ -39,6 +39,7 @@ from core.settings import AppSettings  # noqa: E402
 from webjam_qt.controllers.application_controller import ApplicationController  # noqa: E402
 from webjam_qt.session_state import SessionPhase, SessionUiState  # noqa: E402
 from webjam_qt.theme import load_stylesheet  # noqa: E402
+from webjam_qt.theme.tokens import Space  # noqa: E402
 from webjam_qt.widgets.jam_signal_graphic import JamSignalGraphic  # noqa: E402
 from webjam_qt.widgets.participant_card import ParticipantPresentation  # noqa: E402
 from webjam_qt.widgets.session_hud import SessionHud  # noqa: E402
@@ -397,6 +398,50 @@ def test_join_keeps_one_name_one_secret_invite_and_one_primary_at_460px(
             dialog._join_button_primary,
         ):
             assert dialog.rect().contains(_rect_in(control, dialog))
+    finally:
+        _destroy(dialog)
+
+
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_join_back_sits_close_below_join_not_a_dead_gap(
+    styled_qapp,
+    tmp_path,
+    size,
+):
+    dialog = LaunchDialog(_settings(tmp_path))
+    dialog.resize(*size)
+    dialog.show_join()
+    dialog.show()
+    styled_qapp.processEvents()
+    try:
+        primary_rect = _rect_in(dialog._join_button_primary, dialog)
+        back_rect = _rect_in(dialog._join_back_button, dialog)
+        gap = back_rect.top() - primary_rect.bottom()
+        # Back must sit within one fixed small spacing step of Join, not at
+        # the far end of a stretch that grows with window height.
+        assert 0 <= gap <= Space.LG + Space.XS * 2
+    finally:
+        _destroy(dialog)
+
+
+def test_join_back_gap_is_fixed_not_proportional_to_window_height(
+    styled_qapp,
+    tmp_path,
+):
+    dialog = LaunchDialog(_settings(tmp_path))
+    try:
+        gaps = []
+        for size in ((800, 600), (1280, 800)):
+            dialog.resize(*size)
+            dialog.show_join()
+            dialog.show()
+            styled_qapp.processEvents()
+            primary_rect = _rect_in(dialog._join_button_primary, dialog)
+            back_rect = _rect_in(dialog._join_back_button, dialog)
+            gaps.append(back_rect.top() - primary_rect.bottom())
+        # A fixed-spacing gap does not change when the window grows taller;
+        # a dead gap driven by addStretch would widen substantially.
+        assert abs(gaps[0] - gaps[1]) <= 2
     finally:
         _destroy(dialog)
 
