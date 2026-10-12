@@ -95,6 +95,57 @@ def test_art_shows_exactly_two_start_cards(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+@pytest.mark.parametrize("profile_key", ["art", "music"])
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_join_title_tracks_visible_profile_and_back_navigation(
+    qapp, tmp_path: Path, profile_key: str, size: tuple[int, int]
+):
+    from webjam_qt.theme import load_stylesheet
+
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        dialog._menu_bar.setNativeMenuBar(False)
+        dialog.setStyleSheet(load_stylesheet())
+        dialog.resize(*size)
+        dialog.show()
+        qapp.processEvents()
+
+        # Check the saved profile first, then real card clicks in both
+        # directions. Each Art start must lead to the same invitation door.
+        other_profile = "music" if profile_key == "art" else "art"
+        for key in (profile_key, other_profile, profile_key):
+            dialog._profile_cards[key].click()
+            assert dialog.selected_creator_profile_key == key
+            for card in _visible_cards(dialog) or [None]:
+                if card is not None:
+                    card.click()
+                dialog._join_button.click()
+                qapp.processEvents()
+
+                expected = "Join the room." if key == "art" else "Join Music."
+                assert dialog._pages.currentWidget() is dialog._join_page
+                assert dialog._join_title.isVisible()
+                assert dialog._join_title.text() == expected
+                assert dialog._join_title.accessibleName() == expected
+                assert dialog._join_title.contentsRect().width() >= (
+                    dialog._join_title.fontMetrics().horizontalAdvance(expected)
+                )
+                assert dialog._join_subtitle.text() == (
+                    "Paste the invite or the whole message.\n"
+                    "If your invitation says “same network,” use your host’s Wi-Fi or local network."
+                )
+                assert dialog._join_button_primary.text() == "Join"
+                assert not dialog._join_button_primary.isEnabled()
+                assert_no_banned_first_screen_words(harvest_join_page(dialog))
+
+                dialog._join_back_button.click()
+                qapp.processEvents()
+                assert dialog.showing_choices
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_art_adds_no_start_action_beyond_the_cards_and_host_join(
     qapp, tmp_path: Path
 ):
@@ -290,6 +341,31 @@ def test_the_page_names_what_host_and_join_do_with_the_card_choice(qapp, tmp_pat
             elsewhere.deleteLater()
 
 
+def test_host_accessible_description_never_promises_an_immediate_invite_copy(
+    qapp, tmp_path: Path
+):
+    """Host only persists the chosen role and accepts the dialog.
+
+    `_host()` (launch_dialog.py) never touches the clipboard — an invite is
+    only ever copied later, by a separate action, once the room is
+    shareable (application_controller._copy_band_invite /
+    _current_invite_url). A screen reader hears the host button's
+    accessibleDescription before any sighted helper text, so it must not
+    claim this click copies an invite.
+    """
+
+    for profile_key in ("art", "music"):
+        dialog = _dialog(tmp_path, profile_key)
+        try:
+            described = dialog._host_button.accessibleDescription().casefold()
+            assert "copy an invite for your guests" not in described
+            assert "start the room and copy an invite" not in described
+            if "copy an invite" in described:
+                assert "once you" in described or "inside the room" in described
+        finally:
+            dialog.deleteLater()
+
+
 def test_a_profile_without_cards_keeps_its_headline_and_helper(
     qapp, tmp_path: Path
 ):
@@ -467,6 +543,42 @@ def test_joining_asks_for_one_invitation_and_nothing_else(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+@pytest.mark.parametrize("profile_key", ["art", "music"])
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_join_paste_prompt_is_shared_from_first_paint_through_empty_submit(
+    qapp, tmp_path: Path, profile_key: str, size: tuple[int, int]
+):
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        expected = "Paste an invite to continue"
+        assert LaunchDialog._EMPTY_JOIN_PROMPT == expected
+        assert dialog._join_status.text() == expected
+        dialog.resize(*size)
+        dialog.show_join()
+        dialog.show()
+        qapp.processEvents()
+        assert dialog._join_status.isVisible()
+        assert dialog._join_status.text() == expected
+        initial_result = dialog.result()
+        QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
+        qapp.processEvents()
+        assert dialog.result() == initial_result
+        assert dialog._invite_input.hasFocus()
+        assert dialog._join_status.text() == expected
+
+        dialog._invite_input.setText("unchecked invitation")
+        assert dialog._join_status.text() == "Invitation pasted — choose Join"
+        dialog.show_choices()
+        assert dialog._join_status.text() == expected
+        dialog.show_join()
+        qapp.processEvents()
+        assert dialog._join_status.text() == expected
+        assert dialog._join_button_primary.property("joinBlocked") is True
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_empty_join_primary_focuses_invite_and_announces_paste_prompt(
     qapp, tmp_path: Path
 ):
@@ -508,6 +620,7 @@ def test_empty_join_return_in_invite_field_announces_paste_prompt(
         assert dialog.result() == initial_result
         assert dialog._invite_input.hasFocus()
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
     finally:
         dialog.deleteLater()
 
@@ -524,12 +637,14 @@ def test_whitespace_only_invite_stays_blocked_and_empty_join_on_submit(
         dialog._invite_input.setText(whitespace)
         dialog._on_invite_text_changed()
         assert dialog._join_button_primary.property("joinBlocked") is True
+        assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
         assert dialog._join_status.text() == "Paste an invite to continue"
         initial_result = dialog.result()
         QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
         qapp.processEvents()
         assert dialog.result() == initial_result
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
         assert dialog._invite_input.hasFocus()
     finally:
         dialog.deleteLater()
@@ -548,6 +663,7 @@ def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
         QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
         qapp.processEvents()
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
 
         dialog._invite_input.setText("webjam://invite?v=2&token=test")
         dialog._on_invite_text_changed()
@@ -556,8 +672,9 @@ def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
 
         dialog._invite_input.clear()
         dialog._on_invite_text_changed()
+        assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
         assert dialog._join_status.text() == "Paste an invite to continue"
-        assert dialog._join_status.text() != LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_button_primary.property("joinBlocked") is True
     finally:
         dialog.deleteLater()
 
@@ -795,6 +912,23 @@ def test_every_visible_door_button_matches_owner_lock(qapp, tmp_path, profile, i
             assert dialog.rect().contains(helper.mapTo(dialog, helper.rect().bottomRight()))
         assert not dialog._install_jamulus_button.isVisibleTo(dialog)
         assert_no_banned_first_screen_words(harvest_first_screen(dialog))
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize("profile", ["art", "music"])
+def test_launch_dialog_cannot_grow_past_its_designed_footprint(qapp, tmp_path, profile):
+    dialog = _dialog(tmp_path, profile)
+    try:
+        dialog.show()
+        qapp.processEvents()
+        assert dialog.maximumWidth() <= 800
+        assert dialog.maximumHeight() <= 600
+        dialog.resize(2000, 2000)
+        qapp.processEvents()
+        assert dialog.width() <= 800
+        assert dialog.height() <= 600
     finally:
         dialog.close()
         dialog.deleteLater()

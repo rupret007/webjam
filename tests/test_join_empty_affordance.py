@@ -56,7 +56,10 @@ def test_empty_join_explains_next_step_and_preserves_keyboard_order(
         assert helper.isVisibleTo(dialog)
         assert not dialog._join_button_primary.isEnabled()
         assert helper.focusPolicy() == Qt.FocusPolicy.NoFocus
-        assert (dialog.width(), dialog.height()) == size
+        # Keep default's 800x600 size cap while exercising every requested size.
+        assert (dialog.width(), dialog.height()) == (
+            min(size[0], 800), min(size[1], 600)
+        )
         for widget in (
             helper,
             dialog._invite_input,
