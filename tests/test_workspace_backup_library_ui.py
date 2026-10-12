@@ -79,6 +79,29 @@ def test_backup_exports_merged_snapshot_even_when_editor_is_clean(tmp_path, make
     assert not dialog._dirty
 
 
+def test_backup_resyncs_notes_and_title_controls_to_the_merged_record(tmp_path, make_dialog, monkeypatch, record):
+    library = SessionLibrary(tmp_path / "source")
+
+    def reconcile(_base, edited):
+        # A reconciled merge may keep newer live Notes/title than this clean
+        # editor's own draft, which still shows the pre-merge text.
+        return library.save(replace(edited, notes="Newer live notes from the coordinator",
+                                     title="Renamed by another owner"))
+
+    dialog = make_dialog(library, current_id=record.id, save_record=reconcile)
+    assert not dialog._dirty
+    assert dialog.notes.toPlainText() == record.notes
+    assert dialog.title.text() == record.title
+    destination = tmp_path / "backup.json"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_a, **_k: (str(destination), ""))
+    _click(dialog, "Back up…")
+    assert dialog.notes.toPlainText() == "Newer live notes from the coordinator"
+    assert dialog.title.text() == "Renamed by another owner"
+    assert not dialog._dirty
+    # The resync must not itself mark the editor dirty again.
+    assert dialog.status.text().startswith("Workspace backed up")
+
+
 def test_backup_blocked_by_conflict_does_not_export_stale_snapshot(tmp_path, make_dialog, monkeypatch, record):
     library = SessionLibrary(tmp_path / "source")
 
