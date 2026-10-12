@@ -182,10 +182,12 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         )
         assert panel._activity_detail.isVisibleTo(window)
         assert panel._connection_detail.text() == (
-            "An artist has connected to this room. WebJam does not yet show a full artist list."
+            "An artist is here with you."
             if role is SessionRole.HOST else
-            "This room connection is confirmed. WebJam does not yet show a full artist list."
+            "You’re connected and ready to make."
         )
+        assert "does not yet" not in panel._connection_detail.text()
+        assert "does not yet show a full artist list" in panel._connection_detail.accessibleDescription()
         assert panel.conversation_button().text() == "Set Up Conversation"
         assert panel.conversation_button().isVisibleTo(window)
         assert panel.conversation_button().isEnabled()
