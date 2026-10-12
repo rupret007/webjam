@@ -10377,9 +10377,8 @@ class ApplicationController(QObject):
             ),
         )
         self._focus_initial_hud_action()
-        # The HUD owns the focused action.  The empty stage stays explanatory
-        # so an initial 760x600 window never presents a Start/Check/Practice
-        # pile alongside the same action in the HUD.
+        # The HUD owns the focused action and Music's idle guidance. Hide the
+        # redundant idle card; other phases retain their stage explanation.
         self.window.participant_grid.set_session_state(
             SessionUiState(
                 self._conductor_stage_phase(presentation.phase),
@@ -10392,6 +10391,10 @@ class ApplicationController(QObject):
                 show_practice=False,
                 hint=stage_hint,
                 primary_action="start",
+                show_empty_state=not (
+                    self.creator_profile.key == "music"
+                    and presentation.phase is SessionConductorPhase.IDLE
+                ),
             )
         )
         # The strip copy button is an older duplicate of the HUD action.  Its
