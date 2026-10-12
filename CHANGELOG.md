@@ -9,6 +9,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Art/Music profile selection uses an orange fill; keyboard focus uses a white
   outline on the focused card, including when that card is selected.
 
+- Connected Art rooms keep making guidance beside the Conversation action;
+  the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual
