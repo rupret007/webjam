@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 from shiboken6 import isValid
 
 from core.art_room_overview import ArtRoomOverview, art_room_overview
+from core.meeting_companion import art_room_hud_active_start_detail
 from core.session_conductor import (
     ArtRoomState, SessionFacts, SessionRole, derive_session_presentation,
 )
@@ -155,7 +156,8 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         view = derive_session_presentation(replace(facts, art_room=state))
         current = art_room_overview(state=state, hosting=role is SessionRole.HOST)
         window.set_art_room_overview(current)
-        hud.set_state(view.title, view.message, action_visible=False)
+        hud_detail = view.message or art_room_hud_active_start_detail()
+        hud.set_state(view.title, hud_detail, action_visible=False)
         _settle(qapp)
         if state is ArtRoomState.RECONNECTING:
             assert hud._detail.isVisibleTo(window)
@@ -171,10 +173,10 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         assert visible_text.count("Make from your own space") == 1
         assert hud._status.text() == "You’re in"
         assert hud._status.isVisibleTo(window)
-        assert hud._detail.text() == ""
-        assert not hud._detail.isVisibleTo(window)
+        assert hud._detail.text() == "Make together with your own tools."
+        assert hud._detail.isVisibleTo(window)
+        assert "own tools" in hud.accessibleDescription()
         assert "own space" not in hud.accessibleDescription()
-        assert "own tools" not in hud.accessibleDescription()
         assert panel._activity.text() == "Make from your own space"
         assert panel._activity_detail.text() == (
             "Use paper, clay, a model, printer, or your usual app, or just talk. "
@@ -430,7 +432,7 @@ def test_production_room_copy_fits_and_coexists_with_conversation(
     window.session_hud.set_state(
         "Finish closing the room" if phase == "cleanup_required" else "Your Art room",
         "The room has not finished disconnecting. Choose the closing action to finish."
-        if phase == "cleanup_required" else "Your current room connection and activities are below.",
+        if phase == "cleanup_required" else art_room_hud_active_start_detail(),
         action_visible=False,
     )
     window.webex_embed.set_meeting_configured(True)
