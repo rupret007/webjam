@@ -7897,6 +7897,7 @@ class ApplicationController(QObject):
             ).vocabulary.participant_singular,
             song_line=_invite_song_line_for(self),
             creator_profile_key=_creator_profile_for_controller(self).key,
+            art_start_key=getattr(getattr(self, "creator_start", None), "key", ""),
             # A successful LAN share above is the topology evidence. A native
             # owner must not inherit same-network or public-service claims
             # from the invitation's serialized shape.
