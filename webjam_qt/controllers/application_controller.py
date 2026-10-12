@@ -10202,11 +10202,14 @@ class ApplicationController(QObject):
             return
         if self._jamulus_connected or getattr(self.audio, "connected", False):
             return
+        setter = getattr(self.window, "set_status_latency", None)
+        if not callable(setter):
+            return
         label = headline or presentation.title
         if presentation.phase is SessionConductorPhase.IDLE:
-            self.window.set_status_latency("Not connected")
+            setter("Not connected")
         else:
-            self.window.set_status_latency(label)
+            setter(label)
 
     @staticmethod
     def _conductor_action_kind(action: SessionPrimaryAction) -> str:
