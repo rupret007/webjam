@@ -994,10 +994,16 @@ class SessionStrip(QFrame):
             else "Set Up Conversation"
         )
 
+    def _conversation_footer_label(self) -> str:
+        """Footer density: setup stays short so safety actions keep their min width."""
+
+        action = self._conversation_action_label()
+        if action == "Set Up Conversation":
+            return self._compact_control_text(action)
+        return self._compact_control_label(action)
+
     def _sync_conversation_button_label(self) -> None:
-        self._video_button.setText(
-            self._compact_control_label(self._conversation_action_label())
-        )
+        self._video_button.setText(self._conversation_footer_label())
 
     def _sync_conversation_presentation(self) -> None:
         self._video_action.setText(self._conversation_action_label())
