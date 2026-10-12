@@ -987,10 +987,20 @@ class SessionStrip(QFrame):
             action.setVisible(available)
             action.setEnabled(available and self._tools_enabled)
 
-    def _sync_conversation_presentation(self) -> None:
-        self._video_action.setText(
-            "Conversation" if self._video_configured else "Set Up Conversation"
+    def _conversation_action_label(self) -> str:
+        return (
+            "Conversation"
+            if self._video_configured
+            else "Set Up Conversation"
         )
+
+    def _sync_conversation_button_label(self) -> None:
+        self._video_button.setText(
+            self._compact_control_label(self._conversation_action_label())
+        )
+
+    def _sync_conversation_presentation(self) -> None:
+        self._video_action.setText(self._conversation_action_label())
         tooltip = (
             "Show WebJam's conversation controls.\n"
             "This does not open or rejoin the meeting."
@@ -1002,6 +1012,7 @@ class SessionStrip(QFrame):
             tooltip = f"{tooltip}\n{policy}"
         self._video_button.setToolTip(tooltip)
         self._video_action.setToolTip(tooltip)
+        self._sync_conversation_button_label()
         self._sync_conversation_accessibility()
 
     def _sync_conversation_accessibility(self) -> None:
@@ -1102,6 +1113,7 @@ class SessionStrip(QFrame):
         return {
             "Copy Invite": "Invite",
             "Conversation": "Talk",
+            "Set Up Conversation": "Set Up",
             "● Record Session": "● Record",
             "■ Stop Recording": "■ Stop",
             "■ Finish Stop": "■ Finish",
@@ -1137,9 +1149,7 @@ class SessionStrip(QFrame):
         self._invite_button.setText(
             self._compact_control_label("Copy Invite")
         )
-        self._video_button.setText(
-            self._compact_control_label("Conversation")
-        )
+        self._sync_conversation_button_label()
         self._record_button.setText(
             self._compact_control_label(self._record_button_full_text)
         )
