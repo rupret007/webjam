@@ -382,6 +382,7 @@ class RoomParticipantController:
         self.probe_failed = False
         self.state = ArtRoomState.CONNECTED
         self.app._apply_creator_profile_key(profile, host_owned=True)
+        self.borrowed_start = state.art_start_key
         self.observe_creative_state(state)
         self.app._refresh_readiness()
 
