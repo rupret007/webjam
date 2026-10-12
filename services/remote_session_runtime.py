@@ -140,7 +140,12 @@ class RemoteSessionSnapshot:
 
 
 class RemoteSessionBackend(Protocol):
-    """Owned native transport boundary; implementations must be thread-safe."""
+    """Owned native transport boundary; implementations must be thread-safe.
+
+    Backends with deferred resource installation also provide
+    ``stop_guest(generation=...)``. It must retire that generation even before
+    start_guest enters, and never stop a newer generation's resource.
+    """
 
     def start_guest(
         self,
@@ -390,7 +395,7 @@ class RemoteSessionRuntime:
         self._publish(stopping)
         error: RemoteSessionErrorCode | None = None
         try:
-            self._backend.stop()
+            self._stop_backend(self._backend, generation)
         except Exception as exc:  # noqa: BLE001 - sanitize at ownership boundary
             LOGGER.error(
                 "Remote session backend stop failed; exception_type=%s",
@@ -453,14 +458,23 @@ class RemoteSessionRuntime:
                 securing = self._snapshot
             else:
                 securing = None
-        if invitation is None:
+        if securing is None:
             return
-        if securing is not None:
-            self._publish(securing)
+        self._publish(securing)
+        with self._condition:
+            # A synchronous stage callback can finish Stop before returning.
+            # The backend's generation fence covers cancellation after this
+            # check, without holding the runtime lock across native startup.
+            if operation != self._operation:
+                if self._worker is threading.current_thread():
+                    self._worker = None
+                self._condition.notify_all()
+                return
+            backend = self._backend
         connection: RemoteGuestConnection | None = None
         error: RemoteSessionErrorCode | None = None
         try:
-            connection = self._backend.start_guest(
+            connection = backend.start_guest(
                 invitation,
                 generation=generation,
             )
@@ -485,39 +499,64 @@ class RemoteSessionRuntime:
             # enrollment returns. Backend implementations must do the same.
             invitation = None
             with self._condition:
-                self._pending_invitation = None
+                if operation == self._operation:
+                    self._pending_invitation = None
 
         with self._condition:
-            if operation != self._operation:
+            stale = operation != self._operation
+            if not stale:
+                self._cancel_watchdog_locked()
+                if connection is not None:
+                    self._snapshot = RemoteSessionSnapshot(
+                        phase=RemoteSessionPhase.CONNECTED,
+                        role=SessionRole.GUEST,
+                        generation=connection.generation,
+                        loopback_port=connection.loopback_port,
+                        path=connection.path,
+                        quality=connection.quality,
+                        stage=RemoteSessionStage.CONNECTED,
+                    )
+                else:
+                    self._snapshot = RemoteSessionSnapshot(
+                        phase=RemoteSessionPhase.FAILED,
+                        role=SessionRole.GUEST,
+                        generation=generation,
+                        error_code=(
+                            error or RemoteSessionErrorCode.TRANSPORT_FAILED
+                        ),
+                        stage=RemoteSessionStage.NEEDS_ATTENTION,
+                    )
+                settled = self._snapshot
+                self._worker = None
+                self._condition.notify_all()
+        if stale:
+            # Cleanup is scoped to this attempt. A late completion must never
+            # stop a replacement process. Legacy synchronous backends have
+            # already been cleaned up by stop().
+            stop_guest = getattr(backend, "stop_guest", None)
+            if callable(stop_guest):
+                try:
+                    stop_guest(generation=generation)
+                except Exception as exc:  # noqa: BLE001 - preserve safe logging
+                    LOGGER.error(
+                        "Retired remote backend cleanup failed; exception_type=%s",
+                        type(exc).__name__,
+                    )
+
+            with self._condition:
                 if self._worker is threading.current_thread():
                     self._worker = None
                 self._condition.notify_all()
-                return
-            self._cancel_watchdog_locked()
-            if connection is not None:
-                self._snapshot = RemoteSessionSnapshot(
-                    phase=RemoteSessionPhase.CONNECTED,
-                    role=SessionRole.GUEST,
-                    generation=connection.generation,
-                    loopback_port=connection.loopback_port,
-                    path=connection.path,
-                    quality=connection.quality,
-                    stage=RemoteSessionStage.CONNECTED,
-                )
-            else:
-                self._snapshot = RemoteSessionSnapshot(
-                    phase=RemoteSessionPhase.FAILED,
-                    role=SessionRole.GUEST,
-                    generation=generation,
-                    error_code=(
-                        error or RemoteSessionErrorCode.TRANSPORT_FAILED
-                    ),
-                    stage=RemoteSessionStage.NEEDS_ATTENTION,
-                )
-            settled = self._snapshot
-            self._worker = None
-            self._condition.notify_all()
+            return
         self._publish(settled)
+
+    @staticmethod
+    def _stop_backend(backend: RemoteSessionBackend, generation: int) -> None:
+        stop_guest = getattr(backend, "stop_guest", None)
+        if callable(stop_guest):
+            stop_guest(generation=generation)
+        else:
+            backend.stop()
 
     def _expire_guest_join(self, operation: int, generation: int) -> None:
         """Retire one hung enrollment and prevent its late result from winning."""
@@ -542,12 +581,13 @@ class RemoteSessionRuntime:
                 stage=RemoteSessionStage.NEEDS_ATTENTION,
             )
             expired = self._snapshot
+            backend = self._backend
             self._condition.notify_all()
         self._publish(expired)
 
         def cleanup() -> None:
             try:
-                self._backend.stop()
+                self._stop_backend(backend, generation)
             except Exception as exc:  # noqa: BLE001 - no backend text is safe
                 LOGGER.error(
                     "Timed-out remote backend cleanup failed; exception_type=%s",
