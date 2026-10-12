@@ -698,7 +698,8 @@ def test_setup_phases_use_the_artists_own_words():
     assert "artists" in _visible_copy(waiting)
 
     idle = derive_session_conductor(SessionConductorFacts(creator_profile_key=ART))
-    assert idle.message == "Choose Host or Join to open the room."
+    assert idle.message == "Choose Start Session to open the room."
+    assert "Host or Join" not in idle.message
     assert "artist" in idle.evidence_limit.casefold()
 
 

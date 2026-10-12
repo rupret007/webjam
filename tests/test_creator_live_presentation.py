@@ -68,7 +68,8 @@ def _visible_copy(presentation) -> str:
 def test_music_profile_retains_the_existing_live_vocabulary() -> None:
     idle = derive_session_conductor(SessionConductorFacts())
     assert idle.title == "Ready when you are"
-    assert idle.message == "Choose Host or Join to begin a rehearsal."
+    assert idle.message == "Choose Start Session to connect."
+    assert "Host or Join" not in idle.message
 
     live = derive_session_conductor(_live_facts("music"))
     assert live.title == "Band connected"

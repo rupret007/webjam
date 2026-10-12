@@ -803,11 +803,11 @@ def _presentation(
                 preservation,
             ), primary_label="Start New Room" if host else "Paste New Invite")
         if profile.key == "music":
-            message = "Choose Host or Join to begin a rehearsal."
+            message = "Choose Start Session to connect."
         elif profile.key == "art":
-            message = "Choose Host or Join to open the room."
+            message = "Choose Start Session to open the room."
         else:
-            message = f"Choose Host or Join to begin a {vocabulary.session_noun}."
+            message = f"Choose Start Session to begin a {vocabulary.session_noun}."
         evidence = (
             "WebJam has not checked a live music path or another musician yet."
             if profile.key == "music"
