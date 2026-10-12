@@ -45,6 +45,23 @@ def test_invalid_or_ambiguous_links_cannot_become_player_navigation(url):
         parse_youtube_lesson_url(url)
 
 
+@pytest.mark.parametrize("endpoint", ["videoseries", "live_stream"])
+@pytest.mark.parametrize("host", ["youtube.com", "www.youtube.com", "m.youtube.com"])
+@pytest.mark.parametrize("suffix", ["", "?list=PL_private", "?channel=UC_private&start=30"])
+def test_embed_pseudo_ids_require_a_video_link(endpoint, host, suffix):
+    with pytest.raises(ValueError) as error:
+        parse_youtube_lesson_url(f"https://{host}/embed/{endpoint}{suffix}")
+    assert str(error.value) == "Paste a YouTube video link, such as youtube.com/watch?v=…."
+
+
+def test_video_embed_with_playlist_context_keeps_its_video_and_timestamp():
+    lesson = parse_youtube_lesson_url(
+        "https://www.youtube.com/embed/M7lc1UVf-VE?list=PL_private&start=30"
+    )
+    assert lesson == YouTubeLesson("M7lc1UVf-VE", 30)
+    assert lesson.playback_url == "https://www.youtube.com/watch?v=M7lc1UVf-VE&t=30s"
+
+
 def test_identity_is_domain_separated_and_validated():
     import hashlib
 
