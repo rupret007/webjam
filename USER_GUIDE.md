@@ -320,7 +320,9 @@ its guest. Your personal meeting stays saved for later; leaving the room restore
 it. Any meeting already open stays open until you leave it in that service.
 
 The room view shows whether you are waiting for artists or connected to the
-host. It does not show a full artist list yet. Without a shared activity,
+host. It does not show a full artist list yet. When a shared activity action
+is available, the connection explanation stays short so the action fits in
+an 800×600 window. Without a shared activity,
 **Make from your own space** is a complete place to start: use paper, clay, a
 model, a printer, or your usual app while the room stays open beside you.
 Conversation is optional when you want to talk or share your screen. When the

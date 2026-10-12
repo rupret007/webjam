@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Art rooms with a Paint along or workspace action keep the connection
+  explanation to one short line, leaving the action visible at 800×600.
+  Connection limits and recovery guidance remain explicit.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

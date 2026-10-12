@@ -27,6 +27,37 @@ def canvas():
     ))
 
 
+@pytest.mark.parametrize("state,hosting,named_connections,detail", [
+    (ArtRoomState.WAITING, True, False,
+     "Share an invitation; no artist is confirmed yet."),
+    (ArtRoomState.CONNECTED, True, False,
+     "WebJam does not show a full artist list yet."),
+    (ArtRoomState.CONNECTED, False, False,
+     "WebJam does not show a full artist list yet."),
+    (ArtRoomState.CONNECTED, True, True,
+     "Guest-chosen names. Talk and sharing are separate."),
+])
+@pytest.mark.parametrize("presence,secondary_presence", [
+    (paint_along(), ABSENT), (canvas(), ABSENT),
+    (ABSENT, paint_along()), (paint_along(), canvas()),
+])
+def test_presence_action_keeps_connection_detail_short_and_truthful(
+    state, hosting, named_connections, detail, presence, secondary_presence,
+):
+    view = art_room_overview(
+        state=state, hosting=hosting, named_connections=named_connections,
+        presence=presence, secondary_presence=secondary_presence,
+    )
+    without_action = art_room_overview(
+        state=state, hosting=hosting, named_connections=named_connections,
+    )
+    assert view.activity_actions
+    assert view.connection_label == without_action.connection_label
+    assert view.connection_detail == detail
+    assert len(view.connection_detail) <= 55
+    assert len(view.connection_detail) < len(without_action.connection_detail)
+
+
 @pytest.mark.parametrize("hosting", [False, True])
 def test_only_confirmed_room_connection_offers_shared_activity(hosting):
     presence = paint_along()

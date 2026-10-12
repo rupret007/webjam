@@ -13,6 +13,8 @@ from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 from shiboken6 import isValid
 
 from core.art_room_overview import ArtRoomOverview, art_room_overview
+from core.art_companion import ArtCompanionProjection, CanvasCompanionState
+from core.art_room_presence import art_room_presence
 from core.session_conductor import (
     ArtRoomState, SessionFacts, SessionRole, derive_session_presentation,
 )
@@ -138,6 +140,55 @@ def test_own_tools_guidance_has_one_heading_and_keeps_recovery_context(window, q
     window.set_art_room_overview(current)
     _settle(qapp)
     assert not panel._title.isVisibleTo(window)
+
+
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+@pytest.mark.parametrize("state,hosting,named_connections", [
+    (ArtRoomState.WAITING, True, False),
+    (ArtRoomState.CONNECTED, True, False),
+    (ArtRoomState.CONNECTED, False, False),
+    (ArtRoomState.CONNECTED, True, True),
+])
+@pytest.mark.parametrize("activity", ["video", "canvas"])
+def test_presence_action_fits_without_scrolling_below_short_connection_copy(
+    window, qapp, size, state, hosting, named_connections, activity,
+):
+    presence = art_room_presence(
+        ArtCompanionProjection(
+            in_room=True,
+            canvas=(CanvasCompanionState.MISSING_APP if activity == "canvas"
+                    else CanvasCompanionState.NONE),
+        ),
+        hosting=hosting, intended_video=activity == "video",
+        paint_along_room=activity == "video",
+    )
+    current = art_room_overview(
+        state=state, hosting=hosting, named_connections=named_connections,
+        presence=presence,
+    )
+    window.set_art_room_overview(current)
+    window.resize(*size)
+    _settle(qapp)
+    assert window.size() == QSize(*size)
+    panel = window.art_room_overview
+    detail = panel._connection_detail
+    assert len(detail.text()) <= 55
+    if detail.isVisibleTo(window):
+        assert detail.fontMetrics().horizontalAdvance(detail.text()) <= detail.contentsRect().width()
+    assert panel.verticalScrollBar().value() == 0
+    assert panel.verticalScrollBar().maximum() == 0
+    button = panel.activity_button()
+    assert button.isVisibleTo(window) and button.isEnabled()
+    # Check before focusing: focus must not scroll a hidden action into view.
+    assert panel.viewport().rect().contains(
+        QRect(button.mapTo(panel.viewport(), QPoint()), button.size())
+    )
+    assert window.rect().contains(QRect(button.mapTo(window, QPoint()), button.size()))
+    actions = []
+    panel.activity_requested.connect(actions.append)
+    button.setFocus(Qt.FocusReason.TabFocusReason)
+    QTest.keyClick(button, Qt.Key.Key_Space)
+    assert actions == [activity]
 
 
 @pytest.mark.parametrize("role", [SessionRole.HOST, SessionRole.GUEST])
