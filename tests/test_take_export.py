@@ -6,6 +6,7 @@ import os
 import stat
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -427,6 +428,65 @@ def test_project_export_rejects_source_changes_during_export(
     assert (existing / "keep.txt").read_text(encoding="utf-8") == "Previous export"
     assert (take.path / "webjam-take.json").read_bytes() == manifest_bytes
     assert {path: path.read_bytes() for path in sources[1:]} == other_sources
+
+
+@pytest.mark.parametrize("phase", ["open", "render"])
+@pytest.mark.parametrize("changed_api", [None, "path", "handle"])
+def test_project_export_checks_source_ctime_within_each_api_on_windows(
+    tmp_path, monkeypatch, phase, changed_api
+):
+    """Simulate Windows ctime differences without losing source-change checks."""
+    from core import take_export
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    before = {path: path.read_bytes() for path in sources}
+    source_inode = sources[0].stat().st_ino
+    real_lstat, real_fstat = Path.lstat, os.fstat
+    changed = False
+
+    def inspect(info, api):
+        if info.st_ino != source_inode:
+            return info
+        values = {
+            key: getattr(info, key)
+            for key in (
+                "st_mode", "st_dev", "st_ino", "st_size",
+                "st_mtime_ns", "st_ctime_ns",
+            )
+        }
+        values["st_ctime_ns"] = 1_000_000_000 if api == "path" else 2_000_000_000
+        if changed and changed_api == api:
+            values["st_ctime_ns"] += 1
+        return SimpleNamespace(**values)
+
+    monkeypatch.setattr(Path, "lstat", lambda path: inspect(real_lstat(path), "path"))
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.name = "nt"
+    simulated_os.fstat = lambda fd: inspect(real_fstat(fd), "handle")
+    monkeypatch.setattr(take_export, "os", simulated_os)
+    owner, method = (
+        (sf, "SoundFile") if phase == "open"
+        else (take_export, "_render_segment_block")
+    )
+    original = getattr(owner, method)
+
+    def change_after_call(*args, **kwargs):
+        nonlocal changed
+        result = original(*args, **kwargs)
+        changed = True
+        return result
+
+    monkeypatch.setattr(owner, method, change_after_call)
+    destination = tmp_path / "exports"
+    if changed_api is None:
+        result = export_track_package(take, destination_root=destination)
+        assert result.manifest.is_file()
+    else:
+        with pytest.raises(TakeExportError, match="Source audio changed"):
+            export_track_package(take, destination_root=destination)
+        assert list(destination.iterdir()) == []
+    assert changed
+    assert {path: path.read_bytes() for path in sources} == before
 
 
 def test_project_export_source_digests_match_declared_bytes(tmp_path):
@@ -1318,3 +1378,56 @@ def test_schema2_track_export_blocks_missing_or_changed_media_atomically(tmp_pat
         export_track_package(take, destination_root=root)
     assert root.is_dir()
     assert list(root.iterdir()) == []
+
+
+@pytest.mark.parametrize("platform", ["posix", "nt"])
+@pytest.mark.parametrize("changed", [None, "path_ctime", "handle_ctime"])
+def test_track_export_manifest_checks_ctime_within_each_api_on_windows(
+    tmp_path, monkeypatch, platform, changed
+):
+    """Simulated Windows path/handle ctime split; native Windows: NOT RUN."""
+    from core import take_export
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    real_lstat = Path.lstat
+    real_fstat = os.fstat
+    inspections = {"path": 0, "handle": 0}
+
+    def inspect(info, source):
+        inspections[source] += 1
+        values = {
+            key: getattr(info, key)
+            for key in (
+                "st_mode",
+                "st_dev",
+                "st_ino",
+                "st_size",
+                "st_mtime_ns",
+                "st_ctime_ns",
+            )
+        }
+        values["st_ctime_ns"] = 1_000_000_000 if source == "path" else 2_000_000_000
+        if changed == source + "_ctime" and inspections[source] == 2:
+            values["st_ctime_ns"] += 1
+        return SimpleNamespace(**values)
+
+    monkeypatch.setattr(Path, "lstat", lambda path: inspect(real_lstat(path), "path"))
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.name = platform
+    simulated_os.fstat = lambda fd: inspect(real_fstat(fd), "handle")
+    monkeypatch.setattr(take_export, "os", simulated_os)
+    destination = tmp_path / "exports"
+    before = {path: path.read_bytes() for path in sources}
+
+    if platform == "nt" and changed is None:
+        result = export_track_package(take, destination_root=destination)
+        assert result.folder.is_dir()
+        assert result.manifest.is_file()
+    else:
+        with pytest.raises(TakeExportError, match="manifest"):
+            export_track_package(take, destination_root=destination)
+        assert not destination.exists() or not list(destination.iterdir())
+    assert {path: path.read_bytes() for path in sources} == before
+    if platform == "nt" and changed is None:
+        assert inspections["path"] >= 2
+        assert inspections["handle"] >= 2
