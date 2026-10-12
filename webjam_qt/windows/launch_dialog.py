@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenuBar,
     QPushButton,
+    QSizePolicy,
+    QSpacerItem,
     QStackedLayout,
     QVBoxLayout,
     QWidget,
@@ -517,6 +519,14 @@ class _LaunchPageLayout(QStackedLayout):
         return super().heightForWidth(width)
 
 
+def _expanding_slack(minimum: int = 0) -> QSpacerItem:
+    """Vertical slack that can grow, with a floor so fitted pages keep a gap."""
+
+    return QSpacerItem(
+        0, minimum, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.MinimumExpanding,
+    )
+
+
 class _LaunchPages(QWidget):
     def __init__(self) -> None:
         super().__init__()
@@ -597,6 +607,7 @@ class LaunchDialog(QDialog):
         brand_row = QHBoxLayout()
         brand_row.setContentsMargins(0, 0, 0, 0)
         brand_row.setSpacing(Space.SM)
+        self._brand_row = brand_row
         self._logo = BrandMark(30)
         self._logo.setObjectName("LaunchBrandMark")
         self._wordmark = QLabel(
@@ -702,9 +713,11 @@ class LaunchDialog(QDialog):
         layout.setSpacing(Space.XS)
         # Tall windows give the choice page extra height. Bookend the door with
         # equal stretch so profile cards and Host/Join stay centered instead of
-        # hugging the top. Stretch minimum size is zero, so the 760×600 floor
-        # still fits when the dialog is only as tall as its content.
-        layout.addStretch(1)
+        # hugging the top. Music fits the pages stack to this page's size hint,
+        # which would collapse a zero-minimum stretch and leave no slack inside
+        # the stack. Keep Space.XL so fitted Music still has the same inside
+        # slack the tall-window door test requires.
+        layout.addItem(_expanding_slack(Space.XL))
 
         self._choice_title = QLabel("Create together.")
         title = self._choice_title
@@ -795,7 +808,7 @@ class LaunchDialog(QDialog):
         self._choice_error.setWordWrap(True)
         self._choice_error.setVisible(False)
         layout.addWidget(self._choice_error)
-        layout.addStretch(1)
+        layout.addItem(_expanding_slack(Space.XL))
         self._apply_creator_profile_presentation()
         return page
 
@@ -1219,10 +1232,17 @@ class LaunchDialog(QDialog):
             and not self._visible_start_cards()
         )
         self._pages.set_fit_current_page(centered)
+        # The choice page keeps Space.XL below Join so slack is inside the
+        # pages stack. Matching top padding on the brand row keeps Music's
+        # brand-through-Join block vertically centered without an extra
+        # root-layout gap.
+        if hasattr(self, "_brand_row"):
+            self._brand_row.setContentsMargins(0, Space.XL if centered else 0, 0, 0)
         root = self.layout()
         root.setStretch(0, int(centered))
         root.setStretch(root.count() - 1, int(centered))
         root.setStretch(root.indexOf(self._pages), int(not centered))
+        root.invalidate()
 
     def _set_choice_helper(self, text: str) -> None:
         """Show a helper line only when it has something to say.
