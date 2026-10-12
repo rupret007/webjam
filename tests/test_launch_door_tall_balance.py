@@ -57,6 +57,24 @@ def _vertical_slack_in_pages(dialog: LaunchDialog) -> tuple[int, int]:
     return top_slack, bottom_slack
 
 
+def _assert_music_block_centered_in_dialog(dialog: LaunchDialog) -> None:
+    # Music fits the choice page to its content and centers that block with
+    # the brand row in the outer layout, so slack lives around the group
+    # rather than inside the pages stack.
+    top = min(
+        dialog._logo.mapTo(dialog, QPoint(0, 0)).y(),
+        dialog._wordmark.mapTo(dialog, QPoint(0, 0)).y(),
+    )
+    bottom = (
+        dialog._join_button.mapTo(dialog, QPoint(0, 0)).y()
+        + dialog._join_button.height()
+    )
+    margins = dialog.layout().contentsMargins()
+    available_top = dialog._menu_bar.height() + margins.top()
+    available_bottom = dialog.height() - margins.bottom()
+    assert abs((top - available_top) - (available_bottom - bottom)) <= 2
+
+
 @pytest.mark.parametrize("profile_key", ["art", "music"])
 @pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
 def test_launch_door_centers_in_tall_windows(qapp, tmp_path: Path, profile_key: str, size: tuple[int, int]):
@@ -77,13 +95,16 @@ def test_launch_door_centers_in_tall_windows(qapp, tmp_path: Path, profile_key: 
             rect = _rect_in(widget, dialog)
             assert dialog.rect().contains(rect), widget.accessibleName()
 
-        top_slack, bottom_slack = _vertical_slack_in_pages(dialog)
-        extra = top_slack + bottom_slack
-        assert extra >= 40, "tall sizes should leave slack inside the pages stack"
-        # Before centering, essentially all slack sat below Host/Join.
-        assert top_slack >= 24
-        assert bottom_slack >= 24
-        assert abs(top_slack - bottom_slack) <= max(48, extra // 4)
+        if dialog._visible_start_cards():
+            top_slack, bottom_slack = _vertical_slack_in_pages(dialog)
+            extra = top_slack + bottom_slack
+            assert extra >= 40, "tall sizes should leave slack inside the pages stack"
+            # Before centering, essentially all slack sat below Host/Join.
+            assert top_slack >= 24
+            assert bottom_slack >= 24
+            assert abs(top_slack - bottom_slack) <= max(48, extra // 4)
+        else:
+            _assert_music_block_centered_in_dialog(dialog)
     finally:
         dialog.close()
         dialog.deleteLater()
