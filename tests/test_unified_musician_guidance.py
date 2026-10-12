@@ -6,10 +6,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QCoreApplication
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from core.musician_guidance import GuidanceRecovery, GuidanceState, StudioGuidanceFacts
 from core.session_conductor import (
@@ -598,6 +600,50 @@ def test_embedded_studio_keeps_guidance_and_primary_controls_visible_at_760_by_6
             bottom_right = widget.mapTo(studio, widget.rect().bottomRight())
             assert bounds.contains(top_left)
             assert bounds.contains(bottom_right)
+    finally:
+        _close(controller, window, old_home)
+
+
+@pytest.mark.parametrize("host_enabled", [False, True], ids=["guest", "host"])
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_music_idle_window_points_to_visible_start_session(
+    tmp_path, monkeypatch, host_enabled, size
+):
+    import re
+
+    monkeypatch.setattr(
+        "webjam_qt.platform_permissions.microphone_permission_status",
+        lambda: "authorized",
+    )
+    controller, window, old_home = _controller(
+        tmp_path, last_creator_profile_key="music", host_server_enabled=host_enabled
+    )
+    try:
+        window.setStyleSheet(load_stylesheet())
+        window.resize(*size)
+        window.show()
+        for _ in range(12):
+            QCoreApplication.processEvents()
+
+        assert controller._last_session_conductor.phase is SessionConductorPhase.IDLE
+        action = window.session_hud._action
+        assert action.isVisibleTo(window)
+        assert action.objectName() == "PrimaryButton"
+        assert action.isEnabled()
+        assert action.text() == "Start Session"
+        assert window.rect().contains(action.mapTo(window, action.rect().bottomRight()))
+
+        visible_copy = " ".join(
+            widget.text()
+            for widget in window.findChildren(QLabel) + window.findChildren(QPushButton)
+            if widget.isVisibleTo(window)
+        )
+        assert re.search(r"\b(host|join)\b", visible_copy, re.IGNORECASE) is None
+        for label in (window.session_hud._detail, window.participant_grid._empty_message):
+            assert label.isVisibleTo(window)
+            assert label.text() == "Choose Start Session to begin a rehearsal."
+            assert label.fontMetrics().horizontalAdvance(label.text()) <= label.width()
+        assert not window.participant_grid._empty_hint.isVisibleTo(window)
     finally:
         _close(controller, window, old_home)
 

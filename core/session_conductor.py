@@ -803,7 +803,7 @@ def _presentation(
                 preservation,
             ), primary_label="Start New Room" if host else "Paste New Invite")
         if profile.key == "music":
-            message = "Choose Host or Join to begin a rehearsal."
+            message = "Choose Start Session to begin a rehearsal."
         elif profile.key == "art":
             message = "Choose Host or Join to open the room."
         else:

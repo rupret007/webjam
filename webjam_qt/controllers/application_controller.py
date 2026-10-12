@@ -10346,8 +10346,8 @@ class ApplicationController(QObject):
         detail = presentation.message
         if presentation.preservation:
             detail = f"{detail} {presentation.preservation}"
-        # Explain what this profile allows without claiming a recorder or
-        # a completed setup. The HUD remains the only startup action.
+        # Music idle guidance names Start Session without a recording detour.
+        # Other profiles explain their capabilities without claiming setup.
         stage_hint = ""
         if presentation.phase is SessionConductorPhase.IDLE and not facts.art_room_closed:
             if self.creator_profile.key == "art":
@@ -10356,7 +10356,7 @@ class ApplicationController(QObject):
                     "printer, or your usual app. "
                     f"{art_watch_share_sentence()}"
                 )
-            else:
+            elif self.creator_profile.key != "music":
                 stage_hint = (
                     "Recording is optional. Set it up when you choose Record Session."
                     if facts.role is SessionRole.HOST

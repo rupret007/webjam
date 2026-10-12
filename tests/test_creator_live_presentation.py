@@ -68,7 +68,7 @@ def _visible_copy(presentation) -> str:
 def test_music_profile_retains_the_existing_live_vocabulary() -> None:
     idle = derive_session_conductor(SessionConductorFacts())
     assert idle.title == "Ready when you are"
-    assert idle.message == "Choose Host or Join to begin a rehearsal."
+    assert idle.message == "Choose Start Session to begin a rehearsal."
 
     live = derive_session_conductor(_live_facts("music"))
     assert live.title == "Band connected"
@@ -77,6 +77,17 @@ def test_music_profile_retains_the_existing_live_vocabulary() -> None:
     assert live.creator_profile_key == "music"
     assert live.action_label == "Record"
     assert SessionPrimaryAction.RUN_BAND_CHECK.label_for("music") == "Run Band Check"
+
+
+@pytest.mark.parametrize("role", list(SessionRole))
+def test_music_idle_guidance_names_its_primary_control(role) -> None:
+    idle = derive_session_conductor(SessionConductorFacts(role=role))
+
+    assert idle.phase is SessionConductorPhase.IDLE
+    assert idle.primary_action is SessionPrimaryAction.START_SESSION
+    assert idle.action_label == "Start Session"
+    assert idle.message == f"Choose {idle.action_label} to begin a rehearsal."
+    assert re.search(r"\b(host|join)\b", _visible_copy(idle)) is None
 
 
 def test_podcast_profile_uses_speaker_and_sound_check_copy() -> None:

@@ -237,6 +237,8 @@ Project…**, **Podcast & Voice…**, or **Review & Rehearsal…** before a live
 starts. The profile follows the
 launch, live session, recording, Studio, local session metadata, and new
 standalone projects. Legacy content without a saved profile opens as Music.
+When the Music main window is idle, its guidance says “Choose Start Session
+to begin a rehearsal.” Choose the orange **Start Session** control to continue.
 Review & Rehearsal allows live WebJam-audio Host/Join, Record Session, local
 notes, and playback/read-only review of completed session takes. It blocks
 standalone projects, take editing/comp/mix mutation, track export, shared
