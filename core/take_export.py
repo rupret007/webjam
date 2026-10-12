@@ -93,6 +93,45 @@ def _manifest_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
     )
 
 
+def _manifest_body(info: os.stat_result) -> tuple[int, int, int, int]:
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+
+
+def _manifest_open_metadata_matches(
+    path_stat: os.stat_result, handle_stat: os.stat_result
+) -> bool:
+    if _manifest_body(path_stat) != _manifest_body(handle_stat):
+        return False
+    # Windows Python can report creation time for lstat's ctime but change time
+    # for fstat's ctime. POSIX keeps the full cross-API check.
+    if os.name == "nt":
+        return True
+    return path_stat.st_ctime_ns == handle_stat.st_ctime_ns
+
+
+def _manifest_read_metadata_unchanged(
+    path_before: os.stat_result,
+    handle_opened: os.stat_result,
+    handle_after: os.stat_result,
+    path_current: os.stat_result,
+) -> bool:
+    if not stat.S_ISREG(path_current.st_mode):
+        return False
+    body = _manifest_body(path_before)
+    if not all(
+        _manifest_body(value) == body
+        for value in (path_before, handle_opened, handle_after, path_current)
+    ):
+        return False
+    if path_before.st_ctime_ns != path_current.st_ctime_ns:
+        return False
+    if handle_opened.st_ctime_ns != handle_after.st_ctime_ns:
+        return False
+    if os.name != "nt" and path_before.st_ctime_ns != handle_opened.st_ctime_ns:
+        return False
+    return True
+
+
 def _snapshot_take_manifest(
     path: Path, *, required: bool
 ) -> _TakeManifestSnapshot | None:
@@ -119,15 +158,16 @@ def _snapshot_take_manifest(
             | getattr(os, "O_NONBLOCK", 0)
             | getattr(os, "O_BINARY", 0),
         )
-        if _manifest_identity(os.fstat(descriptor)) != identity:
+        opened = os.fstat(descriptor)
+        if not _manifest_open_metadata_matches(info, opened):
             raise TakeExportError("The take project manifest changed during export.")
         with os.fdopen(descriptor, "rb") as handle:
             descriptor = -1
             data = handle.read(_MAX_TAKE_MANIFEST_BYTES + 1)
-            if (
-                len(data) > _MAX_TAKE_MANIFEST_BYTES
-                or _manifest_identity(os.fstat(handle.fileno())) != identity
-                or _manifest_identity(path.lstat()) != identity
+            if len(data) > _MAX_TAKE_MANIFEST_BYTES:
+                raise TakeExportError("The take project manifest changed during export.")
+            if not _manifest_read_metadata_unchanged(
+                info, opened, os.fstat(handle.fileno()), path.lstat()
             ):
                 raise TakeExportError("The take project manifest changed during export.")
     except OSError as exc:
