@@ -110,7 +110,9 @@ class SimpleSettingsDialog(QDialog):
         title = QLabel("WebJam Settings")
         title.setObjectName("SimpleSettingsTitle")
         subtitle = QLabel(
-            "Jamulus carries the music. WebJam keeps your jam organized."
+            "Set your name and optional meeting link."
+            if self._creator_profile_key == "art"
+            else "Jamulus carries the music. WebJam keeps your jam organized."
         )
         subtitle.setObjectName("SimpleSettingsSubtitle")
         subtitle.setWordWrap(True)

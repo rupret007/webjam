@@ -151,6 +151,9 @@ While a link opens, its status holds keyboard focus. After a Webex handoff,
 the verified **Show Webex App** action can bring that app forward; another
 meeting provider keeps its own **Open Again** action.
 
+Art **Settings** starts with “Set your name and optional meeting link.”
+The **Live music** section is hidden in Art.
+
 WebJam keeps a known-good Jamulus copy for offline use. **More → Jamulus
 Updates** checks only WebJam-approved, signed update information. Downloads do
 not interrupt a live session, and installation waits until audio, recording, practice,

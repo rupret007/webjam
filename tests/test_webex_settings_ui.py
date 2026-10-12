@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -15,6 +18,7 @@ from PySide6.QtWidgets import (  # noqa: E402
     QLabel,
     QLineEdit,
     QPushButton,
+    QWidget,
 )
 
 from core.jamulus_name import JAMULUS_NAME_HELP  # noqa: E402
@@ -425,6 +429,78 @@ def test_settings_omits_live_music_section_for_art_profile(tmp_path):
     assert not hasattr(art_dialog, "_open_jamulus")
 
 
+@pytest.mark.parametrize("profile_key", ["art", "music"])
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_settings_opened_from_profile_has_matching_subtitle_and_sections(
+    tmp_path, monkeypatch, profile_key, size,
+):
+    from core.creative_modes import get_creator_profile_by_key
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.theme import load_stylesheet
+
+    window = QWidget()
+    # Exercise the actual settings-opening method and real dialog without
+    # starting audio, networking, or a persistent application controller.
+    controller = SimpleNamespace(
+        window=window,
+        settings=AppSettings(config_file=str(tmp_path / "settings.json")),
+        creator_profile=get_creator_profile_by_key(profile_key),
+        audio=SimpleNamespace(stopping=False, cleanup_retry_required=False),
+        _invite_switch_in_flight=False,
+        _shutdown_cleanup_blocks_action=lambda: False,
+        _bring_jamulus_forward=Mock(),
+        _on_install_webex_requested=Mock(),
+    )
+    observed = []
+
+    def inspect_dialog(dialog):
+        observed.append(dialog)
+        dialog.setStyleSheet(load_stylesheet())
+        dialog.resize(*size)
+        dialog.show()
+        _app.processEvents()
+        subtitle = dialog.findChild(QLabel, "SimpleSettingsSubtitle")
+        assert subtitle is not None and subtitle.isVisible()
+        assert subtitle.text() == (
+            "Set your name and optional meeting link."
+            if profile_key == "art"
+            else "Jamulus carries the music. WebJam keeps your jam organized."
+        )
+        viewport = dialog._settings_scroll.viewport()
+        assert viewport.rect().contains(
+            subtitle.geometry().translated(subtitle.parentWidget().pos())
+        )
+        assert dialog._settings_scroll.horizontalScrollBar().maximum() == 0
+        visible_labels = [
+            label.text() for label in dialog.findChildren(QLabel)
+            if label.isVisible()
+        ]
+        visible_buttons = [
+            button.text() for button in dialog.findChildren(QPushButton)
+            if button.isVisible()
+        ]
+        assert ("Live music" in visible_labels) == (profile_key == "music")
+        assert ("Open Jamulus Audio Settings" in visible_buttons) == (
+            profile_key == "music"
+        )
+        assert "Your name" in visible_labels
+        assert dialog._conversation_toggle.isVisible()
+        assert "Save" in visible_buttons and "Cancel" in visible_buttons
+        return SimpleSettingsDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(SimpleSettingsDialog, "exec", inspect_dialog)
+    try:
+        ApplicationController._open_settings_wizard(controller)
+        assert len(observed) == 1
+        controller._bring_jamulus_forward.assert_not_called()
+        controller._on_install_webex_requested.assert_not_called()
+    finally:
+        for dialog in observed:
+            dialog.close()
+        window.close()
+        window.deleteLater()
+
+
 def test_settings_keeps_live_music_section_pixel_identical_for_music_profile(
     tmp_path,
 ):
@@ -436,6 +512,9 @@ def test_settings_keeps_live_music_section_pixel_identical_for_music_profile(
     )
 
     for dialog in (default_dialog, music_dialog):
+        assert dialog.findChild(QLabel, "SimpleSettingsSubtitle").text() == (
+            "Jamulus carries the music. WebJam keeps your jam organized."
+        )
         labels = " ".join(label.text() for label in dialog.findChildren(QLabel))
         assert "Live music" in labels
         assert (
