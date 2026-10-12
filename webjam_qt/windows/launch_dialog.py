@@ -75,6 +75,12 @@ _JOIN_INVITATION_GUIDANCE = (
     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
 )
 
+# Single door line when Paint along is the checked Art start (harvest + UX tests).
+PAINT_ALONG_DOOR_HELPER = (
+    "Host starts Paint along, then chooses a file or lesson link. "
+    "Join uses the host's invite."
+)
+
 
 @dataclass(frozen=True)
 class _CreatorLaunchCopy:
@@ -534,6 +540,11 @@ class LaunchDialog(QDialog):
         # A 520 px client area plus a conservative 40 px native-title-bar
         # allowance remains inside the supported physical 760×600 floor.
         self.resize(620, 520)
+        # Cap growth near the designed size so maximizing/dragging can't
+        # strand the Host/Join cards top-left in hundreds of px of dead
+        # space. 800x600 matches the compact-screen floor this dialog is
+        # already required to fill exactly (see W02).
+        self.setMaximumSize(800, 600)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(Space.XXL, Space.MD, Space.XXL, Space.MD)
@@ -642,6 +653,11 @@ class LaunchDialog(QDialog):
         # choice page compact enough for the editable Jamulus-name preview and
         # the optional Windows installer without squeezing role buttons.
         layout.setSpacing(Space.XS)
+        # Tall windows give the choice page extra height. Bookend the door with
+        # equal stretch so profile cards and Host/Join stay centered instead of
+        # hugging the top. Stretch minimum size is zero, so the 760×600 floor
+        # still fits when the dialog is only as tall as its content.
+        layout.addStretch(1)
 
         self._choice_title = QLabel("Create together.")
         title = self._choice_title
@@ -696,6 +712,13 @@ class LaunchDialog(QDialog):
         # stretch at the bottom of this page is enough.
         layout.addWidget(self._build_start_cards())
 
+        self._choice_helper = QLabel()
+        self._choice_helper.setObjectName("LaunchHelper")
+        self._choice_helper.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._choice_helper.setWordWrap(True)
+        self._choice_helper.setVisible(False)
+        layout.addWidget(self._choice_helper)
+
         self._host_button = QPushButton()
         self._host_button.setObjectName("LaunchPrimary")
         self._host_button.setMinimumHeight(52)
@@ -718,13 +741,6 @@ class LaunchDialog(QDialog):
         layout.addWidget(self._host_reason)
         layout.addWidget(self._join_button)
         layout.addWidget(self._studio_button)
-
-        self._choice_helper = QLabel()
-        self._choice_helper.setObjectName("LaunchHelper")
-        self._choice_helper.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self._choice_helper.setWordWrap(True)
-        self._choice_helper.setVisible(False)
-        layout.addWidget(self._choice_helper)
 
         self._choice_error = QLabel("")
         self._choice_error.setObjectName("LaunchError")
@@ -908,7 +924,7 @@ class LaunchDialog(QDialog):
         available = self._can_host()
         restriction = "" if available else "Hosting is available in the macOS app."
         next_step = (
-            "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
+            PAINT_ALONG_DOOR_HELPER
             if start.key == "paint_along" else
             f"Host starts {start.label}. Join uses the host's invite."
         )
@@ -1157,6 +1173,19 @@ class LaunchDialog(QDialog):
         helper = str(text or "").strip()
         self._choice_helper.setText(helper)
         self._choice_helper.setVisible(bool(helper))
+        self._sync_choice_helper_height()
+
+    def _sync_choice_helper_height(self) -> None:
+        """Reserve the wrapped height so Paint along's door line cannot clip."""
+
+        helper = self._choice_helper
+        if not helper.isVisible() or not helper.text().strip():
+            helper.setMinimumHeight(0)
+            return
+        width = helper.width()
+        if width <= 0:
+            width = max(helper.sizeHint().width(), 280)
+        helper.setMinimumHeight(helper.heightForWidth(width))
 
     def _keep_door_cards_tabbable(self) -> None:
         """Restore Tab focus after setTabOrder, which can drop it on command-links."""
@@ -1170,7 +1199,9 @@ class LaunchDialog(QDialog):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._keep_door_cards_tabbable()
+        self._sync_choice_helper_height()
         QTimer.singleShot(0, self, self._keep_door_cards_tabbable)
+        QTimer.singleShot(0, self, self._sync_choice_helper_height)
 
     def _build_menu(self, root: QVBoxLayout) -> None:
         self._menu_bar = QMenuBar(self)
