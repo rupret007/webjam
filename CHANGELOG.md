@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Paint along allows Play for a shown YouTube lesson in a compact, clipped
+  panel. Hidden pages, hidden video surfaces, and minimized windows still
+  cannot start playback. Offline Qt regressions cover these visibility states;
+  real YouTube playback remains **NOT RUN**.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
