@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Idle host Recording Setup no longer offers a Takes folder that reload
+  discards. **Show Folder** opens WebJam's managed host location, with a short
+  explanation. Guest folder choice is unchanged.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

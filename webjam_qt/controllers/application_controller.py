@@ -13181,8 +13181,11 @@ class ApplicationController(QObject):
             return
         local_originals_available = self._local_originals_available()
         session_running = self._is_jamulus_running()
-        takes_folder_editable = not session_running and not bool(
-            getattr(self.host_peer, "active", False)
+        hosting = bool(getattr(self.settings, "host_server_enabled", False))
+        takes_folder_editable = (
+            not session_running
+            and not bool(getattr(self.host_peer, "active", False))
+            and not hosting
         )
         old_settings = self.settings
         settings_path = self.settings.config_file
