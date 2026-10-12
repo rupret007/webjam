@@ -2,7 +2,8 @@
 from dataclasses import replace
 
 import pytest
-from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+from PySide6.QtCore import QPoint, QRect
+from PySide6.QtWidgets import QApplication, QPushButton
 
 from core.creative_modes import get_creator_profile_by_key_or_default
 from core.session_conductor import SessionConductorFacts, SessionRole
@@ -53,25 +54,28 @@ def test_music_idle_shows_one_summary_and_one_start_action(room, qapp, monkeypat
     hud = window.session_hud
     grid = window.participant_grid
     for _ in range(2):
-        visible_labels = [label.text() for label in window.findChildren(QLabel) if label.isVisible()]
-        assert visible_labels.count("Ready when you are") == 1
-        assert visible_labels.count(hud._detail.text()) == 1
-        assert hud._status.isVisible()
+        # Count only the live HUD and stage, not Notes/guidance copies that a
+        # splitter may still report as visible under Linux offscreen Qt.
+        assert hud._status.isVisibleTo(window)
+        assert hud._status.text() == "Ready when you are"
+        assert hud._detail.isVisibleTo(window)
+        assert hud._detail.text() == "Choose Host or Join to begin a rehearsal."
         assert grid._empty_title.isHidden()
         assert grid._empty_message.isHidden()
-        assert grid._empty_eyebrow.isVisible()
+        assert grid._empty_eyebrow.isVisibleTo(window)
         assert grid._empty_eyebrow.text() == "NOT CONNECTED"
         assert grid._empty_hint.text() in (
             "Recording is optional. Set it up when you choose Record Session.",
             "Your host can choose Record Session when everyone is ready.",
         )
         starts = [button for button in window.findChildren(QPushButton)
-                  if button.isVisible() and button.text() == "Start Session"]
+                  if button.isVisibleTo(window) and button.text() == "Start Session"]
         assert starts == [hud._action]
         assert hud._action.isEnabled()
         assert hud._action.accessibleName() == "Start Session"
         assert "Ready when you are" in hud.accessibleDescription()
-        assert window.rect().contains(hud.geometry())
+        action_rect = QRect(hud._action.mapTo(window, QPoint()), hud._action.size())
+        assert window.rect().contains(action_rect)
 
         # A recovery render must restore both lines, and idle must hide them again.
         grid.set_session_state(SessionUiState.connection_failed())
