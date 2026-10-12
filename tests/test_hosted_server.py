@@ -1056,10 +1056,11 @@ class TestHostedControllerFlows(unittest.TestCase):
             "Start Session",
         )
         self.assertTrue(self.window.session_strip._audio_button.isEnabled())
-        self.assertIn(
-            "Recording is optional",
-            self.window.participant_grid._empty_hint.text(),
+        self.assertEqual(
+            self.window.participant_grid._empty_message.text(),
+            "Choose Start Session to begin a rehearsal.",
         )
+        self.assertEqual(self.window.participant_grid._empty_hint.text(), "")
 
     def test_status_bar_shows_hosting_truth(self):
         c = self.controller
