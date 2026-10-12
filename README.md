@@ -131,7 +131,9 @@ the current work available. From launch, choose **File → New Music Project…*
 for a separate offline project.
 
 **F1** / **More → Help** adds local topic search and explicit navigation while
-the main window remains usable. It sends nothing to a model or service and
+the main window remains usable. Art's **Current workspace** topic has three
+launch steps plus one Paint along file-copy note; search **shared lesson**
+for setup with sound. Help sends nothing to a model or service and
 does not perform the action it explains. See [the workflow guide](USER_GUIDE.md#return-to-launch-unreleased)
 and [the exact-build pilot](docs/WORKFLOW_CONTINUITY_PILOT.md). Physical checks
 remain **NOT RUN**; these changes are not claimed in the published v0.29.0 packages.
