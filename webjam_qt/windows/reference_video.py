@@ -263,13 +263,16 @@ class ReferenceVideoDialog(QDialog):
         lesson_row.addWidget(self._lesson_hint, stretch=1)
         layout.addLayout(lesson_row)
 
+        silent_block = QVBoxLayout()
+        silent_block.setContentsMargins(0, 0, 0, 0)
+        silent_block.setSpacing(Space.XS)
         self._silent_section = QLabel(
             _HOST_SILENT_SECTION if self._hosting else "Silent reference"
         )
         self._silent_section.setWordWrap(True)
         self._silent_section.setObjectName("PaintAlongSilentSection")
         self._silent_section.setAccessibleName("Silent reference options")
-        layout.addWidget(self._silent_section)
+        silent_block.addWidget(self._silent_section)
 
         self._status = QLabel(
             _HOST_EMPTY_STATUS
@@ -279,7 +282,8 @@ class ReferenceVideoDialog(QDialog):
         self._status.setWordWrap(True)
         self._status.setObjectName("PaintAlongStatus")
         self._status.setAccessibleName("Paint along status")
-        layout.addWidget(self._status)
+        silent_block.addWidget(self._status)
+        layout.addLayout(silent_block)
 
         self._surface_holder = QFrame()
         self._surface_holder.setObjectName("PaintAlongSurface")
@@ -446,6 +450,7 @@ class ReferenceVideoDialog(QDialog):
         """Keep the optional silent path visually below the shared-lesson route."""
 
         self._silent_section.setVisible(bool(visible))
+        self._update_layout_spacing()
 
     def set_embedded(self, embedded: bool) -> None:
         """Adapt the surface for WebJam's single-window workspace stack."""
@@ -468,11 +473,20 @@ class ReferenceVideoDialog(QDialog):
         # An inline File/Help menu reduces the compact workspace's height.
         # Recover space between rows before any video controls or guidance
         # overlap; larger workspaces keep the original breathing room.
+        # The empty-state silent-section row is extra height, so compact
+        # empty panels tighten further to keep the honesty hint on-screen.
         layout = self._body_layout
-        if layout is not None:
-            layout.setSpacing(
-                Space.SM if self._embedded and self.height() < 360 else Space.MD
-            )
+        if layout is None:
+            return
+        compact = bool(self._embedded and self.height() < 360)
+        silent = getattr(self, "_silent_section", None)
+        extra_row = silent is not None and not silent.isHidden()
+        if compact:
+            layout.setContentsMargins(Space.XL, Space.SM, Space.XL, Space.SM)
+            layout.setSpacing(Space.XS if extra_row else Space.SM)
+        else:
+            layout.setContentsMargins(Space.XL, Space.LG, Space.XL, Space.LG)
+            layout.setSpacing(Space.MD)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

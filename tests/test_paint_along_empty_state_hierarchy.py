@@ -46,6 +46,11 @@ def test_host_empty_paint_along_leads_with_one_next_step_headline(qapp):
         assert panel._silent_section.isVisibleTo(panel)
         assert panel._silent_section.text() == "Silent reference in WebJam"
         assert panel._share_button.objectName() == "GhostButton"
+        panel.resize(720, 346)
+        _settle(qapp)
+        assert panel.rect().contains(panel._hint.geometry())
+        assert panel.rect().contains(panel._silent_section.geometry())
+        assert panel.rect().contains(panel._share_button.geometry())
     finally:
         panel.close()
         panel.deleteLater()
@@ -62,6 +67,11 @@ def test_guest_empty_paint_along_matches_host_hierarchy(qapp):
         assert panel._headline._full_text == _HOST_EMPTY_HEADLINE
         assert panel._headline.geometry().bottom() <= panel._watch_lesson_button.geometry().top()
         assert panel._silent_section.isVisibleTo(panel)
+        panel.resize(720, 346)
+        _settle(qapp)
+        assert panel.rect().contains(panel._hint.geometry())
+        assert panel.rect().contains(panel._silent_section.geometry())
+        assert panel.rect().contains(panel._open_button.geometry())
     finally:
         panel.close()
         panel.deleteLater()
