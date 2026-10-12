@@ -6,6 +6,7 @@ import os
 import stat
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -1192,3 +1193,56 @@ def test_schema2_track_export_blocks_missing_or_changed_media_atomically(tmp_pat
         export_track_package(take, destination_root=root)
     assert root.is_dir()
     assert list(root.iterdir()) == []
+
+
+@pytest.mark.parametrize("platform", ["posix", "nt"])
+@pytest.mark.parametrize("changed", [None, "path_ctime", "handle_ctime"])
+def test_track_export_manifest_checks_ctime_within_each_api_on_windows(
+    tmp_path, monkeypatch, platform, changed
+):
+    """Simulated Windows path/handle ctime split; native Windows: NOT RUN."""
+    from core import take_export
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    real_lstat = Path.lstat
+    real_fstat = os.fstat
+    inspections = {"path": 0, "handle": 0}
+
+    def inspect(info, source):
+        inspections[source] += 1
+        values = {
+            key: getattr(info, key)
+            for key in (
+                "st_mode",
+                "st_dev",
+                "st_ino",
+                "st_size",
+                "st_mtime_ns",
+                "st_ctime_ns",
+            )
+        }
+        values["st_ctime_ns"] = 1_000_000_000 if source == "path" else 2_000_000_000
+        if changed == source + "_ctime" and inspections[source] == 2:
+            values["st_ctime_ns"] += 1
+        return SimpleNamespace(**values)
+
+    monkeypatch.setattr(Path, "lstat", lambda path: inspect(real_lstat(path), "path"))
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.name = platform
+    simulated_os.fstat = lambda fd: inspect(real_fstat(fd), "handle")
+    monkeypatch.setattr(take_export, "os", simulated_os)
+    destination = tmp_path / "exports"
+    before = {path: path.read_bytes() for path in sources}
+
+    if platform == "nt" and changed is None:
+        result = export_track_package(take, destination_root=destination)
+        assert result.folder.is_dir()
+        assert result.manifest.is_file()
+    else:
+        with pytest.raises(TakeExportError, match="manifest"):
+            export_track_package(take, destination_root=destination)
+        assert not destination.exists() or not list(destination.iterdir())
+    assert {path: path.read_bytes() for path in sources} == before
+    if platform == "nt" and changed is None:
+        assert inspections["path"] >= 2
+        assert inspections["handle"] >= 2
