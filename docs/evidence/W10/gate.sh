@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# W10 recording ownership: run offline from the worktree root.
+# W10 recording ownership and Art join title: run offline from the worktree root.
 set -euo pipefail
 export QT_QPA_PLATFORM=offscreen
 PY=.venv/bin/python
@@ -7,6 +7,10 @@ PY=.venv/bin/python
 # Focused regression first; no physical audio device is opened.
 "$PY" -m pytest tests/test_project_recording.py -q \
   -k 'closes_after_start_stop_and_abort_failures or retains_stream_until_close_succeeds or retains_failed_start_until_close_succeeds or fallback_abort_reaches_original_stream'
+
+# Focused Art join-title contract from the earlier W10 campaign.
+"$PY" -m pytest tests/test_art_start_ux.py -q \
+  -k join_title_tracks_visible_profile_and_back_navigation
 
 # Standard local Python checks from CONTRIBUTING.md / DEVELOPMENT.md.
 "$PY" -m ruff check webjam_qt/ core/ ui/ services/ api/
@@ -25,9 +29,13 @@ for test_file in \
   tests/test_recording_studio_shutdown_retry.py \
   tests/test_song_studio_clone.py \
   tests/test_v026_podcast_voice_journey.py \
-  tests/test_art_start_ux.py; do
+  tests/test_art_start_ux.py \
+  tests/test_launch_keyboard_compact.py \
+  tests/test_art_join_entry_ui.py \
+  tests/test_creator_live_presentation.py \
+  tests/test_host_share_join_flow.py; do
   "$PY" -m pytest "$test_file" -q
 done
 
 git diff --check
-echo 'W10 recording ownership gate: PASS'
+echo 'W10 recording ownership and Art join title gate: PASS'
