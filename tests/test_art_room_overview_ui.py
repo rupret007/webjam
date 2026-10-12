@@ -13,7 +13,9 @@ from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 from shiboken6 import isValid
 
 from core.art_room_overview import ArtRoomOverview, art_room_overview
-from core.session_conductor import ArtRoomState
+from core.session_conductor import (
+    ArtRoomState, SessionFacts, SessionRole, derive_session_presentation,
+)
 from core.creative_modes import get_creator_profile_by_key
 from webjam_qt.theme import load_stylesheet
 from webjam_qt.widgets.participant_card import ParticipantPresentation
@@ -136,6 +138,58 @@ def test_own_tools_guidance_has_one_heading_and_keeps_recovery_context(window, q
     window.set_art_room_overview(current)
     _settle(qapp)
     assert not panel._title.isVisibleTo(window)
+
+
+@pytest.mark.parametrize("role", [SessionRole.HOST, SessionRole.GUEST])
+@pytest.mark.parametrize("size", [(720, 560), (1440, 900)])
+def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
+    facts = SessionFacts(
+        role=role, creator_profile_key="art", setup_requested=True,
+        art_room=ArtRoomState.CONNECTED,
+    )
+    panel = window.art_room_overview
+    hud = window.session_hud
+    window.resize(*size)
+    # A reconnect must restore its subtitle, then clear it on returning.
+    for state in (ArtRoomState.CONNECTED, ArtRoomState.RECONNECTING, ArtRoomState.CONNECTED):
+        view = derive_session_presentation(replace(facts, art_room=state))
+        current = art_room_overview(state=state, hosting=role is SessionRole.HOST)
+        window.set_art_room_overview(current)
+        hud.set_state(view.title, view.message, action_visible=False)
+        _settle(qapp)
+        if state is ArtRoomState.RECONNECTING:
+            assert hud._detail.isVisibleTo(window)
+            assert hud._detail.text() == (
+                "The room connection was interrupted. Your own work stays with you."
+            )
+            continue
+
+        visible_text = "\n".join(
+            label.text() for label in window.findChildren(QLabel)
+            if label.isVisibleTo(window)
+        )
+        assert visible_text.count("Make from your own space") == 1
+        assert hud._status.text() == "You’re in"
+        assert hud._status.isVisibleTo(window)
+        assert hud._detail.text() == ""
+        assert not hud._detail.isVisibleTo(window)
+        assert "own space" not in hud.accessibleDescription()
+        assert "own tools" not in hud.accessibleDescription()
+        assert panel._activity.text() == "Make from your own space"
+        assert panel._activity_detail.text() == (
+            "Use paper, clay, a model, printer, or your usual app, or just talk. "
+            "Choose Set Up Conversation to add your meeting link."
+        )
+        assert panel._activity_detail.isVisibleTo(window)
+        assert panel._connection_detail.text() == (
+            "An artist has connected to this room. WebJam does not yet show a full artist list."
+            if role is SessionRole.HOST else
+            "This room connection is confirmed. WebJam does not yet show a full artist list."
+        )
+        assert panel.conversation_button().text() == "Set Up Conversation"
+        assert panel.conversation_button().isVisibleTo(window)
+        assert panel.conversation_button().isEnabled()
+        assert panel.verticalScrollBar().maximum() == 0
 
 
 def test_art_body_replaces_empty_mixer_and_preserves_music_cards(window, qapp):
