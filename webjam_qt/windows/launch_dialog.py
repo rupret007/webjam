@@ -100,7 +100,7 @@ _CREATOR_LAUNCH_COPY = {
         host="Host",
         join="Join",
         local="New Music Project",
-        host_description="Start the room and copy an invite.",
+        host_description="Copy an invite once you're in the room.",
         join_description="Paste the invite you were sent.",
         local_description=(
             "Create a local multitrack music project without starting or joining "
@@ -147,7 +147,7 @@ _CREATOR_LAUNCH_COPY = {
         join="Join",
         local="Standalone Art Unavailable",
         host_description=(
-            "Copy an invite for your guests."
+            "Copy an invite once you're in the room."
         ),
         join_description=(
             "Paste the host's invite to join their activity."
@@ -1081,8 +1081,9 @@ class LaunchDialog(QDialog):
         self._join_button_primary.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._join_button_primary.clicked.connect(self._join)
         layout.addWidget(self._join_button_primary)
-        layout.addStretch(2)
-
+        # Back follows Join at the layout's normal fixed spacing (no stretch
+        # here) so it never drifts into a dead gap on tall windows; any extra
+        # window height instead goes below Back, matching _build_setup_page.
         self._join_back_button = QPushButton("Back")
         self._join_back_button.setObjectName("GhostButton")
         self._join_back_button.setAccessibleName("Back")
@@ -1092,6 +1093,7 @@ class LaunchDialog(QDialog):
         self._join_back_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._join_back_button.clicked.connect(self.show_choices)
         layout.addWidget(self._join_back_button, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addStretch(1)
         self._apply_creator_profile_presentation()
         self._on_invite_text_changed()
         return page
