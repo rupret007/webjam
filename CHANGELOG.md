@@ -8,6 +8,8 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 - Switching from Art uses “room” in the invitation confirmation, joining status,
   and failure messages, including after cleanup retires the Art room.
+- Connected Art rooms keep making guidance beside the Conversation action;
+  the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows

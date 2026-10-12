@@ -453,6 +453,50 @@ def test_v3_message_names_manual_paste_and_preserves_the_complete_invitation(pro
         assert "carries the music" not in message.text
 
 
+@pytest.mark.parametrize("meeting_url", ["", MEETING_URL, "https://zoom.us/j/123", "https://evil.example.com/meet"])
+def test_paint_along_invite_explains_silent_video_and_separate_talk(meeting_url):
+    message = build_invite_message(
+        join_link=JOIN_LINK,
+        creator_profile_key="art",
+        art_start_key="paint_along",
+        meeting_url=meeting_url,
+    )
+    activity = next(line for line in message.text.splitlines() if "Paint along:" in line)
+    assert "Paint along: follow a process video silently in WebJam; talk stays in the meeting." in activity
+    assert "Make from your own space" not in message.text
+    assert message.text.splitlines().count(JOIN_LINK) == 1
+    for engine in ("Drawpile", "Jamulus", "Webex", "Krita"):
+        assert engine not in activity
+    if meeting_url in (MEETING_URL, "https://zoom.us/j/123"):
+        assert message.includes_meeting
+        assert meeting_url in message.text.splitlines()
+        assert "conversation and work sharing" in message.text
+        assert "separate and optional; WebJam does not run it." in message.text
+    else:
+        assert not message.includes_meeting
+        assert "evil.example.com" not in message.text
+
+
+@pytest.mark.parametrize("art_start_key", ["talk_and_make", "", "unknown"])
+@pytest.mark.parametrize("meeting_url", ["", MEETING_URL])
+def test_make_together_invite_keeps_existing_own_space_copy(art_start_key, meeting_url):
+    message = build_invite_message(
+        join_link=JOIN_LINK, creator_profile_key="art",
+        art_start_key=art_start_key, meeting_url=meeting_url,
+    )
+    activity = next(line for line in message.text.splitlines() if "own space" in line)
+    assert "WebJam opens the art room. Make from your own space with paper, clay, a model, a printer, or your usual app." in activity
+    assert "Paint along" not in message.text
+    for engine in ("Drawpile", "Jamulus", "Webex", "Krita"):
+        assert engine not in activity
+
+
+@pytest.mark.parametrize("profile", ["music", "podcast_voice", "review_rehearsal"])
+def test_art_start_does_not_change_other_profiles_invite(profile):
+    kwargs = dict(join_link=JOIN_LINK, creator_profile_key=profile, song_line="Our song", meeting_url=MEETING_URL)
+    assert build_invite_message(**kwargs, art_start_key="paint_along") == build_invite_message(**kwargs)
+
+
 # ----------------------------------------------------------------------
 # Watch-together via Conversation / Webex share (Jeff lock 2026-09-20)
 # ----------------------------------------------------------------------
