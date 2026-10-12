@@ -607,6 +607,7 @@ class ParticipantGrid(QScrollArea):
         show_practice: bool = False,
         hint: str = "",
         primary_action: str = "start",
+        show_summary: bool = True,
     ) -> None:
         """Show persistent session truth when no real participants exist."""
         title = self._profile_text(title)
@@ -655,6 +656,8 @@ class ParticipantGrid(QScrollArea):
         self._empty_eyebrow.setText(eyebrow)
         self._empty_title.setText(title)
         self._empty_message.setText(message)
+        self._empty_title.setVisible(show_summary)
+        self._empty_message.setVisible(show_summary)
         # Escape "&": QPushButton treats it as a mnemonic marker.
         self._empty_primary.setText(primary_text.replace("&", "&&"))
         self._empty_primary.setAccessibleName(primary_text)
@@ -695,6 +698,7 @@ class ParticipantGrid(QScrollArea):
             show_practice=state.show_practice,
             hint=state.hint,
             primary_action=state.primary_action,
+            show_summary=state.show_summary,
         )
 
     def update_level(self, channel_id: int, level: float) -> None:

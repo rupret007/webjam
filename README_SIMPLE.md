@@ -106,6 +106,9 @@ helper that removes quarantine from WebJam only.
 For a short teammate walkthrough of the door and first room action, use
 [Show WebJam](DEMO.md).
 
+In an idle Music room, “Ready when you are” appears beside **Start Session**.
+The stage shows **NOT CONNECTED** without repeating that headline and helper.
+
 Join has one private invitation field and one button. Paste the full invitation
 copied by the host. WebJam checks the host's profile before choosing Art or the
 Music audio path. Art shows waiting, connected, or reconnecting room status;

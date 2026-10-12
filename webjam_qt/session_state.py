@@ -29,9 +29,11 @@ class SessionUiState:
     show_practice: bool = False
     hint: str = ""
     primary_action: str = "start"
-    # Kept last to preserve existing positional construction of UI snapshots.
+    # Appended flags preserve existing positional construction of UI snapshots.
     # False lets the HUD own the sole primary call to action.
     show_primary: bool = True
+    # The HUD can own idle copy while the stage keeps its status and hint.
+    show_summary: bool = True
 
     @classmethod
     def idle(cls, server: str = "", hosting: bool = False) -> SessionUiState:

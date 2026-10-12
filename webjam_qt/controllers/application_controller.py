@@ -10437,6 +10437,13 @@ class ApplicationController(QObject):
                 show_practice=False,
                 hint=stage_hint,
                 primary_action="start",
+                # Idle Music already has this summary beside Start Session
+                # in the HUD. Keep setup/recovery and other profiles intact.
+                show_summary=not (
+                    self.creator_profile.key == "music"
+                    and presentation.phase is SessionConductorPhase.IDLE
+                    and not facts.art_room_closed
+                ),
             )
         )
         # The strip copy button is an older duplicate of the HUD action.  Its

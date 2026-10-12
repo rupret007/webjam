@@ -6,6 +6,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Idle Music shows “Ready when you are” once beside Start Session; the stage
+  keeps its connection status and recording hint without repeating the summary.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
