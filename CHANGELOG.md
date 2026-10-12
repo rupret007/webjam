@@ -10,6 +10,8 @@ All notable improvements and features for the WebJam creator collaboration platf
   changes during rendering, removing the unfinished package and preserving
   earlier exports. Same-format source rewrites and replacements are covered
   by synthetic-file regressions; physical audio checks remain **NOT RUN**.
+- Connected Art rooms keep making guidance beside the Conversation action;
+  the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
