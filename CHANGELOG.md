@@ -8,6 +8,8 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 - Keep the Join invitation field, Join and Back together at compact heights;
   move same-network guidance into **Help → Joining a room…**.
+- Connected Art rooms keep making guidance beside the Conversation action;
+  the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
