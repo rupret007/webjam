@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from core.workflow_help import HelpTopic, search_topics, workflow_topics
 from webjam_qt.controllers.window_layout import centered_window_rect
 from webjam_qt.theme.brand import render_brand_pixmap
-from webjam_qt.theme.tokens import Layout, Space
+from webjam_qt.theme.tokens import Color, Layout, Space
 
 
 class HelpDialog(QDialog):
@@ -74,6 +74,7 @@ class HelpDialog(QDialog):
         self._body.setAccessibleDescription(
             "Read-only help. Use the arrow or Page Down keys to scroll."
         )
+        self._body.anchorClicked.connect(self._toggle_shared_lessons)
         self._body.setOpenLinks(False)
         self._body.setOpenExternalLinks(False)
         self._body.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -108,6 +109,7 @@ class HelpDialog(QDialog):
         self.resize(640, 600)
 
     def set_context(self, body: str, *, profile: str, offline_studio: bool) -> None:
+        self._art_overview = profile == "art"
         self._all_topics = (HelpTopic("overview", "Current workspace", body),
                             *workflow_topics(profile, offline_studio=offline_studio))
         self._filter_topics()
@@ -130,13 +132,61 @@ class HelpDialog(QDialog):
 
     def _show_topic(self, row: int) -> None:
         topic = self._matches[row] if 0 <= row < len(self._matches) else None
-        self._body.setHtml(topic.body if topic else
+        self._shared_lessons_expanded = False
+        self._selected_topic = topic
+        self._body.setHtml(self._topic_body(topic) if topic else
             "<p>No matching help topics. Try <b>saved work</b>, <b>draft</b>, "
             "<b>export</b> or <b>reference</b>, or clear the search.</p>")
         self._route = topic.route if topic else ""
         self._navigate.setText(topic.action if topic else "Open workflow")
         self._navigate.setVisible(bool(self._route))
         self._navigate.setEnabled(bool(self._route))
+
+    def _topic_body(self, topic: HelpTopic) -> str:
+        if not self._art_overview or topic.key != "overview":
+            return topic.body
+        expanded = self._shared_lessons_expanded
+        label = "▾ Shared lessons (collapse)" if expanded else "▸ Shared lessons (expand)"
+        body = topic.body + (
+            f'<p><a href="help:shared-lessons" style="color: {Color.TEXT_PRIMARY}">'
+            f'{label}</a></p>'
+        )
+        if expanded:
+            body += (
+                "<p>In the room, the host uses <b>Copy Invite</b>. <b>More</b> opens "
+                "<b>Paint along…</b>. For Make together, the host can also choose the "
+                "optional <b>Shared Canvas…</b> handoff.</p>"
+                "<p>For a lesson with sound, choose <b>Watch a shared lesson</b>. "
+                "The host chooses <b>Choose YouTube…</b>, then <b>Open in browser</b>. "
+                "In <b>Set Up Conversation</b> or <b>Conversation</b>, add the meeting link "
+                "and choose <b>Join / Open Meeting</b>. In Webex, share the browser window "
+                "with computer sound. Guests listen to that one copy and ask the host to "
+                "pause or resume. Confirm hearing and sharing together; WebJam cannot "
+                "observe the external meeting.</p>"
+                "<p>If the meeting was added after the room invite, the host uses "
+                "<b>Copy Link</b>; guests use <b>Add Link</b> in Conversation without "
+                "leaving the room. <b>Conversation</b> returns to your lesson setup "
+                "after Notes.</p>"
+                "<p>For a silent local reference, the host chooses <b>Choose process video…</b>. "
+                "Guests choose <b>Open my copy…</b>. Local files are not transferred; "
+                "only a matching local file follows the host. Talk stays in Webex; "
+                "video in WebJam is silent. For a silent browser reference, the host "
+                "chooses <b>YouTube link…</b>; guests choose <b>Open lesson</b>.</p>"
+                "<p><b>Back to room</b> keeps the room open. The host chooses <b>End Room</b>; "
+                "guests choose <b>Leave Room</b>. F11 toggles full screen. Esc returns from "
+                "Paint along to the room, or leaves full screen.</p>"
+            )
+        return body
+
+    def _toggle_shared_lessons(self, url) -> None:
+        topic = self._selected_topic
+        if (url.toString() != "help:shared-lessons" or not self._art_overview
+                or topic is None or topic.key != "overview"):
+            return
+        self._shared_lessons_expanded = not self._shared_lessons_expanded
+        self._body.setHtml(self._topic_body(topic))
+        # Retain keyboard access to the disclosure after replacing its document.
+        self._body.setTextCursor(self._body.document().find("Shared lessons"))
 
     def _request_navigation(self) -> None:
         if self.isVisible() and self._route:

@@ -650,31 +650,12 @@ class ConductorWindow(QMainWindow):
         if profile.key == "art":
             body = (
                 f"<b>WebJam v{__version__} — Art</b><br>"
-                "<i>Make together with your own tools.</i><br><br>"
-                "<b>1.</b> At launch, choose <b>Make together</b> or "
-                "<b>Paint along</b>, then <b>Host</b>. Guests choose <b>Join</b> "
-                "with the host's invite.<br>"
-                "<b>2.</b> The host uses <b>Copy Invite</b>. In the room, "
-                "<b>More</b> opens <b>Paint along…</b>; the host can also "
-                "choose the optional <b>Shared Canvas…</b> handoff.<br>"
-                "<b>3.</b> For a lesson with sound, choose <b>Watch a shared lesson</b>. "
-                "The host chooses <b>Choose YouTube…</b>, then <b>Open in browser</b>. "
-                "If the meeting was added after the room invite, the host uses <b>Copy Link</b>; "
-                "guests use <b>Add Link</b> in Conversation without leaving the room. "
-                "Join the meeting and share that lesson with computer sound. Guests listen "
-                "to that one copy and ask the host to pause or resume.<br>"
-                "<b>4.</b> Paint in your usual app or on paper. "
-                "<b>Set Up Conversation</b> or <b>Conversation</b> shows "
-                "optional external meeting controls; <b>Join / Open Meeting</b> "
-                "opens the configured link.<br>"
-                "<b>5.</b> The optional silent reference uses <b>Choose process video…</b> "
-                "or <b>YouTube link…</b>. Guests use <b>Open my copy…</b> or <b>Open lesson</b>. "
-                "Local files are not transferred. <b>Back to room</b> keeps the room open; "
-                "<b>Conversation</b> returns to your lesson setup after Notes.<br>"
-                "<b>6.</b> The host chooses <b>End Room</b>; guests choose "
-                "<b>Leave Room</b>.<br><br>"
-                "F11 — Toggle full screen<br>"
-                "Esc — Back to room from Paint along; otherwise leave full screen"
+                "<i>Make together with your own tools.</i>"
+                "<ul><li>Choose <b>Make together</b> or <b>Paint along</b>.</li>"
+                "<li>Choose <b>Host</b> and share your invite, or <b>Join</b> "
+                "and paste the host's invite.</li>"
+                "<li>In the room, make with your own tools or on paper, "
+                "or follow the <b>Paint along</b> prompt.</li></ul>"
             )
         elif self._reference_studio_only and profile.key == "podcast_voice":
             body = (
@@ -801,14 +782,15 @@ class ConductorWindow(QMainWindow):
                 f"{reset_shortcut} — Reset every fader to 0 dB<br>"
                 "F11 / Esc — Enter / leave full screen"
             )
-        body += (
-            "<br><br><b>Continue your work</b><br>"
-            "Open <b>More → Session library…</b>, or <b>File → Session library…</b> "
-            "at launch. Search saved workspaces, read <b>Summary</b>, and choose "
-            "<b>Continue</b>. Restoring notes does not start a room or recording."
-            " Use <b>File → Return to launch…</b> to choose another workflow after "
-            "unfinished work and session cleanup are resolved."
-        )
+        if profile.key != "art":
+            body += (
+                "<br><br><b>Continue your work</b><br>"
+                "Open <b>More → Session library…</b>, or <b>File → Session library…</b> "
+                "at launch. Search saved workspaces, read <b>Summary</b>, and choose "
+                "<b>Continue</b>. Restoring notes does not start a room or recording."
+                " Use <b>File → Return to launch…</b> to choose another workflow after "
+                "unfinished work and session cleanup are resolved."
+            )
         if profile.key == "music":
             moment_shortcut = "⌘M" if sys.platform == "darwin" else "Ctrl+M"
             body += (
@@ -816,12 +798,6 @@ class ConductorWindow(QMainWindow):
                 "<b>Save plan…</b> / <b>Add saved plan…</b> reuses the order and goals. "
                 f"<b>Mark moment</b> ({moment_shortcut}) saves a plain note unless a "
                 "recording position is confirmed."
-            )
-        elif profile.key == "art":
-            body += (
-                "<br>In <b>Art project</b>, keep your brief, references, progress, "
-                "and next steps. Lesson bookmark positions are entered by you. "
-                "<b>Open reference</b> opens the selected reference only when requested."
             )
         if not self._reference_studio_only and profile.key in {"music", "podcast_voice"}:
             body += (

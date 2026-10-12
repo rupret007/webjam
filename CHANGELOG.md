@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Art Help opens with three short bullets matching Choose → Host/Join → room.
+  Shared lesson setup is collapsed until requested; keyboard users can expand
+  and collapse it without opening a browser or meeting.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

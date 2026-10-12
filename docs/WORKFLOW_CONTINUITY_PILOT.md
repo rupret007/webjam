@@ -11,6 +11,12 @@ The scope is safe return to the launch screen, local searchable workflow Help,
 focused persistence recovery, and bounded CI diagnostics. The existing Session
 library, rehearsal plans, Studio review/receipts and Art projects are the
 v0.29.0 baseline, not newly invented capabilities. Jamulus retains live audio;
+Art Help starts with three bullets: choose Make together or Paint along,
+Host or Join using the invite, then follow the room prompt with your own tools.
+Expand **Shared lessons** for the browser, meeting sound and local video steps.
+Tab to the disclosure and press Enter to expand or collapse it. Saved-work
+and Art-reference instructions remain searchable Help topics.
+
 Art users keep their own tools. Help is not a model, a paid API, or peer chat.
 
 ## Bind the observation to one build

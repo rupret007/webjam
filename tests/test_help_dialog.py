@@ -81,6 +81,11 @@ def test_real_help_fits_scrolls_and_returns_without_changing_work(app, window, p
             QTest.keyClick(dialog._body, Qt.Key.Key_PageDown)
         assert bar.value() == bar.maximum()
         QTest.keyClick(dialog._body, Qt.Key.Key_Tab)
+        if profile == "art":
+            # Art now has one keyboard-operable disclosure before Close help.
+            assert dialog._body.hasFocus()
+            assert dialog._body.textCursor().charFormat().anchorHref() == "help:shared-lessons"
+            QTest.keyClick(dialog._body, Qt.Key.Key_Tab)
         assert dialog._ok.hasFocus()
         QTest.keyClick(dialog._ok, Qt.Key.Key_Return if route == "f1" else Qt.Key.Key_Escape)
         assert not dialog.isVisible()

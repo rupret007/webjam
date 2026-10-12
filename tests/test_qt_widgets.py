@@ -1677,6 +1677,16 @@ class TestConductorWindow(unittest.TestCase):
                     body = set_text.call_args.args[0]
                     self.assertIs(window.workspace_stack.currentWidget(), workspace)
                     if profile_key == "art":
+                        self.assertEqual(body.count("<li>"), 3)
+                        self.assertIn("Shared lessons (expand)", body)
+                        self.assertNotIn("YouTube", body)
+                        self.assertNotIn("Webex", body)
+                        from PySide6.QtCore import QUrl
+                        with mock.patch("PySide6.QtWidgets.QTextBrowser.setHtml") as expanded:
+                            window._workflow_help_dialog._body.anchorClicked.emit(
+                                QUrl("help:shared-lessons")
+                            )
+                        body = expanded.call_args.args[0]
                         for token in (
                             "— Art", "Make together", "Paint along", "<b>More</b>",
                             "Shared Canvas…", "Choose process video…",
