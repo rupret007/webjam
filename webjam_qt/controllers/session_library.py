@@ -130,7 +130,7 @@ class SessionLibraryCoordinator(QObject):
             first_workspace = self.current is None
             self.current = self.library.create(self._profile(), title or "Untitled workspace",
                                                notes=notes, mode_key=mode)
-            self._captured_live = (self.current.id, (title, mode, notes))
+            self._captured_live = None
             follow_along = getattr(self._c, "follow_along", None)
             if first_workspace and follow_along is not None:
                 follow_along.workspace_created()
@@ -150,19 +150,28 @@ class SessionLibraryCoordinator(QObject):
         if self.current is not None and self.current.profile == self._profile():
             latest = self._pending.get(self.current.id, self.current)
             title, mode, notes = self._context()
+            context = (title, mode, notes)
+            first_capture = self._captured_live is None or self._captured_live[0] != self.current.id
             previous = (self.current.title, self.current.mode_key, self.current.notes)
-            if self._captured_live is not None and self._captured_live[0] == self.current.id:
+            if not first_capture:
                 previous = self._captured_live[1]
+                if context == previous:
+                    return
             # A later Undo is an edit even when it returns to the saved value.
-            # Remember captures across write failures; unchanged live fields
-            # must still leave another owner's pending values alone.
-            self._captured_live = (self.current.id, (title, mode, notes))
+            # Remember captures across write failures; only changed live fields
+            # may replace another owner's pending values.
+            self._captured_live = (self.current.id, context)
+            if first_capture and latest is not self.current and context == previous:
+                # Unchanged live controls do not own an existing retained draft.
+                return
             changes = {}
-            if title != self.current.title or title != previous[0]:
+            if title != previous[0]:
                 changes["title"] = title or latest.title
-            if mode != self.current.mode_key or mode != previous[1]:
+            if mode != previous[1]:
                 changes["mode_key"] = mode
-            if notes != self.current.notes or notes == latest.notes or notes != previous[2]:
+            # Preloaded Notes still need their first pulse, unless a retained
+            # draft owns different Notes that the live control has not edited.
+            if notes != previous[2] or (first_capture and notes == latest.notes):
                 pulse = build_session_pulse(creator_profile_key=self._profile(), title=title, notes=notes)
                 changes.update(notes=notes, decisions=pulse.decisions,
                     actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
@@ -415,6 +424,10 @@ class SessionLibraryCoordinator(QObject):
             self._pending.pop(record.id, None)
         if self.current is not None and self.current.id == record.id:
             self.current = record
+            # The live controls are about to be rewritten to the editor's
+            # saved content; advance the capture baseline to match so a
+            # later revert of the live control back to its pre-edit value
+            # reads as a real change instead of "unchanged since capture".
             self._applying = True
             try:
                 self._c.window.session_strip.set_session_title(record.title)
@@ -514,7 +527,7 @@ class SessionLibraryCoordinator(QObject):
             return
         owner = self._recap_owner
         if self.current is not None and self.current.id == owner.id:
-            owner = self.current
+            owner = self._pending.get(owner.id, self.current)
             recap = dict(self._pending_recap, take_ids=sorted(self._live_take_ids))
         else:
             recap = self._pending_recap
@@ -544,7 +557,8 @@ class SessionLibraryCoordinator(QObject):
         entry = {"take_id": take_id, "take_path": "", "run_id": self._run_id,
                  "recording_session_id": session_id, "validated": False,
                  "status": "pending", "title": "Recording requested"}
-        self.current = replace(self.current, take_links=(*self.current.take_links, entry))
+        latest = self._pending.get(self.current.id, self.current)
+        self.current = replace(latest, take_links=(*latest.take_links, entry))
         self._pending[self.current.id] = self.current
         self.flush()
 
@@ -558,7 +572,7 @@ class SessionLibraryCoordinator(QObject):
         if binding is not None:
             owner_id, run_id = binding
             if self.current is not None and self.current.id == owner_id:
-                owner = self.current
+                owner = self._pending.get(owner_id, self.current)
             else:
                 try:
                     owner = self._pending.get(owner_id) or self.library.load(owner_id)

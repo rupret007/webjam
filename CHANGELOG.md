@@ -10,6 +10,9 @@ All notable improvements and features for the WebJam creator collaboration platf
   title, or mode to its last saved value replaces the older retained edit on
   retry, while pending take and recap information stays intact.
 
+- Connected Art rooms keep making guidance beside the Conversation action;
+  the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
+
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
   diagnostics, Art companion, Pocket Stage), the public repo, and the actual
