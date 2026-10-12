@@ -48,12 +48,21 @@ def _door_anchor_widgets(dialog: LaunchDialog) -> list:
 
 
 def _vertical_slack_in_pages(dialog: LaunchDialog) -> tuple[int, int]:
-    pages = _rect_in(dialog._pages, dialog)
+    """Art stretches `_pages`; Music hug-fits and centers against the dialog.
+
+    After the Music door hug-fits `_pages` so Host/Join sit with the brand
+    row, interior pages-stack slack is always 0. Measure that profile's
+    slack against the dialog instead. Art still fills `_pages`.
+    """
     rects = [_rect_in(widget, dialog) for widget in _door_anchor_widgets(dialog)]
     content_top = min(rect.top() for rect in rects)
     content_bottom = max(rect.bottom() for rect in rects)
-    top_slack = max(0, content_top - pages.top())
-    bottom_slack = max(0, pages.bottom() - content_bottom)
+    if dialog.selected_creator_profile_key == "music":
+        frame = dialog.rect()
+    else:
+        frame = _rect_in(dialog._pages, dialog)
+    top_slack = max(0, content_top - frame.top())
+    bottom_slack = max(0, frame.bottom() - content_bottom)
     return top_slack, bottom_slack
 
 
