@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -59,6 +60,7 @@ class FakePlayer:
         self.seeks: list[float] = []
         self.fail_on: set[str] = set()
         self.closed = False
+        self.on_load: Callable[[Path], None] | None = None
 
     def _maybe_fail(self, name: str) -> None:
         self.calls.append(name)
@@ -67,6 +69,8 @@ class FakePlayer:
 
     def load(self, path: Path) -> float:
         self._maybe_fail("load")
+        if self.on_load is not None:
+            self.on_load(Path(path))
         self.loaded = Path(path)
         self.position = 0.0
         self.state = "ready"
@@ -411,6 +415,26 @@ def test_player_that_cannot_open_the_file_fails_closed(tmp_path):
     snapshot = controller.share(write_video(tmp_path / "lesson.mp4"))
     assert snapshot.state is ReferenceVideoState.FAILED
     assert snapshot.shared is False
+
+
+def test_host_does_not_commit_identity_when_file_changes_during_player_load(
+    tmp_path,
+):
+    video = write_video(tmp_path / "lesson.mp4", b"bytes-before-player-load")
+    controller, player, _ = make_host(tmp_path)
+
+    def rewrite_during_load(path: Path) -> None:
+        path.write_bytes(b"different-bytes-after-fingerprint")
+
+    player.on_load = rewrite_during_load
+    snapshot = controller.share(video)
+
+    assert snapshot.state is ReferenceVideoState.FAILED
+    assert snapshot.shared is False
+    assert snapshot.identity_digest == ""
+    assert snapshot.needs_attention is True
+    assert controller.content_sha256() == ""
+    assert "moved or changed" in snapshot.error
 
 
 def test_zero_duration_media_is_refused(tmp_path):

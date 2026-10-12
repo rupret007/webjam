@@ -132,6 +132,12 @@ class LanRoomGuest:
         self._thread.start()
 
     @property
+    def lesson_requests_enabled(self) -> bool:
+        """True once armed; a transient poll failure clears this until explicit reentry."""
+        with self._lesson_lock:
+            return self._lesson_enabled
+
+    @property
     def lesson_request_state(self) -> LessonRequestGuestState:
         with self._lesson_lock:
             self._refresh_lesson_locked()

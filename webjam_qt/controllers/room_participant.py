@@ -967,7 +967,15 @@ class RoomParticipantController:
         if panel is None or getattr(panel, "_shared_lesson_hosting", None) is None:
             return
         binding = self._lesson_binding
-        if not self._lesson_current(binding):
+        # A transient poll failure disables the guest worker's request authority
+        # even while the room connection itself stays current; surface Restart
+        # rather than leaving the guest stuck with no way back in.
+        disarmed_guest = (
+            binding is not None and binding.role == "guest"
+            and self._lesson_current(binding)
+            and not binding.owner.lesson_requests_enabled
+        )
+        if disarmed_guest or not self._lesson_current(binding):
             self.retire_lesson_requests()
             self._wire_lesson_actions(None)
             panel.set_lesson_request_guest(status="Ask the host aloud.")
