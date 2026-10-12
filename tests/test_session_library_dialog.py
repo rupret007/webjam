@@ -280,6 +280,47 @@ def test_pending_take_without_path_cannot_open_or_offer_relink(tmp_path, make_di
     assert asked == []
 
 
+def test_local_take_relink_updates_matching_rehearsal_bookmarks(tmp_path, make_dialog, app, monkeypatch):
+    from tests.test_workspace_media_backup import _digest, _take
+
+    takes_root = tmp_path / "takes"
+    takes_root.mkdir()
+    root, project = _take(takes_root, label="song")
+    reference = {
+        "take_id": project.take_id,
+        "take_path": str(root),
+        "source_identity": _digest((root / "webjam-take.json").read_bytes()),
+        "title": "song",
+    }
+    library = SessionLibrary(tmp_path / "lib")
+    record = library.create("music", "Local rehearsal", take_links=(reference,))
+    assert not record.import_provenance
+    dialog = make_dialog(library, current_id=record.id)
+    panel = dialog.rehearsal
+    panel.add_song("Tune")
+    bookmark_ref = {key: reference[key] for key in ("take_id", "take_path", "source_identity")}
+    panel.add_bookmark("Chorus", **bookmark_ref, position_seconds=1.5, timing_verified=True)
+    panel.add_bookmark(
+        "Different identity",
+        **dict(bookmark_ref, source_identity="f" * 64),
+        position_seconds=2.0,
+        timing_verified=True,
+    )
+    assert dialog.save_current()
+    moved = tmp_path / "moved-take"
+    root.rename(moved)
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *_a, **_k: str(moved))
+    dialog.takes.setCurrentRow(0)
+    dialog.relink_take_button.click()
+    app.processEvents()
+    assert dialog.record.take_links[0]["take_path"] == str(moved)
+    bookmarks = panel.payload()["songs"][0]["bookmarks"]
+    assert bookmarks[0]["take_path"] == str(moved)
+    assert bookmarks[1]["take_path"] == str(root)
+    reloaded = library.load(record.id)
+    assert reloaded.rehearsal["songs"][0]["bookmarks"][0]["take_path"] == str(moved)
+
+
 def test_save_reconciliation_cannot_change_which_take_the_user_selected(tmp_path, make_dialog):
     library = SessionLibrary(tmp_path)
     first = {"take_id": "one", "take_path": str(tmp_path / "one"), "title": "One"}

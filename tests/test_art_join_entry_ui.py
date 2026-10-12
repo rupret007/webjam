@@ -110,7 +110,7 @@ def test_paste_does_not_parse_or_claim_a_network_type(join_door, profile):
             assert dialog.selected_role == ""
         parse.assert_not_called()
     dialog._invite_input.clear()
-    assert dialog._join_status.text() == "Paste your invitation"
+    assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
     assert dialog._join_subtitle.text() == guidance
 
 
