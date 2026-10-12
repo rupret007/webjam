@@ -203,6 +203,15 @@ def test_ended_native_host_can_reopen_with_current_room_truth(qapp, controllers,
         drain(qapp, lambda: not app._remote_host_preparing)
         assert panel._overview.phase == "waiting"
         assert panel._overview.activity_action == "video"
+        assert panel._overview.conversation_deferred
+        assert panel.conversation_button().isHidden()
+        app.settings.webex_url = "https://example.webex.com/meet/room"
+        app._sync_art_room_overview()
+        assert not panel._overview.conversation_deferred
+        assert not panel.conversation_button().isHidden()
+        app.settings.webex_url = ""
+        app._sync_art_room_overview()
+        assert panel.conversation_button().isHidden()
         first = app._remote_session
         app.window.session_strip.launch_audio_requested.emit()
         drain(qapp, lambda: not app.audio.stopping)

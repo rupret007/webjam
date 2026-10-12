@@ -77,6 +77,14 @@ class ArtRoomPresence:
 
 ABSENT = ArtRoomPresence()
 
+# A named setup record lets the overview recognize the host's initial step
+# without expanding the bounded room-status projection or matching UI strings.
+PAINT_ALONG_SETUP = ArtRoomPresence(
+    label="Set up Paint along",
+    description="Open Paint along, then choose a local video file or a lesson link.",
+    target=ArtPresenceTarget.VIDEO,
+)
+
 #: Video states where this computer cannot follow what the host is showing.
 #: Each has its own recovery inside the panel; the room only needs to say
 #: that the panel is where to go.
@@ -230,13 +238,7 @@ def art_room_presence(
             target=ArtPresenceTarget.CANVAS,
         )
     if hosting and intended_video:
-        return ArtRoomPresence(
-            label="Set up Paint along",
-            description=(
-                "Open Paint along, then choose a local video file or a lesson link."
-            ),
-            target=ArtPresenceTarget.VIDEO,
-        )
+        return PAINT_ALONG_SETUP
 
     # A guest who joined a Paint along room, before the host has shared the
     # video. Give them the same one next click a waiting host gets, so they
@@ -256,6 +258,7 @@ def art_room_presence(
 
 __all__ = [
     "ABSENT",
+    "PAINT_ALONG_SETUP",
     "ArtPresenceTarget",
     "ArtPresenceTone",
     "ArtRoomPresence",

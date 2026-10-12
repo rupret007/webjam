@@ -277,6 +277,7 @@ class ArtRoomOverviewWidget(QScrollArea):
             "or change its audio."
         )
         self._conversation_button.setEnabled(overview.conversation_enabled)
+        self._conversation_button.setVisible(not overview.conversation_deferred)
         secondary_description = (
             (overview.secondary_activity_label, overview.secondary_activity_detail)
             if secondary_offered else ()

@@ -311,6 +311,10 @@ connection is current, not that a meeting or drawing app has joined.
 The banner keeps that status brief; making guidance appears once in the room
 overview beside **Set Up Conversation** (or **Conversation** with a saved link).
 
+When the host has chosen Paint along but has neither a video nor a meeting
+link configured, the overview offers **Open Paint along** as its next step.
+**More → Set Up Conversation** remains available to add a meeting link.
+
 If the full invitation includes an optional conversation link, **Conversation**
 uses that link for this room. You do not need to paste it again. Joining never
 opens it automatically: choose **Join / Open Meeting** when ready. An invitation

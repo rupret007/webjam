@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from core.art_room_presence import ABSENT, ArtPresenceTarget, ArtRoomPresence
+from core.art_room_presence import ABSENT, PAINT_ALONG_SETUP, ArtPresenceTarget, ArtRoomPresence
 from core.meeting_companion import art_make_together_activity_detail
 from core.session_conductor import ArtRoomState
 
@@ -40,6 +40,8 @@ class ArtRoomOverview:
     secondary_activity_action_label: str = ""
     secondary_activity_enabled: bool = False
     making_detail: str = ""
+    #: Keep the initial Paint along step alone; Conversation remains in More.
+    conversation_deferred: bool = False
 
     @property
     def activity_actions(self) -> tuple[str, ...]:
@@ -213,6 +215,10 @@ def art_room_overview(
         # Conversation only reveals the separate meeting controls. Its
         # availability is independent of the Art transport connection.
         conversation_enabled=not (stopping or cleanup_required or quitting),
+        conversation_deferred=(
+            active and hosting and action == "video"
+            and presence == PAINT_ALONG_SETUP and not conversation_configured
+        ),
         # Name the next click: a room with no saved meeting link needs one
         # set up before anyone can talk; after that the panel is just there.
         conversation_action_label=(
