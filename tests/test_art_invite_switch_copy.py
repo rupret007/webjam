@@ -136,3 +136,30 @@ def test_art_apply_failure_reuses_ready_button_copy(switching, monkeypatch, host
     assert not app.window.session_strip._audio_button.isEnabled()
     assert not app.audio.cleanup_retry_required
     app.begin_startup_journey.assert_not_called()
+
+
+def test_active_art_room_keeps_room_copy_when_profile_is_music(switching, monkeypatch):
+    app, question, thread = switching("music", False)
+    monkeypatch.setattr(app, "_art_room_active", lambda: True)
+    app._stop_reference_track_for_session_end.return_value = False
+
+    assert app.accept_invite_url(create_invite_link("192.168.1.42"))
+    assert question.call_args.args[1] == "Join this room?"
+    assert app.window.session_hud._status.text() == "Joining your room…"
+    assert app.window.session_hud._detail.text() == (
+        "WebJam is switching the room connection safely."
+    )
+
+    # The outgoing room can stop before the asynchronous failure is shown.
+    monkeypatch.setattr(app, "_art_room_active", lambda: False)
+    thread.call_args.kwargs["target"]()
+
+    assert app.window.session_hud._status.text() == (
+        "WebJam couldn’t open the new room safely"
+    )
+    assert app.window.session_strip._audio_button.text() == "Try Leave Room"
+    assert app.window.session_strip._audio_button.isEnabled()
+    assert app.window.flash_message.call_args.args[0].startswith(
+        "The room switch did not finish safely."
+    )
+    app.begin_startup_journey.assert_not_called()

@@ -308,6 +308,8 @@ asking for microphone setup, or requiring Music audio evidence. The host sees
 Invite**. The guest pastes that complete invitation once; WebJam follows the
 host's Art activity when the room responds. **You’re in** means the Art room
 connection is current, not that a meeting or drawing app has joined.
+The banner keeps that status brief; making guidance appears once in the room
+overview beside **Set Up Conversation** (or **Conversation** with a saved link).
 
 Opening another invitation while Art is active asks **Join this room?** before
 ending the current room. If cleanup fails, use **Try End Room** (host) or

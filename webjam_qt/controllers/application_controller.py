@@ -2481,14 +2481,20 @@ class ApplicationController(QObject):
         profile_key: object,
         *,
         host_owned: bool = False,
-    ) -> None:
-        """Apply one canonical profile; authenticated host state wins for guests."""
+    ) -> bool:
+        """Apply one canonical profile; authenticated host state wins for guests.
+
+        Returns whether the canonical profile is active once this call
+        returns. A pending Library media operation can defer the switch;
+        callers that must not declare success before adoption actually
+        happens (e.g. native room admission) need to check this.
+        """
 
         if getattr(self, "_shutdown", False):
-            return
+            return False
         canonical = canonical_creator_profile_key(profile_key)
         if canonical is None:
-            return
+            return False
         owner_changed = bool(host_owned) != bool(
             getattr(self, "_creator_profile_host_owned", False)
         )
@@ -2507,11 +2513,11 @@ class ApplicationController(QObject):
             or "music"
         )
         if canonical == active_key and not owner_changed:
-            return
+            return True
         library = getattr(self, "session_library", None)
         if canonical != active_key and library is not None:
             if library.profile_changing() is False:
-                return
+                return False
         with ApplicationController._defer_session_pulse_refresh(self):
             if canonical != active_key:
                 self._chat_profile_generation = (
@@ -2544,6 +2550,7 @@ class ApplicationController(QObject):
             shared_track_available = getattr(self, "_shared_track_host_available", None)
             if callable(set_shared_track) and callable(shared_track_available):
                 set_shared_track(shared_track_available())
+        return True
 
     def _guest_media_state(self) -> tuple[GuestMediaState, EvidenceState]:
         """Map the guest transfer owner's finite facts without exposing errors."""
@@ -7897,6 +7904,7 @@ class ApplicationController(QObject):
             ).vocabulary.participant_singular,
             song_line=_invite_song_line_for(self),
             creator_profile_key=_creator_profile_for_controller(self).key,
+            art_start_key=getattr(getattr(self, "creator_start", None), "key", ""),
             # A successful LAN share above is the topology evidence. A native
             # owner must not inherit same-network or public-service claims
             # from the invitation's serialized shape.
@@ -8093,7 +8101,9 @@ class ApplicationController(QObject):
 
         # Keep the current room's vocabulary through asynchronous cleanup,
         # even if applying the incoming invitation replaces the profile.
-        switch_is_art = _creator_profile_for_controller(self).key == "art"
+        switch_is_art = bool(
+            _creator_profile_for_controller(self).key == "art" or self._art_room_active()
+        )
         session_noun = "room" if switch_is_art else "jam"
         busy = bool(self._is_jamulus_running() or self.bridge.hosted_server_alive()
                     or self._room_is_busy_for_invitation())
@@ -8127,6 +8137,12 @@ class ApplicationController(QObject):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return False
+            # Freeze the outgoing jam's Library recap before any teardown
+            # starts, exactly as normal End/Leave does, so the replacement
+            # jam below does not inherit this run's ID or live take set.
+            switch_library = getattr(self, "session_library", None)
+            if switch_library is not None:
+                switch_library.capture_summary()
             self._invite_switch_generation += 1
             switch_generation = self._invite_switch_generation
             self._invite_switch_in_flight = True
@@ -8315,6 +8331,13 @@ class ApplicationController(QObject):
             )
             self._pending_invitation = None
             self._pending_invitation_meeting_url = ""
+            # The old jam's cleanup has fully finished by this point. Finish
+            # its Library run now, exactly once, before any replacement
+            # startup below calls start_session() and could otherwise reuse
+            # this run's ID and live take set for an unrelated jam.
+            switch_library = getattr(self, "session_library", None)
+            if switch_library is not None:
+                switch_library.finish_session()
             if isinstance(selected, RemoteInvitation):
                 # The old jam is now fully retired. Release the switch latch
                 # before entering the normal v3 path so its own cleanup
@@ -12969,6 +12992,7 @@ class ApplicationController(QObject):
             parent=self.window,
             settings_provider=lambda: self.settings,
             show_band_check_action=not show_meeting_link,
+            creator_profile_key=self.creator_profile.key,
         )
         wizard.audio_settings_requested.connect(self._bring_jamulus_forward)
         wizard.install_webex_requested.connect(
