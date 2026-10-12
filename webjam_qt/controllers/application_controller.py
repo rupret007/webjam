@@ -7900,6 +7900,7 @@ class ApplicationController(QObject):
             ).vocabulary.participant_singular,
             song_line=_invite_song_line_for(self),
             creator_profile_key=_creator_profile_for_controller(self).key,
+            art_start_key=getattr(getattr(self, "creator_start", None), "key", ""),
             # A successful LAN share above is the topology evidence. A native
             # owner must not inherit same-network or public-service claims
             # from the invitation's serialized shape.
@@ -13023,6 +13024,7 @@ class ApplicationController(QObject):
             parent=self.window,
             settings_provider=lambda: self.settings,
             show_band_check_action=not show_meeting_link,
+            creator_profile_key=self.creator_profile.key,
         )
         wizard.audio_settings_requested.connect(self._bring_jamulus_forward)
         wizard.install_webex_requested.connect(

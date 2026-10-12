@@ -131,6 +131,8 @@ def test_live_door_fits_800x600_with_larger_text(qapp, tmp_path: Path, profile_k
         if profile_key == "art":
             assert "Make together" in labels
             assert "Paint along" in labels
+        else:
+            _assert_music_block_centered(dialog)
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -150,6 +152,90 @@ def test_every_visible_door_control_has_an_accessible_name(qapp, tmp_path: Path)
         for card in dialog.findChildren(ProfileCard) + dialog.findChildren(StartCard):
             if card.isVisibleTo(dialog):
                 assert card.focusPolicy() == Qt.FocusPolicy.StrongFocus
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+def _assert_music_block_centered(dialog):
+    # Include the shared brand row, not just the choice page below it.
+    top = min(widget.mapTo(dialog, QPoint()).y()
+              for widget in (dialog._logo, dialog._wordmark))
+    bottom = dialog._join_button.mapTo(dialog, QPoint()).y() + dialog._join_button.height()
+    margins = dialog.layout().contentsMargins()
+    available_top = dialog._menu_bar.height() + margins.top()
+    available_bottom = dialog.height() - margins.bottom()
+    assert abs((top - available_top) - (available_bottom - bottom)) <= 2
+
+
+@pytest.mark.parametrize("size", [(620, 520), (800, 600), (1280, 800)])
+@pytest.mark.parametrize("styled", [False, True])
+def test_music_choice_block_is_vertically_centered(qapp, tmp_path, size, styled):
+    dialog = _dialog(tmp_path, "music")
+    try:
+        if styled:
+            dialog.setStyleSheet(load_stylesheet())
+        dialog.resize(*size)
+        dialog.show()
+        qapp.processEvents()
+        _assert_music_block_centered(dialog)
+        assert not dialog._visible_start_cards()
+        dialog.resize(760, 600)
+        qapp.processEvents()
+        _assert_music_block_centered(dialog)
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+def test_music_name_validation_keeps_the_block_centered_and_visible(qapp, tmp_path):
+    dialog = _dialog(tmp_path, "music")
+    try:
+        dialog.setStyleSheet(load_stylesheet())
+        dialog.resize(800, 600)
+        dialog.show()
+        dialog._name_input.clear()
+        dialog._host_button.click()
+        qapp.processEvents()
+        assert dialog._name_input.isVisibleTo(dialog)
+        assert dialog._name_error.isVisibleTo(dialog)
+        _assert_music_block_centered(dialog)
+        for widget in (dialog._name_input, dialog._name_error, dialog._host_button,
+                       dialog._join_button):
+            assert dialog.rect().contains(QRect(widget.mapTo(dialog, QPoint()), widget.size()))
+        assert not (tmp_path / "settings.json").exists()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+def test_centering_tracks_profile_and_page_changes(qapp, tmp_path):
+    dialog = _dialog(tmp_path, "art")
+    try:
+        dialog.setStyleSheet(load_stylesheet())
+        dialog.resize(800, 600)
+        dialog.show()
+        qapp.processEvents()
+        widgets = [dialog._logo, dialog._wordmark, dialog._art_profile_card,
+                   dialog._music_profile_card, *dialog._visible_start_cards(),
+                   dialog._host_button, dialog._join_button]
+        art_geometry = [QRect(widget.mapTo(dialog, QPoint()), widget.size())
+                        for widget in widgets]
+        original_brand_top = dialog._logo.mapTo(dialog, QPoint()).y()
+        dialog._music_profile_card.click()
+        qapp.processEvents()
+        _assert_music_block_centered(dialog)
+        dialog.show_join()
+        qapp.processEvents()
+        assert dialog._logo.mapTo(dialog, QPoint()).y() == original_brand_top
+        assert dialog._invite_input.isVisibleTo(dialog)
+        dialog.show_choices()
+        qapp.processEvents()
+        _assert_music_block_centered(dialog)
+        dialog._art_profile_card.click()
+        qapp.processEvents()
+        assert [QRect(widget.mapTo(dialog, QPoint()), widget.size())
+                for widget in widgets] == art_geometry
     finally:
         dialog.close()
         dialog.deleteLater()
