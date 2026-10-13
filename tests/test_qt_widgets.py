@@ -622,6 +622,20 @@ class TestSessionStrip(unittest.TestCase):
         self.assertEqual(s._video_action.text(), "Set Up Conversation")
         self.assertEqual(s._video_button.text(), "Conversation")
 
+    def test_compact_footer_talk_matches_set_up_conversation_unmatched_label(self):
+        s = self._strip()
+        s.set_conversation_action_label("Review meeting link")
+        s.set_compact_control_labels(True)
+        self.assertEqual(s._video_action.text(), "Review meeting link")
+        self.assertEqual(s._video_button.text(), "Conversation")
+        self.assertNotEqual(s._video_button.text(), "Set up")
+        self.assertNotEqual(s._video_button.text(), "Talk")
+        s.set_compact_control_labels(False)
+        self.assertEqual(s._video_button.text(), "Conversation")
+        s.set_compact_control_labels(True)
+        self.assertEqual(s._video_button.text(), "Conversation")
+        self.assertEqual(s._video_action.text(), "Review meeting link")
+
     def test_external_handoff_progress_never_disables_conversation_navigation(self):
         s = self._strip()
 

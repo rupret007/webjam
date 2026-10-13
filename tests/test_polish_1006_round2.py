@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -264,6 +265,55 @@ def test_compact_footer_talk_matches_set_up_conversation(qapp):
         _settle(qapp)
         assert footer.text() == "Conversation"
         assert panel.conversation_button().text() == "Conversation"
+    finally:
+        window.session_strip._record_clock.stop()
+        window.session_strip.stop_session_clock()
+        window._room_help_dialog.close()
+        window.close()
+        window.deleteLater()
+        _settle(qapp)
+
+
+def test_compact_footer_talk_matches_set_up_conversation_unmatched_label(qapp):
+    window = ConductorWindow(
+        mode_entries=[("music_jam", "Music jam")],
+        initial_mode_key="music_jam",
+        initial_title="Making together",
+    )
+    window.menuBar().setNativeMenuBar(False)
+    window.setStyleSheet(load_stylesheet())
+    window.set_creator_profile(get_creator_profile_by_key("art"))
+    panel = window.art_room_overview
+    footer = window.session_strip._video_button
+    try:
+        window.set_art_room_overview(
+            replace(
+                art_room_overview(state=ArtRoomState.CONNECTED, hosting=True),
+                conversation_action_label="Review meeting link",
+            )
+        )
+        window.resize(800, 600)
+        window.show()
+        _settle(qapp)
+        assert window.width() <= 800
+        assert panel.conversation_button().text() == "Review meeting link"
+        assert panel.conversation_button().accessibleName() == "Review meeting link"
+        assert footer.text() == "Conversation"
+        assert footer.text() != "Set up"
+        assert footer.text() != "Talk"
+
+        window.resize(1280, 800)
+        _settle(qapp)
+        assert panel.conversation_button().text() == "Review meeting link"
+        assert footer.text() == "Conversation"
+
+        window.resize(800, 600)
+        _settle(qapp)
+        assert window.width() <= 800
+        assert panel.conversation_button().text() == "Review meeting link"
+        assert footer.text() == "Conversation"
+        assert footer.text() != "Set up"
+        assert footer.text() != "Talk"
     finally:
         window.session_strip._record_clock.stop()
         window.session_strip.stop_session_clock()

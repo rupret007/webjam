@@ -209,6 +209,7 @@ class SessionStrip(QFrame):
         self._record_button_full_text = "● Record Session"
         self._audio_button_full_text = "Start Session"
         self._video_configured = True
+        self._conversation_action_text = "Conversation"
         self.setAcceptDrops(True)
         # --- Widgets
         self._logo = BrandMark(28)
@@ -988,7 +989,7 @@ class SessionStrip(QFrame):
             action.setEnabled(available and self._tools_enabled)
 
     def _conversation_action_label(self) -> str:
-        return "Conversation" if self._video_configured else "Set Up Conversation"
+        return self._conversation_action_text
 
     def _visible_conversation_control_label(self) -> str:
         """Shorten to Set up / Talk only when that stays in the action family."""
@@ -1174,9 +1175,20 @@ class SessionStrip(QFrame):
         self._sync_conversation_accessibility()
         self._video_action.setEnabled(self._tools_enabled)
 
-    def set_video_configured(self, configured: bool) -> None:
-        self._video_configured = bool(configured)
+    def set_conversation_action_label(self, label: str) -> None:
+        """Keep the overview's next-click words for compact family mapping."""
+
+        text = str(label).strip() or (
+            "Conversation" if self._video_configured else "Set Up Conversation"
+        )
+        self._conversation_action_text = text
+        self._video_configured = text == "Conversation"
         self._sync_conversation_presentation()
+
+    def set_video_configured(self, configured: bool) -> None:
+        self.set_conversation_action_label(
+            "Conversation" if configured else "Set Up Conversation"
+        )
 
     def set_tools_enabled(self, enabled: bool) -> None:
         self._tools_enabled = bool(enabled)

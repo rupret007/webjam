@@ -1101,8 +1101,8 @@ class ConductorWindow(QMainWindow):
         """Keep private names separate from the public room projection."""
 
         self.art_room_overview.set_overview(overview, room_connections=room_connections)
-        self.session_strip.set_video_configured(
-            overview.conversation_action_label == "Conversation"
+        self.session_strip.set_conversation_action_label(
+            overview.conversation_action_label
         )
         self._setup_tab_order()
 
