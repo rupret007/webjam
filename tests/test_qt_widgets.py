@@ -1604,7 +1604,12 @@ class TestConductorWindow(unittest.TestCase):
         body = set_text.call_args.args[0]
         self.assertIn("Choose <b>Studio</b>", body)
         self.assertNotIn("build a song project", body)
-        self.assertIn("choose <b>Music</b>, then <b>Host</b> or <b>Join</b>", body)
+        self.assertIn(
+            "choose <b>Music</b> or <b>Art</b> "
+            "(<b>Make together</b> / <b>Paint along</b>), then <b>Host</b> "
+            "or <b>Join</b>",
+            body,
+        )
         self.assertNotIn("Host a Jam", body)
         self.assertNotIn("Join a Jam", body)
         self.assertIn("review completed session takes", body)
@@ -1622,6 +1627,36 @@ class TestConductorWindow(unittest.TestCase):
         self.assertIn("Set up the audio device", body)
         self.assertIn("Recheck Route", body)
         self.assertNotIn("Multitrack Studio", body)
+
+    def test_music_help_splits_meeting_practice_from_ensemble_audio(self):
+        from unittest import mock
+        import re
+
+        w = self._window()
+        with mock.patch(
+            "webjam_qt.windows.help_dialog.HelpDialog.show",
+            return_value=0,
+        ), mock.patch(
+            "PySide6.QtWidgets.QTextBrowser.setHtml",
+        ) as set_text:
+            w.show_help()
+
+        body = set_text.call_args.args[0]
+        step_three = re.search(r"<b>3\.</b>(.*?)<b>4\.</b>", body, re.DOTALL)
+        step_four = re.search(r"<b>4\.</b>(.*?)<b>5\.</b>", body, re.DOTALL)
+        self.assertIsNotNone(step_three)
+        self.assertIsNotNone(step_four)
+        practice = step_three.group(1)
+        ensemble = step_four.group(1)
+        self.assertIn("Set up video practice", practice)
+        self.assertIn("YouTube", practice)
+        for token in ("Jamulus", "Open Shared Track", "Webex"):
+            self.assertNotIn(token, practice)
+        self.assertIn("Open Shared Track", ensemble)
+        self.assertIn("Jamulus", ensemble)
+        self.assertIn("Webex", ensemble)
+        self.assertIn("<b>5.</b> The host presses <b>Record Session</b>", body)
+        self.assertIn("<b>9.</b> Press <b>End Session</b>", body)
 
     def test_art_help_follows_current_profile_without_music_actions(self):
         from unittest import mock
@@ -1662,7 +1697,9 @@ class TestConductorWindow(unittest.TestCase):
                             self.assertNotIn(token, body)
                     else:
                         self.assertIn("review completed session takes", body)
-                        self.assertNotIn("Paint along", body)
+                        self.assertNotIn("— Art", body)
+                        self.assertIn("Make together", body)
+                        self.assertIn("Paint along", body)
         finally:
             window.close()
 

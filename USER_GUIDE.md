@@ -21,8 +21,10 @@ then **New workspace…** and a title. The **Notes**, **Rehearsal plan**, **Art 
 Changes save locally; check the save status and use **Save** before leaving.
 Search finds previous work. **Continue** brings its saved context
 back into the app; it does not connect a room or start recording. **Save as
-copy…** makes a separate workspace. Invitations and meeting credentials are
-not a reusable workspace template.
+copy…** makes a separate workspace. Close the Library with its window button,
+**Close**, or Escape; reopening shows your current saved or pending work.
+If saving fails, the Library stays open with your draft so you can retry.
+Invitations and meeting credentials are not a reusable workspace template.
 
 For Music, **More → Session library… → Rehearsal plan** opens the ordered setlist. Add song titles,
 key, tempo, goals, notes, and next steps. **Previous** / **Next** selects a song;
@@ -308,6 +310,8 @@ asking for microphone setup, or requiring Music audio evidence. The host sees
 Invite**. The guest pastes that complete invitation once; WebJam follows the
 host's Art activity when the room responds. **You’re in** means the Art room
 connection is current, not that a meeting or drawing app has joined.
+The banner keeps that status brief; making guidance appears once in the room
+overview beside **Set Up Conversation** (or **Conversation** with a saved link).
 
 If the full invitation includes an optional conversation link, **Conversation**
 uses that link for this room. You do not need to paste it again. Joining never
