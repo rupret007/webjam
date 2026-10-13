@@ -6,6 +6,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Connected Art rooms keep making guidance beside the Conversation action;
+  the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
+
 - Paint along rechecks the host's shared local file before Play and on each
   refresh, including while ready or paused. A changed or missing file retires
   its sharing proof and offers the existing Choose process video recovery.

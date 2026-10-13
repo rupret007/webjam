@@ -164,6 +164,47 @@ class TestStrictProductPalette(unittest.TestCase):
         self.assertEqual(offenders, [], "Forbidden named UI hues:\n" + "\n".join(offenders))
 
 
+class TestPaintAlongRoleContrast(unittest.TestCase):
+    def test_rendered_role_uses_readable_secondary_text(self):
+        from PySide6.QtGui import QPalette
+        from PySide6.QtWidgets import QApplication
+
+        from webjam_qt.theme.tokens import Color
+        from webjam_qt.windows.reference_video import ReferenceVideoDialog
+
+        app = QApplication.instance() or QApplication([])
+        for hosting, copy in ((True, "YOU CONTROL"), (False, "YOU FOLLOW")):
+            for embedded in (False, True):
+                for size in ((800, 600), (1280, 800)):
+                    with self.subTest(hosting=hosting, embedded=embedded, size=size):
+                        panel = ReferenceVideoDialog(hosting=hosting)
+                        try:
+                            panel.setStyleSheet(load_stylesheet())
+                            panel.set_embedded(embedded)
+                            panel.resize(*size)
+                            panel.show()
+                            app.processEvents()
+                            role = panel._role
+                            foreground = role.palette().color(
+                                QPalette.ColorRole.WindowText
+                            ).name()
+                            background = panel.palette().color(
+                                QPalette.ColorRole.Window
+                            ).name()
+                            self.assertTrue(role.isVisibleTo(panel))
+                            self.assertEqual(role.text(), copy)
+                            # This small role label must stay above muted helper
+                            # text in the hierarchy, even if muted passes AA.
+                            self.assertEqual(foreground.upper(), Color.TEXT_SECONDARY)
+                            self.assertGreaterEqual(
+                                _contrast_ratio(foreground, background), 4.5
+                            )
+                        finally:
+                            panel.close()
+                            panel.deleteLater()
+                            app.processEvents()
+
+
 class TestBundledFonts(unittest.TestCase):
     def test_inter_ttfs_ship_with_the_theme(self):
         from pathlib import Path
