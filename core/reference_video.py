@@ -1146,7 +1146,10 @@ class ReferenceVideoFollower:
                     duration_s=float(snapshot.duration_s or 0.0),
                     infer_from_position=snapshot.source_kind != "youtube",
                 )
-                if ended:
+                # Sitting on the last frame is not a stop. Keep the pause
+                # obligation until the backend has actually ended; otherwise a
+                # paused host seek (or a later hide) leaves the copy playing.
+                if _player_reported_state(player) == "ended":
                     self._playing_locally = False
                 generation_changed = (
                     snapshot.playback_generation != self._applied_generation

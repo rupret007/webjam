@@ -1188,6 +1188,54 @@ def test_ended_guest_does_not_replay_while_both_copies_sit_at_eof(tmp_path, sign
     assert player.position == pytest.approx(12.0)
 
 
+def test_inferred_eof_paused_host_seek_still_pauses_the_guest(tmp_path, signer):
+    player = FakePlayer(duration_s=12.0)
+    follower = make_follower(player=player, tolerance_s=0.75)
+    follower.open_local_copy(write_video(tmp_path / "mine.mp4", b"the lesson"))
+    follower.observe(
+        shared_projection(
+            tmp_path,
+            signer,
+            state="playing",
+            position_s=11.0,
+            duration_s=12.0,
+            playback_generation=1,
+        ),
+        received_monotonic_s=0.0,
+    )
+    follower.apply(0.0)
+    player.position = 11.0
+    assert player.state == "playing"
+    pause_calls = player.calls.count("pause")
+
+    player.position = 12.0
+    assert player.state == "playing"
+
+    follower.observe(
+        shared_projection(
+            tmp_path,
+            signer,
+            state="paused",
+            position_s=10.4,
+            duration_s=12.0,
+            playback_generation=1,
+        ),
+        received_monotonic_s=1.0,
+    )
+    snapshot = follower.apply(1.0)
+
+    assert snapshot.should_play is False
+    assert player.position == pytest.approx(10.4)
+    assert player.state == "paused"
+    assert player.calls.count("pause") == pause_calls + 1
+
+    follower.set_hidden(True)
+    hidden = follower.apply(2.0)
+    assert hidden.state is ReferenceVideoFollowState.HIDDEN
+    assert player.state == "paused"
+    assert player.calls.count("pause") >= pause_calls + 1
+
+
 def test_paused_subsecond_host_seek_updates_the_guest_frame(tmp_path, signer):
     player = FakePlayer()
     follower = make_follower(player=player, tolerance_s=0.75)
