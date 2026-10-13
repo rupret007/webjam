@@ -10,6 +10,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   **Open Paint along** stays available as a quiet body action; guest
   **Open my copy…** recovery keeps its emphasis.
 
+- Art’s idle first screen now tells a person with no art skill what to do:
+  the room names Start Session and says you do not need an art app, instead
+  of listing clay, printers, or a meeting-share essay.
+
 - Native joins wait for Library/Studio media work before consuming an invite.
   After the operation finishes, join explicitly with the same still-valid
   invitation. A local profile deferral after enrollment no longer asks users
