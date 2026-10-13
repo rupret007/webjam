@@ -1,6 +1,7 @@
 """Real searchable Help stays readable without blocking session controls."""
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -11,9 +12,33 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from core.creative_modes import get_creator_profile_by_key
+from tests.support.start_ux import assert_no_banned_first_screen_words
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.theme import load_stylesheet
 from webjam_qt.windows.conductor_window import ConductorWindow
+
+_ART_HELP_DETAIL_TOKENS = (
+    "YouTube",
+    "Shared Canvas",
+    "F11",
+    "Choose process video",
+    "YouTube link",
+    "Choose YouTube",
+    "Open in browser",
+    "Add Link",
+)
+
+
+def _art_overview_topic(window, app):
+    window.set_creator_profile(get_creator_profile_by_key("art"))
+    window.show()
+    window.show_help()
+    app.processEvents()
+    dialog = window._workflow_help_dialog
+    assert dialog._topics.item(0).text() == "Current workspace"
+    dialog._topics.setCurrentRow(0)
+    app.processEvents()
+    return dialog._topics.item(0).data(Qt.ItemDataRole.UserRole), dialog._body.toPlainText()
 
 
 @pytest.fixture(scope="module")
@@ -74,7 +99,9 @@ def test_real_help_fits_scrolls_and_returns_without_changing_work(app, window, p
         text = dialog._body.toPlainText()
         assert ("Paint along" in text) == (profile == "art")
         bar = dialog._body.verticalScrollBar()
-        if large_text:
+        # Music's long card still overflows at 22px. Art's three door beats
+        # can fit on 760×680, so a scrollbar is not required there.
+        if large_text and profile != "art":
             assert bar.maximum() > 0
         dialog._body.setFocus()
         for _ in range(2 + bar.maximum() // max(1, bar.pageStep())):
@@ -279,3 +306,30 @@ def test_compact_large_text_keeps_navigation_and_readable_body_visible(app, wind
         assert dialog._navigate.fontMetrics().horizontalAdvance(dialog._navigate.text()) < dialog._navigate.width() - 20
     finally:
         app.setStyleSheet(previous_style)
+
+
+def test_art_help_opens_on_three_door_beats(app, window):
+    topic, text = _art_overview_topic(window, app)
+    steps = re.findall(r"<b>(\d+)\.</b>", topic.body)
+    assert steps == ["1", "2", "3"], steps
+    beats = re.split(r"<b>\d+\.</b>", topic.body)[1:]
+    assert len(beats) == 3
+    for beat in beats:
+        words = re.findall(r"\w+", re.sub(r"<[^>]*>", " ", beat))
+        assert len(words) <= 28, beat
+    assert "Make together" in text
+    assert "Paint along" in text
+    assert "Host" in text
+    assert "Join" in text
+    assert "invite" in text.casefold()
+    assert "meeting" in text.casefold()
+    assert "silent" in text.casefold()
+    assert "Continue your work" not in text
+
+
+def test_art_help_first_page_keeps_youtube_canvas_and_keyboard_in_topics(app, window):
+    topic, text = _art_overview_topic(window, app)
+    for token in _ART_HELP_DETAIL_TOKENS:
+        assert token not in topic.body, token
+        assert token not in text, token
+    assert_no_banned_first_screen_words(text)
