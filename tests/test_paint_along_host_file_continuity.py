@@ -1,7 +1,5 @@
 """Post-share host file changes retire proof before the next picture update."""
 
-import os
-
 import pytest
 
 from core import reference_video
