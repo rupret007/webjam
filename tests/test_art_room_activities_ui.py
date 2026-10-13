@@ -218,7 +218,8 @@ def test_second_activity_renders_plain_text_with_full_accessible_status(window):
 @pytest.mark.parametrize(("canvas", "video"), [
     ("ready", "hidden"), ("missing_app", "hidden"),
     ("ready", "ready"),
-    ("ready", "needs_file"), ("missing_app", "local_attention"),
+    ("ready", "needs_file"), ("missing_app", "needs_file"),
+    ("unreadable", "needs_file"), ("missing_app", "local_attention"),
     ("share_pending", "hidden"), ("withdraw_pending", "hidden"),
 ])
 def test_both_production_activities_fit_and_keep_keyboard_actions_reachable(
@@ -232,9 +233,16 @@ def test_both_production_activities_fit_and_keep_keyboard_actions_reachable(
     assert current.role_label == ("Host" if hosting else "Guest")
     copy_recovery = video == "needs_file"
     if copy_recovery:
-        # NEEDS_FILE recovery is the one next click; Conversation stays in the
-        # footer. Making-detail remains when a canvas is also offered.
+        # NEEDS_FILE recovery is the one next click even when canvas also
+        # needs attention. Conversation stays in the footer. Making-detail
+        # remains when a canvas is also offered.
         assert current.open_my_copy_recovery
+        assert current.activity_action == "video"
+        assert current.activity_action_label == "Open my copy…"
+        assert panel.activity_button().text() == "Open my copy…"
+        assert panel.activity_button().objectName() == "PrimaryButton"
+        assert panel.secondary_activity_button().objectName() == "GhostButton"
+        assert panel.secondary_activity_button().text() == "Open workspace"
         assert not panel.conversation_button().isVisibleTo(window)
     else:
         assert panel.conversation_button().isVisibleTo(window)
@@ -292,3 +300,22 @@ def test_both_production_activities_fit_and_keep_keyboard_actions_reachable(
         assert button.hasFocus()
         rect = QRect(button.mapTo(panel.viewport(), QPoint()), button.size())
         assert panel.viewport().rect().contains(rect), (button.text(), rect)
+
+
+@pytest.mark.parametrize("canvas", ["missing_app", "unreadable"])
+def test_needs_file_owns_emphasis_when_canvas_also_needs_attention(window, qapp, canvas):
+    current = room_overview(canvas=canvas, video="needs_file")
+    window.set_art_room_overview(current)
+    _settle(qapp)
+    panel = window.art_room_overview
+    assert current.open_my_copy_recovery
+    assert current.activity_actions == ("video", "canvas")
+    assert panel.activity_button().text() == "Open my copy…"
+    assert panel.activity_button().objectName() == "PrimaryButton"
+    assert panel.secondary_activity_button().text() == "Open workspace"
+    assert panel.secondary_activity_button().objectName() == "GhostButton"
+    assert not panel.conversation_button().isVisibleTo(window)
+    assert panel._making_detail.isVisibleTo(window)
+    assert panel._activity_detail.text() == (
+        "Open your own copy of the same video to follow along."
+    )

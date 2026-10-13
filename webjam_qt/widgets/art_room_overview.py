@@ -277,9 +277,13 @@ class ArtRoomOverviewWidget(QScrollArea):
             "or change its audio."
         )
         self._conversation_button.setEnabled(overview.conversation_enabled)
-        # NEEDS_FILE recovery owns the body. Conversation stays in the footer.
+        # NEEDS_FILE recovery owns the body even when canvas is also offered.
+        # Conversation stays in the footer.
+        recovery_enabled = (
+            overview.activity_enabled or overview.secondary_activity_enabled
+        )
         self._conversation_button.setVisible(
-            not (overview.activity_enabled and overview.open_my_copy_recovery)
+            not (recovery_enabled and overview.open_my_copy_recovery)
         )
         secondary_description = (
             (overview.secondary_activity_label, overview.secondary_activity_detail)

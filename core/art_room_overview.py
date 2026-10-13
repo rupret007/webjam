@@ -43,11 +43,16 @@ class ArtRoomOverview:
 
     @property
     def open_my_copy_recovery(self) -> bool:
-        """Guest NEEDS_FILE: Room's one next click is **Open my copy…**."""
-        return (
-            self.activity_action == "video"
-            and self.activity_label == "Open my copy…"
-            and self.activity_action_label == "Open my copy…"
+        """Guest NEEDS_FILE: Room's emphasized next click is **Open my copy…**."""
+        return _is_open_my_copy_recovery(
+            self.activity_label, self.activity_action, self.activity_action_label,
+        ) or (
+            self.secondary_activity_enabled
+            and _is_open_my_copy_recovery(
+                self.secondary_activity_label,
+                self.secondary_activity_action,
+                self.secondary_activity_action_label,
+            )
         )
 
     @property
@@ -197,6 +202,18 @@ def art_room_overview(
             secondary_activity = secondary_presence.label
             secondary_detail = secondary_presence.description
             secondary_action, secondary_action_label = candidate, candidate_label
+    if (
+        _is_open_my_copy_recovery(
+            secondary_activity, secondary_action, secondary_action_label,
+        )
+        and not _is_open_my_copy_recovery(activity, action, action_label)
+    ):
+        # Missing-file recovery owns Room emphasis even when canvas attention
+        # ranked first. The strip chip can still name the other request.
+        activity, secondary_activity = secondary_activity, activity
+        activity_detail, secondary_detail = secondary_detail, activity_detail
+        action, secondary_action = secondary_action, action
+        action_label, secondary_action_label = secondary_action_label, action_label
     return ArtRoomOverview(
         phase=phase,
         phase_label=label,
