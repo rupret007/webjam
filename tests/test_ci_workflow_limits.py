@@ -52,7 +52,7 @@ class _SourceLine(NamedTuple):
 _RUN_KEY = re.compile(
     r"^(?P<indent> *)(?P<sequence>-\s+)?run\s*:\s*(?P<value>.*)$"
 )
-_STRUCTURAL_LINE = re.compile(r"^ *(?:-\s+)?(?P<body>.*)$")
+_STRUCTURAL_LINE = re.compile(r"^ *(?P<sequence>-\s+)?(?P<body>.*)$")
 _ORDINARY_MAPPING = re.compile(
     r"^[A-Za-z0-9_.-]+\s*:\s*(?P<value>.*)$"
 )
@@ -219,6 +219,16 @@ def _reject_unsupported_yaml_syntax(line: str, path: Path) -> None:
     body = match.group("body") if match is not None else ""
     if not body or body.startswith("#"):
         return
+    if match.group("sequence") and body.startswith(("'", '"')):
+        # Quoted list values such as push.tags' '**' are ordinary scalars.
+        # The decoder rejects trailing mapping syntax, so quoted keys still
+        # reach the fail-closed check below instead of hiding a run command.
+        try:
+            _decode_inline_scalar(body)
+        except AssertionError:
+            pass
+        else:
+            return
     if body.startswith(("'", '"', "[", "{", "?", "&", "*", "!")) or (
         _MERGE_KEY.match(body) is not None
     ):
@@ -560,6 +570,57 @@ def test_run_scalar_inline_styles(
     assert list(_run_scalars([workflow])) == [
         ("fixture.yml", "Inline", expected)
     ]
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        "'**'",
+        '"release/**" # tags may contain slashes',
+        "'it''s-a-tag'",
+        '"tag-\\u263a"',
+    ],
+)
+def test_quoted_sequence_values_preserve_run_limit_checks(
+    tmp_path: Path,
+    tag: str,
+) -> None:
+    workflow = tmp_path / "fixture.yml"
+    payload = "a" * (GITHUB_MAX_EXPRESSION + 1)
+    workflow.write_text(
+        f"on:\n  push:\n    tags:\n      - {tag}\n"
+        "jobs:\n  test:\n    steps:\n      - name: Still measured\n"
+        f"        run: {payload}\n",
+        encoding="utf-8",
+    )
+
+    assert _oversized_run_scalars([workflow], limit=GITHUB_MAX_EXPRESSION) == [
+        "fixture.yml: Still measured is 21001 UTF-16 code units"
+    ]
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "- 'run': echo hidden",
+        '- "run": echo hidden',
+        '- "\\u0072un": echo hidden',
+        "'run': echo hidden",
+        "- '**' trailing-content",
+        "- '**",
+        '- "\\q"',
+        "- *shared",
+        "- &shared '**'",
+        "- !!str '**'",
+        "- {run: echo hidden}",
+    ],
+)
+def test_quoted_sequence_support_still_rejects_unsupported_structure(
+    tmp_path: Path,
+    entry: str,
+) -> None:
+    with pytest.raises(AssertionError, match="unsupported YAML property syntax"):
+        _reject_unsupported_yaml_syntax(f"      {entry}", tmp_path / "fixture.yml")
 
 
 def test_astral_text_is_measured_in_github_utf16_code_units(
