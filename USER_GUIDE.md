@@ -209,7 +209,10 @@ buttons; **Page Down / Page Up** scrolls the instructions. **OK** or **Esc**
 closes Help without changing the room, notes or recording. Compact screens
 and enlarged text keep the instructions scrollable and the actions reachable.
 
-The always-visible Session HUD is the dominant action surface. **Notes** opens
+The always-visible Session HUD is the dominant action surface. When a Music
+host's invite is ready, it says **Copy the invite** with a **Copy Invite** button.
+The empty stage keeps its primary button hidden while the HUD owns this action.
+**Notes** opens
 your local writing area. In Music, Podcast & Voice, and Review & Rehearsal,
 choose **Session details** to read the same
 status, next step, evidence-based reason, output results, and recent events in
@@ -365,6 +368,13 @@ Another Invite**. Cancelling that choice leaves the current recovery available.
 A native invitation that may have been consumed still needs **Paste New Invite**
 with a fresh invitation from the host. If a peer needs an update, update
 WebJam on both computers and use a fresh invitation.
+
+If Library or Studio is already working with local media, wait for its result
+before joining. WebJam leaves the native invitation unused; open that same
+still-valid invitation again, or choose **Start Session** if it was already
+loaded. Finishing the local operation does not join automatically. If local
+work delays a join that has already enrolled, WebJam keeps the room closed
+and asks for a fresh invitation instead of replaying one that may be used.
 
 Choose **End Room** as host or **Leave Room** as guest. If cleanup needs another
 attempt, **Try End Room** or **Try Leave Room** stays available. Your external
