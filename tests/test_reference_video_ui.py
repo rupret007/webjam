@@ -447,7 +447,7 @@ def test_the_launch_dialog_offers_art_without_a_local_project(qapp, tmp_path):
         cards = {card.start_key: card for card in dialog._visible_start_cards()}
         paint_along = cards["paint_along"].accessibleDescription().casefold()
         assert "file or lesson link" in paint_along
-        assert "local video file or lesson link" in paint_along
+        assert "local video file or a lesson link" in paint_along
         assert "silent and follows the host" in paint_along
         assert "talk in your meeting" in paint_along
     finally:

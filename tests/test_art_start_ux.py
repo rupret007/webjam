@@ -256,7 +256,7 @@ def test_choosing_a_card_binds_host_to_that_card(qapp, tmp_path: Path):
         cards["paint_along"].setChecked(True)
         host_described = dialog._host_button.accessibleDescription().casefold()
         assert "start paint along as the host" in host_described
-        assert "local video file or lesson link" in host_described
+        assert "local video file or a lesson link" in host_described
     finally:
         dialog.deleteLater()
 
@@ -816,11 +816,11 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
         ] == [
             (
                 "Make together",
-                "You do not need an art app. Talk and make with what you have.",
+                "Paint, sculpt, 3D print, or just talk.",
             ),
             (
                 "Paint along",
-                "Watch one video together and make along.",
+                "Follow a silent video from a file or lesson link.",
             ),
         ]
         others = [
@@ -994,9 +994,7 @@ def test_make_together_summary_does_not_promise_a_canvas_at_start():
     """Canvas is an in-room optional add-on, not a start-card promise."""
 
     start = get_creator_profile_by_key("art").get_start("talk_and_make")
-    assert start.summary == (
-        "You do not need an art app. Talk and make with what you have."
-    )
+    assert start.summary == "Paint, sculpt, 3D print, or just talk."
     assert "canvas" not in start.summary.casefold()
     assert start.talk_only is True
     assert start.shared_canvas is False
@@ -1018,10 +1016,7 @@ def test_live_door_harvest_keeps_other_workspaces_off_screen(qapp, tmp_path, pro
                 assert hidden_door not in spoken
             assert "write songs or play live together" in spoken
             if profile_key == "art":
-                assert "you do not need an art app" in spoken
-                assert "talk and make with what you have" in spoken
-                assert "watch one video together and make along" in spoken
-                assert "paint, sculpt, 3d print" not in spoken
-                assert "silent video from a file or lesson link" not in spoken
+                assert "paint, sculpt, 3d print, or just talk" in spoken
+                assert "follow a silent video from a file or lesson link" in spoken
     finally:
         dialog.deleteLater()

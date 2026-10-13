@@ -52,11 +52,10 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_art_start_ux.
    [docs/MERGE_AND_RELEASE.md](docs/MERGE_AND_RELEASE.md#1-ten-second-ux-gate).
 
 2. **Choose Art.** Two more cards appear:
-   - **Make together** — "You do not need an art app. Talk and make with
-     what you have." Everyone works in their own space; the host can open
-     one shared canvas from inside the room if the group wants to draw
-     together.
-   - **Paint along** — "Watch one video together and make along."
+   - **Make together** — "Paint, sculpt, 3D print, or just talk." Everyone
+     works in their own space; the host can open one shared canvas from
+     inside the room if the group wants to draw together.
+   - **Paint along** — "Follow a silent video from a file or lesson link."
 
    Point out that neither card names Jamulus, Webex, Drawpile, Krita, or any
    other tool — that's enforced by `tests/test_art_start_ux.py`, not a styling
