@@ -21,8 +21,10 @@ then **New workspace…** and a title. The **Notes**, **Rehearsal plan**, **Art 
 Changes save locally; check the save status and use **Save** before leaving.
 Search finds previous work. **Continue** brings its saved context
 back into the app; it does not connect a room or start recording. **Save as
-copy…** makes a separate workspace. Invitations and meeting credentials are
-not a reusable workspace template.
+copy…** makes a separate workspace. Close the Library with its window button,
+**Close**, or Escape; reopening shows your current saved or pending work.
+If saving fails, the Library stays open with your draft so you can retry.
+Invitations and meeting credentials are not a reusable workspace template.
 
 For Music, **More → Session library… → Rehearsal plan** opens the ordered setlist. Add song titles,
 key, tempo, goals, notes, and next steps. **Previous** / **Next** selects a song;
@@ -566,6 +568,10 @@ For the existing **silent local-file option**, the host chooses one video file:
 
 Things worth knowing:
 
+- If the host's chosen file changes or moves after sharing, WebJam checks it
+  again on the next refresh or Play, stops using its old sharing identity, and
+  offers **Choose process video…** to open it again. This also applies while
+  the video is ready or paused.
 - **Only the host controls playback.** Guests have no play, pause, stop, or
   scrub control, by design.
 - **The video is silent from its first frame.** Use an optional meeting app

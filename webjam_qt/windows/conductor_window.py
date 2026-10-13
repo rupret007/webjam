@@ -765,7 +765,8 @@ class ConductorWindow(QMainWindow):
             body = (
                 f"<b>WebJam v{__version__}</b><br>"
                 "<i>Host. Share. Join. Play.</i><br><br>"
-                "<b>1.</b> At launch, choose <b>Music</b>, then <b>Host</b> "
+                "<b>1.</b> At launch, choose <b>Music</b> or <b>Art</b> "
+                "(<b>Make together</b> / <b>Paint along</b>), then <b>Host</b> "
                 "or <b>Join</b>.<br>"
                 "<b>2.</b> For a WebJam room, the host presses <b>Copy Invite</b> and sends the link. "
                 "For video practice, continue to <b>Play along</b> even if audio setup needs attention.<br>"
@@ -1101,7 +1102,11 @@ class ConductorWindow(QMainWindow):
         """Keep private names separate from the public room projection."""
 
         self.art_room_overview.set_overview(overview, room_connections=room_connections)
-        self._setup_tab_order()
+        if (
+            QApplication.activeModalWidget() is None
+            and QApplication.activePopupWidget() is None
+        ):
+            self._setup_tab_order()
 
     def apply_art_notes_layout(self) -> bool:
         """Give compact Art Notes the workspace without changing its meeting."""

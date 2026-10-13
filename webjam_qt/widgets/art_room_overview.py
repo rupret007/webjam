@@ -6,6 +6,7 @@ from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QBoxLayout,
     QFrame,
     QHBoxLayout,
@@ -278,13 +279,19 @@ class ArtRoomOverviewWidget(QScrollArea):
         )
         self._conversation_button.setEnabled(overview.conversation_enabled)
         # NEEDS_FILE recovery owns the body even when canvas is also offered.
-        # Conversation stays in the footer.
+        # Conversation stays in the footer. A first video offer must not hide
+        # or rebuild that GhostButton while a menu or dialog owns the UI.
+        popup_owns_ui = (
+            QApplication.activeModalWidget() is not None
+            or QApplication.activePopupWidget() is not None
+        )
         recovery_enabled = (
             overview.activity_enabled or overview.secondary_activity_enabled
         )
-        self._conversation_button.setVisible(
-            not (recovery_enabled and overview.open_my_copy_recovery)
-        )
+        if not popup_owns_ui:
+            self._conversation_button.setVisible(
+                not (recovery_enabled and overview.open_my_copy_recovery)
+            )
         secondary_description = (
             (overview.secondary_activity_label, overview.secondary_activity_detail)
             if secondary_offered else ()
@@ -309,6 +316,8 @@ class ArtRoomOverviewWidget(QScrollArea):
                     )
                 except (RuntimeError, TypeError):
                     pass
+        if popup_owns_ui:
+            return
         self._sync_density()
 
     def _open_activity(self) -> None:
