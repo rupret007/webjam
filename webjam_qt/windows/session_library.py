@@ -18,6 +18,7 @@ from core.art_workspace import art_summary
 from core.session_intelligence import build_session_pulse
 from core.session_library import (
     SessionLibrary, SessionLibraryError, SessionLibraryImportUnconfirmed,
+    SessionLibrarySaveUnconfirmed,
     validate_session_record,
 )
 from webjam_qt.widgets.art_workspace import ArtWorkspacePanel
@@ -166,6 +167,7 @@ class SessionLibraryDialog(QDialog):
         # success signals may settle that map; this dialog edits a snapshot.
         self.pending_records = deepcopy(dict(pending_records or {}))
         self._save_record = save_record
+        self._save_attempts = {}
         self._prepare_take_open = prepare_take_open
         from webjam_qt.controllers.workspace_media import LibraryMediaActions
         self.media_actions = LibraryMediaActions(self)
@@ -624,7 +626,7 @@ class SessionLibraryDialog(QDialog):
         try:
             edited = self._edited_record()
             self.record = (self._save_record(deepcopy(self._base_record), edited)
-                           if self._save_record is not None else self.library.save(edited))
+                           if self._save_record is not None else self._save_owned_record(edited))
         except (OSError, ValueError) as error:
             self.status.setText(f"Changes are still here but not saved: {error} Use Save to retry or Save as copy.")
             return False
@@ -659,6 +661,22 @@ class SessionLibraryDialog(QDialog):
         self.record_saved.emit(self.record)
         self.refresh()
         return True
+
+    def _save_owned_record(self, record):
+        attempt = self._save_attempts.get(record.id)
+        if attempt is not None and (attempt.base_token != record._store_token
+                                    or attempt.base_revision != record.revision):
+            # A deliberate reload/selection has established a new base.
+            self._save_attempts.pop(record.id, None)
+            attempt = None
+        try:
+            saved = (self.library.save(record, retry=attempt) if attempt is not None
+                     else self.library.save(record))
+        except SessionLibrarySaveUnconfirmed as error:
+            self._save_attempts[record.id] = error.attempt
+            raise
+        self._save_attempts.pop(record.id, None)
+        return saved
 
     def _new(self):
         if not self.save_current():

@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Session library Save can recover after a directory-sync failure without a
+  duplicate workspace. Retry confirms the exact attempted publication before
+  saving newer drafts; external changes still retain the conflict/copy path.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
