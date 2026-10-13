@@ -43,6 +43,10 @@ MAX_REFERENCE_VIDEO_NAME_CHARS = 255
 # prove it is closer than that to the host.  Correcting below the interval
 # would fight the poll rate instead of removing real drift.
 DEFAULT_SYNC_TOLERANCE_S = 0.75
+# A paused still frame is not drifting. Honor a host scrub smaller than the
+# poll interval, but ignore identical heartbeats so a paused guest does not
+# seek every tick.
+PAUSED_SEEK_EPSILON_S = 0.05
 # Six consecutive missed polls is a lost host clock, not a hiccup.  A follower
 # stops rather than extrapolating a position it can no longer prove.
 DEFAULT_STALE_AFTER_S = 5.0
@@ -313,6 +317,42 @@ class ReferenceVideoPlayer(Protocol):
     def position_s(self) -> float: ...
 
     def close(self) -> None: ...
+
+
+def _player_reported_state(player: object) -> str:
+    """Optional observed transport. Missing seams are not a failure."""
+
+    playback_state = getattr(player, "playback_state", None)
+    if not callable(playback_state):
+        return ""
+    return str(playback_state() or "")
+
+
+def _position_is_at_end(position_s: object, duration_s: object) -> bool:
+    try:
+        position = float(position_s)
+        duration = float(duration_s)
+    except (TypeError, ValueError):
+        return False
+    return (
+        math.isfinite(position)
+        and math.isfinite(duration)
+        and duration > 0.0
+        and position >= duration
+    )
+
+
+def _player_is_at_end(
+    player: object,
+    *,
+    duration_s: float,
+    infer_from_position: bool,
+) -> bool:
+    if _player_reported_state(player) == "ended":
+        return True
+    if not infer_from_position:
+        return False
+    return _position_is_at_end(player.position_s(), duration_s)
 
 
 @runtime_checkable
@@ -616,9 +656,18 @@ class ReferenceVideoHostController:
             self._load_generation += 1
             operation = self._load_generation
             try:
+                if _player_is_at_end(
+                    self._player,
+                    duration_s=self._duration_s,
+                    infer_from_position=self._source_kind != "youtube",
+                ):
+                    self._player.seek(0.0)
+                    if operation != self._load_generation:
+                        return self._snapshot_locked()
                 self._player.play()
                 if operation != self._load_generation:
                     return self._snapshot_locked()
+                self._position_s = self._clamp(self._player.position_s())
             except Exception:
                 if operation != self._load_generation:
                     return self._snapshot_locked()
@@ -709,11 +758,21 @@ class ReferenceVideoHostController:
                 return self._snapshot_locked()
             try:
                 self._position_s = self._clamp(self._player.position_s())
-                playback_state = getattr(self._player, "playback_state", None)
-                if self._source_kind == "youtube" and callable(playback_state):
-                    observed = playback_state()
-                    if observed in {"paused", "ended"}:
-                        self._state = ReferenceVideoState.PAUSED
+                observed = _player_reported_state(self._player)
+                local_eof = (
+                    self._source_kind != "youtube"
+                    and _position_is_at_end(self._position_s, self._duration_s)
+                )
+                if observed in {"paused", "ended"} or local_eof:
+                    if (
+                        self._state is ReferenceVideoState.PLAYING
+                        and self._source_kind != "youtube"
+                        and observed not in {"paused", "ended"}
+                    ):
+                        self._player.pause()
+                        self._position_s = self._clamp(self._player.position_s())
+                    self._state = ReferenceVideoState.PAUSED
+                if self._source_kind == "youtube":
                     self._error = (
                         "The lesson is buffering. Playback will follow when it is ready."
                         if observed == "buffering" else ""
@@ -1082,21 +1141,44 @@ class ReferenceVideoFollower:
                 if not snapshot.can_follow:
                     self._pause_local_locked()
                     return self._resolve_locked(now_monotonic_s)
-                if (snapshot.playback_generation != self._applied_generation
-                        or abs(float(player.position_s()) - snapshot.target_position_s) > self._tolerance_s):
+                ended = _player_is_at_end(
+                    player,
+                    duration_s=float(snapshot.duration_s or 0.0),
+                    infer_from_position=snapshot.source_kind != "youtube",
+                )
+                if ended:
+                    self._playing_locally = False
+                generation_changed = (
+                    snapshot.playback_generation != self._applied_generation
+                )
+                position_delta = abs(
+                    float(player.position_s()) - snapshot.target_position_s
+                )
+                tolerance_s = (
+                    self._tolerance_s
+                    if snapshot.should_play
+                    else PAUSED_SEEK_EPSILON_S
+                )
+                needs_transport = (
+                    generation_changed or position_delta > tolerance_s
+                )
+                if needs_transport:
                     player.seek(snapshot.target_position_s)
                     if not current():
                         self._pause_local_locked()
                         return self._resolve_locked(now_monotonic_s)
                     self._applied_generation = snapshot.playback_generation
                 if snapshot.should_play and not self._playing_locally:
-                    self._pause_pending = True
-                    player.play()
-                    if not current():
-                        self._pause_local_locked()
-                        return self._resolve_locked(now_monotonic_s)
-                    self._playing_locally = True
-                    self._pause_pending = False
+                    # Sitting on a finished frame while the host is also
+                    # still at that frame is not a new play attempt.
+                    if not (ended and not needs_transport):
+                        self._pause_pending = True
+                        player.play()
+                        if not current():
+                            self._pause_local_locked()
+                            return self._resolve_locked(now_monotonic_s)
+                        self._playing_locally = True
+                        self._pause_pending = False
                 elif not snapshot.should_play:
                     self._pause_local_locked()
                 return self._resolve_locked(now_monotonic_s)
@@ -1314,6 +1396,7 @@ def paint_along_watch_lesson_hint() -> str:
 __all__ = [
     "DEFAULT_STALE_AFTER_S",
     "DEFAULT_SYNC_TOLERANCE_S",
+    "PAUSED_SEEK_EPSILON_S",
     "FILE_UNAVAILABLE_MESSAGE",
     "FOLLOWING_MESSAGE",
     "HIDDEN_MESSAGE",

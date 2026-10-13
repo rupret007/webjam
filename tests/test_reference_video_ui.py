@@ -147,6 +147,22 @@ def test_the_host_panel_swaps_play_and_pause_with_the_transport(host_dialog):
     assert host_dialog._pause_button.isEnabled() is False
 
 
+def test_the_host_panel_does_not_claim_playing_after_local_eof(host_dialog):
+    host_dialog.set_host_snapshot(
+        _shared(
+            state=ReferenceVideoState.PAUSED,
+            position_s=600.0,
+            duration_s=600.0,
+        )
+    )
+    assert host_dialog._status.text() == "Paused."
+    assert host_dialog._play_button.isHidden() is False
+    assert host_dialog._play_button.isEnabled() is True
+    assert host_dialog._pause_button.isHidden() is True
+    assert host_dialog._pause_button.isEnabled() is False
+    assert host_dialog._clock.text() == "10:00 / 10:00"
+
+
 def test_the_host_panel_shows_a_failure_instead_of_a_stale_source(host_dialog):
     host_dialog.set_host_snapshot(_shared())
     host_dialog.set_host_snapshot(
