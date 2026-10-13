@@ -2,6 +2,10 @@ name: WebJam CI
 
 on:
   push:
+    branches:
+      - master
+    tags:
+      - '**'
   pull_request:
   workflow_dispatch:
     inputs:
@@ -36,7 +40,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   # Only cancel superseded PR runs. Pushes to branches/tags must run to
   # completion so master always produces a green build + release artifacts
   # (rapid successive pushes previously cancelled every run, leaving the
