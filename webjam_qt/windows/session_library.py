@@ -768,6 +768,7 @@ class SessionLibraryDialog(QDialog):
             links = [dict(item) for item in self.record.take_links]
             links[row]["take_path"] = path
             self.record = replace(self.record, take_links=tuple(links))
+            self.rehearsal.relink_take(ref["take_id"], ref.get("source_identity"), path)
             self._dirty = True
             self.save_current()
             self._render_takes()
@@ -947,6 +948,8 @@ class SessionLibraryDialog(QDialog):
             self.status.setText(f"Import could not be reconciled; retry is blocked and its evidence is retained: {error}")
 
     def reject(self):
+        # QDialog's window-close handler also calls reject(). Keep both it
+        # and Escape on this guarded path so successful closes emit finished.
         if self.prepare_close() and self.save_current():
             super().reject()
 
@@ -957,9 +960,3 @@ class SessionLibraryDialog(QDialog):
     def done(self, result):
         if self.prepare_close():
             super().done(result)
-
-    def closeEvent(self, event):
-        if self.prepare_close() and self.save_current():
-            event.accept()
-        else:
-            event.ignore()

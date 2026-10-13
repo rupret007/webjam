@@ -341,6 +341,31 @@ def test_the_page_names_what_host_and_join_do_with_the_card_choice(qapp, tmp_pat
             elsewhere.deleteLater()
 
 
+def test_host_accessible_description_never_promises_an_immediate_invite_copy(
+    qapp, tmp_path: Path
+):
+    """Host only persists the chosen role and accepts the dialog.
+
+    `_host()` (launch_dialog.py) never touches the clipboard — an invite is
+    only ever copied later, by a separate action, once the room is
+    shareable (application_controller._copy_band_invite /
+    _current_invite_url). A screen reader hears the host button's
+    accessibleDescription before any sighted helper text, so it must not
+    claim this click copies an invite.
+    """
+
+    for profile_key in ("art", "music"):
+        dialog = _dialog(tmp_path, profile_key)
+        try:
+            described = dialog._host_button.accessibleDescription().casefold()
+            assert "copy an invite for your guests" not in described
+            assert "start the room and copy an invite" not in described
+            if "copy an invite" in described:
+                assert "once you" in described or "inside the room" in described
+        finally:
+            dialog.deleteLater()
+
+
 def test_a_profile_without_cards_keeps_its_headline_and_helper(
     qapp, tmp_path: Path
 ):
@@ -518,6 +543,42 @@ def test_joining_asks_for_one_invitation_and_nothing_else(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+@pytest.mark.parametrize("profile_key", ["art", "music"])
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_join_paste_prompt_is_shared_from_first_paint_through_empty_submit(
+    qapp, tmp_path: Path, profile_key: str, size: tuple[int, int]
+):
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        expected = "Paste your invitation to continue"
+        assert LaunchDialog._EMPTY_JOIN_PROMPT == expected
+        assert dialog._join_status.text() == expected
+        dialog.resize(*size)
+        dialog.show_join()
+        dialog.show()
+        qapp.processEvents()
+        assert dialog._join_status.isVisible()
+        assert dialog._join_status.text() == expected
+        initial_result = dialog.result()
+        QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
+        qapp.processEvents()
+        assert dialog.result() == initial_result
+        assert dialog._invite_input.hasFocus()
+        assert dialog._join_status.text() == expected
+
+        dialog._invite_input.setText("unchecked invitation")
+        assert dialog._join_status.text() == "Invitation pasted — choose Join"
+        dialog.show_choices()
+        assert dialog._join_status.text() == expected
+        dialog.show_join()
+        qapp.processEvents()
+        assert dialog._join_status.text() == expected
+        assert dialog._join_button_primary.property("joinBlocked") is True
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_empty_join_primary_focuses_invite_and_announces_paste_prompt(
     qapp, tmp_path: Path
 ):
@@ -575,7 +636,7 @@ def test_whitespace_only_invite_stays_blocked_and_empty_join_on_submit(
         dialog._invite_input.setText(whitespace)
         dialog._on_invite_text_changed()
         assert dialog._join_button_primary.property("joinBlocked") is True
-        assert dialog._join_status.text() == "Paste your invitation"
+        assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
         initial_result = dialog.result()
         QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
         qapp.processEvents()
@@ -607,8 +668,8 @@ def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
 
         dialog._invite_input.clear()
         dialog._on_invite_text_changed()
-        assert dialog._join_status.text() == "Paste your invitation"
-        assert dialog._join_status.text() != LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_button_primary.property("joinBlocked") is True
     finally:
         dialog.deleteLater()
 
@@ -768,6 +829,24 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
             if not isinstance(button, (StartCard, ProfileCard))
         ]
         assert others == ["Host", "Join"]
+    finally:
+        dialog.deleteLater()
+
+
+def test_make_together_door_card_matches_the_in_room_session_title(
+    qapp, tmp_path: Path
+):
+    """Quoted door words and the room's default title are one phrase."""
+
+    dialog = _dialog(tmp_path)
+    try:
+        cards = _visible_cards(dialog)
+        door_label = cards[0].accessibleName()
+        assert door_label == "Make together"
+        assert cards[0].text() == "Make together"
+        profile = get_creator_profile_by_key("art")
+        assert profile.default_template == door_label
+        assert profile.default_template != "Making together"
     finally:
         dialog.deleteLater()
 

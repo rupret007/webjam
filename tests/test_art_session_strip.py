@@ -72,6 +72,26 @@ def test_art_hides_studio_because_it_has_no_take_or_local_project(qapp):
         strip.deleteLater()
 
 
+def test_make_together_session_title_matches_the_door_card(qapp):
+    """The strip title a person sees is Make together; Preview stays a subtitle."""
+
+    profile = get_creator_profile_by_key("art")
+    make = profile.starts[0]
+    strip = SessionStrip(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title=profile.default_template,
+    )
+    try:
+        strip.set_creator_profile(profile)
+        assert make.label == "Make together"
+        assert strip.current_title() == make.label
+        assert strip.current_title() != "Making together"
+        assert strip._subtitle.text() == "Art · Preview"
+    finally:
+        strip.deleteLater()
+
+
 def test_art_strip_copy_addresses_artists_not_a_review(qapp):
     strip = _strip()
     try:
@@ -124,12 +144,42 @@ def test_art_strip_status_shows_preview_not_ready_when_profile_is_preview(qapp):
         music = get_creator_profile_by_key("music")
         assert music.is_preview is False
         strip.set_creator_profile(music)
-        assert strip._subtitle.text() == "Music · Ready"
+        assert strip._subtitle.text() == "Music"
+        assert "ready" not in strip._subtitle.text().casefold()
 
         review = get_creator_profile_by_key("review_rehearsal")
         assert review.is_preview is True
         strip.set_creator_profile(review)
         assert strip._subtitle.text() == "Review & Rehearsal · Preview"
+    finally:
+        strip.deleteLater()
+
+
+def test_music_room_idle_header_has_no_bare_ready_pre_session(qapp):
+    """The Music room's persistent subtitle must not claim "Ready" before
+    any session is connected -- it's the idle/default chrome state, not a
+    live status. Host-profile-locked and Preview copy stay unchanged.
+    """
+
+    strip = _strip()
+    try:
+        # Default construction state: no session connected yet.
+        assert "ready" not in strip._subtitle.text().casefold()
+
+        music = get_creator_profile_by_key("music")
+        strip.set_creator_profile(music)
+        assert strip._subtitle.text() == "Music"
+        assert "ready" not in strip._subtitle.text().casefold()
+
+        # Host-profile-locked branch is unchanged.
+        strip.set_creator_profile(music, locked=True)
+        assert strip._subtitle.text() == "Music · Host profile"
+        assert "ready" not in strip._subtitle.text().casefold()
+
+        # Preview branch is unchanged.
+        art = get_creator_profile_by_key("art")
+        strip.set_creator_profile(art)
+        assert strip._subtitle.text() == "Art · Preview"
     finally:
         strip.deleteLater()
 
