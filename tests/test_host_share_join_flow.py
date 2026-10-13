@@ -521,7 +521,9 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     assert dialog._join_button_primary.text() == "Join"
     assert dialog._join_button_primary.isEnabled() is False
     assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
-    assert "never saved" in dialog._join_privacy.text()
+    assert dialog._join_privacy.text() == (
+        "The invite stays on this screen. WebJam does not save it."
+    )
     assert dialog._invite_input.echoMode() is QLineEdit.EchoMode.Password
     dialog._name_input.setText("Drummer")
     dialog._invite_input.setText(
