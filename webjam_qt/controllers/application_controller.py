@@ -2386,6 +2386,16 @@ class ApplicationController(QObject):
             set_talk_share(overview.conversation_enabled)
         return overview
 
+    def _art_overview_offers_video(self) -> bool:
+        """True when Paint along already owns the room's next click."""
+
+        if getattr(self.creator_profile, "key", "") != "art":
+            return False
+        overview = getattr(
+            getattr(self.window, "art_room_overview", None), "_overview", None
+        )
+        return bool(overview is not None and "video" in overview.activity_actions)
+
     def _on_art_overview_activity(self, action: str) -> None:
         # Re-read current owners at dispatch; a click queued before Leave
         # must not open an optional layer for a room that is now closing.
@@ -10337,8 +10347,12 @@ class ApplicationController(QObject):
         self._record_pilot_conductor_presentation(presentation)
         self._publish_musician_guidance(snapshot, display_override=display_override)
         self._sync_art_room_overview()
+        overview_offers_video = self._art_overview_offers_video()
         if display_override is not None:
-            if display_override.primary_action is SessionPrimaryAction.COPY_INVITE:
+            if (
+                display_override.primary_action is SessionPrimaryAction.COPY_INVITE
+                and not overview_offers_video
+            ):
                 self.window.session_strip.set_invite_available(False)
             self.window.participant_grid.set_session_state(
                 SessionUiState(
@@ -10388,6 +10402,10 @@ class ApplicationController(QObject):
             }
             and not header_owned
             and not studio_owned
+            and not (
+                overview_offers_video
+                and action is SessionPrimaryAction.COPY_INVITE
+            )
         )
         detail = presentation.message
         if presentation.preservation:
@@ -10439,9 +10457,10 @@ class ApplicationController(QObject):
                 primary_action="start",
             )
         )
-        # The strip copy button is an older duplicate of the HUD action.  Its
-        # reset command remains under More when a v3 host owns that invite.
-        if action is SessionPrimaryAction.COPY_INVITE:
+        # The strip copy button is an older duplicate of the HUD action.
+        # Paint along already owns the orange next click, so keep Copy Invite
+        # on the footer instead of hiding it or doubling the primary.
+        if action is SessionPrimaryAction.COPY_INVITE and not overview_offers_video:
             self.window.session_strip.set_invite_available(False)
 
     def _publish_musician_guidance(

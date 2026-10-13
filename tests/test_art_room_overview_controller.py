@@ -6,9 +6,11 @@ from dataclasses import replace
 from unittest import mock
 
 import pytest
+from PySide6.QtCore import QPoint, QRect, QSize
+from PySide6.QtWidgets import QPushButton
 
 from core.room_state import RoomState
-from core.session_conductor import ArtRoomState
+from core.session_conductor import ArtRoomState, SessionPrimaryAction
 from core.session_transfer import SharedCanvasSessionSnapshot
 from services.remote_session_runtime import RemoteSessionPhase
 from tests.test_art_room_controller import (
@@ -22,6 +24,7 @@ from tests.test_art_room_controller import (
     state,
 )
 from webjam_qt.controllers.application_controller import ApplicationController
+from webjam_qt.theme import load_stylesheet
 
 controllers = _controllers_fixture
 qapp = _qapp_fixture
@@ -173,7 +176,7 @@ def test_native_shared_canvas_routes_existing_panel_and_rechecks_owner(
         app.audio.stopping = False
 
 
-def test_ended_native_host_can_reopen_with_current_room_truth(qapp, controllers, monkeypatch):
+def _native_waiting_art_host(controllers, monkeypatch, *, start_key: str):
     from core.room_state import RoomIdentity
     from core.session_transport import SessionRole
     from services.remote_session_runtime import RemoteSessionSnapshot
@@ -193,10 +196,112 @@ def test_ended_native_host_can_reopen_with_current_room_truth(qapp, controllers,
             owners.append(self)
 
     monkeypatch.setattr("services.native_remote_transport.NativeHostTransportOwner", HostOwner)
-    monkeypatch.setattr("services.native_remote_transport.reference_local_host_requested", lambda: True)
+    monkeypatch.setattr(
+        "services.native_remote_transport.reference_local_host_requested",
+        lambda: True,
+    )
     app: ApplicationController = controllers(profile="art", hosting=True)
     app.bridge.enable_remote_host_mode = mock.Mock()
-    app.settings.last_creator_start_key = "paint_along"
+    app.settings.last_creator_start_key = start_key
+    return app
+
+
+def _show_art_room(app, qapp, size):
+    window = app.window
+    window.menuBar().setNativeMenuBar(False)
+    window.setStyleSheet(load_stylesheet())
+    window.resize(*size)
+    window.show()
+    qapp.processEvents()
+    return window
+
+
+def _visible_primary_labels(window):
+    return [
+        button.text().replace("&", "")
+        for button in window.findChildren(QPushButton)
+        if button.objectName() == "PrimaryButton" and button.isVisibleTo(window)
+    ]
+
+
+def test_paint_along_waiting_host_has_one_orange_open_paint_along(
+    qapp, controllers, monkeypatch,
+):
+    """Paint along is the next click; HUD Copy Invite must not be a second orange."""
+
+    app = _native_waiting_art_host(controllers, monkeypatch, start_key="paint_along")
+    window = _show_art_room(app, qapp, (800, 600))
+    panel = window.art_room_overview
+    hud = window.session_hud
+    try:
+        assert app.begin_startup_journey()
+        drain(qapp, lambda: not app._remote_host_preparing)
+        window.resize(800, 600)
+        qapp.processEvents()
+        assert window.size() == QSize(800, 600)
+        assert panel._overview.phase == "waiting"
+        assert panel._overview.activity_action == "video"
+        assert panel._overview.activity_action_label == "Open Paint along"
+        assert app._last_session_conductor.primary_action is (
+            SessionPrimaryAction.COPY_INVITE
+        )
+        assert hud._status.text() == "Your room is open"
+        assert hud._detail.text() == (
+            "Copy the invite. Keep making while you wait for another artist."
+        )
+        assert hud._detail.isVisibleTo(window)
+        assert not hud._action.isVisibleTo(window)
+        activity = panel.activity_button()
+        assert activity.isVisibleTo(window) and activity.isEnabled()
+        assert activity.text() == "Open Paint along"
+        assert activity.objectName() == "PrimaryButton"
+        conversation = panel.conversation_button()
+        assert conversation.isVisibleTo(window) and conversation.isEnabled()
+        assert conversation.text() == "Set Up Conversation"
+        assert conversation.objectName() == "GhostButton"
+        footer = window.session_strip._invite_button
+        assert footer.isVisibleTo(window) and footer.isEnabled()
+        assert footer.objectName() == "GhostButton"
+        assert "invite" in footer.accessibleName().lower()
+        assert _visible_primary_labels(window) == ["Open Paint along"]
+        activity_rect = QRect(
+            activity.mapTo(panel.viewport(), QPoint()), activity.size()
+        )
+        assert panel.viewport().rect().contains(activity_rect)
+        assert window.rect().contains(
+            QRect(activity.mapTo(window, QPoint()), activity.size())
+        )
+        assert not activity.visibleRegion().isEmpty()
+    finally:
+        drain(qapp, lambda: not app._remote_host_preparing)
+
+
+def test_make_together_waiting_host_keeps_hud_copy_invite(
+    qapp, controllers, monkeypatch,
+):
+    """Make together has no Paint along next click, so HUD Copy Invite stays."""
+
+    app = _native_waiting_art_host(controllers, monkeypatch, start_key="talk_and_make")
+    window = _show_art_room(app, qapp, (1280, 800))
+    hud = window.session_hud
+    panel = window.art_room_overview
+    try:
+        assert app.begin_startup_journey()
+        drain(qapp, lambda: not app._remote_host_preparing)
+        qapp.processEvents()
+        assert panel._overview.phase == "waiting"
+        assert "video" not in panel._overview.activity_actions
+        assert hud._status.text() == "Your room is open"
+        assert hud._action.isVisibleTo(window)
+        assert hud._action.text().replace("&", "") == "Copy Invite"
+        assert hud._action.objectName() == "PrimaryButton"
+        assert not window.session_strip._invite_button.isVisibleTo(window)
+    finally:
+        drain(qapp, lambda: not app._remote_host_preparing)
+
+
+def test_ended_native_host_can_reopen_with_current_room_truth(qapp, controllers, monkeypatch):
+    app = _native_waiting_art_host(controllers, monkeypatch, start_key="paint_along")
     panel = app.window.art_room_overview
     try:
         assert app.begin_startup_journey()

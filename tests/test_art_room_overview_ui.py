@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 from shiboken6 import isValid
 
 from core.art_room_overview import ArtRoomOverview, art_room_overview
+from core.art_room_presence import ArtPresenceTarget, ArtRoomPresence
 from core.session_conductor import (
     ArtRoomState, SessionFacts, SessionRole, derive_session_presentation,
 )
@@ -306,6 +307,58 @@ def test_current_activity_and_conversation_are_keyboard_navigation_only(window, 
     window.set_art_room_overview(overview())
     assert not activity.isVisibleTo(window)
     assert conversation.isEnabled()
+
+
+def test_paint_along_waiting_room_shows_open_paint_along_without_scroll_at_800(
+    window, qapp,
+):
+    current = art_room_overview(
+        state=ArtRoomState.WAITING,
+        hosting=True,
+        presence=ArtRoomPresence(
+            label="Set up Paint along",
+            description=(
+                "Open Paint along, then choose a local video file or a lesson link."
+            ),
+            target=ArtPresenceTarget.VIDEO,
+        ),
+    )
+    window.set_art_room_overview(current)
+    window.session_hud.set_state(
+        "Your room is open",
+        "Copy the invite. Keep making while you wait for another artist.",
+        action_visible=False,
+    )
+    window.session_strip.set_invite_available(True)
+    window.resize(800, 600)
+    _settle(qapp)
+    assert window.size() == QSize(800, 600)
+    panel = window.art_room_overview
+    activity = panel.activity_button()
+    conversation = panel.conversation_button()
+    footer = window.session_strip._invite_button
+    hud = window.session_hud
+    assert hud._status.text() == "Your room is open"
+    assert hud._detail.isVisibleTo(window)
+    assert not hud._action.isVisibleTo(window)
+    assert activity.isVisibleTo(window) and activity.isEnabled()
+    assert activity.text() == "Open Paint along"
+    assert activity.objectName() == "PrimaryButton"
+    assert conversation.isVisibleTo(window) and conversation.isEnabled()
+    assert conversation.text() == "Set Up Conversation"
+    assert conversation.objectName() == "GhostButton"
+    assert footer.isVisibleTo(window)
+    assert footer.objectName() == "GhostButton"
+    assert panel.verticalScrollBar().maximum() == 0
+    rect = QRect(activity.mapTo(panel.viewport(), QPoint()), activity.size())
+    assert panel.viewport().rect().contains(rect)
+    assert not activity.visibleRegion().isEmpty()
+    oranges = [
+        button.text().replace("&", "")
+        for button in window.findChildren(QPushButton)
+        if button.objectName() == "PrimaryButton" and button.isVisibleTo(window)
+    ]
+    assert oranges == ["Open Paint along"]
 
 
 @pytest.mark.parametrize("size", [(720, 560), (1440, 900)])
