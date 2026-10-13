@@ -6,6 +6,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Waiting Art rooms say “Share the invite. Making can start now.” beneath
+  “Waiting for artists to connect”; the HUD keeps its Copy Invite instruction.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

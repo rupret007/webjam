@@ -375,6 +375,9 @@ Make together is complete with everyone working in their own space: paint,
 clay, paper, a printer, or the software they already know. A shared canvas is
 optional and is not a setup requirement.
 
+While waiting for artists to connect, the room says “Share the invite. Making
+can start now.” Use **Copy Invite** in the room banner to invite another artist.
+
 Open **Conversation** to talk and show your work. Until a meeting link is
 saved the room's button reads **Set Up Conversation**; it opens the same
 panel, where you add a public HTTPS link. Once saved it reads

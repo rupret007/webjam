@@ -154,10 +154,7 @@ def art_room_overview(
     elif state is ArtRoomState.WAITING and hosting:
         phase, label, title = "waiting", "Room open", "Make from your own space"
         connection = "Waiting for artists to connect"
-        detail = (
-            "Your room is open. Share its invitation using the action above; "
-            "an invitation alone does not mean someone has joined."
-        )
+        detail = "Share the invite. Making can start now."
     else:
         phase, label, title = "idle", "Before you host" if hosting else "Before you join", "Make room for your art"
         connection = "No room connected"

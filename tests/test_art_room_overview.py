@@ -78,7 +78,8 @@ def test_make_together_is_complete_without_optional_tools_or_a_roster():
     joined = art_room_overview(state=ArtRoomState.CONNECTED, hosting=False)
     assert waiting.phase == "waiting"
     assert joined.phase == "connected"
-    assert "Waiting for artists" in waiting.connection_label
+    assert waiting.connection_label == "Waiting for artists to connect"
+    assert waiting.connection_detail == "Share the invite. Making can start now."
     assert joined.connection_label == "Connected to the host"
     for overview in (waiting, joined):
         assert overview.title == "Make from your own space"

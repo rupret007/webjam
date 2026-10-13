@@ -140,6 +140,40 @@ def test_own_tools_guidance_has_one_heading_and_keeps_recovery_context(window, q
     assert not panel._title.isVisibleTo(window)
 
 
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_waiting_room_has_short_body_and_keeps_copy_invite_in_hud(window, qapp, size):
+    facts = SessionFacts(
+        role=SessionRole.HOST, creator_profile_key="art", setup_requested=True,
+        art_room=ArtRoomState.WAITING,
+    )
+    view = derive_session_presentation(facts)
+    window.set_art_room_overview(art_room_overview(state=facts.art_room, hosting=True))
+    hud = window.session_hud
+    hud.set_state(
+        view.title, view.message, invite_available=True,
+        action_text=view.primary_label, action_visible=True,
+    )
+    window.resize(*size)
+    _settle(qapp)
+
+    panel = window.art_room_overview
+    assert panel._connection.text() == "Waiting for artists to connect"
+    detail = panel._connection_detail
+    assert detail.text() == "Share the invite. Making can start now."
+    assert detail.isVisibleTo(window)
+    assert detail.fontMetrics().horizontalAdvance(detail.text()) <= detail.contentsRect().width()
+    assert panel.viewport().rect().contains(QRect(detail.mapTo(panel.viewport(), QPoint()), detail.size()))
+    assert detail.text() in panel.accessibleDescription()
+    assert "invitation alone" not in panel.accessibleDescription()
+    assert hud._detail.text() == "Copy the invite. Keep making while you wait for another artist."
+    assert hud._detail.isVisibleTo(window)
+    assert hud._action.text() == "Copy Invite"
+    assert hud._action.isVisibleTo(window) and hud._action.isEnabled()
+    assert window.rect().contains(QRect(hud._action.mapTo(window, QPoint()), hud._action.size()))
+    assert "Preview" in window.windowTitle()
+    assert panel.verticalScrollBar().maximum() == 0
+
+
 @pytest.mark.parametrize("role", [SessionRole.HOST, SessionRole.GUEST])
 @pytest.mark.parametrize("size", [(720, 560), (1440, 900)])
 def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
