@@ -11,6 +11,7 @@ import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -28,6 +29,7 @@ from core.reference_video import (  # noqa: E402
     ReferenceVideoHostController,
     ReferenceVideoPlayerError,
     ReferenceVideoState,
+    file_identity_token,
     identities_match,
     load_reference_video_source,
     session_identity_signer,
@@ -198,6 +200,83 @@ def test_directory_is_refused(tmp_path):
     folder.mkdir()
     with pytest.raises(ReferenceVideoError):
         load_reference_video_source(folder)
+
+
+def _split_ctime_video(tmp_path, monkeypatch, *, platform, changed):
+    """Real bytes with synthetic path/handle ctime receipts; native Windows: NOT RUN.
+
+    CPython 3.12 Windows lstat reports creation time in ctime while fstat
+    reports change time. Only those receipts and this module's OS name change.
+    """
+    from core import reference_video
+
+    video = write_video(tmp_path / "lesson.mp4", b"stable-local-video-bytes")
+    real_lstat = Path.lstat
+    real_fstat = os.fstat
+    inspections = {"path": 0, "handle": 0}
+
+    def inspect(info, source):
+        inspections[source] += 1
+        values = {
+            key: getattr(info, key)
+            for key in (
+                "st_mode",
+                "st_dev",
+                "st_ino",
+                "st_size",
+                "st_mtime",
+                "st_mtime_ns",
+                "st_ctime",
+                "st_ctime_ns",
+            )
+        }
+        values["st_ctime_ns"] = 1_000_000_000 if source == "path" else 2_000_000_000
+        if changed == source + "_ctime" and inspections[source] == 2:
+            values["st_ctime_ns"] += 1
+        return SimpleNamespace(**values)
+
+    monkeypatch.setattr(Path, "lstat", lambda path: inspect(real_lstat(path), "path"))
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.name = platform
+    simulated_os.fstat = lambda fd: inspect(real_fstat(fd), "handle")
+    monkeypatch.setattr(reference_video, "os", simulated_os)
+    return video, inspections
+
+
+@pytest.mark.parametrize("platform", ["posix", "nt"])
+@pytest.mark.parametrize("changed", [None, "path_ctime", "handle_ctime"])
+def test_local_video_load_checks_ctime_within_each_api_on_windows(
+    tmp_path, monkeypatch, platform, changed
+):
+    """Simulated Windows path/handle ctime split; native Windows: NOT RUN."""
+    video, inspections = _split_ctime_video(
+        tmp_path, monkeypatch, platform=platform, changed=changed
+    )
+    if platform == "nt" and changed is None:
+        source = load_reference_video_source(video)
+        assert source.byte_size == len(b"stable-local-video-bytes")
+        assert source._identity_token == file_identity_token(video)
+        assert inspections["path"] >= 2
+        assert inspections["handle"] >= 2
+    else:
+        with pytest.raises(ReferenceVideoError, match="moved or changed"):
+            load_reference_video_source(video)
+
+
+def test_host_share_accepts_windows_path_descriptor_ctime_split(tmp_path, monkeypatch):
+    """Unchanged Paint along file must share despite split Windows clocks."""
+    video, inspections = _split_ctime_video(
+        tmp_path, monkeypatch, platform="nt", changed=None
+    )
+    controller, player, _ = make_host(tmp_path)
+    snapshot = controller.share(video)
+    assert snapshot.state is ReferenceVideoState.READY
+    assert snapshot.shared is True
+    assert snapshot.needs_attention is False
+    assert snapshot.identity_digest
+    assert player.loaded == video
+    assert inspections["path"] >= 2
+    assert inspections["handle"] >= 2
 
 
 # ---------------------------------------------------------------------------

@@ -101,6 +101,45 @@ def _identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
     )
 
 
+def _identity_body(info: os.stat_result) -> tuple[int, int, int, int]:
+    return _identity(info)[:4]
+
+
+def _open_metadata_matches(
+    path_stat: os.stat_result, handle_stat: os.stat_result
+) -> bool:
+    if _identity_body(path_stat) != _identity_body(handle_stat):
+        return False
+    # Windows Python can report creation time for lstat's ctime but change time
+    # for fstat's ctime. POSIX keeps the full cross-API check.
+    if os.name == "nt":
+        return True
+    return path_stat.st_ctime_ns == handle_stat.st_ctime_ns
+
+
+def _read_metadata_unchanged(
+    path_before: os.stat_result,
+    handle_opened: os.stat_result,
+    handle_after: os.stat_result,
+    path_current: os.stat_result,
+) -> bool:
+    if stat.S_ISLNK(path_current.st_mode) or not stat.S_ISREG(path_current.st_mode):
+        return False
+    body = _identity_body(path_before)
+    if not all(
+        _identity_body(value) == body
+        for value in (path_before, handle_opened, handle_after, path_current)
+    ):
+        return False
+    if path_before.st_ctime_ns != path_current.st_ctime_ns:
+        return False
+    if handle_opened.st_ctime_ns != handle_after.st_ctime_ns:
+        return False
+    if os.name != "nt" and path_before.st_ctime_ns != handle_opened.st_ctime_ns:
+        return False
+    return True
+
+
 def _display_name(path: Path) -> str:
     name = " ".join(path.name.split())
     if not name or any(character in name for character in ("/", "\\", "\0")):
@@ -135,7 +174,7 @@ class ReferenceVideoSource:
     display_name: str
     content_sha256: str
     byte_size: int
-    # The descriptor identity whose bytes were hashed; never a wire field.
+    # Path-API identity of the hashed file; later lstat checks use this clock.
     _identity_token: tuple[int, int, int, int, int]
 
     def __repr__(self) -> str:
@@ -148,10 +187,11 @@ class ReferenceVideoSource:
 def load_reference_video_source(path: str | os.PathLike[str]) -> ReferenceVideoSource:
     """Hash one regular local video file, failing closed on any substitution.
 
-    The pathname is opened without following symlinks and the descriptor's
-    identity is compared again after EOF, so a file replaced or mutated while
-    it was being read produces an error rather than an identity for bytes that
-    were never fully seen.
+    The pathname is opened without following symlinks. Path and descriptor
+    metadata are compared again after EOF using the workspace-backup ctime
+    convention, so a file replaced or mutated while it was being read produces
+    an error rather than an identity for bytes that were never fully seen.
+    Stable Windows path/descriptor ctime differences are not treated as a swap.
     """
 
     try:
@@ -169,6 +209,15 @@ def load_reference_video_source(path: str | os.PathLike[str]) -> ReferenceVideoS
     display_name = _display_name(candidate)
     descriptor = -1
     try:
+        before = candidate.lstat()
+        if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+            raise OSError("not a regular file")
+        if before.st_size <= 0:
+            raise OSError("empty file")
+        if before.st_size > MAX_REFERENCE_VIDEO_BYTES:
+            raise ReferenceVideoError(
+                "That video is larger than WebJam can share in a session."
+            )
         flags = (
             os.O_RDONLY
             | getattr(os, "O_BINARY", 0)
@@ -185,7 +234,8 @@ def load_reference_video_source(path: str | os.PathLike[str]) -> ReferenceVideoS
             raise ReferenceVideoError(
                 "That video is larger than WebJam can share in a session."
             )
-        bound = _identity(opened)
+        if not _open_metadata_matches(before, opened):
+            raise OSError("source changed while it was being read")
         digest = hashlib.sha256()
         while True:
             chunk = os.read(descriptor, 1024 * 1024)
@@ -194,13 +244,11 @@ def load_reference_video_source(path: str | os.PathLike[str]) -> ReferenceVideoS
             digest.update(chunk)
         current_path = candidate.lstat()
         current_descriptor = os.fstat(descriptor)
-        if (
-            stat.S_ISLNK(current_path.st_mode)
-            or not stat.S_ISREG(current_path.st_mode)
-            or _identity(current_path) != bound
-            or _identity(current_descriptor) != bound
+        if not _read_metadata_unchanged(
+            before, opened, current_descriptor, current_path
         ):
             raise OSError("source changed while it was being read")
+        bound = _identity(current_path)
     except ReferenceVideoError:
         raise
     except Exception as exc:
