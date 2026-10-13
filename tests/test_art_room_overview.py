@@ -96,13 +96,9 @@ def test_waiting_host_without_meeting_does_not_ask_to_set_up_conversation():
     waiting = art_room_overview(
         state=ArtRoomState.WAITING, hosting=True, conversation_configured=False,
     )
-<<<<<<< HEAD
-    own_space = "You do not need an art app. Use paper, your usual tools, or just talk."
-=======
     own_space = (
         "You do not need an art app. Use paper, your usual tools, or just talk."
     )
->>>>>>> origin/cursor/art-first-screen-ten-second-50bd
     assert waiting.phase == "waiting"
     assert waiting.activity_detail == own_space
     assert "Conversation" not in waiting.activity_detail
