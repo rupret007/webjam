@@ -608,15 +608,10 @@ def test_art_idle_guidance_supports_own_tools_without_recording_claim(tmp_path):
         controller._conductor_setup_requested = False
         controller._render_session_conductor()
         hint = window.participant_grid._empty_hint.text()
-        assert "Make from your own space" in hint
-        assert "paper, clay, a model, printer, or your usual app" in hint
-        assert "Conversation" in hint
-        assert "Join / Open Meeting or Show Webex App" in hint
-        assert "Talk in" in hint
-        assert "Share" in hint
-        assert "WebJam does not play the movie." in hint
-        assert "Watch a shared lesson" in hint
-        assert "screen share" not in hint
+        assert hint == "You do not need an art app. Use paper, your usual tools, or just talk."
+        assert "Join / Open Meeting or Show Webex App" not in hint
+        assert "WebJam does not play the movie." not in hint
+        assert "Watch a shared lesson" not in hint
         assert "recording" not in hint.casefold()
         assert controller.creator_start.talk_only
     finally:
