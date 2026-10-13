@@ -12,6 +12,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   to update the host; stale or absent room state still fails closed and an
   uncertain enrollment still requires a fresh invitation.
 
+- The invite-ready Music HUD says **Copy the invite**. The HUD's **Copy Invite**
+  remains the sole primary action; compact and normal window regressions keep
+  the empty stage's **Start Session** hidden.
+
 - Closing Session library with the window button or **Close** now completes
   the dialog lifecycle, like Escape. Reopening shows current saved or pending
   work; failed saves keep the draft visible and media cancellation retains
@@ -19,6 +23,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
+
+- Paint along rechecks the host's shared local file before Play and on each
+  refresh, including while ready or paused. A changed or missing file retires
+  its sharing proof and offers the existing Choose process video recovery.
+  YouTube lessons and silent playback retain their existing behavior.
 
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
