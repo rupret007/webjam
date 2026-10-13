@@ -6,6 +6,12 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Art/Music launch File menus keep Session library and hide New Music Project,
+  Podcast, and Review starts, including the New shortcut. Help's Music setup
+  appears only for Music with an available verified Windows installer and
+  disappears if installer integrity validation fails. Host/Join and Art's
+  two start cards are unchanged; physical/live checks remain **NOT RUN**.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

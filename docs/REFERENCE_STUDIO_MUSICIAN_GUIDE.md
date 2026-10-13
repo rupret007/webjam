@@ -42,10 +42,10 @@ even if a caller bypasses a disabled visible action.
 
 ## Start a project
 
-On WebJam's launch screen, choose **File → New Music Project…** to open
-Reference Studio. If a live Music session is open, end or leave it, quit
-WebJam, and relaunch to reach that menu. The live session's **Studio** button
-opens completed-take review.
+Art and Music's live launch doors offer **Host** and **Join**. Their File menu
+keeps **Session library…** and hides standalone project starts. The live
+Music session's **Studio** button still opens completed-take review.
+The standalone Reference Studio workflow retains these project controls:
 
 - Choose **Play Along / Record**, select a local backing track, then choose
   where to create its `.webjam` project folder.
