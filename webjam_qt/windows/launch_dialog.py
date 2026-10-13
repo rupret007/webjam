@@ -74,6 +74,10 @@ _JOIN_INVITATION_GUIDANCE = (
     "Paste the invite or the whole message.\n"
     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
 )
+_JOIN_INVITE_FIELD_NAME = "Paste the invite"
+_JOIN_PRIVACY_LINE = (
+    "The invite stays on this screen. WebJam does not save it."
+)
 
 # Single door line when Paint along is the checked Art start (harvest + UX tests).
 PAINT_ALONG_DOOR_HELPER = (
@@ -1091,16 +1095,14 @@ class LaunchDialog(QDialog):
         # on screen or exposing it as an ordinary editable value to assistive
         # technologies.
         self._invite_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._invite_input.setPlaceholderText("Paste the invite")
-        self._invite_input.setAccessibleName("Invite")
+        self._invite_input.setPlaceholderText(_JOIN_INVITE_FIELD_NAME)
+        self._invite_input.setAccessibleName(_JOIN_INVITE_FIELD_NAME)
         self._invite_input.setAccessibleDescription(_JOIN_INVITATION_GUIDANCE)
         self._invite_input.returnPressed.connect(self._join)
         self._invite_input.textChanged.connect(self._on_invite_text_changed)
         layout.addWidget(self._invite_input)
 
-        self._join_privacy = QLabel(
-            "Private invitation secrets stay hidden and are never saved in settings or logs."
-        )
+        self._join_privacy = QLabel(_JOIN_PRIVACY_LINE)
         self._join_privacy.setObjectName("LaunchPrivacyNote")
         self._join_privacy.setAccessibleName("Invitation privacy")
         self._join_privacy.setAlignment(Qt.AlignmentFlag.AlignHCenter)

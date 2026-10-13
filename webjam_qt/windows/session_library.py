@@ -20,6 +20,7 @@ from core.session_library import (
     SessionLibrary, SessionLibraryError, SessionLibraryImportUnconfirmed,
     validate_session_record,
 )
+from core.workspace_backup import detach_take_ownership
 from webjam_qt.widgets.art_workspace import ArtWorkspacePanel
 from webjam_qt.widgets.rehearsal_plan import RehearsalPlanPanel
 from webjam_qt.windows.workspace_backup import (
@@ -569,7 +570,11 @@ class SessionLibraryDialog(QDialog):
             if checked is not None and path:
                 suffix = " — " + checked
             elif not path:
-                suffix = (" — historical reference; no completed take here" if imported and not ref.get("recording_session_id")
+                # A reservation whose live ownership was detached (import, or a
+                # copy that can't own the original's in-flight recording) never
+                # completes here, regardless of whether this record is imported.
+                suffix = (" — historical reference; no completed take here"
+                          if ref.get("historical_origins") and not ref.get("recording_session_id")
                           else " — requested or finalizing; no completed take yet")
             elif imported:
                 suffix = " — stored link — not checked"
@@ -630,35 +635,39 @@ class SessionLibraryDialog(QDialog):
             return False
         self._dirty = False
         self._base_record = deepcopy(self.record)
-        # A reconciled merge may keep a newer live Notes/title than this
-        # editor's own draft. Resync the controls so they match what was
-        # actually written, or a later save could bounce it back to stale text.
-        self._loading = True
-        try:
-            if self.title.text() != self.record.title:
-                self.title.setText(self.record.title)
-            if self.notes.toPlainText() != self.record.notes:
-                self.notes.setPlainText(self.record.notes)
-        finally:
-            self._loading = False
         self.pending_records.pop(self.record.id, None)
-        if self.record.title != edited.title or self.record.notes != edited.notes:
-            # The save reconciled newer live Notes/title into the saved record;
-            # reflect that here so a later edit-and-save starts from the saved
-            # content instead of reverting disk and the live workspace to this
-            # editor's stale text.
-            self._loading = True
-            try:
-                self.title.setText(self.record.title)
-                self.notes.setPlainText(self.record.notes)
-            finally:
-                self._loading = False
+        self._sync_accepted_fields(edited)
         self.summary.setPlainText(workspace_summary(self.record))
         self._render_takes()
         self.status.setText("Saved on this computer.")
         self.record_saved.emit(self.record)
         self.refresh()
         return True
+
+    def _sync_accepted_fields(self, edited):
+        """Pull back a merged save's accepted content into these widgets.
+
+        A three-way merge can keep a newer live value instead of this
+        editor's own draft for a field (e.g. Notes updated elsewhere while
+        this dialog was open). Leaving the stale draft in the widget would
+        let the next unrelated save (e.g. a title-only edit) resubmit it and
+        revert the accepted value right back on disk.
+        """
+        self._loading = True
+        try:
+            if self.title.text() != self.record.title:
+                self.title.setText(self.record.title)
+            if self.notes.toPlainText() != self.record.notes:
+                self.notes.setPlainText(self.record.notes)
+            if self.record.rehearsal != edited.rehearsal:
+                from core.rehearsal_plan import RehearsalPlan
+                self.rehearsal.load_payload(RehearsalPlan.from_payload(self.record.rehearsal).payload())
+            if self.record.art != edited.art:
+                from core.art_workspace import normalize_art_workspace
+                self.art.load_payload(normalize_art_workspace(self.record.art),
+                                       defer_reference_checks=bool(self.record.import_provenance))
+        finally:
+            self._loading = False
 
     def _new(self):
         if not self.save_current():
@@ -685,6 +694,10 @@ class SessionLibraryDialog(QDialog):
             edited = self._edited_record()
             fields = {key: getattr(edited, key) for key in ("notes", "decisions", "actions", "blockers",
                 "recaps", "take_links", "rehearsal", "art", "mode_key", "source_key", "import_provenance", "media_provenance")}
+            # A copy never started its own recordings; keep provenance but drop
+            # live ownership so it can't shadow the original as the completion
+            # owner (recording_completed() fails closed on ambiguous matches).
+            fields["take_links"] = detach_take_ownership(fields["take_links"], edited.id)
             record = self.library.create(edited.profile, title.strip(), **fields)
             self._dirty = False
             self.pending_records.pop(edited.id, None)
