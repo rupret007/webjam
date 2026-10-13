@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.network_invite import BandInvite, create_invite_link
+from core.network_invite import BandInvite, create_invite_link, parse_invite_link
 from core.remote_invitation import RemoteInvitation, issue_remote_invitation
 from webjam_qt.invitation_ingress import (
     InvitationIngressError,
@@ -257,16 +257,26 @@ def _private_lan_v2_link() -> str:
     )
 
 
+def _move_query_field_last(link: str, name: str) -> str:
+    prefix, separator, query = link.partition("?")
+    assert separator
+    parts = query.split("&")
+    head = [part for part in parts if not part.startswith(f"{name}=")]
+    tail = [part for part in parts if part.startswith(f"{name}=")]
+    assert tail
+    return f"{prefix}?{'&'.join([*head, *tail])}"
+
+
 def test_standalone_and_prose_v2_pastes_strip_the_same_surrounding_punctuation() -> None:
     """Copying a v2 link out of a sentence must not block Join."""
 
     link = _private_lan_v2_link()
-    bare = parse_invitation_at_ingress(link, source=InvitationSource.PASTE)
-    assert isinstance(bare, BandInvite)
-    assert bare.version == 2
-    assert bare.peer_enabled is True
-    assert bare.host == "192.168.1.42"
-    assert bare.peer_port == 43121
+    expected = parse_invite_link(link)
+    assert isinstance(expected, BandInvite)
+    assert expected.version == 2
+    assert expected.peer_enabled is True
+    assert expected.host == "192.168.1.42"
+    assert expected.peer_port == 43121
 
     for pasted in (
         f"{link}.",
@@ -279,7 +289,7 @@ def test_standalone_and_prose_v2_pastes_strip_the_same_surrounding_punctuation()
         f"Please use {link}!",
     ):
         parsed = parse_invitation_at_ingress(pasted, source=InvitationSource.PASTE)
-        assert parsed == bare
+        assert parsed == expected
 
     other = create_invite_link(
         "10.0.0.8",
@@ -309,6 +319,32 @@ def test_standalone_and_prose_v2_pastes_strip_the_same_surrounding_punctuation()
         )
     assert argv_error.value.code is InvitationIngressErrorCode.SOURCE_NOT_ALLOWED
     assert "t" * 43 not in str(argv_error.value)
+
+
+def test_bare_invitations_keep_a_session_name_that_ends_in_punctuation() -> None:
+    """A valid pasted link must match the strict parser, including trailing '.'."""
+
+    v1 = create_invite_link("192.168.1.42", session_name="Rehearsal.")
+    expected_v1 = parse_invite_link(v1)
+    assert expected_v1.session_name == "Rehearsal."
+    parsed_v1 = parse_invitation_at_ingress(v1, source=InvitationSource.PASTE)
+    assert parsed_v1 == expected_v1
+
+    v2 = create_invite_link(
+        "192.168.1.42",
+        session_name="Rehearsal.",
+        session_id="11111111-1111-4111-8111-111111111111",
+        peer_port=43121,
+        invite_token="t" * 43,
+    )
+    v2_session_last = _move_query_field_last(v2, "session")
+    assert v2_session_last.endswith("session=Rehearsal.")
+    expected_v2 = parse_invite_link(v2_session_last)
+    assert expected_v2.session_name == "Rehearsal."
+    parsed_v2 = parse_invitation_at_ingress(
+        v2_session_last, source=InvitationSource.PASTE
+    )
+    assert parsed_v2 == expected_v2
 
 
 def test_two_different_jam_links_in_one_paste_are_ambiguous_not_guessed() -> None:
