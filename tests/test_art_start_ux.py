@@ -859,6 +859,24 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+def test_make_together_door_card_matches_the_in_room_session_title(
+    qapp, tmp_path: Path
+):
+    """Quoted door words and the room's default title are one phrase."""
+
+    dialog = _dialog(tmp_path)
+    try:
+        cards = _visible_cards(dialog)
+        door_label = cards[0].accessibleName()
+        assert door_label == "Make together"
+        assert cards[0].text() == "Make together"
+        profile = get_creator_profile_by_key("art")
+        assert profile.default_template == door_label
+        assert profile.default_template != "Making together"
+    finally:
+        dialog.deleteLater()
+
+
 @pytest.mark.parametrize(
     "profile_key", ["music", "podcast_voice", "review_rehearsal", "art"]
 )

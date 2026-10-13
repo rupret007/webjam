@@ -17,7 +17,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QSize, QTimer, Qt
+from PySide6.QtCore import QEvent, QRect, QSize, QTimer, Qt
 from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeyEvent, QKeySequence, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -500,6 +500,45 @@ def apply_remote_join_defaults(settings: AppSettings) -> None:
     settings.webex_audio_mode = "talkback"
 
 
+class _LaunchLayout(QVBoxLayout):
+    """Share compact-door slack between the brand row and the page interior."""
+
+    centered_pages: QWidget | None = None
+
+    def setGeometry(self, rect: QRect) -> None:
+        super().setGeometry(rect)
+        if self.centered_pages is None:
+            return
+
+        top = self.itemAt(0)
+        bottom = self.itemAt(self.count() - 1)
+        if top.spacerItem() is None or bottom.spacerItem() is None:
+            return  # Layout order changed; keep Qt's plain allocation.
+        spare = top.geometry().height() + bottom.geometry().height()
+        page_slack = min(28, spare // 3)
+        above_brand = (spare - page_slack) // 2
+        below_pages = spare - 2 * page_slack - above_brand
+        offset = top.geometry().top() + above_brand - self.itemAt(1).geometry().top()
+
+        # QBoxLayout stretch weights divide total sizes, not extra height.
+        # Start with Qt's content-sized pages (including wrapped text), then
+        # cap each page bookend at 28px so the brand stays close to the cards.
+        # Below Join includes the bottom bookend: above_brand must match
+        # below_pages + page_slack to center the whole visible block.
+        # Only geometry changes; hints/minimums stay small enough to shrink.
+        # Keep the invisible outer spacers as Qt's allocation anchors and use
+        # absolute positions: Qt can reuse its allocation for an unchanged
+        # rect, and invalidating here would cause endless layout requests.
+        for index in range(1, self.count() - 1):
+            item = self.itemAt(index)
+            if item.isEmpty():
+                continue
+            geometry = item.geometry().translated(0, offset)
+            if item.widget() is self.centered_pages:
+                geometry.setBottom(bottom.geometry().bottom() - below_pages)
+            item.setGeometry(geometry)
+
+
 class _LaunchPageLayout(QStackedLayout):
     """Let a compact choice page fit its content instead of hidden pages."""
 
@@ -593,7 +632,7 @@ class LaunchDialog(QDialog):
         # already required to fill exactly (see W02).
         self.setMaximumSize(800, 600)
 
-        root = QVBoxLayout(self)
+        root = _LaunchLayout(self)
         root.setContentsMargins(Space.XXL, Space.MD, Space.XXL, Space.MD)
         root.setSpacing(Space.MD)
         root.addStretch(0)
@@ -1222,6 +1261,7 @@ class LaunchDialog(QDialog):
         )
         self._pages.set_fit_current_page(centered)
         root = self.layout()
+        root.centered_pages = self._pages if centered else None
         root.setStretch(0, int(centered))
         root.setStretch(root.count() - 1, int(centered))
         root.setStretch(root.indexOf(self._pages), int(not centered))
