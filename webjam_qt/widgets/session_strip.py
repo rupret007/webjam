@@ -1145,6 +1145,22 @@ class SessionStrip(QFrame):
         self._audio_button.setText(
             self._compact_control_label(self._audio_button_full_text)
         )
+        self._apply_compact_strip_density()
+
+    def _apply_compact_strip_density(self) -> None:
+        """Recover width so the full Conversation name fits at 720 px."""
+
+        layout = self.layout()
+        if layout is None:
+            return
+        if self._compact_control_labels:
+            layout.setContentsMargins(Space.SM, Space.SM, Space.SM, Space.SM)
+            layout.setSpacing(Space.XS)
+            self._title_input.setMinimumWidth(118)
+        else:
+            layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
+            layout.setSpacing(Space.SM)
+            self._title_input.setMinimumWidth(128)
 
     def set_video_state(self, label: str, *, enabled: bool = True) -> None:
         """Retain external-launch status without changing navigation semantics.
