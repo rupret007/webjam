@@ -242,7 +242,9 @@ class SimpleSettingsDialog(QDialog):
         )
         self._keys_toggle.setArrowType(Qt.ArrowType.RightArrow)
         self._keys_toggle.setAccessibleName(
-            "Optional Music AI and writing help keys"
+            self._keys_toggle.text()
+            if self._creator_profile_key == "art"
+            else "Optional Music AI and writing help keys"
         )
         keys.layout().addWidget(self._keys_toggle)
         self._keys_panel = ProviderKeyPanel(

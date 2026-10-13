@@ -7,7 +7,8 @@ All notable improvements and features for the WebJam creator collaboration platf
 ## [Unreleased]
 
 - Art Settings now says “Your name and optional meeting link.”, uses the plain
-  name hint and accessible name “Your name”, and omits Verify Sound.
+  name hint and accessible name “Your name”, and omits Verify Sound. The name
+  display says “Others see”; optional keys use the visible label for accessibility.
 
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.

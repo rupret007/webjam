@@ -7,6 +7,10 @@ from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from core.jamulus_name import JAMULUS_NAME_HELP
 from core.settings import AppSettings, load_settings
+from tests.support.start_ux import (
+    assert_no_banned_first_screen_words,
+    harvest_spoken_page,
+)
 from webjam_qt.theme import load_stylesheet
 from webjam_qt.widgets.jamulus_name_preview import PLAIN_NAME_HELP
 from webjam_qt.windows.simple_settings import SimpleSettingsDialog
@@ -46,13 +50,25 @@ def test_art_settings_first_paint_has_neutral_subtitle(art_dialog, qapp, size):
     )
     assert "Jamulus" not in visible_copy
     assert "Live music" not in visible_copy
+    assert_no_banned_first_screen_words(harvest_spoken_page(art_dialog))
+    assert art_dialog._keys_toggle.accessibleName() == art_dialog._keys_toggle.text()
     assert not hasattr(art_dialog, "_open_jamulus")
     for widget in (subtitle, art_dialog._name, art_dialog._name_preview):
         assert widget.isVisible()
         assert widget.visibleRegion().boundingRect() == widget.rect()
 
 
-def test_art_settings_name_uses_plain_help_and_accessible_identity(art_dialog):
+@pytest.mark.parametrize(
+    ("name", "visible_name", "spoken_name"),
+    [
+        ("Alex", "Alex", "Alex"),
+        ("Alex Painter", "Alex Pai / nter", "Alex Pai\nnter"),
+        ("Cafe\u0301BandX", "Cafe\u0301Band / X", "Cafe\u0301Band\nX"),
+    ],
+)
+def test_art_settings_name_uses_plain_help_and_accessible_identity(
+    art_dialog, name, visible_name, spoken_name
+):
     assert art_dialog._name.accessibleName() == "Your name"
     assert art_dialog._name.accessibleDescription() == PLAIN_NAME_HELP
     assert art_dialog._name_preview.accessibleName() == "What others see"
@@ -60,6 +76,12 @@ def test_art_settings_name_uses_plain_help_and_accessible_identity(art_dialog):
     art_dialog._name.setText("Alex Painter")
     assert "Alex Pai / nter" in art_dialog._name_preview.text()
     assert "Jamulus" not in art_dialog._name_preview.accessibleDescription()
+    art_dialog._name.setText(name)
+    assert art_dialog._name_preview.text() == f"{PLAIN_NAME_HELP}\nOthers see: {visible_name}"
+    assert art_dialog._name_preview.accessibleDescription() == (
+        f"{PLAIN_NAME_HELP} Others see: {spoken_name}"
+    )
+    assert_no_banned_first_screen_words(harvest_spoken_page(art_dialog))
 
 
 @pytest.mark.parametrize("profile", ["art", "music"])
@@ -81,6 +103,13 @@ def test_verify_sound_is_only_offered_for_music(
         if profile == "music":
             assert dialog._name.accessibleDescription() == JAMULUS_NAME_HELP
             assert dialog._open_jamulus.text() == "Open Jamulus Audio Settings"
+            dialog._name.setText("Alex Painter")
+            assert dialog._name_preview.text() == (
+                f"{JAMULUS_NAME_HELP}\nMixer preview: Alex Pai / nter"
+            )
+            assert dialog._keys_toggle.accessibleName() == (
+                "Optional Music AI and writing help keys"
+            )
     finally:
         dialog.close()
         dialog.deleteLater()

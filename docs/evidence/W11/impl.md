@@ -1,3 +1,86 @@
+# W11 — Review1 fix round
+
+Fixed on 2026-10-13 in `/Users/jeffstory/Documents/webjam-24h/W11`, branch
+`webjam-24h/W11-art-settings-drops-jamulus-and-verify-so`, starting at `44e54ac`.
+
+## Review issues addressed
+
+- The full `JamulusNamePreview` layout now honors `plain_words=True`, showing
+  **Others see: Alex** instead of **Mixer preview: Alex**. This reuses the
+  compact launch widget's existing wording; no new maker copy was invented.
+  Music keeps its existing help and **Mixer preview** line. Name validation,
+  wrapping and fail-closed errors are unchanged.
+- Also addressed the review's optional accessibility note: Art's optional-key
+  disclosure announces its visible **Song tools and writing help keys
+  (optional)** label instead of the engine name **Music AI**. Music's label
+  remains unchanged.
+- Strengthened `tests/test_art_settings_ux.py` without removing any assertions:
+  the shared first-screen banned-word gate now checks visible and accessible
+  copy (including tooltips and buttons) at both sizes. Exact name-display and
+  accessible-description assertions cover short, wrapped and combining-Unicode
+  names. Music wording is explicitly protected for both Verify Sound flags.
+- Updated USER_GUIDE.md and CHANGELOG.md. The existing `gate.sh` already runs
+  every affected module and needed no change; campaign and committed copies
+  remain identical.
+
+## Fix-round validation
+
+Before the product fix, the strengthened full Art Settings test module returned
+**5 failed, 5 passed in 1.12s**: two first-paint failures caught **Music AI** in
+accessible copy; three exact-text failures caught **Mixer preview**. Evidence:
+campaign `items/W11/fix-round-red.log`.
+
+After the product fix, ran:
+
+`bash /Users/jeffstory/Documents/bob-overnight-inject/local-webjam-24h-1010/items/W11/gate.sh`
+
+**PASS, exit 0: 375 tests passed, 7 subtests passed.** Full modules ran in fresh
+interpreters; no tests or gates were weakened, skipped, deleted or xfailed.
+
+| Check | Exact result |
+| --- | --- |
+| `tests/test_art_settings_ux.py` | 10 passed in 0.84s |
+| `tests/test_webex_settings_ui.py` | 20 passed in 0.63s |
+| `tests/test_jamulus_name.py` | 22 passed in 0.08s |
+| `tests/test_provider_key_settings_ui.py` | 14 passed in 0.52s |
+| `tests/test_recording_studio.py` | 134 passed in 5.49s |
+| `tests/test_art_conversation_link_journey.py` | 18 passed in 4.84s |
+| `tests/test_application_controller_video_audio_paths.py` | 52 passed, 7 subtests passed in 1.46s |
+| `tests/test_art_start_ux.py` | 66 passed in 1.05s |
+| `tests/test_creative_modes_edge.py` | 39 passed in 0.09s |
+| Product and focused-test ruff checks | All checks passed! |
+| compileall | exit 0 |
+| pip check | No broken requirements found. |
+| ux_smoke_test.py | UX smoke gate passed. |
+| git diff --check | exit 0 |
+
+Full log: campaign `items/W11/fix-round-gate.log`. Pip again emitted only its
+nonfatal unwritable-cache warning.
+
+## UX evidence and limits
+
+Read UX_GATE.md and the launch/start-card sources and tests. Art still starts
+with **Make together** / **Paint along**, then **Host** / **Join**. The complete
+66-case start suite passed. No Preview honesty labels or fail-closed copy changed.
+
+Fresh offscreen PNGs and visible/accessibility text harvests for Art and Music
+at **800×600** and **1280×800** are in campaign
+`shots/W11/fix-round-art-settings/`. Both Art screenshots were visually inspected:
+**Your name and optional meeting link.**, the existing plain hint, **Others see:
+Alex**, **Meeting link (optional)**, optional keys, **Cancel**, and **Save** fit.
+The captures also assert unclipped identity controls and the shared banned-word
+gate for Art. Credentials were isolated and no meeting was opened.
+
+**NOT RUN:** native-window/VoiceOver interaction, physical/live audio, two-Mac
+checks, live Webex, packaging, and repository tests beyond the modules above.
+No push, merge, PR, tag, release, publication or sends. No large build outputs
+were created; approximately **18 GiB free** remained.
+
+---
+
+The initial implementation report below is historical. Its retained
+**Mixer preview** wording and old test totals are superseded by this fix round.
+
 # W11 — Art Settings drops Jamulus and Verify Sound
 
 Implemented on 2026-10-13 in `/Users/jeffstory/Documents/webjam-24h/W11`, branch

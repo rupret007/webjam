@@ -333,7 +333,7 @@ visible again. Your existing local copy stays open.
 
 Art **Settings** opens with “Your name and optional meeting link.” Edit
 **Your name**, optionally add a meeting link, then choose **Save**. Art Settings
-does not offer **Verify Sound**.
+shows how your name wraps under **Others see** and does not offer **Verify Sound**.
 
 When the room offers a shared canvas or Paint along, its next step still
 includes paper, clay, a model, printer, or your usual app. Shared activities
