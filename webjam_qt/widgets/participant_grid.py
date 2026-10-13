@@ -638,6 +638,7 @@ class ParticipantGrid(QScrollArea):
         self._empty_state.setProperty("sessionState", state)
         phase_labels = {
             "not_connected": "NOT CONNECTED",
+            "connected": "CONNECTED",
             "connecting": "STARTING",
             "practice": "PRIVATE PRACTICE",
             "reconnecting": "RECONNECTING",

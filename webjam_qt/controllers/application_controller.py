@@ -5054,6 +5054,9 @@ class ApplicationController(QObject):
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             self._render_remote_fresh_invitation_hud()
             return False
+        if (getattr(self, "_remote_invitation", None) is not None
+                and self._native_join_blocked_by_workspace_media()):
+            return False
         library = getattr(self, "session_library", None)
         if library is not None:
             library.start_session()
@@ -6362,7 +6365,10 @@ class ApplicationController(QObject):
         self._publish_musician_guidance(snapshot, display_override=override)
         self.window.participant_grid.set_session_state(
             SessionUiState(
-                self._conductor_stage_phase(snapshot.presentation.phase),
+                self._conductor_stage_phase(
+                    snapshot.presentation.phase,
+                    snapshot.facts,
+                ),
                 override.title,
                 override.message,
                 primary_text=override.action_label
@@ -8054,6 +8060,8 @@ class ApplicationController(QObject):
         failure requires a fresh invitation and never falls into legacy audio.
         """
 
+        if self._native_join_blocked_by_workspace_media():
+            return False
         if invitation.advisory_expired():
             self.window.flash_message(
                 "That invitation expired. Ask the host for a fresh one.",
@@ -8512,6 +8520,8 @@ class ApplicationController(QObject):
         invitation = getattr(self, "_remote_invitation", None)
         if invitation is None or getattr(self, "_shutdown", False):
             return
+        if self._native_join_blocked_by_workspace_media():
+            return
         # A remote invitation always represents a guest attempt, even when
         # this app last used a host profile. There is no owned Jamulus work at
         # this point; replacing an old idle/preflight token prevents the later
@@ -8602,6 +8612,20 @@ class ApplicationController(QObject):
             startup_authorization_generation,
         )
         runtime.start_guest(invitation)
+
+    def _native_join_blocked_by_workspace_media(self) -> bool:
+        """Leave a capability untouched until its workspace can adopt a room."""
+
+        library = getattr(self, "session_library", None)
+        studio = getattr(self.window, "recording_studio", None)
+        if not (bool(getattr(library, "media_operation_pending", False))
+                or bool(getattr(studio, "media_open_pending", False))):
+            return False
+        self.window.flash_message(
+            "Wait for the workspace operation result before continuing another workspace.",
+            ms=7000,
+        )
+        return True
 
     def _begin_remote_host(
         self,
@@ -8991,6 +9015,11 @@ class ApplicationController(QObject):
             return (
                 "Update WebJam on both computers. Ask the host for a fresh "
                 "invitation, then choose Paste New Invite."
+            )
+        if error_value == "local_operation_pending":
+            return (
+                "Local media work kept this room from opening. Finish that work, "
+                "then ask the host for a fresh invitation and choose Paste New Invite."
             )
         if error_value == "expired":
             return (
@@ -10173,8 +10202,33 @@ class ApplicationController(QObject):
                       else ArtRoomState.NONE),
         )
 
+    _CONDUCTOR_LIVE_CONNECTION_PHASES = frozenset(
+        {
+            SessionConductorPhase.CONNECTED,
+            SessionConductorPhase.LIVE,
+        }
+    )
+
+    _CONDUCTOR_IN_SESSION_WORK_PHASES = frozenset(
+        {
+            SessionConductorPhase.RECORDING,
+            SessionConductorPhase.TAKE_READY,
+            SessionConductorPhase.REVIEWING,
+        }
+    )
+
     @staticmethod
-    def _conductor_stage_phase(phase: SessionConductorPhase) -> SessionPhase:
+    def _conductor_has_music_connection(facts: SessionConductorFacts) -> bool:
+        return (
+            facts.music_path is MusicPathState.AUTHENTICATED
+            and facts.local_participant is EvidenceState.VERIFIED
+        )
+
+    @staticmethod
+    def _conductor_stage_phase(
+        phase: SessionConductorPhase,
+        facts: SessionConductorFacts | None = None,
+    ) -> SessionPhase:
         if phase in {
             SessionConductorPhase.RECONNECTING,
             SessionConductorPhase.FAILED,
@@ -10185,6 +10239,15 @@ class ApplicationController(QObject):
             return SessionPhase.ERROR
         if phase is SessionConductorPhase.ENDING:
             return SessionPhase.ENDING
+        if phase in ApplicationController._CONDUCTOR_LIVE_CONNECTION_PHASES:
+            return SessionPhase.CONNECTED
+        if phase in ApplicationController._CONDUCTOR_IN_SESSION_WORK_PHASES:
+            if (
+                facts is not None
+                and ApplicationController._conductor_has_music_connection(facts)
+            ):
+                return SessionPhase.CONNECTED
+            return SessionPhase.NOT_CONNECTED
         if phase in {
             SessionConductorPhase.STARTING_HOST,
             SessionConductorPhase.WAITING_FOR_HOST_READINESS,
@@ -10198,6 +10261,30 @@ class ApplicationController(QObject):
         }:
             return SessionPhase.CONNECTING
         return SessionPhase.NOT_CONNECTED
+
+    def _sync_session_status_chip_from_conductor(
+        self,
+        presentation,
+        *,
+        headline: str | None = None,
+    ) -> None:
+        """Keep legacy Session chip aligned with SessionHud when Jamulus is idle."""
+
+        room = getattr(self, "_room_participant", None)
+        if room is not None and (
+            self.creator_profile.key == "art" or self._art_room_active()
+        ):
+            return
+        if self._jamulus_connected or getattr(self.audio, "connected", False):
+            return
+        setter = getattr(self.window, "set_status_latency", None)
+        if not callable(setter):
+            return
+        label = headline or presentation.title
+        if presentation.phase is SessionConductorPhase.IDLE:
+            setter("Not connected")
+        else:
+            setter(label)
 
     @staticmethod
     def _conductor_action_kind(action: SessionPrimaryAction) -> str:
@@ -10346,7 +10433,7 @@ class ApplicationController(QObject):
                 self.window.session_strip.set_invite_available(False)
             self.window.participant_grid.set_session_state(
                 SessionUiState(
-                    self._conductor_stage_phase(presentation.phase),
+                    self._conductor_stage_phase(presentation.phase, facts),
                     display_override.title,
                     display_override.message,
                     primary_text=(
@@ -10366,6 +10453,10 @@ class ApplicationController(QObject):
                     show_practice=False,
                     primary_action="start",
                 )
+            )
+            self._sync_session_status_chip_from_conductor(
+                presentation,
+                headline=display_override.title,
             )
             return
 
@@ -10427,7 +10518,7 @@ class ApplicationController(QObject):
         # pile alongside the same action in the HUD.
         self.window.participant_grid.set_session_state(
             SessionUiState(
-                self._conductor_stage_phase(presentation.phase),
+                self._conductor_stage_phase(presentation.phase, facts),
                 presentation.title,
                 presentation.message,
                 primary_text=presentation.action_label or "Continue",
@@ -10439,6 +10530,7 @@ class ApplicationController(QObject):
                 primary_action="start",
             )
         )
+        self._sync_session_status_chip_from_conductor(presentation)
         # The strip copy button is an older duplicate of the HUD action.  Its
         # reset command remains under More when a v3 host owns that invite.
         if action is SessionPrimaryAction.COPY_INVITE:
