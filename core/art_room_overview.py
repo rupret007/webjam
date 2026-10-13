@@ -140,15 +140,12 @@ def art_room_overview(
     elif state is ArtRoomState.CONNECTED:
         phase, label, title = "connected", "In the room", "Make from your own space"
         connection = "Artist connection confirmed" if hosting else "Connected to the host"
-        # One short confirmed-connection line. The missing-roster honesty
-        # lives in Help, not above the next making step.
+        # One short confirmed-connection line, including named hosts.
+        # Roster honesty and the talk/share split live in Help.
         detail = "This computer is in the room."
         if hosting and named_connections:
             connection = "Connected to your room"
-            detail = (
-                "Names guests chose when joining WebJam. "
-                "Talk and screen sharing are separate."
-            )
+            detail = "Names guests chose when joining WebJam."
     elif state is ArtRoomState.WAITING and hosting:
         phase, label, title = "waiting", "Room open", "Make from your own space"
         connection = "Waiting for artists to connect"

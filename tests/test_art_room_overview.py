@@ -91,13 +91,13 @@ def test_connected_room_uses_one_short_line_instead_of_a_roster_apology(hosting)
     named = art_room_overview(
         state=ArtRoomState.CONNECTED, hosting=hosting, named_connections=True,
     )
+    assert named.activity_label == "Make from your own space"
+    assert named.connection_detail.count(".") == 1
+    assert "full artist list" not in named.connection_detail
+    assert "Talk and screen sharing" not in named.connection_detail
     if hosting:
         assert named.connection_label == "Connected to your room"
-        assert named.connection_detail == (
-            "Names guests chose when joining WebJam. "
-            "Talk and screen sharing are separate."
-        )
-        assert "full artist list" not in named.connection_detail
+        assert named.connection_detail == "Names guests chose when joining WebJam."
     else:
         assert named.connection_detail == "This computer is in the room."
 

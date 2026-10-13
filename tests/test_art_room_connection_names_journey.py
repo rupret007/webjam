@@ -128,8 +128,10 @@ def _assert_named(rig, *expected):
     assert panel._connections_list.isVisibleTo(app.window)
     assert panel._connection.text() == "Connected to your room"
     assert panel._connection_detail.text() == (
-        "Names guests chose when joining WebJam. Talk and screen sharing are separate."
+        "Names guests chose when joining WebJam."
     )
+    assert panel._connection_detail.text().count(".") == 1
+    assert "Talk and screen sharing" not in panel._connection_detail.text()
     return panel
 
 

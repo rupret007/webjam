@@ -18,6 +18,7 @@ from webjam_qt.controllers.workflow_help import WorkflowHelpCoordinator
     ("music", "checksum receipt", "export_receipts"),
     ("art", "moved relink", "art_relink"),
     ("art", "full artist list", "art_room_people"),
+    ("art", "talk screen sharing names", "art_room_people"),
     ("art", "YouTube Bob Ross", "follow_along"),
     ("music", "play along latency", "follow_along"),
 ])
@@ -31,6 +32,7 @@ def test_art_help_holds_the_full_artist_list_sentence_music_does_not():
     assert people.title == "Who is in the room"
     assert "WebJam does not yet show a full artist list." in people.body
     assert "this computer is in the room" in people.body.casefold()
+    assert "Talk and screen sharing stay in your meeting." in people.body
     music = " ".join(topic.body for topic in workflow_topics("music"))
     assert "full artist list" not in music
     assert "art_room_people" not in {topic.key for topic in workflow_topics("music")}
