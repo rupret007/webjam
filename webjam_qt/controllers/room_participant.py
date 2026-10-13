@@ -24,6 +24,7 @@ from core.session_transfer import (
     SharedCanvasSessionSnapshot,
 )
 from services.lan_room_guest import LanRoomTerminalReason, LessonRequestGuestState
+from services.remote_session_runtime import RemoteSessionPhase
 
 
 LOGGER = logging.getLogger("webjam.qt.room_participant")
@@ -170,6 +171,7 @@ class RoomParticipantController:
         self.native_received_at = 0.0
         self.native_applied = None
         self.native_wait_started = 0.0
+        self.native_profile_deferred = False
         self.publisher = None
         self.stopping = False
         self._lesson_binding = None
@@ -656,6 +658,7 @@ class RoomParticipantController:
         self.native_applied = None
         self.native_generation = 0
         self.native_wait_started = 0.0
+        self.native_profile_deferred = False
         self.probing = role == "guest"
         self.probe_failed = False
         if self.app.creator_profile.key == "art":
@@ -707,26 +710,40 @@ class RoomParticipantController:
                 and generation == self.generation and not self.blocked
                 and getattr(source.snapshot, "generation", 0) == native_generation):
             from services.remote_session_runtime import RemoteSessionErrorCode
+            # A locally deferred profile is not evidence of an unsupported
+            # peer. Preserve the existing absent/stale-state failure otherwise.
+            error = RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED
+            if (self.native_source is source and self.native_generation == native_generation
+                    and self.native_profile_deferred):
+                error = RemoteSessionErrorCode.LOCAL_OPERATION_PENDING
             source.mark_connection_lost(expected_generation=native_generation,
-                                        error_code=RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED)
+                                        error_code=error)
             self.app._show_remote_session_failure(
-                guest_enrollment=True, error_code=RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED,
+                guest_enrollment=True, error_code=error,
             )
 
     def apply_native(self, source, snapshot):
         state = self.native_state
         if (state is None or snapshot.generation != self.native_generation
-                or source is not self.app._remote_session or self.blocked):
+                or source is not self.app._remote_session or self.blocked
+                or snapshot.phase is not RemoteSessionPhase.CONNECTED):
             return
         key = (source, snapshot.generation, state.revision)
         if key == self.native_applied:
             return
         if time.monotonic() - self.native_received_at >= 5.0:
             return
+        if not self.app._apply_creator_profile_key(state.creator_profile_key, host_owned=True):
+            self.native_profile_deferred = True
+            # A Library media operation is still pending. Retry shortly
+            # without declaring admission complete; the 5s deadline above
+            # bounds how long these retries can run.
+            generation = self.generation
+            QTimer.singleShot(200, lambda: self._retry_apply_native(source, key, generation))
+            return
         self.native_applied = key
         self.probing = False
         self.borrowed_start = state.art_start_key
-        self.app._apply_creator_profile_key(state.creator_profile_key, host_owned=True)
         if state.creator_profile_key == "art":
             self.state = ArtRoomState.CONNECTED
             self.app._remote_invitation = None
@@ -735,6 +752,17 @@ class RoomParticipantController:
         else:
             self.state = ArtRoomState.NONE
             self.app._activate_remote_guest_route(snapshot, source=source)
+
+    def _retry_apply_native(self, source, key, generation):
+        state = self.native_state
+        if (state is None or self.blocked or generation != self.generation
+                or source is not self.app._remote_session
+                or (source, self.native_generation, state.revision) != key):
+            return
+        snapshot = getattr(source, "snapshot", None)
+        if snapshot is None or snapshot.generation != self.native_generation:
+            return
+        self.apply_native(source, snapshot)
 
     def observe_creative_state(self, state):
         for method, field in (("_reference_video_coordinator", "reference_video"),
