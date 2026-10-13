@@ -1882,7 +1882,8 @@ def test_running_invite_switch_save_failure_returns_to_recoverable_ui(
     controller.shutdown()
 
 
-def test_running_invite_switch_is_single_flight_and_latest_wins(qapp, tmp_path):
+@pytest.mark.parametrize("arrival", ["confirmation", "teardown"])
+def test_running_invite_switch_is_single_flight_and_latest_wins(qapp, tmp_path, arrival):
     from webjam_qt.controllers.application_controller import ApplicationController
     from webjam_qt.windows.conductor_window import ConductorWindow
 
@@ -1906,11 +1907,18 @@ def test_running_invite_switch_is_single_flight_and_latest_wins(qapp, tmp_path):
     second = create_invite_link("192.168.1.43", session_name="Second New Jam")
     worker: dict[str, object] = {}
 
+    def answer(*args):
+        if arrival == "confirmation" and question.call_count == 1:
+            assert controller.accept_invitation(
+                parse_invite_link(second), meeting_url="https://example.webex.com/new"
+            ) is True
+        return QMessageBox.StandardButton.Yes
+
     with (
         patch.object(
             QMessageBox,
             "question",
-            return_value=QMessageBox.StandardButton.Yes,
+            side_effect=answer,
         ) as question,
         patch(
             "webjam_qt.controllers.application_controller.threading.Thread",
@@ -1927,22 +1935,217 @@ def test_running_invite_switch_is_single_flight_and_latest_wins(qapp, tmp_path):
         patch.object(window, "flash_message") as flash,
     ):
         assert controller.accept_invite_url(first) is True
-        assert controller.accept_invite_url(second) is True
+        if arrival == "teardown":
+            assert controller.accept_invitation(
+                parse_invite_link(second), meeting_url="https://example.webex.com/new"
+            ) is True
         assert controller._invite_switch_in_flight is True
         assert controller.audio.stopping is True
         assert question.call_count == 1
         assert thread.call_count == 1
         assert "newer invitation" in flash.call_args.args[0]
+        assert controller._pending_invitation == parse_invite_link(second)
+        assert controller._pending_invitation_meeting_url == "https://example.webex.com/new"
         worker["target"]()
 
     assert controller._invite_switch_in_flight is False
     assert controller._pending_invitation is None
     assert controller.audio.stopping is False
     assert controller.settings.jamulus_server == "192.168.1.43"
+    assert controller._session_meeting_url == "https://example.webex.com/new"
     assert controller.window.session_strip.current_title() == "Second New Jam"
     controller.begin_startup_journey.assert_called_once_with()
     controller.bridge.jamulus_state = "Stopped"
     controller.shutdown()
+
+
+@pytest.fixture
+def invitation_confirmation_room(qapp, tmp_path):
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"), jamulus_server="192.168.1.10",
+    )
+    save_settings(settings)
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam", initial_title="Current Jam",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_state = "Running"
+    controller.bridge.hosted_server_alive = MagicMock(return_value=False)
+    controller.bridge.hosted_server_owned = MagicMock(return_value=False)
+    controller.bridge.stop_jamulus = MagicMock(return_value=True)
+    controller.begin_startup_journey = MagicMock()
+    yield controller
+    controller.bridge.jamulus_state = "Stopped"
+    controller.shutdown()
+
+
+@pytest.mark.parametrize("answer", ["no", "dismiss", "exception"])
+def test_invite_confirmation_cancel_preserves_room_and_can_retry(
+    invitation_confirmation_room, answer,
+):
+    controller = invitation_confirmation_room
+    first = parse_invite_link(create_invite_link("192.168.1.42"))
+    second = parse_invite_link(create_invite_link("192.168.1.43"))
+    original_settings = Path(controller.settings.config_file).read_bytes()
+
+    def respond(*args):
+        if question.call_count == 1:
+            assert controller.accept_invitation(second, meeting_url="https://example.webex.com/new")
+        if answer == "exception":
+            raise RuntimeError("dialog failed")
+        return (QMessageBox.StandardButton.No if answer == "no"
+                else QMessageBox.StandardButton.NoButton)
+
+    with (
+        patch.object(QMessageBox, "question", side_effect=respond) as question,
+        patch("webjam_qt.controllers.application_controller.threading.Thread") as thread,
+        patch.object(controller.session_library, "capture_summary") as capture,
+        patch.object(controller, "_prepare_pocket_stage_for_session_end") as prepare,
+    ):
+        if answer == "exception":
+            with pytest.raises(RuntimeError, match="dialog failed"):
+                controller.accept_invitation(first)
+        else:
+            assert controller.accept_invitation(first) is False
+        assert question.call_count == 1
+        thread.assert_not_called()
+        capture.assert_not_called()
+        prepare.assert_not_called()
+        assert controller._invite_switch_in_flight is False
+        assert controller._pending_invitation is None
+        assert controller._pending_invitation_meeting_url == ""
+        assert controller.audio.stopping is False
+        assert controller.bridge.jamulus_state == "Running"
+        controller.bridge.stop_jamulus.assert_not_called()
+        assert Path(controller.settings.config_file).read_bytes() == original_settings
+        # A cancelled question cannot strand the guard or keep the newer invite.
+        question.side_effect = None
+        question.return_value = QMessageBox.StandardButton.Yes
+        assert controller.accept_invitation(first)
+        assert question.call_count == 2
+        assert thread.call_count == 1
+        assert controller._pending_invitation is None
+    # This test deliberately captured, rather than started, the worker.
+    controller._invite_switch_in_flight = False
+    controller.audio.stopping = False
+
+
+@pytest.mark.parametrize("change", [
+    "recording", "take", "recording_session", "client", "server", "role",
+    "startup", "startup_cancel", "room", "cleanup", "workspace", "shutdown_pending",
+    "remote_owner", "guest_invite",
+])
+def test_invite_confirmation_rechecks_ownership_before_teardown(
+    invitation_confirmation_room, monkeypatch, change,
+):
+    controller = invitation_confirmation_room
+    first = parse_invite_link(create_invite_link("192.168.1.42"))
+    second = parse_invite_link(create_invite_link("192.168.1.43"))
+
+    with monkeypatch.context() as changes:
+        def respond(*args):
+            if question.call_count == 1:
+                assert controller.accept_invitation(second)
+            target, attr, value = {
+                "recording": (controller, "_server_recording", True),
+                "take": (controller.recording, "_take_id", "replacement-take"),
+                "recording_session": (controller.recording, "_session_id", "replacement-session"),
+                "client": (controller.bridge, "jamulus_process", object()),
+                "server": (controller.bridge, "hosted_server_process", object()),
+                "role": (controller.settings, "host_server_enabled", True),
+                "startup": (controller, "_startup_generation", controller._startup_generation + 1),
+                "startup_cancel": (controller, "_startup_attempt", {"phase": "cancelling"}),
+                "remote_owner": (controller, "_remote_invite_owner", object()),
+                "guest_invite": (controller, "_guest_invite", second),
+                "room": (controller._room_participant, "generation", controller._room_participant.generation + 1),
+                "cleanup": (controller.audio, "stopping", True),
+                "workspace": (controller, "_workspace_transition_pending", True),
+                "shutdown_pending": (controller, "_shutdown_cleanup_pending", True),
+            }[change]
+            changes.setattr(target, attr, value, raising=False)
+            return QMessageBox.StandardButton.Yes
+
+        with (
+            patch.object(QMessageBox, "question", side_effect=respond) as question,
+            patch("webjam_qt.controllers.application_controller.threading.Thread") as thread,
+            patch.object(controller.session_library, "capture_summary") as capture,
+        ):
+            assert controller.accept_invitation(first) is False
+            assert question.call_count == 1
+            thread.assert_not_called()
+            capture.assert_not_called()
+            controller.bridge.stop_jamulus.assert_not_called()
+            controller.begin_startup_journey.assert_not_called()
+            assert controller._invite_switch_in_flight is False
+            assert controller._pending_invitation is None
+            assert controller._pending_invitation_meeting_url == ""
+            # Do not undo a different cleanup owner's stopping latch.
+            assert controller.audio.stopping is (change == "cleanup")
+
+
+def test_invite_confirmation_shutdown_invalidates_outer_yes(invitation_confirmation_room):
+    controller = invitation_confirmation_room
+    invite = parse_invite_link(create_invite_link("192.168.1.42"))
+
+    def respond(*args):
+        assert controller.shutdown() is True
+        return QMessageBox.StandardButton.Yes
+
+    with (
+        patch.object(QMessageBox, "question", side_effect=respond),
+        patch("webjam_qt.controllers.application_controller.threading.Thread") as thread,
+    ):
+        assert controller.accept_invitation(invite) is False
+        thread.assert_not_called()
+    assert controller._shutdown is True
+    assert controller._invite_switch_in_flight is False
+    assert controller._pending_invitation is None
+    controller.begin_startup_journey.assert_not_called()
+
+
+def test_invite_confirmation_summary_failure_releases_guard(invitation_confirmation_room):
+    controller = invitation_confirmation_room
+    invite = parse_invite_link(create_invite_link("192.168.1.42"))
+    with (
+        patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes),
+        patch.object(controller.session_library, "capture_summary", side_effect=RuntimeError("summary failed")),
+        patch("webjam_qt.controllers.application_controller.threading.Thread") as thread,
+    ):
+        with pytest.raises(RuntimeError, match="summary failed"):
+            controller.accept_invitation(invite)
+        thread.assert_not_called()
+    assert controller._invite_switch_in_flight is False
+    assert controller._pending_invitation is None
+    assert controller.audio.stopping is False
+    controller.bridge.stop_jamulus.assert_not_called()
+
+
+def test_invite_confirmation_stale_outer_cannot_release_new_owner(invitation_confirmation_room):
+    controller = invitation_confirmation_room
+    first = parse_invite_link(create_invite_link("192.168.1.42"))
+    second = parse_invite_link(create_invite_link("192.168.1.43"))
+
+    def respond(*args):
+        if question.call_count == 1:
+            controller._cancel_invitation_confirmation()
+            assert controller.accept_invitation(second)
+        return QMessageBox.StandardButton.Yes
+
+    with (
+        patch.object(QMessageBox, "question", side_effect=respond) as question,
+        patch("webjam_qt.controllers.application_controller.threading.Thread") as thread,
+    ):
+        assert controller.accept_invitation(first) is False
+        assert question.call_count == 2
+        assert thread.call_count == 1
+        assert controller._invite_switch_in_flight is True
+        assert controller.audio.stopping is True
+    controller._invite_switch_in_flight = False
+    controller.audio.stopping = False
 
 
 def test_running_invite_launch_failure_clears_switch_latches(qapp, tmp_path):
