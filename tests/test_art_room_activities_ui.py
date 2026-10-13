@@ -230,6 +230,15 @@ def test_both_production_activities_fit_and_keep_keyboard_actions_reachable(
     window.session_strip.set_audio_state("End Room" if hosting else "Leave Room")
     panel = window.art_room_overview
     assert current.role_label == ("Host" if hosting else "Guest")
+    copy_recovery = video == "needs_file"
+    if copy_recovery:
+        # NEEDS_FILE recovery is the one next click; Conversation stays in the
+        # footer. Making-detail remains when a canvas is also offered.
+        assert current.open_my_copy_recovery
+        assert not panel.conversation_button().isVisibleTo(window)
+    else:
+        assert panel.conversation_button().isVisibleTo(window)
+        assert panel.conversation_button().isEnabled()
     assert panel._making_detail.isVisibleTo(window)
     assert "paper, clay, a model, printer, or your usual app" in panel._making_detail.text()
     # Deterministically exercise wider glyph metrics without changing a
@@ -271,10 +280,12 @@ def test_both_production_activities_fit_and_keep_keyboard_actions_reachable(
         meeting_rect = QRect(window.webex_embed.mapTo(window, QPoint()), window.webex_embed.size())
         assert room_rect.bottom() < meeting_rect.top()
         assert window.rect().contains(meeting_rect)
-    for button in (
+    focused = [
         panel.activity_button(), panel.secondary_activity_button(),
-        panel.conversation_button(),
-    ):
+    ]
+    if not copy_recovery:
+        focused.append(panel.conversation_button())
+    for button in focused:
         assert button.isVisibleTo(window) and button.isEnabled()
         button.setFocus(Qt.FocusReason.TabFocusReason)
         _settle(qapp)

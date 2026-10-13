@@ -119,6 +119,38 @@ def test_guest_paint_along_needs_file_names_open_my_copy_button():
     assert overview.activity_action == "video"
     assert overview.activity_action_label == "Open my copy…"
     assert overview.activity_label == "Open my copy…"
+    assert overview.activity_detail == (
+        "Open your own copy of the same video to follow along."
+    )
+    assert overview.open_my_copy_recovery
+    assert not overview.making_detail
+    assert overview.conversation_enabled
+
+
+def test_guest_needs_file_keeps_making_detail_when_a_canvas_is_also_offered():
+    """W08 omits making-detail only when Open my copy… is the one next line."""
+
+    overview = art_room_overview(
+        state=ArtRoomState.CONNECTED, hosting=False,
+        presence=paint_along(), secondary_presence=canvas(),
+    )
+    assert overview.open_my_copy_recovery
+    assert overview.activity_actions == ("video", "canvas")
+    assert overview.making_detail.startswith("Start making with paper, clay")
+    assert "Shared activities are optional." in overview.making_detail
+
+
+def test_mismatched_copy_is_not_the_needs_file_open_my_copy_emphasis():
+    presence = art_room_presence(ArtCompanionProjection(
+        in_room=True, video=VideoCompanionState.MISMATCHED_FILE,
+    ))
+    overview = art_room_overview(
+        state=ArtRoomState.CONNECTED, hosting=False, presence=presence,
+    )
+    assert not overview.open_my_copy_recovery
+    assert overview.activity_action_label == "Open my copy…"
+    assert overview.activity_label == "Paint along needs a look"
+    assert overview.making_detail.startswith("Start making with paper, clay")
 
 
 @pytest.mark.parametrize("hosting", [False, True])
@@ -211,13 +243,15 @@ def test_both_offered_panels_keep_their_status_and_action(primary, secondary):
 
 
 @pytest.mark.parametrize("hosting", [False, True])
-@pytest.mark.parametrize("canvas_state,video_state", [
-    (CanvasCompanionState.READY, VideoCompanionState.NONE),
-    (CanvasCompanionState.MISSING_APP, VideoCompanionState.NONE),
-    (CanvasCompanionState.NONE, VideoCompanionState.NEEDS_FILE),
-    (CanvasCompanionState.NONE, VideoCompanionState.PLAYING),
+@pytest.mark.parametrize("canvas_state,video_state,expect_making_detail", [
+    (CanvasCompanionState.READY, VideoCompanionState.NONE, True),
+    (CanvasCompanionState.MISSING_APP, VideoCompanionState.NONE, True),
+    (CanvasCompanionState.NONE, VideoCompanionState.NEEDS_FILE, False),
+    (CanvasCompanionState.NONE, VideoCompanionState.PLAYING, True),
 ])
-def test_optional_activity_keeps_an_any_artist_next_step(hosting, canvas_state, video_state):
+def test_optional_activity_keeps_an_any_artist_next_step(
+    hosting, canvas_state, video_state, expect_making_detail,
+):
     presence = art_room_presence(ArtCompanionProjection(
         in_room=True, transport_allowed=hosting, canvas=canvas_state, video=video_state,
     ), hosting=hosting)
@@ -226,9 +260,13 @@ def test_optional_activity_keeps_an_any_artist_next_step(hosting, canvas_state, 
         if state is ArtRoomState.WAITING and not hosting:
             assert not overview.making_detail
             continue
-        assert overview.making_detail.startswith("Start making with paper, clay")
-        assert "model, printer, or your usual app" in overview.making_detail
-        assert "Shared activities are optional." in overview.making_detail
+        if expect_making_detail:
+            assert overview.making_detail.startswith("Start making with paper, clay")
+            assert "model, printer, or your usual app" in overview.making_detail
+            assert "Shared activities are optional." in overview.making_detail
+        else:
+            assert not overview.making_detail
+            assert overview.open_my_copy_recovery
         assert overview.activity_actions == (presence.target.value,)
         assert overview.activity_detail == presence.description
 

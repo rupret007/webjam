@@ -42,6 +42,15 @@ class ArtRoomOverview:
     making_detail: str = ""
 
     @property
+    def open_my_copy_recovery(self) -> bool:
+        """Guest NEEDS_FILE: Room's one next click is **Open my copy…**."""
+        return (
+            self.activity_action == "video"
+            and self.activity_label == "Open my copy…"
+            and self.activity_action_label == "Open my copy…"
+        )
+
+    @property
     def activity_actions(self) -> tuple[str, ...]:
         """The distinct, currently enabled panel targets in display order."""
         actions = []
@@ -208,7 +217,10 @@ def art_room_overview(
         making_detail=(
             "Start making with paper, clay, a model, printer, or your usual app. "
             "Shared activities are optional."
-            if active and (action or secondary_action) else ""
+            if active and (action or secondary_action) and not (
+                _is_open_my_copy_recovery(activity, action, action_label)
+                and not secondary_action
+            ) else ""
         ),
         # Conversation only reveals the separate meeting controls. Its
         # availability is independent of the Art transport connection.
@@ -218,6 +230,15 @@ def art_room_overview(
         conversation_action_label=(
             "Conversation" if conversation_configured else "Set Up Conversation"
         ),
+    )
+
+
+def _is_open_my_copy_recovery(activity: str, action: str, action_label: str) -> bool:
+    """True only for guest NEEDS_FILE, not mismatched-copy or Open lesson."""
+    return (
+        action == "video"
+        and activity == "Open my copy…"
+        and action_label == "Open my copy…"
     )
 
 
