@@ -316,7 +316,7 @@ class SessionStrip(QFrame):
 
         self._video_button = QPushButton("Conversation")
         self._video_button.setObjectName("GhostButton")
-        self._video_button.setAccessibleName("Show conversation controls")
+        self._video_button.setAccessibleName("Conversation")
         self._video_button.setToolTip(
             "Show WebJam's conversation controls.\n"
             "This does not open or rejoin the meeting."
@@ -742,7 +742,7 @@ class SessionStrip(QFrame):
                 "workspace when WebJam was opened in Reference Studio."
             )
             studio_tip = "Open Studio to review completed takes and work on the song."
-            conversation_name = "Show conversation controls"
+            conversation_name = "Conversation"
             check_label = "Band Check"
             check_menu_label = "Band Check / Verify Sound"
             practice_label = "Practice Solo"
@@ -836,7 +836,7 @@ class SessionStrip(QFrame):
                 "Art rooms have no take review and no local Studio project."
             )
             studio_tip = "Art has no Studio take or local project."
-            conversation_name = "Show conversation controls"
+            conversation_name = "Conversation"
             check_label = "Session Check"
             check_menu_label = "Session Check / Verify Audio"
             practice_label = "Private Room Audio"
@@ -1101,7 +1101,6 @@ class SessionStrip(QFrame):
 
         return {
             "Copy Invite": "Invite",
-            "Conversation": "Talk",
             "● Record Session": "● Record",
             "■ Stop Recording": "■ Stop",
             "■ Finish Stop": "■ Finish",
