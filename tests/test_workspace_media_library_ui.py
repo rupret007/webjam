@@ -247,6 +247,8 @@ def test_worker_keeps_owner_until_thread_dies_and_result_is_consumed(
 ):
     record, _ = art
     dialog = make_dialog(SessionLibrary(tmp_path / "original"), current_id=record.id)
+    finished = []
+    dialog.finished.connect(finished.append)
     entered, release = Event(), Event()
     original = ui.plan_workspace_package
     def paused(record, selection, **kwargs):
@@ -276,6 +278,7 @@ def test_worker_keeps_owner_until_thread_dies_and_result_is_consumed(
         else:
             QTest.keyClick(dialog, Qt.Key.Key_Escape)
         assert flow.active and flow.job.pending and dialog.isVisible()
+        assert finished == []
         assert not dialog.save_current()
         release.set()
         flow.job._thread.join(3)
@@ -284,6 +287,7 @@ def test_worker_keeps_owner_until_thread_dies_and_result_is_consumed(
         flow.job._poll()
         assert not flow.active and not flow.job.pending
         assert "cancelled" in dialog.status.text()
+        assert dialog.isVisible() and finished == []
     finally:
         release.set()
         if dialog.workspace_flow.job._thread is not None:
