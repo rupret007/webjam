@@ -793,8 +793,10 @@ class LaunchDialog(QDialog):
         creator_row.addWidget(self._creator_profile_label)
         creator_row.addWidget(self._creator_profile_selector, 1)
         layout.addLayout(creator_row)
-        # Keep the cards and actions together. Profiles without start cards
-        # are centered with the shared brand row by the outer layout.
+        # Keep the cards and actions together. Art (two start cards) and
+        # Music (Host/Join only) are both clustered with the shared brand
+        # row by the outer layout, so the Art door has no empty band under
+        # the logo.
         layout.addWidget(self._build_start_cards())
 
         self._choice_helper = QLabel()
@@ -1253,10 +1255,11 @@ class LaunchDialog(QDialog):
     def _update_choice_centering(self, *_args: object) -> None:
         if not hasattr(self, "_choice_page"):
             return  # The choice page is still being constructed.
-        centered = (
-            self._pages.currentWidget() is self._choice_page
-            and not self._visible_start_cards()
-        )
+        # Art's two start cards used to skip this path, which glued the
+        # brand to the top and left an empty band under the logo. Music
+        # already clusters brand + cards + Host/Join; Art uses the same
+        # compact door. Join / setup pages stay top-aligned.
+        centered = self._pages.currentWidget() is self._choice_page
         self._pages.set_fit_current_page(centered)
         root = self.layout()
         root.centered_pages = self._pages if centered else None
