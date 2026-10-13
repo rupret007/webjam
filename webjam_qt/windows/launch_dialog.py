@@ -511,14 +511,16 @@ class _LaunchLayout(QVBoxLayout):
         if top.spacerItem() is None or bottom.spacerItem() is None:
             return  # Layout order changed; keep Qt's plain allocation.
         spare = top.geometry().height() + bottom.geometry().height()
-        above_brand = spare // 3
+        page_slack = min(28, spare // 3)
+        above_brand = (spare - page_slack) // 2
+        below_pages = spare - 2 * page_slack - above_brand
         offset = top.geometry().top() + above_brand - self.itemAt(1).geometry().top()
 
         # QBoxLayout stretch weights divide total sizes, not extra height.
         # Start with Qt's content-sized pages (including wrapped text), then
-        # move two thirds of the measured spare height inside the pages. Its
-        # equal bookend stretches split that height above and below the door.
-        # The remaining third above the brand matches the space below Join.
+        # cap each page bookend at 28px so the brand stays close to the cards.
+        # Below Join includes the bottom bookend: above_brand must match
+        # below_pages + page_slack to center the whole visible block.
         # Only geometry changes; hints/minimums stay small enough to shrink.
         # Keep the invisible outer spacers as Qt's allocation anchors and use
         # absolute positions: Qt can reuse its allocation for an unchanged
@@ -529,7 +531,7 @@ class _LaunchLayout(QVBoxLayout):
                 continue
             geometry = item.geometry().translated(0, offset)
             if item.widget() is self.centered_pages:
-                geometry.setBottom(bottom.geometry().bottom())
+                geometry.setBottom(bottom.geometry().bottom() - below_pages)
             item.setGeometry(geometry)
 
 
