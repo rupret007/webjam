@@ -653,8 +653,8 @@ class ConductorWindow(QMainWindow):
                 "<i>Make together with your own tools.</i><br><br>"
                 "<b>1.</b> Choose <b>Make together</b> or <b>Paint along</b>, "
                 "then <b>Host</b> or <b>Join</b>.<br>"
-                "<b>2.</b> The host copies the invite. In the room, one next "
-                "action is enough.<br>"
+                "<b>2.</b> The host copies the invite. Then keep making in "
+                "your own space, or open the lesson.<br>"
                 "<b>3.</b> Talk in the meeting. Paint along stays silent."
             )
         elif self._reference_studio_only and profile.key == "podcast_voice":

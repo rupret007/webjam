@@ -100,8 +100,9 @@ def test_real_help_fits_scrolls_and_returns_without_changing_work(app, window, p
         assert ("Paint along" in text) == (profile == "art")
         bar = dialog._body.verticalScrollBar()
         # Music's long card still overflows at 22px. Art's three door beats
-        # can fit on 760×680, so a scrollbar is not required there.
-        if large_text and profile != "art":
+        # can fit on 760×680; compact Art still overflows and must stay
+        # keyboard-scrollable.
+        if large_text and (profile != "art" or size == (480, 500)):
             assert bar.maximum() > 0
         dialog._body.setFocus()
         for _ in range(2 + bar.maximum() // max(1, bar.pageStep())):
@@ -325,6 +326,11 @@ def test_art_help_opens_on_three_door_beats(app, window):
     assert "meeting" in text.casefold()
     assert "silent" in text.casefold()
     assert "Continue your work" not in text
+    beat_two = re.sub(r"<[^>]*>", " ", beats[1])
+    assert "invite" in beat_two.casefold()
+    assert "keep making" in beat_two.casefold()
+    assert "open the lesson" in beat_two.casefold()
+    assert "one next action" not in beat_two.casefold()
 
 
 def test_art_help_first_page_keeps_youtube_canvas_and_keyboard_in_topics(app, window):
@@ -333,3 +339,37 @@ def test_art_help_first_page_keeps_youtube_canvas_and_keyboard_in_topics(app, wi
         assert token not in topic.body, token
         assert token not in text, token
     assert_no_banned_first_screen_words(text)
+
+
+@pytest.mark.parametrize("size", [(760, 680), (480, 500)])
+def test_art_follow_along_topic_overflows_and_scrolls_with_large_text(app, window, size):
+    previous_style = app.styleSheet()
+    app.setStyleSheet(load_stylesheet() +
+        "\n#HelpDialog QWidget, QTextBrowser#HelpBody { font-size: 22px; }")
+    available = QRect(80, 40, *size)
+    window.set_creator_profile(get_creator_profile_by_key("art"))
+    window.session_canvas.restore_notes("Keep these local notes.")
+    window.show()
+    try:
+        with patch.object(
+            QGuiApplication, "screenAt",
+            return_value=SimpleNamespace(availableGeometry=lambda: available),
+        ):
+            window.show_help()
+        app.processEvents()
+        dialog = window._workflow_help_dialog
+        row = next(
+            i for i in range(dialog._topics.count())
+            if dialog._topics.item(i).text() == "Paint along and play along with sound"
+        )
+        dialog._topics.setCurrentRow(row)
+        app.processEvents()
+        bar = dialog._body.verticalScrollBar()
+        assert bar.maximum() > 0
+        dialog._body.setFocus()
+        for _ in range(2 + bar.maximum() // max(1, bar.pageStep())):
+            QTest.keyClick(dialog._body, Qt.Key.Key_PageDown)
+        assert bar.value() == bar.maximum()
+        assert window.session_canvas._notes.toPlainText() == "Keep these local notes."
+    finally:
+        app.setStyleSheet(previous_style)

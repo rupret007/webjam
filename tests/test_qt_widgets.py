@@ -1680,8 +1680,10 @@ class TestConductorWindow(unittest.TestCase):
                         for token in (
                             "— Art", "Make together", "Paint along",
                             "<b>Host</b> or <b>Join</b>", "invite", "silent",
+                            "keep making", "open the lesson",
                         ):
                             self.assertIn(token, body)
+                        self.assertNotIn("one next action is enough", body)
                         self.assertIn("<b>1.</b>", body)
                         self.assertIn("<b>3.</b>", body)
                         self.assertNotIn("<b>4.</b>", body)
