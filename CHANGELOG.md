@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Malformed saved input maps, including `{}`, `false`, `0`, `""`, and `null`,
+  disable supplemental Local Original capture even with an environment opt-in,
+  so they cannot silently select inputs 1–2. Missing and empty-list maps retain
+  the existing compatibility behavior.
+
 - Native joins wait for Library/Studio media work before consuming an invite.
   After the operation finishes, join explicitly with the same still-valid
   invitation. A local profile deferral after enrollment no longer asks users

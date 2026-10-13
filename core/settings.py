@@ -120,8 +120,8 @@ def _input_maps_value_is_malformed_persisted(raw: object) -> bool:
     """Whether a persisted ``input_maps`` value must not use the legacy empty-map rule.
 
     Only a valid JSON empty list ``[]`` is an intentional legacy-compatible
-    configuration. Falsy scalars (``false``, ``0``, ``""``), objects, and
-    non-empty lists that fail coercion are malformed and must fail closed.
+    configuration. Falsy scalars (``false``, ``0``, ``""``, ``null``), objects,
+    and non-empty lists that fail coercion are malformed and must fail closed.
     """
 
     if raw == []:
@@ -186,9 +186,9 @@ def _coerce_settings_data(data: dict) -> None:
     if "input_maps" in data:
         raw_input_maps = data["input_maps"]
         data["input_maps"] = _coerce_input_maps(raw_input_maps)
-        # A non-empty malformed/over-capacity map must never degrade into the
-        # empty-list compatibility default and unexpectedly record inputs 1–2.
-        # Disable supplemental capture until the musician repairs the map.
+        # A malformed/over-capacity map must never degrade into the empty-list
+        # compatibility default and unexpectedly record inputs 1–2. Disable
+        # supplemental capture until the musician repairs the map.
         if _input_maps_value_is_malformed_persisted(raw_input_maps):
             data["local_capture_enabled"] = False
     # String fields: ensure str

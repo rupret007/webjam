@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -8,7 +9,7 @@ from core.session_recording_plan import (
     configured_input_map_bindings,
     resolve_capture_tracks,
 )
-from core.settings import AppSettings, load_settings, save_settings
+from core.settings import AppSettings, _coerce_settings_data, load_settings, save_settings
 
 
 def _entry(**overrides):
@@ -74,6 +75,86 @@ def test_falsy_malformed_input_maps_disable_capture_not_legacy_pair(
     assert loaded.local_capture_enabled is False
     assert resolve_capture_tracks(loaded) != LEGACY_CAPTURE_TRACKS
     assert resolve_capture_tracks(loaded) == ()
+
+
+@pytest.fixture(params=["saved", "environment", "legacy_saved", "legacy_environment"])
+def capture_opt_in(request, monkeypatch):
+    """Opt-in paths from closed #308 that must not re-arm a rejected map."""
+    for key in tuple(os.environ):
+        if key.startswith("WEBJAM_"):
+            monkeypatch.delenv(key)
+    if request.param == "environment":
+        monkeypatch.setenv("WEBJAM_LOCAL_CAPTURE_ENABLED", "true")
+        return {"local_capture_enabled": False}
+    if request.param == "legacy_environment":
+        monkeypatch.setenv("WEBJAM_WEBEX_AUDIO_BRIDGE_ENABLED", "true")
+        return {"local_capture_enabled": False}
+    if request.param == "legacy_saved":
+        return {"webex_audio_bridge_enabled": True, "local_capture_enabled": True}
+    return {"local_capture_enabled": True}
+
+
+@pytest.mark.parametrize("raw", [{}, False, 0, ""], ids=["object", "false", "zero", "string"])
+def test_falsey_malformed_input_maps_disable_capture(tmp_path, capture_opt_in, raw):
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({
+        **capture_opt_in,
+        "input_maps": raw,
+        "musician_name": "Map regression",
+        "audio_input_device_index": 7,
+        "local_capture_choice_made": True,
+    }), encoding="utf-8")
+
+    loaded = load_settings(str(config))
+
+    assert resolve_capture_tracks(loaded) == ()
+    assert loaded.local_capture_enabled is False
+    assert loaded.input_maps == []
+    assert loaded.musician_name == "Map regression"
+    assert loaded.audio_input_device_index == 7
+    assert loaded.local_capture_choice_made is True
+
+
+@pytest.mark.parametrize(
+    "raw", [{}, False, 0, "", None], ids=["object", "false", "zero", "string", "null"]
+)
+def test_falsey_malformed_input_maps_disable_capture_during_coercion(raw):
+    data = {"input_maps": raw, "local_capture_enabled": True}
+
+    _coerce_settings_data(data)
+
+    assert data["input_maps"] == []
+    assert data["local_capture_enabled"] is False
+
+
+@pytest.mark.parametrize(
+    "maps", [{}, {"input_maps": []}], ids=["absent", "empty_list"]
+)
+def test_legacy_empty_input_maps_preserve_capture_compatibility(
+    tmp_path, capture_opt_in, maps,
+):
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({**capture_opt_in, **maps}), encoding="utf-8")
+
+    loaded = load_settings(str(config))
+
+    assert loaded.local_capture_enabled is True
+    assert loaded.input_maps == []
+    assert resolve_capture_tracks(loaded) == LEGACY_CAPTURE_TRACKS
+
+
+def test_valid_input_maps_preserve_capture_opt_in(tmp_path, capture_opt_in):
+    config = tmp_path / "config.json"
+    maps = [_entry(name="Room Pair", channels=2)]
+    config.write_text(json.dumps({**capture_opt_in, "input_maps": maps}), encoding="utf-8")
+
+    loaded = load_settings(str(config))
+
+    assert loaded.local_capture_enabled is True
+    assert loaded.input_maps == maps
+    assert resolve_capture_tracks(loaded) == (
+        LocalCaptureTrack("local-Room Pair", (0, 1), logical_source_ordinal=0),
+    )
 
 
 def test_hostile_input_maps_fail_safe_to_empty(tmp_path):

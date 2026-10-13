@@ -8,10 +8,7 @@ if [[ $# -ne 1 || "$1" != /* ]]; then
 fi
 
 mount_path="$1"
-# macos-14 can still report EBUSY after ditto of WebJam.app. Drain first
-# and keep a bounded busy-only retry; other hdiutil failures fail closed.
-sync
-for attempt in 1 2 3 4 5; do
+for attempt in 1 2 3; do
   if hdiutil detach "$mount_path"; then
     exit 0
   else
@@ -20,10 +17,9 @@ for attempt in 1 2 3 4 5; do
 
   # macOS hdiutil reports EBUSY as exit 16. A copied image can still be
   # busy briefly; other failures must stop the package verification now.
-  if [[ "$status" -ne 16 || "$attempt" -eq 5 ]]; then
+  if [[ "$status" -ne 16 || "$attempt" -eq 3 ]]; then
     exit "$status"
   fi
-  printf 'Disk image is busy; retrying detach (%s/5).\n' "$attempt" >&2
-  sync
+  printf 'Disk image is busy; retrying detach (%s/3).\n' "$attempt" >&2
   sleep $((attempt * 2))
 done

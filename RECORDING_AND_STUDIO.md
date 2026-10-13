@@ -77,6 +77,12 @@ The host keeps shared recording authority. Guests can opt into Local Originals
 only when the active private session supports them; they are never interrupted
 while joining live audio.
 
+If saved input maps are malformed, WebJam turns off supplemental Local Original
+capture. Open **Recording Setup** to review the inputs and tracks before enabling
+it again. An environment opt-in cannot override a rejected saved map. For legacy
+settings, missing maps and an empty list still select inputs 1–2 when local
+capture is explicitly enabled; `{}`, `false`, `0`, `""`, and `null` do not.
+
 ## Recording readiness
 
 WebJam checks takes storage, recorder control, the known roster, and any
