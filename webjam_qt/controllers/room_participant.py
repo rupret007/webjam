@@ -171,6 +171,7 @@ class RoomParticipantController:
         self.native_received_at = 0.0
         self.native_applied = None
         self.native_wait_started = 0.0
+        self.native_profile_deferred = False
         self.publisher = None
         self.stopping = False
         self._lesson_binding = None
@@ -657,6 +658,7 @@ class RoomParticipantController:
         self.native_applied = None
         self.native_generation = 0
         self.native_wait_started = 0.0
+        self.native_profile_deferred = False
         self.probing = role == "guest"
         self.probe_failed = False
         if self.app.creator_profile.key == "art":
@@ -708,10 +710,16 @@ class RoomParticipantController:
                 and generation == self.generation and not self.blocked
                 and getattr(source.snapshot, "generation", 0) == native_generation):
             from services.remote_session_runtime import RemoteSessionErrorCode
+            # A locally deferred profile is not evidence of an unsupported
+            # peer. Preserve the existing absent/stale-state failure otherwise.
+            error = RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED
+            if (self.native_source is source and self.native_generation == native_generation
+                    and self.native_profile_deferred):
+                error = RemoteSessionErrorCode.LOCAL_OPERATION_PENDING
             source.mark_connection_lost(expected_generation=native_generation,
-                                        error_code=RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED)
+                                        error_code=error)
             self.app._show_remote_session_failure(
-                guest_enrollment=True, error_code=RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED,
+                guest_enrollment=True, error_code=error,
             )
 
     def apply_native(self, source, snapshot):
@@ -726,6 +734,7 @@ class RoomParticipantController:
         if time.monotonic() - self.native_received_at >= 5.0:
             return
         if not self.app._apply_creator_profile_key(state.creator_profile_key, host_owned=True):
+            self.native_profile_deferred = True
             # A Library media operation is still pending. Retry shortly
             # without declaring admission complete; the 5s deadline above
             # bounds how long these retries can run.
