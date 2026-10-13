@@ -48,17 +48,6 @@ def _door_anchor_widgets(dialog: LaunchDialog) -> list:
 
 
 def _vertical_slack_in_pages(dialog: LaunchDialog) -> tuple[int, int]:
-    if dialog.selected_creator_profile_key == "music":
-        # Music's content-sized page is centered together with the brand row
-        # by the outer layout, so its balancing space is outside the pages.
-        margins = dialog.layout().contentsMargins()
-        content_top = min(_rect_in(widget, dialog).top()
-                          for widget in (dialog._logo, dialog._wordmark))
-        content_bottom = _rect_in(dialog._join_button, dialog).bottom()
-        return (
-            content_top - dialog._menu_bar.height() - margins.top(),
-            dialog.rect().bottom() - margins.bottom() - content_bottom,
-        )
     pages = _rect_in(dialog._pages, dialog)
     rects = [_rect_in(widget, dialog) for widget in _door_anchor_widgets(dialog)]
     content_top = min(rect.top() for rect in rects)
@@ -90,7 +79,7 @@ def test_launch_door_centers_in_tall_windows(qapp, tmp_path: Path, profile_key: 
 
         top_slack, bottom_slack = _vertical_slack_in_pages(dialog)
         extra = top_slack + bottom_slack
-        assert extra >= 40, "tall sizes should leave slack around the door content"
+        assert extra >= 40, "tall sizes should leave slack inside the pages stack"
         # Before centering, essentially all slack sat below Host/Join.
         assert top_slack >= 24
         assert bottom_slack >= 24
