@@ -754,8 +754,9 @@ class LaunchDialog(QDialog):
         creator_row.addWidget(self._creator_profile_label)
         creator_row.addWidget(self._creator_profile_selector, 1)
         layout.addLayout(creator_row)
-        # Keep the cards and actions together. Profiles without start cards
-        # are centered with the shared brand row by the outer layout.
+        # Keep the cards and actions together. The bookend stretches above
+        # center every first-screen profile inside the pages stack, including
+        # Music, which has no start cards of its own.
         layout.addWidget(self._build_start_cards())
 
         self._choice_helper = QLabel()
@@ -1214,15 +1215,16 @@ class LaunchDialog(QDialog):
     def _update_choice_centering(self, *_args: object) -> None:
         if not hasattr(self, "_choice_page"):
             return  # The choice page is still being constructed.
-        centered = (
-            self._pages.currentWidget() is self._choice_page
-            and not self._visible_start_cards()
-        )
-        self._pages.set_fit_current_page(centered)
+        # Music used to shrink `_pages` around the choice block so the brand
+        # row could drop and sit with Host/Join. That left no slack *inside*
+        # the pages stack on tall windows (extra == 0) while Art, which keeps
+        # start cards, still filled the stack. Keep pages filling for every
+        # profile; the choice page bookends center Host/Join with slack.
+        self._pages.set_fit_current_page(False)
         root = self.layout()
-        root.setStretch(0, int(centered))
-        root.setStretch(root.count() - 1, int(centered))
-        root.setStretch(root.indexOf(self._pages), int(not centered))
+        root.setStretch(0, 0)
+        root.setStretch(root.count() - 1, 0)
+        root.setStretch(root.indexOf(self._pages), 1)
 
     def _set_choice_helper(self, text: str) -> None:
         """Show a helper line only when it has something to say.

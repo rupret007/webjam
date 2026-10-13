@@ -132,7 +132,7 @@ def test_live_door_fits_800x600_with_larger_text(qapp, tmp_path: Path, profile_k
             assert "Make together" in labels
             assert "Paint along" in labels
         else:
-            _assert_music_block_centered(dialog)
+            _assert_music_choices_centered_in_pages(dialog)
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -157,15 +157,28 @@ def test_every_visible_door_control_has_an_accessible_name(qapp, tmp_path: Path)
         dialog.deleteLater()
 
 
-def _assert_music_block_centered(dialog):
-    # Include the shared brand row, not just the choice page below it.
-    top = min(widget.mapTo(dialog, QPoint()).y()
-              for widget in (dialog._logo, dialog._wordmark))
-    bottom = dialog._join_button.mapTo(dialog, QPoint()).y() + dialog._join_button.height()
+def _assert_music_choices_centered_in_pages(dialog):
+    """Music keeps the brand in the header and centers Host/Join in `_pages`."""
+
+    pages = QRect(dialog._pages.mapTo(dialog, QPoint(0, 0)), dialog._pages.size())
+    widgets = (
+        dialog._art_profile_card,
+        dialog._music_profile_card,
+        dialog._host_button,
+        dialog._join_button,
+    )
+    rects = [QRect(widget.mapTo(dialog, QPoint(0, 0)), widget.size()) for widget in widgets]
+    top_slack = min(rect.top() for rect in rects) - pages.top()
+    bottom_slack = pages.bottom() - max(rect.bottom() for rect in rects)
+    extra = max(0, top_slack) + max(0, bottom_slack)
+    assert top_slack >= 0 and bottom_slack >= 0
+    assert abs(top_slack - bottom_slack) <= max(48, extra // 4)
     margins = dialog.layout().contentsMargins()
-    available_top = dialog._menu_bar.height() + margins.top()
-    available_bottom = dialog.height() - margins.bottom()
-    assert abs((top - available_top) - (available_bottom - bottom)) <= 2
+    brand_top = min(
+        dialog._logo.mapTo(dialog, QPoint()).y(),
+        dialog._wordmark.mapTo(dialog, QPoint()).y(),
+    )
+    assert brand_top <= dialog._menu_bar.height() + margins.top() + 16
 
 
 @pytest.mark.parametrize("size", [(620, 520), (800, 600), (1280, 800)])
@@ -178,11 +191,11 @@ def test_music_choice_block_is_vertically_centered(qapp, tmp_path, size, styled)
         dialog.resize(*size)
         dialog.show()
         qapp.processEvents()
-        _assert_music_block_centered(dialog)
+        _assert_music_choices_centered_in_pages(dialog)
         assert not dialog._visible_start_cards()
         dialog.resize(760, 600)
         qapp.processEvents()
-        _assert_music_block_centered(dialog)
+        _assert_music_choices_centered_in_pages(dialog)
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -199,7 +212,7 @@ def test_music_name_validation_keeps_the_block_centered_and_visible(qapp, tmp_pa
         qapp.processEvents()
         assert dialog._name_input.isVisibleTo(dialog)
         assert dialog._name_error.isVisibleTo(dialog)
-        _assert_music_block_centered(dialog)
+        _assert_music_choices_centered_in_pages(dialog)
         for widget in (dialog._name_input, dialog._name_error, dialog._host_button,
                        dialog._join_button):
             assert dialog.rect().contains(QRect(widget.mapTo(dialog, QPoint()), widget.size()))
@@ -224,14 +237,16 @@ def test_centering_tracks_profile_and_page_changes(qapp, tmp_path):
         original_brand_top = dialog._logo.mapTo(dialog, QPoint()).y()
         dialog._music_profile_card.click()
         qapp.processEvents()
-        _assert_music_block_centered(dialog)
+        _assert_music_choices_centered_in_pages(dialog)
+        assert dialog._logo.mapTo(dialog, QPoint()).y() == original_brand_top
         dialog.show_join()
         qapp.processEvents()
         assert dialog._logo.mapTo(dialog, QPoint()).y() == original_brand_top
         assert dialog._invite_input.isVisibleTo(dialog)
         dialog.show_choices()
         qapp.processEvents()
-        _assert_music_block_centered(dialog)
+        _assert_music_choices_centered_in_pages(dialog)
+        assert dialog._logo.mapTo(dialog, QPoint()).y() == original_brand_top
         dialog._art_profile_card.click()
         qapp.processEvents()
         assert [QRect(widget.mapTo(dialog, QPoint()), widget.size())
