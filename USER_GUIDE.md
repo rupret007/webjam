@@ -209,7 +209,10 @@ buttons; **Page Down / Page Up** scrolls the instructions. **OK** or **Esc**
 closes Help without changing the room, notes or recording. Compact screens
 and enlarged text keep the instructions scrollable and the actions reachable.
 
-The always-visible Session HUD is the dominant action surface. **Notes** opens
+The always-visible Session HUD is the dominant action surface. When a Music
+host's invite is ready, it says **Copy the invite** with a **Copy Invite** button.
+The empty stage keeps its primary button hidden while the HUD owns this action.
+**Notes** opens
 your local writing area. In Music, Podcast & Voice, and Review & Rehearsal,
 choose **Session details** to read the same
 status, next step, evidence-based reason, output results, and recent events in

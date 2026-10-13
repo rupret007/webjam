@@ -56,8 +56,8 @@ def test_cold_guest_room_loss_and_leave_never_show_music_roster(qapp, controller
     assert panel._overview.activity_label == "Make from your own space"
     assert "You do not need an art app" in panel._overview.activity_detail
     assert "your usual tools, or just talk" in panel._overview.activity_detail
-    # Make together's next click is talk. An invitation without a meeting
-    # asks for one; adding a room-only link turns it into the way back.
+    # Connected guests still name the Conversation setup step. Waiting
+    # hosts omit that ask so HUD Copy Invite stays the one primary.
     assert not str(app.settings.webex_url or "").strip()
     assert panel._overview.conversation_action_label == "Set Up Conversation"
     assert panel.conversation_button().text() == "Set Up Conversation"
