@@ -83,7 +83,8 @@ class TestDemoToRealTransition(unittest.TestCase):
         self.assertEqual(self.controller.participants, {})
         self.assertFalse(self.window.participant_grid._empty_state.isHidden())
         self.assertEqual(
-            self.window.participant_grid._empty_title.text(), "Ready when you are"
+            self.window.participant_grid._empty_message.text(),
+            "Your band will appear here when connected."
         )
 
         # Real participants arrive via Jamulus callback.
@@ -131,7 +132,8 @@ class TestDemoToRealTransition(unittest.TestCase):
         self.assertFalse(self.controller._jamulus_connected)
         self.assertEqual(self.controller.participants, {})
         self.assertEqual(
-            self.window.participant_grid._empty_title.text(), "Ready when you are"
+            self.window.participant_grid._empty_message.text(),
+            "Your band will appear here when connected."
         )
 
     def test_stop_audio_cancelled_keeps_real_state(self):

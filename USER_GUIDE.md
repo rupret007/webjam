@@ -530,6 +530,9 @@ can reuse its saved lesson without starting Jamulus.
 The launch-time Library explains this sequence because live lesson setup is
 available only after continuing into the workspace.
 
+Idle Music shows **Ready when you are** and “Choose **Start Session** to connect.”
+The center card stays **NOT CONNECTED** until a connection is confirmed.
+
 ### Silent Paint Along references
 
 For the existing **silent local-file option**, the host chooses one video file:

@@ -654,6 +654,7 @@ class ParticipantGrid(QScrollArea):
             eyebrow = f"PREVIEW · {eyebrow}"
         self._empty_eyebrow.setText(eyebrow)
         self._empty_title.setText(title)
+        self._empty_title.setVisible(bool(title))
         self._empty_message.setText(message)
         # Escape "&": QPushButton treats it as a mnemonic marker.
         self._empty_primary.setText(primary_text.replace("&", "&&"))
@@ -673,7 +674,7 @@ class ParticipantGrid(QScrollArea):
             if hint:
                 accessible_parts.append(hint)
         self._empty_state.setAccessibleDescription(
-            ". ".join(part.rstrip(".") for part in accessible_parts) + "."
+            ". ".join(part.rstrip(".") for part in accessible_parts if part) + "."
         )
         self._empty_state.setVisible(not bool(self._cards))
         style = self._empty_state.style()

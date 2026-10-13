@@ -10395,8 +10395,13 @@ class ApplicationController(QObject):
         # Explain what this profile allows without claiming a recorder or
         # a completed setup. The HUD remains the only startup action.
         stage_hint = ""
+        stage_title = presentation.title
+        stage_message = presentation.message
         if presentation.phase is SessionConductorPhase.IDLE and not facts.art_room_closed:
-            if self.creator_profile.key == "art":
+            if self.creator_profile.key == "music":
+                stage_title = ""
+                stage_message = "Your band will appear here when connected."
+            elif self.creator_profile.key == "art":
                 stage_hint = (
                     "Make from your own space: use paper, clay, a model, "
                     "printer, or your usual app. "
@@ -10428,8 +10433,8 @@ class ApplicationController(QObject):
         self.window.participant_grid.set_session_state(
             SessionUiState(
                 self._conductor_stage_phase(presentation.phase),
-                presentation.title,
-                presentation.message,
+                stage_title,
+                stage_message,
                 primary_text=presentation.action_label or "Continue",
                 primary_enabled=presentation.primary_enabled,
                 show_primary=False,

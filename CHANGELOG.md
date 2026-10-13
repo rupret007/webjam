@@ -6,6 +6,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Idle Music names **Start Session** in the HUD and keeps the center card to
+  **NOT CONNECTED** with one supporting line, without repeating launch choices.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

@@ -77,6 +77,26 @@ def test_one_snapshot_drives_hud_stage_canvas_studio_and_public_surfaces(tmp_pat
         _close(controller, window, old_home)
 
 
+def test_idle_music_controller_keeps_the_next_click_in_the_hud(tmp_path):
+    controller, window, old_home = _controller(tmp_path)
+    try:
+        controller._render_session_conductor()
+        assert controller._last_musician_guidance.phase is SessionConductorPhase.IDLE
+        assert window.session_hud._status.text() == "Ready when you are"
+        assert window.session_hud._detail.text() == "Choose Start Session to connect."
+        assert window.session_hud._action.text() == "Start Session"
+        assert not window.session_hud._action.isHidden()
+        grid = window.participant_grid
+        assert grid._empty_eyebrow.text() == "NOT CONNECTED"
+        assert grid._empty_title.isHidden()
+        assert grid._empty_message.text() == "Your band will appear here when connected."
+        assert grid._empty_hint.isHidden()
+        assert grid._empty_primary.isHidden()
+        assert grid._empty_ready.isHidden()
+    finally:
+        _close(controller, window, old_home)
+
+
 def test_creative_note_cannot_change_operational_phase_or_action(tmp_path):
     controller, window, old_home = _controller(tmp_path)
     try:

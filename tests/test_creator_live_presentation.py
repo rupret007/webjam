@@ -68,7 +68,7 @@ def _visible_copy(presentation) -> str:
 def test_music_profile_retains_the_existing_live_vocabulary() -> None:
     idle = derive_session_conductor(SessionConductorFacts())
     assert idle.title == "Ready when you are"
-    assert idle.message == "Choose Host or Join to begin a rehearsal."
+    assert idle.message == "Choose Start Session to connect."
 
     live = derive_session_conductor(_live_facts("music"))
     assert live.title == "Band connected"
@@ -77,6 +77,85 @@ def test_music_profile_retains_the_existing_live_vocabulary() -> None:
     assert live.creator_profile_key == "music"
     assert live.action_label == "Record"
     assert SessionPrimaryAction.RUN_BAND_CHECK.label_for("music") == "Run Band Check"
+
+
+@pytest.mark.parametrize("role", [SessionRole.HOST, SessionRole.GUEST])
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_idle_music_names_one_next_action_in_the_hud(role, size) -> None:
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from unittest.mock import Mock
+
+    from PySide6.QtWidgets import QApplication, QLabel, QPushButton
+
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.theme import load_stylesheet
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    app = QApplication.instance() or QApplication([])
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Band Rehearsal",
+    )
+    window.menuBar().setNativeMenuBar(False)
+    window.setStyleSheet(load_stylesheet())
+    window.session_strip.set_recording_available(False)
+    facts = SessionConductorFacts(role=role)
+    controller = Mock()
+    controller.window = window
+    controller.creator_profile = get_creator_profile_by_key_or_default("music")
+    controller._startup_attempt = None
+    controller._session_conductor_facts.return_value = facts
+    controller._observe_session_conductor_facts.return_value = SessionConductor(facts).snapshot
+    controller._guest_recording_setup_context.return_value = None
+    controller._studio_save_retry_context.return_value = None
+    controller._conductor_stage_phase = ApplicationController._conductor_stage_phase
+    controller._conductor_action_kind = ApplicationController._conductor_action_kind
+    try:
+        ApplicationController._render_session_conductor(controller)
+        window.resize(*size)
+        window.show()
+        app.processEvents()
+        hud = window.session_hud
+        grid = window.participant_grid
+        assert hud._status.text() == "Ready when you are"
+        assert hud._detail.text() == "Choose Start Session to connect."
+        assert hud._action.text() == "Start Session"
+        assert hud._action.isVisible() and hud._action.isEnabled()
+        assert hud._action.accessibleName() == "Start Session"
+        assert window.rect().contains(hud._action.mapTo(window, hud._action.rect().topLeft()))
+        assert window.rect().contains(hud._action.mapTo(window, hud._action.rect().bottomRight()))
+        actions = []
+        hud.action_requested.connect(actions.append)
+        hud._action.click()
+        assert actions == ["start_session"]
+        assert grid._empty_eyebrow.text() == "NOT CONNECTED"
+        assert grid._empty_title.isHidden()
+        assert grid._empty_message.text() == "Your band will appear here when connected."
+        assert grid._empty_hint.isHidden()
+        assert not any(button.isVisible() for button in grid._empty_state.findChildren(QPushButton))
+        assert [label.text() for label in grid._empty_state.findChildren(QLabel) if label.isVisible()] == [
+            "NOT CONNECTED", "Your band will appear here when connected.",
+        ]
+        visible = " ".join(label.text() for label in window.findChildren(QLabel) if label.isVisible())
+        assert visible.count("Ready when you are") == 1
+        assert visible.count("Choose Start Session to connect.") == 1
+        assert "Host or Join" not in visible
+        assert sum(button.isVisible() and button.text() == "Start Session" for button in window.findChildren(QPushButton)) == 1
+        assert "Host or Join" not in grid._empty_state.accessibleDescription()
+        assert grid._empty_state.accessibleDescription() == "Your band will appear here when connected."
+
+        # A subsequent non-idle presentation must restore the stage headline.
+        live = _live_facts("music")
+        controller._session_conductor_facts.return_value = live
+        controller._observe_session_conductor_facts.return_value = SessionConductor(live).snapshot
+        ApplicationController._render_session_conductor(controller)
+        assert grid._empty_title.isVisible()
+        assert grid._empty_title.text() == "Band connected"
+    finally:
+        window.close()
+        window.deleteLater()
+        app.processEvents()
 
 
 def test_podcast_profile_uses_speaker_and_sound_check_copy() -> None:

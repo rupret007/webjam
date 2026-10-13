@@ -704,7 +704,8 @@ class TestLaunchStopAudio(_ControllerTestBase):
         self.assertFalse(c._rpc_hang_banner_shown)
         self.assertEqual(c.participants, {})
         self.assertEqual(
-            c.window.participant_grid._empty_title.text(), "Ready when you are"
+            c.window.participant_grid._empty_message.text(),
+            "Your band will appear here when connected."
         )
 
     def test_stop_warns_when_server_recording_is_active(self):
