@@ -1648,7 +1648,8 @@ class TestConductorWindow(unittest.TestCase):
         for token in ("Jamulus", "Open Shared Track", "Webex"):
             self.assertNotIn(token, practice)
         self.assertIn("Open Shared Track", ensemble)
-        self.assertIn("Jamulus", ensemble)
+        self.assertNotIn("Jamulus", ensemble)
+        self.assertIn("shared with the room", ensemble)
         self.assertIn("Webex", ensemble)
         self.assertIn("<b>5.</b> The host presses <b>Record Session</b>", body)
         self.assertIn("<b>9.</b> Press <b>End Session</b>", body)
