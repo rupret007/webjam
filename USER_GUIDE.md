@@ -435,6 +435,9 @@ when a local copy or embedded YouTube lesson cannot play. The focused action is 
 Link**, **Join / Open Meeting**, or the available meeting-app action. Merely
 showing these controls does not join a meeting or start a lesson.
 
+Below that action, **Choose a silent reference** offers a local process video
+or YouTube link for silent playback inside WebJam.
+
 For a YouTube lesson, such as a Bob Ross mountain painting, the host chooses
 **Choose YouTube…**, pastes its video link, then chooses **Open in browser**.
 An existing embedded lesson supplies its current reference link and position;

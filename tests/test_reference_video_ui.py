@@ -94,7 +94,7 @@ def test_the_host_panel_opens_on_the_no_video_path(host_dialog):
     assert host_dialog.windowTitle() == "Paint along"
     assert host_dialog.minimumWidth() == 720
     assert host_dialog.minimumHeight() == 520
-    assert host_dialog._headline.text() == "Or choose a silent reference"
+    assert host_dialog._headline.text() == "Choose a silent reference"
     assert host_dialog._status.text() == (
         "Choose a local video or YouTube link below for silent playback inside WebJam. You control it."
     )
@@ -116,6 +116,38 @@ def test_the_host_panel_opens_on_the_no_video_path(host_dialog):
         assert disabled.isEnabled() is False
     assert host_dialog._more_button.isHidden() is True
     assert host_dialog._position.isEnabled() is False
+
+
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_empty_host_keeps_shared_lesson_first_above_silent_reference(host_dialog, qapp, size):
+    from PySide6.QtCore import QPoint, QRect
+    from PySide6.QtWidgets import QPushButton
+
+    from webjam_qt.theme import load_stylesheet
+
+    host_dialog.setStyleSheet(load_stylesheet())
+    host_dialog.resize(*size)
+    host_dialog.show()
+    qapp.processEvents()
+
+    assert (host_dialog.width(), host_dialog.height()) == size
+    viewport = host_dialog._scroll.viewport()
+    watch = host_dialog._watch_lesson_button
+    watch_bounds = QRect(watch.mapTo(viewport, QPoint()), watch.size())
+    assert watch.isVisible() and watch.isEnabled()
+    assert watch.text() == "Watch a shared lesson"
+    assert viewport.rect().contains(watch_bounds)
+    assert host_dialog._scroll.verticalScrollBar().value() == 0
+    assert watch_bounds.bottom() < host_dialog._headline.mapTo(viewport, QPoint()).y()
+    assert host_dialog._headline.text() == "Choose a silent reference"
+    visible_actions = [
+        button for button in host_dialog.findChildren(QPushButton)
+        if button.isVisible()
+    ]
+    assert min(visible_actions, key=lambda button: button.mapTo(viewport, QPoint()).y()) is watch
+    assert [button for button in visible_actions if button.objectName() == "PrimaryButton"] == [watch]
+    assert host_dialog._share_button.objectName() == "GhostButton"
+    assert host_dialog._youtube_button.objectName() == "GhostButton"
 
 
 def test_the_host_panel_enables_transport_only_once_a_file_is_shared(host_dialog):
@@ -156,7 +188,7 @@ def test_the_host_panel_shows_a_failure_instead_of_a_stale_source(host_dialog):
         )
     )
 
-    assert host_dialog._headline.text() == "Or choose a silent reference"
+    assert host_dialog._headline.text() == "Choose a silent reference"
     assert "couldn't open that video" in host_dialog._status.text()
     assert host_dialog._play_button.isEnabled() is False
     assert host_dialog._clock.text() == "0:00 / 0:00"
