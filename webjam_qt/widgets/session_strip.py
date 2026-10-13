@@ -1721,14 +1721,25 @@ class SessionStrip(QFrame):
                     if self._creator_profile_locked
                     else "Preview"
                 )
+            elif self._creator_profile_locked:
+                status = "Host profile"
             else:
-                status = "Host profile" if self._creator_profile_locked else "Ready"
-            self._subtitle.setText(
-                f"{self._creator_profile_label} · {status}"
-            )
-            self._subtitle.setAccessibleName(
-                f"Creator profile: {self._creator_profile_label}; {status}"
-            )
+                # No session-state claim here: this fires before a session
+                # is connected, so a bare "Ready" would overstate what's
+                # actually true yet. The label alone says what it is.
+                status = ""
+            if status:
+                self._subtitle.setText(
+                    f"{self._creator_profile_label} · {status}"
+                )
+                self._subtitle.setAccessibleName(
+                    f"Creator profile: {self._creator_profile_label}; {status}"
+                )
+            else:
+                self._subtitle.setText(self._creator_profile_label)
+                self._subtitle.setAccessibleName(
+                    f"Creator profile: {self._creator_profile_label}"
+                )
             return
         label = self._mode_picker.currentText()
         self._subtitle.setText(f"{label} · WebJam")
