@@ -166,6 +166,36 @@ def build_session_pulse(
     )
 
 
+def _action_texts(actions: Iterable[SessionAction]) -> tuple[str, ...]:
+    return tuple(
+        (f"@{action.owner} " if action.owner else "") + action.text for action in actions
+    )
+
+
+def session_notes_facts(
+    *,
+    creator_profile_key: object | None,
+    title: str,
+    notes: str,
+    previous_notes: str | None = None,
+    previous_decisions: tuple[str, ...] = (),
+    previous_actions: tuple[str, ...] = (),
+    previous_blockers: tuple[str, ...] = (),
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """Return stored facts when notes are unchanged; otherwise derive from notes.
+
+    Imported workspaces may carry ``decisions`` / ``actions`` / ``blockers`` that
+    are not restated in the notes text. Title, mode, and backup saves must not
+    erase those fields. An intentional notes edit still rebuilds them.
+    """
+    if previous_notes is not None and notes == previous_notes:
+        return previous_decisions, previous_actions, previous_blockers
+    pulse = build_session_pulse(
+        creator_profile_key=creator_profile_key, title=title, notes=notes,
+    )
+    return pulse.decisions, _action_texts(pulse.actions), pulse.blockers
+
+
 def _parse_notes(notes: str) -> dict[str, list]:
     decisions: list[str] = []
     actions: list[SessionAction] = []

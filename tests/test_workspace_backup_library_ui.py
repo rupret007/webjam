@@ -1,5 +1,6 @@
 """Library UI slice for metadata-only workspace backup: back up, preview, import."""
 from dataclasses import replace
+import json
 import os
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QLabel, QPushButton
 
-from core.session_library import SessionLibrary, SessionLibraryConflict
+from core.session_library import SessionLibrary, SessionLibraryConflict, encode_session_record
 from core.workspace_backup import (
     export_workspace_backup,
     import_workspace_backup,
@@ -23,6 +24,31 @@ from webjam_qt.windows.workspace_backup import WorkspaceBackupChoicesDialog
 from tests import test_workspace_backup as backup_tests
 
 record = backup_tests.record
+
+_IMPORTED_NOTES = "Practice Wednesday"
+_IMPORTED_FACTS = (("Play in D",), ("Send chart",), ("Missing player",))
+
+
+def _fact_bytes(value):
+    payload = json.loads(encode_session_record(value))
+    return json.dumps(
+        {key: payload[key] for key in ("decisions", "actions", "blockers")},
+        ensure_ascii=False, separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _import_music_with_facts(tmp_path):
+    source = SessionLibrary(tmp_path / "source").create(
+        "music", "Wednesday rehearsal", notes=_IMPORTED_NOTES,
+        decisions=_IMPORTED_FACTS[0], actions=_IMPORTED_FACTS[1],
+        blockers=_IMPORTED_FACTS[2],
+    )
+    destination = tmp_path / "backup.json"
+    export_workspace_backup(source, destination)
+    library = SessionLibrary(tmp_path / "dest")
+    imported = import_workspace_backup(library, preview_workspace_backup(destination))
+    assert _fact_bytes(imported) == _fact_bytes(source)
+    return library, imported
 
 
 @pytest.fixture(autouse=True)
@@ -499,3 +525,50 @@ def test_recovery_action_and_status_fit_compact_enlarged_text_layout(tmp_path, m
             assert dialog.content_scroll.horizontalScrollBar().maximum() == 0
         assert dialog.status.wordWrap()
         assert dialog.rect().contains(QRect(dialog.status.mapTo(dialog, QPoint()), dialog.status.size()))
+
+
+def test_imported_facts_survive_forced_save_canceled_backup_and_title_edit(
+    tmp_path, make_dialog, monkeypatch,
+):
+    library, imported = _import_music_with_facts(tmp_path)
+    expected = _fact_bytes(imported)
+    dialog = make_dialog(library, current_id=imported.id)
+    assert not dialog._dirty
+    assert dialog.notes.toPlainText() == _IMPORTED_NOTES
+    assert dialog.save_current(force=True)
+    assert _fact_bytes(library.load(imported.id)) == expected
+
+    monkeypatch.setattr(WorkspaceBackupChoicesDialog, "exec",
+                        lambda _self: QDialog.DialogCode.Rejected)
+    _click(dialog, "Back up…")
+    after_cancel = library.load(imported.id)
+    assert after_cancel.notes == _IMPORTED_NOTES
+    assert _fact_bytes(after_cancel) == expected
+
+    dialog.title.setText("Renamed rehearsal")
+    assert dialog.save_current()
+    renamed = library.load(imported.id)
+    assert renamed.title == "Renamed rehearsal"
+    assert renamed.notes == _IMPORTED_NOTES
+    assert _fact_bytes(renamed) == expected
+
+    later = tmp_path / "after-rename.json"
+    monkeypatch.setattr(WorkspaceBackupChoicesDialog, "exec",
+                        lambda _self: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_a, **_k: (str(later), ""))
+    _click(dialog, "Back up…")
+    assert _fact_bytes(preview_workspace_backup(later).record) == expected
+
+
+def test_intentional_notes_edit_updates_derived_facts(tmp_path, make_dialog):
+    library, imported = _import_music_with_facts(tmp_path)
+    dialog = make_dialog(library, current_id=imported.id)
+    dialog.notes.setPlainText(
+        "Decision: Keep the chorus\nAction: @Pat send the chart\nBlocker: Missing stand"
+    )
+    assert dialog.save_current()
+    saved = library.load(imported.id)
+    assert saved.decisions == ("Keep the chorus",)
+    assert saved.actions == ("@Pat send the chart",)
+    assert saved.blockers == ("Missing stand",)
+    assert saved.notes.startswith("Decision: Keep the chorus")

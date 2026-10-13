@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.art_workspace import art_summary
-from core.session_intelligence import build_session_pulse
+from core.session_intelligence import build_session_pulse, session_notes_facts
 from core.session_library import (
     SessionLibrary, SessionLibraryError, SessionLibraryImportUnconfirmed,
     validate_session_record,
@@ -599,12 +599,15 @@ class SessionLibraryDialog(QDialog):
                 self.timer.start()
 
     def _edited_record(self):
-        pulse = build_session_pulse(creator_profile_key=self.record.profile,
-            title=self.title.text(), notes=self.notes.toPlainText())
+        notes = self.notes.toPlainText()
+        decisions, actions, blockers = session_notes_facts(
+            creator_profile_key=self.record.profile, title=self.title.text(), notes=notes,
+            previous_notes=self.record.notes, previous_decisions=self.record.decisions,
+            previous_actions=self.record.actions, previous_blockers=self.record.blockers,
+        )
         return replace(self.record, title=self.title.text().strip() or "Untitled workspace",
-            notes=self.notes.toPlainText(), decisions=pulse.decisions,
-            actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
-            blockers=pulse.blockers, rehearsal=self.rehearsal.payload(), art=self.art.payload())
+            notes=notes, decisions=decisions, actions=actions, blockers=blockers,
+            rehearsal=self.rehearsal.payload(), art=self.art.payload())
 
     def save_current(self, *, force: bool = False, _operation_token=None) -> bool:
         """Persist editor changes; ``force`` reconciles even a clean editor.

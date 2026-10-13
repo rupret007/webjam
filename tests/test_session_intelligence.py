@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from core.session_intelligence import build_session_pulse
+from core.session_intelligence import build_session_pulse, session_notes_facts
 
 
 class TestSessionIntelligence(unittest.TestCase):
@@ -177,6 +177,31 @@ class TestSessionIntelligence(unittest.TestCase):
         self.assertEqual(pulse.mode_key, "music")
         self.assertEqual(pulse.mode_label, "Music")
         self.assertEqual(pulse.checkpoint, "sound check")
+
+    def test_unchanged_notes_keep_stored_facts_and_edits_rederive(self):
+        stored = (("Play in D",), ("Send chart",), ("Missing player",))
+        kept = session_notes_facts(
+            creator_profile_key="music",
+            title="Wednesday rehearsal",
+            notes="Practice Wednesday",
+            previous_notes="Practice Wednesday",
+            previous_decisions=stored[0],
+            previous_actions=stored[1],
+            previous_blockers=stored[2],
+        )
+        self.assertEqual(kept, stored)
+        derived = session_notes_facts(
+            creator_profile_key="music",
+            title="Wednesday rehearsal",
+            notes="Decision: Keep the chorus\nAction: Send chart",
+            previous_notes="Practice Wednesday",
+            previous_decisions=stored[0],
+            previous_actions=stored[1],
+            previous_blockers=stored[2],
+        )
+        self.assertEqual(derived[0], ("Keep the chorus",))
+        self.assertEqual(derived[1], ("Send chart",))
+        self.assertEqual(derived[2], ())
 
 
 if __name__ == "__main__":

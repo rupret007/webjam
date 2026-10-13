@@ -10,7 +10,7 @@ from uuid import uuid4
 from PySide6.QtCore import QObject, QTimer
 
 from core.art_workspace import art_summary
-from core.session_intelligence import build_session_pulse
+from core.session_intelligence import session_notes_facts
 from core.session_library import SessionLibrary, SessionLibraryConflict
 
 
@@ -128,8 +128,13 @@ class SessionLibraryCoordinator(QObject):
                     self._flash(" ".join(warnings))
             title, mode, notes = self._context()
             first_workspace = self.current is None
+            decisions, actions, blockers = session_notes_facts(
+                creator_profile_key=self._profile(), title=title, notes=notes,
+            )
             self.current = self.library.create(self._profile(), title or "Untitled workspace",
-                                               notes=notes, mode_key=mode)
+                                               notes=notes, mode_key=mode,
+                                               decisions=decisions, actions=actions,
+                                               blockers=blockers)
             follow_along = getattr(self._c, "follow_along", None)
             if first_workspace and follow_along is not None:
                 follow_along.workspace_created()
@@ -170,10 +175,13 @@ class SessionLibraryCoordinator(QObject):
             if title:
                 changes["title"] = title
             changes["mode_key"] = mode
-            pulse = build_session_pulse(creator_profile_key=self._profile(), title=title, notes=notes)
-            changes.update(notes=notes, decisions=pulse.decisions,
-                actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
-                blockers=pulse.blockers)
+            decisions, actions, blockers = session_notes_facts(
+                creator_profile_key=self._profile(), title=title, notes=notes,
+                previous_notes=latest.notes, previous_decisions=latest.decisions,
+                previous_actions=latest.actions, previous_blockers=latest.blockers,
+            )
+            changes.update(notes=notes, decisions=decisions, actions=actions,
+                           blockers=blockers)
             candidate = replace(latest, **changes)
             if candidate != self.current or self.current.id in self._pending:
                 self._pending[candidate.id] = candidate
