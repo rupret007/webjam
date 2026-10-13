@@ -6,7 +6,7 @@ import logging
 from collections.abc import Callable
 from copy import deepcopy
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -572,7 +572,9 @@ class RecordingSetupDialog(QDialog):
         self._error.setText(message)
         self._error.setAccessibleDescription(message)
         self._error.setVisible(True)
-        self._scroll.ensureWidgetVisible(self._error)
+        # Let Qt lay out the newly shown, wrapped label and update the scroll
+        # range before revealing it. The dialog context cancels this on deletion.
+        QTimer.singleShot(0, self, lambda: self._scroll.ensureWidgetVisible(self._error))
 
     def _show_folder(self) -> None:
         path = str(self._settings.takes_directory or "")

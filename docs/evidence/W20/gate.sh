@@ -12,7 +12,7 @@ trap 'rm -rf "$w20_cache"' EXIT
 export PYTHONPYCACHEPREFIX="$w20_cache"
 
 .venv/bin/python -m ruff check webjam_qt/ core/ ui/ services/ api/
-.venv/bin/python -m ruff check tests/test_recording_format_setup.py tests/test_recording_format_controller.py
+.venv/bin/python -m ruff check tests/test_recording_format_setup.py tests/test_recording_format_controller.py tests/test_recording_setup_compact_recovery.py
 .venv/bin/python -m compileall -q core webjam_qt ui services api tests
 .venv/bin/python -m pip check
 .venv/bin/python ux_smoke_test.py
@@ -23,6 +23,8 @@ export PYTHONPYCACHEPREFIX="$w20_cache"
   -k 'session_change'
 .venv/bin/python -m pytest -p no:cacheprovider tests/test_recording_format_controller.py -q \
   -k 'join_settings_change or guest_owner_change or ordinary_opt_out or stale_endpoint or modal_identity_change or generation_change_after'
+.venv/bin/python -m pytest -p no:cacheprovider tests/test_recording_setup_compact_recovery.py -q \
+  -k 'first_session_change'
 
 # Complete modules for the touched Recording Setup dialog/controller path
 # and adjacent Studio/UX owners. Fresh interpreter per module (CI / CONTRIBUTING.md).

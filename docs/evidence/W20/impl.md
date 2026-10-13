@@ -1,116 +1,102 @@
-# W20 — Guard Recording Setup Save on session change
+# W20 — Fix first rejected Save guidance visibility
 
 Worktree: `/Users/jeffstory/Documents/webjam-24h/W20`
 Branch: `webjam-24h/W20-guard-recording-setup-save-on-session-ch`
-Verified on 2026-10-12. This report supersedes the earlier validation report.
+Verified on 2026-10-12 against review1.md, starting at `e03a3ce`.
+This fix-round report supersedes the previous validation report; its historical
+results remain in commit `e03a3ce` and the campaign verification logs.
 
-## What changed
+## Change and review resolution
 
-The supplied branch already contained implementation commit `674d854`
-(`Reject Recording Setup Save when session identity changed under the modal.`).
-Its product behavior was retained and verified:
+Addressed the review's P2: the first rejected Save could leave the entire reopen
+message below the scroll viewport. `RecordingSetupDialog._show_error` now queues
+scrolling for the next Qt event-loop turn, after the newly visible wrapped label
+has been laid out and the scroll range updated. The timer uses the dialog as its
+context so deletion cancels the callback. Production scope is one helper and
+one import in `webjam_qt/windows/recording_setup.py`.
 
-- `webjam_qt/windows/recording_setup.py`: every Save checks session identity
-  before writing the opening settings snapshot. A rejected Save preserves the
-  visible draft. An unavailable guard fails closed with path-free guidance.
-- `webjam_qt/controllers/application_controller.py`: compares the opening
-  settings snapshot, settings generation, and guest owner; passes the guard
-  to Setup and rechecks after acceptance before installing settings. The
-  separate idle-only format guard still permits ordinary Local Originals
-  opt-out during an unchanged active session.
+The existing session snapshot/generation/guest identity guards from `674d854`
+and `e03a3ce` remain intact, including rejection before writing, post-acceptance
+rechecking, retained drafts, fail-closed exceptions, and unchanged-session
+Local Originals opt-out. No product copy or honesty decisions changed.
 
-This follow-up adds five regression cases in
-`tests/test_recording_format_controller.py`: generation-only changes, in-place
-endpoint/role/meeting preference edits without changing the settings object or
-its generation, and a generation change after Save but before application.
-They assert rejection before any write, exact reopen guidance, retained draft,
-unchanged saved bytes, and refusal to install a stale accepted result.
+Added six real Qt keyboard/geometry regressions in
+`tests/test_recording_setup_compact_recovery.py`: 620×360, 620×440, and 620×620,
+each at normal and 125% font stretch with the production stylesheet. Each opens
+with a clear guard, changes it to stale, focuses Save and presses Return once.
+The test requires the entire error rectangle inside the viewport and sufficient
+height for wrapped text, without test-driven scrolling. It also asserts no
+write, retained draft, exact accessible guidance, retained Save focus, and
+working Escape dismissal.
 
-`USER_GUIDE.md` now explains close/reopen/review and reapplying edits.
-`CHANGELOG.md` records the W20 behavior. `docs/evidence/W20/gate.sh` and this
-report are committed evidence copies; identical copies are provided at the
-requested campaign `items/W20/gate.sh` and `items/W20/impl.md` paths.
-The gate retains every existing check and adds the five focused cases.
-No tests were weakened, skipped, deleted, or xfailed.
-
-## UX gate
-
-Read campaign `UX_GATE.md`, W20 backlog details, both audits, launch copy in
-`launch_dialog.py`, the starts in `creative_modes.py`, and the Art start tests.
-The user sees the existing one-action guidance:
-
-> The session setup changed. Close and reopen Recording Setup to review it.
-
-No new product copy was invented. Music still offers **Host / Join**; Art still
-has exactly **Make together / Paint along**, then **Host / Join**. The Art start
-suite passed all 66 tests. Preview and fail-closed honesty copy are unchanged.
-No screenshots or physical UX observations are claimed by this verification.
+The guide and changelog explain automatic visibility. The gate adds this
+focused selection and lints its module, retaining all previous checks and
+assertions. Campaign `items/W20/impl.md` and `gate.sh` match the committed copies
+in `docs/evidence/W20/`. No test was weakened, skipped, deleted, or xfailed.
 
 ## Regression proof
 
-On the supplied fixed code:
+Before changing product code, ran:
 
 ```bash
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest tests/test_recording_format_controller.py -q -k 'modal_identity_change or generation_change_after'
+QT_QPA_PLATFORM=offscreen PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -p no:cacheprovider tests/test_recording_setup_compact_recovery.py -q -k first_session_change --tb=short
 ```
 
-**5 passed, 23 deselected in 1.27s**, exit 0.
+**6 failed, 8 deselected in 1.25s**: all failed the viewport containment
+assertion. At 620×440 with normal text, the error started at y=346 while the
+viewport height was 334. Raw output: campaign `items/W20/fix1-regression-before.log`.
+With the final fix, the same selection gave **6 passed, 8 deselected in 0.80s**.
 
-Temporarily replaced only the two product files with their versions from
-`674d854^`, keeping the added tests. A Python `try/finally` restored both
-current files after running the same selection with `--tb=short`.
-**5 failed, 23 deselected in 1.45s**, exit 1. Four cases attempted the stale
-write; the fifth installed a new settings object despite the generation change.
-This is actual pre-fix behavior, not a simulated guard failure. Current product
-files were restored and have no diff. Raw output:
-`items/W20/verification-regression-before.log` in the campaign directory.
-
-## Exact final gate results
-
-Run from the worktree root:
+## Final gate
 
 ```bash
-bash /Users/jeffstory/Documents/bob-overnight-inject/local-webjam-24h-1010/items/W20/gate.sh
+RUFF_NO_CACHE=true bash /Users/jeffstory/Documents/bob-overnight-inject/local-webjam-24h-1010/items/W20/gate.sh
 ```
 
-**Exit 1: gate FAIL.** Focused W20 checks pass. One adjacent test cannot bind
-its localhost socket under this sandbox and fails with
-`PermissionError: [Errno 1] Operation not permitted` in `socketserver.py`.
-The test remains in the gate; no skip, retry, or mock was added to hide it.
-This same failure occurred on the initial gate run before the added tests.
+**Exit 1: gate FAIL.** Complete modules: **318 passed, 1 failed**.
+Separately run focused selections: **17 passed**. The sole failure remains
+`test_studio_opt_out_publishes_fresh_authenticated_zero_track_host_proof` in
+`tests/test_guest_recording_preflight_guidance.py:361`: the sandbox denies
+binding `127.0.0.1` with `PermissionError: [Errno 1] Operation not permitted`.
+This matches review1's baseline failure; no retry, skip, or mock conceals it.
+Raw complete output: campaign `items/W20/fix1-gate.log`.
 
-| Check | Exact result |
+| Check | Result |
 | --- | --- |
-| Ruff: production directories | All checks passed! |
-| Ruff: both recording-format test modules | All checks passed! |
+| Ruff: production directories and all three relevant test modules | Passed |
 | compileall: core/webjam_qt/ui/services/api/tests | Exit 0 |
-| pip check | No broken requirements found. |
-| UX smoke | UX smoke gate passed. |
-| Focused dialog session-change cases | 2 passed, 17 deselected in 1.02s |
-| Focused controller cases | 9 passed, 19 deselected in 1.46s |
-| test_recording_format_setup.py | 19 passed in 0.75s |
-| test_recording_format_controller.py | 28 passed in 2.30s |
-| test_recording_setup_compact_recovery.py | 8 passed in 0.79s |
-| test_recording_studio.py | 134 passed in 6.22s |
-| test_recording_readiness_ui.py | 16 passed in 0.92s |
-| test_guest_recording_preflight_guidance.py | 1 failed, 21 passed in 2.29s |
-| test_local_originals_choice_profiles.py | 20 passed in 0.94s |
-| test_art_start_ux.py | 66 passed in 1.31s |
+| pip check | No broken requirements found |
+| UX smoke | Passed |
+| Focused dialog session-change cases | 2 passed, 17 deselected |
+| Focused controller cases | 9 passed, 19 deselected |
+| Focused first-rejection visibility cases | 6 passed, 8 deselected |
+| test_recording_format_setup.py | 19 passed |
+| test_recording_format_controller.py | 28 passed |
+| test_recording_setup_compact_recovery.py | 14 passed |
+| test_recording_studio.py | 134 passed |
+| test_recording_readiness_ui.py | 16 passed |
+| test_guest_recording_preflight_guidance.py | 21 passed, 1 failed |
+| test_local_originals_choice_profiles.py | 20 passed |
+| test_art_start_ux.py | 66 passed |
 | git diff --check | Exit 0 |
 
-Failed test:
-`test_studio_opt_out_publishes_fresh_authenticated_zero_track_host_proof`.
-Full-module total: **312 passed, 1 failed**, plus the separately run focused
-selection (**11 passed**). Raw final output is in campaign
-`items/W20/verification-gate.log`. Pip also reported its normal inaccessible
-user-cache warning; dependency verification succeeded.
+## UX gate and limits
 
-## NOT RUN and scope
+Read campaign UX_GATE.md, launch copy in `launch_dialog.py`, starts in
+`creative_modes.py`, and Art start tests. Music retains **Host / Join**.
+Art retains exactly **Make together / Paint along**, then **Host / Join**.
+The Art suite checks banned first-screen words and extra doors. The existing
+rejection still says:
 
-Real audio, two-Mac, Webex, native Windows, physical usability: **NOT RUN**.
-Full repository test suite beyond the listed relevant modules: **NOT RUN**.
-Package build, signing, notarization, publication: **NOT RUN**.
-No push, merge, PR, tag, release, sends, paid APIs, or unrelated processes were
-used. Only this worktree/branch and requested campaign artifacts were written.
-Disk remained about 21 GiB free; no large build outputs were created and the
-gate cleans its temporary bytecode directory on exit.
+> The session setup changed. Close and reopen Recording Setup to review it.
+
+Preview labels and fail-closed copy are unchanged. The visibility evidence is
+an offscreen software check with the application stylesheet, not a physical UX
+observation. Native screen-reader announcement, real audio, two-Mac, Webex,
+native Windows, physical usability, and the full repository suite: **NOT RUN**.
+Package build, signing, notarization, and publication: **NOT RUN**.
+
+No push, merge, PR, tag, release, sends, paid APIs, unrelated process changes,
+or Latest changes. Only this worktree/branch and requested campaign artifacts
+were written. Disk remains about 21 GiB free; no large build outputs were
+created. The gate removes its temporary bytecode directory on exit.

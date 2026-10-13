@@ -7,7 +7,8 @@ All notable improvements and features for the WebJam creator collaboration platf
 ## [Unreleased]
 
 - Recording Setup rejects Save if the session settings changed while it was
-  open, with guidance to close and reopen Setup to review them. Local Originals
+  open, with guidance to close and reopen Setup to review them. The first rejected
+  Save scrolls the full guidance into view even in compact windows. Local Originals
   opt-out remains available during an unchanged active session.
 
 - Connected Art rooms keep making guidance beside the Conversation action;
