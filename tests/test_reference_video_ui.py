@@ -673,6 +673,61 @@ def test_paint_along_reuses_webjams_single_top_level_window(qapp):
         window.deleteLater()
 
 
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_empty_host_file_and_youtube_actions_stay_unclipped(qapp, size):
+    """Compact 800×600 must show the silent-reference actions, not clip them."""
+
+    from PySide6.QtCore import QPoint, QRect
+
+    from webjam_qt.theme import load_stylesheet
+    from webjam_qt.theme.tokens import Space
+
+    panel = ReferenceVideoDialog(hosting=True)
+    try:
+        panel.setStyleSheet(load_stylesheet())
+        panel.resize(*size)
+        panel.show()
+        for _ in range(8):
+            qapp.processEvents()
+
+        assert panel.width() == size[0]
+        assert panel.height() == size[1]
+        actions = (
+            panel._watch_lesson_button,
+            panel._share_button,
+            panel._youtube_button,
+        )
+        assert [button.text() for button in actions] == [
+            "Watch a shared lesson",
+            "Choose process video…",
+            "YouTube link…",
+        ]
+        bounds = panel.rect()
+        for button in actions:
+            assert button.isVisibleTo(panel) and button.isEnabled(), button.text()
+            mapped = QRect(button.mapTo(panel, QPoint()), button.size())
+            assert mapped.left() >= Space.XL, (button.text(), mapped)
+            assert bounds.contains(mapped), (button.text(), mapped, bounds)
+            visible = button.visibleRegion().boundingRect()
+            assert visible.size() == button.size(), (button.text(), visible, button.size())
+        assert panel._watch_lesson_button.objectName() == "PrimaryButton"
+        assert panel._share_button.objectName() == "GhostButton"
+        assert panel._youtube_button.objectName() == "GhostButton"
+        watch = QRect(
+            panel._watch_lesson_button.mapTo(panel, QPoint()),
+            panel._watch_lesson_button.size(),
+        )
+        share = QRect(
+            panel._share_button.mapTo(panel, QPoint()),
+            panel._share_button.size(),
+        )
+        assert watch.bottom() < share.top()
+    finally:
+        panel.close()
+        panel.deleteLater()
+        qapp.processEvents()
+
+
 def test_embedded_paint_along_fits_the_supported_compact_window(qapp):
     from webjam_qt.windows.conductor_window import ConductorWindow
 
