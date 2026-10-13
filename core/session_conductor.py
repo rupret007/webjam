@@ -815,7 +815,7 @@ def _presentation(
         )
         return present(
             SessionPrimaryAction.START_SESSION,
-            "Ready when you are",
+            "Start when you are",
             message,
             evidence,
         )
