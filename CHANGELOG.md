@@ -11,6 +11,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   published, the take files are left as they are, and Studio does not show a
   success or an export receipt.
 
+- Closing Session library with the window button or **Close** now completes
+  the dialog lifecycle, like Escape. Reopening shows current saved or pending
+  work; failed saves keep the draft visible and media cancellation retains
+  its existing recovery guard.
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
