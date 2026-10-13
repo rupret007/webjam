@@ -161,7 +161,7 @@ def test_join_page_fits_compact_larger_text_with_named_tab_order(qapp, tmp_path:
         assert join.accessibleDescription()
         assert back.accessibleName() == "Back"
         assert back.accessibleDescription()
-        assert dialog._invite_input.accessibleName() == "Invite"
+        assert dialog._invite_input.accessibleName() == "Paste the invite"
         assert dialog._join_title.accessibleName() == "Join the room."
         assert dialog._join_subtitle.accessibleName() == "How to join"
         dialog._invite_input.setFocus(Qt.FocusReason.TabFocusReason)
