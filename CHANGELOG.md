@@ -6,6 +6,12 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Native joins wait for Library/Studio media work before consuming an invite.
+  After the operation finishes, join explicitly with the same still-valid
+  invitation. A local profile deferral after enrollment no longer asks users
+  to update the host; stale or absent room state still fails closed and an
+  uncertain enrollment still requires a fresh invitation.
+
 - Closing Session library with the window button or **Close** now completes
   the dialog lifecycle, like Escape. Reopening shows current saved or pending
   work; failed saves keep the draft visible and media cancellation retains

@@ -366,6 +366,13 @@ A native invitation that may have been consumed still needs **Paste New Invite**
 with a fresh invitation from the host. If a peer needs an update, update
 WebJam on both computers and use a fresh invitation.
 
+If Library or Studio is already working with local media, wait for its result
+before joining. WebJam leaves the native invitation unused; open that same
+still-valid invitation again, or choose **Start Session** if it was already
+loaded. Finishing the local operation does not join automatically. If local
+work delays a join that has already enrolled, WebJam keeps the room closed
+and asks for a fresh invitation instead of replaying one that may be used.
+
 Choose **End Room** as host or **Leave Room** as guest. If cleanup needs another
 attempt, **Try End Room** or **Try Leave Room** stays available. Your external
 meeting and drawing app remain open. The host can offer a shared canvas from

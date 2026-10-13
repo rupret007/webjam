@@ -62,6 +62,7 @@ class RemoteSessionErrorCode(str, Enum):
     TIMED_OUT = "timed_out"
     STOP_FAILED = "stop_failed"
     PEER_PROTOCOL_UNSUPPORTED = "peer_protocol_unsupported"
+    LOCAL_OPERATION_PENDING = "local_operation_pending"
 
 
 class RemoteBackendError(RuntimeError):
@@ -227,6 +228,7 @@ class RemoteSessionRuntime:
         if type(error_code) is not RemoteSessionErrorCode or error_code not in {
             RemoteSessionErrorCode.TRANSPORT_FAILED,
             RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED,
+            RemoteSessionErrorCode.LOCAL_OPERATION_PENDING,
         }:
             raise ValueError("The connection loss reason is not supported.")
         with self._condition:
