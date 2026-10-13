@@ -17,11 +17,23 @@ from webjam_qt.controllers.workflow_help import WorkflowHelpCoordinator
     ("podcast_voice", "blocked alignment", "blocked_export"),
     ("music", "checksum receipt", "export_receipts"),
     ("art", "moved relink", "art_relink"),
+    ("art", "full artist list", "art_room_people"),
     ("art", "YouTube Bob Ross", "follow_along"),
     ("music", "play along latency", "follow_along"),
 ])
 def test_search_finds_specific_workflow_offline(profile, query, key):
     assert key in {topic.key for topic in search_topics(workflow_topics(profile), query)}
+
+
+def test_art_help_holds_the_full_artist_list_sentence_music_does_not():
+    art = workflow_topics("art")
+    people = next(topic for topic in art if topic.key == "art_room_people")
+    assert people.title == "Who is in the room"
+    assert "WebJam does not yet show a full artist list." in people.body
+    assert "this computer is in the room" in people.body.casefold()
+    music = " ".join(topic.body for topic in workflow_topics("music"))
+    assert "full artist list" not in music
+    assert "art_room_people" not in {topic.key for topic in workflow_topics("music")}
 
 
 def test_search_is_literal_and_does_not_search_private_workspaces():
@@ -35,7 +47,9 @@ def test_search_is_literal_and_does_not_search_private_workspaces():
 def test_profile_and_standalone_topics_do_not_offer_incompatible_actions():
     art = workflow_topics("art")
     assert {topic.route for topic in art if topic.route} == {"library", "art"}
-    assert [topic.key for topic in art if not topic.route] == ["follow_along"]
+    assert [topic.key for topic in art if not topic.route] == [
+        "follow_along", "art_room_people",
+    ]
     assert not {"take_review", "rehearsal_moments", "export_receipts"} & {t.key for t in art}
     offline = workflow_topics("music", offline_studio=True)
     assert {topic.route for topic in offline} == {"", "studio"}

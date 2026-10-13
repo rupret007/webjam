@@ -140,11 +140,9 @@ def art_room_overview(
     elif state is ArtRoomState.CONNECTED:
         phase, label, title = "connected", "In the room", "Make from your own space"
         connection = "Artist connection confirmed" if hosting else "Connected to the host"
-        detail = (
-            "An artist has connected to this room. WebJam does not yet show a full artist list."
-            if hosting
-            else "This room connection is confirmed. WebJam does not yet show a full artist list."
-        )
+        # One short confirmed-connection line. The missing-roster honesty
+        # lives in Help, not above the next making step.
+        detail = "This computer is in the room."
         if hosting and named_connections:
             connection = "Connected to your room"
             detail = (

@@ -331,7 +331,8 @@ def test_guest_connection_does_not_invent_names_from_transport_or_personal_profi
     _assert_cleared(app)
     panel = app.window.art_room_overview
     assert panel._connection.text() == "Connected to the host"
-    assert "does not yet show a full artist list" in panel._connection_detail.text()
+    assert panel._connection_detail.text() == "This computer is in the room."
+    assert "full artist list" not in panel._connection_detail.text()
     assert "PRIVATE_ARTIST" not in repr(panel._overview) + caplog.text
     app.bridge.launch_webex.assert_not_called()
     pair.player_factory.assert_not_called()
@@ -450,7 +451,10 @@ def test_busy_name_inventory_clears_rows_until_a_current_read_is_available(
         assert rig.app._room_participant.state is ArtRoomState.CONNECTED
         assert rig.app._room_participant.host_connection_names() is None
         _assert_cleared(rig.app)
-        assert "does not yet show a full artist list" in (
+        assert rig.app.window.art_room_overview._connection_detail.text() == (
+            "This computer is in the room."
+        )
+        assert "full artist list" not in (
             rig.app.window.art_room_overview._connection_detail.text()
         )
     rig.tick()

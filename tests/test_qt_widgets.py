@@ -1683,6 +1683,7 @@ class TestConductorWindow(unittest.TestCase):
                             "YouTube link…", "Open my copy…", "Open lesson",
                             "silent", "Local files are not transferred", "Conversation",
                             "Back to room", "Notes", "End Room", "Leave Room",
+                            "WebJam does not yet show a full artist list.",
                         ):
                             self.assertIn(token, body)
                         for token in (
@@ -1693,6 +1694,7 @@ class TestConductorWindow(unittest.TestCase):
                     else:
                         self.assertIn("review completed session takes", body)
                         self.assertNotIn("Paint along", body)
+                        self.assertNotIn("full artist list", body)
         finally:
             window.close()
 

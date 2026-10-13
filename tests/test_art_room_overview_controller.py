@@ -52,6 +52,8 @@ def test_cold_guest_room_loss_and_leave_never_show_music_roster(qapp, controller
     assert panel.isVisibleTo(app.window)
     assert not app.window.participant_grid.isVisibleTo(app.window)
     assert panel._overview.connection_label == "Connected to the host"
+    assert panel._overview.connection_detail == "This computer is in the room."
+    assert "full artist list" not in panel.accessibleDescription()
     assert "0 artists" not in panel.accessibleDescription()
     assert panel._overview.activity_label == "Make from your own space"
     assert "paper, clay, a model, printer, or your usual app" in panel._overview.activity_detail

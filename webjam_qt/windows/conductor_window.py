@@ -650,7 +650,8 @@ class ConductorWindow(QMainWindow):
         if profile.key == "art":
             body = (
                 f"<b>WebJam v{__version__} — Art</b><br>"
-                "<i>Make together with your own tools.</i><br><br>"
+                "<i>Make together with your own tools.</i><br>"
+                "WebJam does not yet show a full artist list.<br><br>"
                 "<b>1.</b> At launch, choose <b>Make together</b> or "
                 "<b>Paint along</b>, then <b>Host</b>. Guests choose <b>Join</b> "
                 "with the host's invite.<br>"

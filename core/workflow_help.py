@@ -121,6 +121,15 @@ def workflow_topics(profile: str, *, offline_studio: bool = False) -> tuple[Help
             "setlist bookmark timing timestamp plain note song recap summary", "rehearsal",
             "Open Rehearsal plan"))
     if profile == "art":
+        topics.append(HelpTopic(
+            "art_room_people",
+            "Who is in the room",
+            "<p>A confirmed connection means this computer is in the room. "
+            "WebJam does not yet show a full artist list.</p>"
+            "<p>When guests join through WebJam, the host can see the names they chose. "
+            "Talk and screen sharing stay in your meeting.</p>",
+            "artist list names connected guests room who",
+        ))
         topics.append(HelpTopic("art_relink", "Find a moved Art reference",
             "<p>In <b>Art project</b>, keep the project brief, progress and next steps alongside "
             "file and link references. Select a missing file, choose <b>Relink…</b>, and locate "

@@ -73,6 +73,35 @@ def test_cleanup_and_end_remove_stale_room_activity_before_connection_facts(host
     assert "own leave controls" in ended.connection_detail
 
 
+@pytest.mark.parametrize("hosting", [False, True])
+def test_connected_room_uses_one_short_line_instead_of_a_roster_apology(hosting):
+    """Connected Art keeps making as the next heading; the missing list is Help."""
+
+    overview = art_room_overview(state=ArtRoomState.CONNECTED, hosting=hosting)
+    assert overview.connection_detail == "This computer is in the room."
+    assert overview.connection_detail.count(".") == 1
+    assert overview.activity_label == "Make from your own space"
+    assert overview.title == "Make from your own space"
+    public = " ".join((
+        overview.connection_label, overview.connection_detail,
+        overview.title, overview.activity_label, overview.activity_detail,
+        overview.making_detail,
+    ))
+    assert "full artist list" not in public
+    named = art_room_overview(
+        state=ArtRoomState.CONNECTED, hosting=hosting, named_connections=True,
+    )
+    if hosting:
+        assert named.connection_label == "Connected to your room"
+        assert named.connection_detail == (
+            "Names guests chose when joining WebJam. "
+            "Talk and screen sharing are separate."
+        )
+        assert "full artist list" not in named.connection_detail
+    else:
+        assert named.connection_detail == "This computer is in the room."
+
+
 def test_make_together_is_complete_without_optional_tools_or_a_roster():
     waiting = art_room_overview(state=ArtRoomState.WAITING, hosting=True)
     joined = art_room_overview(state=ArtRoomState.CONNECTED, hosting=False)
