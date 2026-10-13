@@ -186,6 +186,7 @@ def test_running_host_process_is_not_invite_ready_or_connected_without_proof():
     assert invite_ready.primary_action is SessionPrimaryAction.COPY_INVITE
     assert invite_ready.primary_enabled
     assert invite_ready.action_label == "Copy Invite"
+    assert invite_ready.title == "Copy the invite"
     assert "Copy the invite" in invite_ready.message
     assert "next step" in invite_ready.message
     assert _host_ready_facts().host_ready

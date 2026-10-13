@@ -528,9 +528,14 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
     assert "WebJam window" in next_click
 
     # Overview Make-together detail stays brief (fits with Conversation closed).
+    # Default / non-waiting rooms still name the Conversation setup step.
+    # Waiting hosts omit that ask so HUD Copy Invite stays the one primary.
     detail = art_make_together_activity_detail()
     assert "paper, clay, a model, printer, or your usual app" in detail
     assert "Choose Set Up Conversation" in detail
+    waiting = art_make_together_activity_detail(waiting_host=True)
+    assert "paper, clay, a model, printer, or your usual app" in waiting
+    assert "Conversation" not in waiting
     assert WATCH_TOGETHER_ACTIONS not in detail
     assert WEBJAM_DOES_NOT_PLAY_MOVIE not in detail
     assert paint_along_local_note() not in detail
@@ -573,7 +578,16 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
     # Honesty: guidance never invents Webex opaque schemes (meeting-reminder).
     assert "https meeting link" in WEBEX_HANDOFF_IS_HTTPS
     blob = " ".join(
-        (detail, watch, card, lesson, music, WEBEX_HANDOFF_IS_HTTPS, meeting_share_how())
+        (
+            detail,
+            waiting,
+            watch,
+            card,
+            lesson,
+            music,
+            WEBEX_HANDOFF_IS_HTTPS,
+            meeting_share_how(),
+        )
     )
     for forbidden in (
         "Plex", "watch party", "Embedded App", "joined the meeting",
@@ -590,17 +604,33 @@ def test_music_invite_names_meeting_share_for_watching_a_demo():
     assert "you do not need it to play" in message.text
 
 
+OWN_SPACE = (
+    "Use paper, clay, a model, printer, or your usual app, or just talk."
+)
+SETUP_ASK = "Choose Set Up Conversation to add your meeting link."
+CONVERSATION_NEXT = "Choose Conversation to talk or share your screen."
+
+
 @pytest.mark.parametrize(
-    "configured,next_action",
+    "configured,waiting_host,detail",
     [
-        (False, "Choose Set Up Conversation to add your meeting link."),
-        (True, "Choose Conversation to talk or share your screen."),
+        (False, False, f"{OWN_SPACE} {SETUP_ASK}"),
+        (False, True, OWN_SPACE),
+        (True, False, f"{OWN_SPACE} {CONVERSATION_NEXT}"),
+        (True, True, f"{OWN_SPACE} {CONVERSATION_NEXT}"),
     ],
 )
-def test_make_together_room_names_the_next_action(configured, next_action):
+def test_make_together_activity_omits_setup_ask_only_for_waiting_hosts(
+    configured, waiting_host, detail
+):
     from core.meeting_companion import art_make_together_activity_detail
 
-    assert art_make_together_activity_detail(conversation_configured=configured) == (
-        "Use paper, clay, a model, printer, or your usual app, or just talk. "
-        + next_action
-    )
+    assert art_make_together_activity_detail(
+        conversation_configured=configured,
+        waiting_host=waiting_host,
+    ) == detail
+    if waiting_host and not configured:
+        assert "Conversation" not in detail
+        assert "meeting link" not in detail
+    elif not configured:
+        assert SETUP_ASK in detail
