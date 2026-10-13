@@ -171,6 +171,7 @@ def art_room_overview(
     activity = "Make from your own space"
     activity_detail = art_make_together_activity_detail(
         conversation_configured=conversation_configured,
+        waiting_host=phase == "waiting" and hosting,
     )
     action = ""
     action_label = ""
