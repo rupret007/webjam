@@ -190,6 +190,12 @@ creator profile and distinguish session takes from standalone local projects.
 An open Help window updates when the profile changes, keeping your search
 without taking focus from your work.
 
+Music Help opens with **Host. Share. Join. Play.**: choose **Music**, then
+**Host** or **Join**; the host uses **Copy Invite**; play in WebJam and talk in
+the meeting. For setup details, select **Paint along and play along with sound**
+or **Live audio and Music room controls**. Room controls and shortcuts are in
+the live-audio topic.
+
 Selecting a topic only changes the instructions. Its explicit button, such
 as **Open Session library**, **Open Rehearsal plan**, **Open Art project** or
 **Open Studio**, navigates to an existing workspace. It does not start a room,

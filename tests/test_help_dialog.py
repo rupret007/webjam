@@ -31,6 +31,42 @@ def window(app):
     app.processEvents()
 
 
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_music_help_opens_with_only_three_short_beats(app, window, size):
+    available = QRect(0, 0, *size)
+    with patch.object(QGuiApplication, "screenAt", return_value=SimpleNamespace(availableGeometry=lambda: available)):
+        window.show_help()
+    dialog = window._workflow_help_dialog
+    app.processEvents()
+    assert dialog._topics.currentItem().text() == "Current workspace"
+    text = dialog._body.toPlainText()
+    lines = [line for line in text.splitlines() if line.strip()]
+    assert lines[1:] == [
+        "Host. Share. Join. Play.",
+        "1. At launch, choose Music, then Host or Join.",
+        "2. The host uses Copy Invite and shares the invite.",
+        "3. Play in WebJam. Talk in the meeting.",
+    ]
+    for word in ("Jamulus", "Webex", "Drawpile", "Krita", "Moises", "Music AI",
+                 "stems", "BYOK", "host-clocked", "Preview", "API", "Studio Visit", "Bob Ross"):
+        assert word.casefold() not in text.casefold()
+    assert available.contains(dialog.frameGeometry())
+    assert dialog._body.verticalScrollBar().maximum() == 0
+    assert dialog._body.horizontalScrollBar().maximum() == 0
+
+
+@pytest.mark.parametrize("query", ["Jamulus", "Webex"])
+def test_music_engine_guidance_stays_searchable_off_the_opening_card(app, window, query):
+    window.show_help()
+    dialog = window._workflow_help_dialog
+    dialog._search.setText(query)
+    app.processEvents()
+    assert dialog._topics.count() > 0
+    assert all(topic.key != "overview" for topic in dialog._matches)
+    assert query in dialog._body.toPlainText()
+    assert "Disconnect meeting audio while playing" in dialog._body.toPlainText()
+
+
 @pytest.mark.parametrize("profile", ["music", "art"])
 @pytest.mark.parametrize("route", ["f1", "more"])
 @pytest.mark.parametrize("large_text", [False, True])
@@ -73,6 +109,13 @@ def test_real_help_fits_scrolls_and_returns_without_changing_work(app, window, p
         assert dialog._body.horizontalScrollBar().maximum() == 0
         text = dialog._body.toPlainText()
         assert ("Paint along" in text) == (profile == "art")
+        if profile == "music":
+            # The opening card now fits. Exercise the relocated long guidance
+            # for the same enlarged-text scrolling and keyboard guarantees.
+            row = next(i for i, topic in enumerate(dialog._matches) if topic.key == "live_audio")
+            dialog._topics.setCurrentRow(row)
+            app.processEvents()
+            assert "Useful shortcuts" in dialog._body.toPlainText()
         bar = dialog._body.verticalScrollBar()
         if large_text:
             assert bar.maximum() > 0

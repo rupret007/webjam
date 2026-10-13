@@ -767,69 +767,40 @@ class ConductorWindow(QMainWindow):
                 "<i>Host. Share. Join. Play.</i><br><br>"
                 "<b>1.</b> At launch, choose <b>Music</b>, then <b>Host</b> "
                 "or <b>Join</b>.<br>"
-                "<b>2.</b> For a WebJam room, the host presses <b>Copy Invite</b> and sends the link. "
-                "For video practice, continue to <b>Play along</b> even if audio setup needs attention.<br>"
-                "<b>3.</b> For meeting practice, choose <b>Play along</b> and "
-                "<b>Set up video practice</b>. One YouTube presentation plays in "
-                "your meeting with conversation and turn-taking. Use <b>Copy Link</b> "
-                "for the meeting; guests open it in their browser or meeting app. "
-                "This path works without a WebJam room or a finished live-audio setup.<br>"
-                "<b>4.</b> For live ensemble audio, choose <b>Open Shared Track</b>. "
-                "A supported local backing file routes through Jamulus for playing "
-                "together; disconnect meeting audio and keep Webex for faces. "
-                "Each musician tile shows real connection and level truth.<br>"
-                "<b>5.</b> The host presses <b>Record Session</b> for synchronized tracks.<br>"
-                "<b>6.</b> Choose <b>Studio</b> to review completed session "
-                "takes. For a standalone Music project, end or leave the "
-                "session, then choose <b>File → Return to launch…</b>. At launch choose "
-                "<b>File → New Music Project…</b>, then "
-                "<b>Play Along / Record</b> or <b>Open Project…</b>.<br>"
-                "<b>7.</b> Choose <b>Conversation</b> to show meeting controls. "
-                "<b>Show Webex App</b> brings the verified application forward "
-                "without reopening a meeting link; Webex chooses which of its "
-                "windows is shown. Only "
-                "<b>Join / Open Meeting</b> opens the saved meeting link.<br>"
-                "<b>8.</b> The host can choose <b>Shared Track</b> to load "
-                "and inspect a song. If Play is not ready, the strip says "
-                "<b>Set up the audio device</b> and opens Shared Track for "
-                "<b>Set Up Shared Track…</b> and <b>Recheck Route</b>.<br>"
-                "<b>9.</b> Press <b>End Session</b> when the jam is over.<br><br>"
-                "<b>Useful shortcuts</b><br>"
-                "F2 — Band Check<br>"
-                f"{navigation_line}<br>"
-                f"{mix_shortcuts} — Save / load your monitor mix while Live is open<br>"
-                f"{reset_shortcut} — Reset every fader to 0 dB<br>"
-                "F11 / Esc — Enter / leave full screen"
+                "<b>2.</b> The host uses <b>Copy Invite</b> and shares the invite.<br>"
+                "<b>3.</b> Play in WebJam. Talk in the meeting."
             )
-        body += (
-            "<br><br><b>Continue your work</b><br>"
-            "Open <b>More → Session library…</b>, or <b>File → Session library…</b> "
-            "at launch. Search saved workspaces, read <b>Summary</b>, and choose "
-            "<b>Continue</b>. Restoring notes does not start a room or recording."
-            " Use <b>File → Return to launch…</b> to choose another workflow after "
-            "unfinished work and session cleanup are resolved."
-        )
-        if profile.key == "music":
-            moment_shortcut = "⌘M" if sys.platform == "darwin" else "Ctrl+M"
+        # Live Music opens on the three door beats; details live in topics.
+        if profile.key != "music" or self._reference_studio_only:
             body += (
-                "<br>In <b>Rehearsal plan</b>, order songs and keep each song's notes. "
-                "<b>Save plan…</b> / <b>Add saved plan…</b> reuses the order and goals. "
-                f"<b>Mark moment</b> ({moment_shortcut}) saves a plain note unless a "
-                "recording position is confirmed."
+                "<br><br><b>Continue your work</b><br>"
+                "Open <b>More → Session library…</b>, or <b>File → Session library…</b> "
+                "at launch. Search saved workspaces, read <b>Summary</b>, and choose "
+                "<b>Continue</b>. Restoring notes does not start a room or recording."
+                " Use <b>File → Return to launch…</b> to choose another workflow after "
+                "unfinished work and session cleanup are resolved."
             )
-        elif profile.key == "art":
-            body += (
-                "<br>In <b>Art project</b>, keep your brief, references, progress, "
-                "and next steps. Lesson bookmark positions are entered by you. "
-                "<b>Open reference</b> opens the selected reference only when requested."
-            )
-        if not self._reference_studio_only and profile.key in {"music", "podcast_voice"}:
-            body += (
-                "<br>For completed takes, Studio's <b>Review / Compare</b> keeps "
-                "favorites and private notes. <b>Set A</b> / <b>Set B</b> then "
-                "<b>Listen A</b> / <b>Listen B</b> auditions saved arrangements. "
-                "<b>Export receipt…</b> appears after package checksums verify."
-            )
+            if profile.key == "music":
+                moment_shortcut = "⌘M" if sys.platform == "darwin" else "Ctrl+M"
+                body += (
+                    "<br>In <b>Rehearsal plan</b>, order songs and keep each song's notes. "
+                    "<b>Save plan…</b> / <b>Add saved plan…</b> reuses the order and goals. "
+                    f"<b>Mark moment</b> ({moment_shortcut}) saves a plain note unless a "
+                    "recording position is confirmed."
+                )
+            elif profile.key == "art":
+                body += (
+                    "<br>In <b>Art project</b>, keep your brief, references, progress, "
+                    "and next steps. Lesson bookmark positions are entered by you. "
+                    "<b>Open reference</b> opens the selected reference only when requested."
+                )
+            if not self._reference_studio_only and profile.key in {"music", "podcast_voice"}:
+                body += (
+                    "<br>For completed takes, Studio's <b>Review / Compare</b> keeps "
+                    "favorites and private notes. <b>Set A</b> / <b>Set B</b> then "
+                    "<b>Listen A</b> / <b>Listen B</b> auditions saved arrangements. "
+                    "<b>Export receipt…</b> appears after package checksums verify."
+                )
         screen = QGuiApplication.screenAt(self.frameGeometry().center())
         if screen is None:
             screen = QGuiApplication.primaryScreen()

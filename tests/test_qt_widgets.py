@@ -1602,11 +1602,12 @@ class TestConductorWindow(unittest.TestCase):
             w.show_help()
 
         body = set_text.call_args.args[0]
-        self.assertIn("Choose <b>Studio</b>", body)
-        self.assertNotIn("build a song project", body)
         self.assertIn("choose <b>Music</b>, then <b>Host</b> or <b>Join</b>", body)
         self.assertNotIn("Host a Jam", body)
         self.assertNotIn("Join a Jam", body)
+        body = next(t.body for t in w._workflow_help_dialog._all_topics if t.key == "live_audio")
+        self.assertIn("Choose <b>Studio</b>", body)
+        self.assertNotIn("build a song project", body)
         self.assertIn("review completed session takes", body)
         self.assertIn("end or leave the session, then choose <b>File → Return to launch…</b>", body)
         self.assertIn("File → New Music Project…", body)
@@ -1625,7 +1626,6 @@ class TestConductorWindow(unittest.TestCase):
 
     def test_music_help_splits_meeting_practice_from_ensemble_audio(self):
         from unittest import mock
-        import re
 
         w = self._window()
         with mock.patch(
@@ -1637,12 +1637,11 @@ class TestConductorWindow(unittest.TestCase):
             w.show_help()
 
         body = set_text.call_args.args[0]
-        step_three = re.search(r"<b>3\.</b>(.*?)<b>4\.</b>", body, re.DOTALL)
-        step_four = re.search(r"<b>4\.</b>(.*?)<b>5\.</b>", body, re.DOTALL)
-        self.assertIsNotNone(step_three)
-        self.assertIsNotNone(step_four)
-        practice = step_three.group(1)
-        ensemble = step_four.group(1)
+        for token in ("Jamulus", "Webex", "Set up video practice", "Open Shared Track"):
+            self.assertNotIn(token, body)
+        topics = {t.key: t.body for t in w._workflow_help_dialog._all_topics}
+        practice = topics["follow_along"].split("</p>")[0]
+        ensemble = topics["live_audio"].split("</p>")[0]
         self.assertIn("Set up video practice", practice)
         self.assertIn("YouTube", practice)
         for token in ("Jamulus", "Open Shared Track", "Webex"):
@@ -1650,8 +1649,8 @@ class TestConductorWindow(unittest.TestCase):
         self.assertIn("Open Shared Track", ensemble)
         self.assertIn("Jamulus", ensemble)
         self.assertIn("Webex", ensemble)
-        self.assertIn("<b>5.</b> The host presses <b>Record Session</b>", body)
-        self.assertIn("<b>9.</b> Press <b>End Session</b>", body)
+        self.assertIn("<p>The host presses <b>Record Session</b>", topics["live_audio"])
+        self.assertIn("<p>Press <b>End Session</b>", topics["live_audio"])
 
     def test_art_help_follows_current_profile_without_music_actions(self):
         from unittest import mock
@@ -1691,7 +1690,10 @@ class TestConductorWindow(unittest.TestCase):
                         ):
                             self.assertNotIn(token, body)
                     else:
-                        self.assertIn("review completed session takes", body)
+                        self.assertIn("Host. Share. Join. Play.", body)
+                        details = next(t.body for t in window._workflow_help_dialog._all_topics
+                                       if t.key == "live_audio")
+                        self.assertIn("review completed session takes", details)
                         self.assertNotIn("Paint along", body)
         finally:
             window.close()
@@ -1706,12 +1708,10 @@ class TestConductorWindow(unittest.TestCase):
         ), mock.patch(
             "webjam_qt.windows.help_dialog.HelpDialog.show",
             return_value=0,
-        ), mock.patch(
-            "PySide6.QtWidgets.QTextBrowser.setHtml",
-        ) as set_text:
+        ):
             w.show_help()
 
-        body = set_text.call_args.args[0]
+        body = next(t.body for t in w._workflow_help_dialog._all_topics if t.key == "live_audio")
         # Music has a fourth surface, so its help lists a fourth shortcut.
         self.assertIn("⌘1 / ⌘2 / ⌘3 / ⌘4 — Live / Notes / Studio / Song", body)
         self.assertIn(

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from html import unescape
 import re
+import sys
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,38 @@ def workflow_topics(profile: str, *, offline_studio: bool = False) -> tuple[Help
             "project. Browser playback time is not tracked. Embedded Paint along stays silent.</p>",
             "YouTube Bob Ross painting music song lesson Webex sound pause play along latency"))
     if profile == "music" and not offline_studio:
+        mac = sys.platform == "darwin"
+        navigation = "⌘1 / ⌘2 / ⌘3 / ⌘4" if mac else "Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4"
+        mix = "⌘S / ⌘O" if mac else "Ctrl+S / Ctrl+O"
+        reset = "Control+Shift+R" if mac else "Ctrl+Shift+R"
+        topics.append(HelpTopic("live_audio", "Live audio and Music room controls",
+            "<p>For live ensemble audio, choose <b>Open Shared Track</b>. "
+            "A supported local backing file routes through Jamulus for playing "
+            "together; disconnect meeting audio and keep Webex for faces. "
+            "Each musician tile shows real connection and level truth.</p>"
+            "<p>The host presses <b>Record Session</b> for synchronized tracks.</p>"
+            "<p>Choose <b>Studio</b> to review completed session "
+            "takes. For a standalone Music project, end or leave the "
+            "session, then choose <b>File → Return to launch…</b>. At launch choose "
+            "<b>File → New Music Project…</b>, then "
+            "<b>Play Along / Record</b> or <b>Open Project…</b>.</p>"
+            "<p>Choose <b>Conversation</b> to show meeting controls. "
+            "<b>Show Webex App</b> brings the verified application forward "
+            "without reopening a meeting link; Webex chooses which of its "
+            "windows is shown. Only "
+            "<b>Join / Open Meeting</b> opens the saved meeting link.</p>"
+            "<p>The host can choose <b>Shared Track</b> to load "
+            "and inspect a song. If Play is not ready, the strip says "
+            "<b>Set up the audio device</b> and opens Shared Track for "
+            "<b>Set Up Shared Track…</b> and <b>Recheck Route</b>.</p>"
+            "<p>Press <b>End Session</b> when the jam is over.</p>"
+            "<p><b>Useful shortcuts</b><br>"
+            "F2 — Band Check<br>"
+            f"{navigation} — Live / Notes / Studio / Song<br>"
+            f"{mix} — Save / load your monitor mix while Live is open<br>"
+            f"{reset} — Reset every fader to 0 dB<br>"
+            "F11 / Esc — Enter / leave full screen</p>",
+            "ensemble recording conversation mixer keyboard shortcuts band check"))
         topics.append(HelpTopic("rehearsal_moments", "Rehearsal songs and moment notes",
             "<p>In <b>Rehearsal plan</b>, add songs, key, tempo and goals. Previous / Next changes "
             "the active song while keeping each song's notes. Save plan… and Add saved plan… reuse "

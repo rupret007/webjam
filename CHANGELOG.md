@@ -6,6 +6,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Music Help opens with “Host. Share. Join. Play.” and three short steps.
+  Engine, meeting, room-control and keyboard details stay in searchable topics.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

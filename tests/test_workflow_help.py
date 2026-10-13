@@ -32,6 +32,23 @@ def test_search_is_literal_and_does_not_search_private_workspaces():
     assert all("href=" not in topic.body for topic in topics)
 
 
+@pytest.mark.parametrize("platform,shortcut", [("darwin", "⌘1 / ⌘2 / ⌘3 / ⌘4"),
+                                             ("win32", "Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4")])
+def test_live_music_details_keep_engine_boundaries_and_shortcuts(monkeypatch, platform, shortcut):
+    monkeypatch.setattr("core.workflow_help.sys.platform", platform)
+    topic = next(t for t in workflow_topics("music") if t.key == "live_audio")
+    assert "routes through Jamulus" in topic.body
+    assert "disconnect meeting audio and keep Webex for faces" in topic.body
+    assert "If Play is not ready" in topic.body
+    assert "Set up the audio device" in topic.body
+    assert "Recheck Route" in topic.body
+    assert shortcut in topic.body
+    assert not topic.route and not topic.action
+    for profile, offline in (("art", False), ("podcast_voice", False),
+                             ("review_rehearsal", False), ("music", True)):
+        assert "live_audio" not in {t.key for t in workflow_topics(profile, offline_studio=offline)}
+
+
 def test_profile_and_standalone_topics_do_not_offer_incompatible_actions():
     art = workflow_topics("art")
     assert {topic.route for topic in art if topic.route} == {"library", "art"}
