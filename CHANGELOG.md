@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Aligned-originals export rejects a source recording that changes after its
+  declared hash is checked, including a same-format rewrite. No package is
+  published, the take files are left as they are, and Studio does not show a
+  success or an export receipt.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

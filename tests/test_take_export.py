@@ -583,6 +583,11 @@ def test_schema2_raw_export_preserves_one_stereo_logical_source(tmp_path):
     assert len(evidence["tracks"]) == 1
     assert evidence["tracks"][0]["output_channels"] == 2
     assert evidence["tracks"][0]["segments"][0]["channels"] == 2
+    assert (
+        evidence["tracks"][0]["segments"][0]["declared_sha256"]
+        == evidence["tracks"][0]["segments"][0]["observed_sha256"]
+        == _digest(source)
+    )
 
 
 def test_schema2_export_fails_closed_when_reconnect_changes_channel_layout(tmp_path):
@@ -1193,6 +1198,115 @@ def test_schema2_track_export_blocks_missing_or_changed_media_atomically(tmp_pat
         export_track_package(take, destination_root=root)
     assert root.is_dir()
     assert list(root.iterdir()) == []
+
+
+def _pcm16_constant(path: Path, amplitude: int, *, frames: int = 4800, rate: int = 48_000) -> None:
+    """Write the tiny real WAV used by the same-format rewrite probe."""
+    import struct
+    import wave
+
+    with wave.open(str(path), "wb") as writer:
+        writer.setnchannels(1)
+        writer.setsampwidth(2)
+        writer.setframerate(rate)
+        writer.writeframes(struct.pack("<h", amplitude) * frames)
+
+
+def _pcm16_take(tmp_path: Path, *, amplitude: int = 100):
+    """Schema-v2 take whose source is the `_take` WAV from media-backup tests."""
+    take_dir = tmp_path / "first"
+    take_dir.mkdir()
+    audio = take_dir / "audio.wav"
+    _pcm16_constant(audio, amplitude)
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="Session",
+        take_name="first",
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=48_000,
+        participants=(),
+        tracks=(
+            _project_track(
+                "Guitar",
+                None,
+                [_project_segment(audio, take_dir)],
+                order=0,
+                source_type=SourceType.JAMULUS_SERVER,
+                quality=SourceQuality.NETWORK_TRACK,
+            ),
+        ),
+    )
+    write_take_project(take_dir, project)
+    take = load_take(take_dir)
+    assert take is not None
+    assert take.manifest_schema_version >= 2
+    return take, audio
+
+
+def test_schema2_track_export_rejects_same_format_rewrite_after_source_hash(
+    tmp_path, monkeypatch
+):
+    """Same-format rewrite after `_sha256(source)` must not publish a package."""
+    from core import take_export
+
+    take, audio = _pcm16_take(tmp_path)
+    original = audio.read_bytes()
+    destination = tmp_path / "exports"
+    real_sha256 = take_export._sha256
+    rewritten = False
+
+    def hash_then_rewrite(path):
+        nonlocal rewritten
+        digest = real_sha256(path)
+        if not rewritten and Path(path).resolve() == audio.resolve():
+            rewritten = True
+            _pcm16_constant(audio, 2000)
+        return digest
+
+    monkeypatch.setattr(take_export, "_sha256", hash_then_rewrite)
+
+    with pytest.raises(TakeExportError, match="source recording changed after validation"):
+        export_track_package(take, destination_root=destination)
+
+    assert rewritten
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == []
+    expected_rewrite = tmp_path / "rewritten.wav"
+    _pcm16_constant(expected_rewrite, 2000)
+    assert audio.read_bytes() == expected_rewrite.read_bytes()
+    assert audio.read_bytes() != original
+    # WebJam must not restore or further rewrite the take source.
+    samples, rate = sf.read(audio, dtype="float32")
+    assert rate == 48_000
+    assert float(samples[0]) == pytest.approx(2000 / 32768)
+    assert float(samples[0]) == pytest.approx(0.06103515625)
+
+
+def test_schema2_track_export_rejects_source_rewrite_before_publication(
+    tmp_path, monkeypatch
+):
+    from core import take_export
+
+    take, audio = _pcm16_take(tmp_path)
+    original = audio.read_bytes()
+    destination = tmp_path / "exports"
+    real_checksums = take_export._write_checksum_manifest
+
+    def rewrite_then_checksums(*args, **kwargs):
+        _pcm16_constant(audio, 2000)
+        return real_checksums(*args, **kwargs)
+
+    monkeypatch.setattr(take_export, "_write_checksum_manifest", rewrite_then_checksums)
+
+    with pytest.raises(TakeExportError, match="source recording changed after validation"):
+        export_track_package(take, destination_root=destination)
+
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == []
+    expected_rewrite = tmp_path / "rewritten.wav"
+    _pcm16_constant(expected_rewrite, 2000)
+    assert audio.read_bytes() == expected_rewrite.read_bytes() != original
 
 
 @pytest.mark.parametrize("platform", ["posix", "nt"])

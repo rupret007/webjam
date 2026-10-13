@@ -75,6 +75,9 @@ _PEER_ALIGNMENT_MIN_CONFIDENCE = 0.85
 _PEER_ALIGNMENT_MAX_RESIDUAL_MS = 2.0
 _PEER_ALIGNMENT_MIN_ANCHORS = 3
 _MAX_TAKE_MANIFEST_BYTES = 16 * 1024 * 1024
+_SOURCE_CHANGED_AFTER_VALIDATION = (
+    "A source recording changed after validation. Reopen the take and export again."
+)
 
 
 @dataclass(frozen=True)
@@ -355,6 +358,43 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _export_source_path(take_root: Path, segment, track_name: str) -> Path:
+    source = (take_root / segment.path).resolve()
+    try:
+        source.relative_to(take_root)
+    except ValueError as exc:
+        raise TakeExportError(
+            f"{track_name} points outside its take folder."
+        ) from exc
+    if not source.is_file():
+        raise TakeExportError(f"{track_name} is missing {segment.path}.")
+    return source
+
+
+def _require_declared_source_identity(
+    source: Path, segment, track_name: str
+) -> str:
+    """Confirm on-disk media still matches the take's declared immutable facts."""
+    try:
+        size = source.stat().st_size
+    except OSError as exc:
+        raise TakeExportError(f"{track_name} is missing {segment.path}.") from exc
+    if segment.size_bytes and size != segment.size_bytes:
+        raise TakeExportError(f"{track_name} changed size after validation.")
+    observed = _sha256(source)
+    if segment.sha256 and observed != segment.sha256:
+        raise TakeExportError(_SOURCE_CHANGED_AFTER_VALIDATION)
+    return observed
+
+
+def _require_unchanged_source_media(take_root: Path, tracks) -> None:
+    """Re-check every selected source before the unpublished package is renamed."""
+    for track in tracks:
+        for segment in track.segments:
+            source = _export_source_path(take_root, segment, track.name)
+            _require_declared_source_identity(source, segment, track.name)
+
+
 def _inspect_audio(path: Path) -> dict:
     """Return bounded-streaming evidence for an independently playable WAV."""
     import numpy as np
@@ -518,19 +558,8 @@ def _write_project_track(
         for segment in sorted(
             track.segments, key=lambda item: (item.project_start_frame, item.segment_id)
         ):
-            source = (take_root / segment.path).resolve()
-            try:
-                source.relative_to(take_root)
-            except ValueError as exc:
-                raise TakeExportError(
-                    f"{track.name} points outside its take folder."
-                ) from exc
-            if not source.is_file():
-                raise TakeExportError(f"{track.name} is missing {segment.path}.")
-            if segment.size_bytes and source.stat().st_size != segment.size_bytes:
-                raise TakeExportError(f"{track.name} changed size after validation.")
-            if segment.sha256 and _sha256(source) != segment.sha256:
-                raise TakeExportError(f"{track.name} changed after validation.")
+            source = _export_source_path(take_root, segment, track.name)
+            _require_declared_source_identity(source, segment, track.name)
             reader = sf.SoundFile(str(source))
             observed = (
                 int(reader.samplerate),
@@ -547,6 +576,11 @@ def _write_project_track(
                 raise TakeExportError(
                     f"{track.name} media facts changed after validation."
                 )
+            try:
+                _require_declared_source_identity(source, segment, track.name)
+            except TakeExportError:
+                reader.close()
+                raise
             start = int(segment.project_start_frame) + offset_frames
             rendered_frames = round(
                     segment.frame_count
@@ -931,8 +965,12 @@ def _export_project_track_package(
                 reference_indexes.append(export_index)
             person = participant_map.get(track.participant_id)
             source_files = []
+            take_root = take.path.resolve()
             for segment in track.segments:
-                source_path = take.path / segment.path
+                source_path = _export_source_path(take_root, segment, track.name)
+                observed_sha256 = _require_declared_source_identity(
+                    source_path, segment, track.name
+                )
                 source_files.append(
                     {
                         "segment_id": segment.segment_id,
@@ -943,7 +981,7 @@ def _export_project_track_package(
                         "project_start_frame": segment.project_start_frame,
                         "media_status": segment.media_status.value,
                         "declared_sha256": segment.sha256,
-                        "observed_sha256": _sha256(source_path),
+                        "observed_sha256": observed_sha256,
                         "gaps": [gap.to_dict() for gap in segment.gaps],
                     }
                 )
@@ -1184,6 +1222,7 @@ def _export_project_track_package(
 
         checksums = temporary / "CHECKSUMS.sha256"
         _write_checksum_manifest(temporary, checksums)
+        _require_unchanged_source_media(take.path.resolve(), selected)
         _publish_track_package(temporary, final_folder, take.path, manifest_snapshot)
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
