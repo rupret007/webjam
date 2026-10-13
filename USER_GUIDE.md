@@ -709,6 +709,10 @@ separately if that is required.
 
 ## Host a live session
 
+When Music shows **Invite ready**, choose **Copy Invite** in the session bar.
+The empty stage says **NOT CONNECTED** and **Waiting for your band.**;
+an invitation alone does not mean someone has joined.
+
 For an Art room, follow [Art](#art) above. For Music, Podcast & Voice, or Review
 & Rehearsal, choose **Host**, **Host Remote Recording**, or **Host Review**.
 That action authorizes the private session—there is no extra Start

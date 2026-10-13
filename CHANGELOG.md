@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Music invite-ready keeps “Invite ready” and “Copy Invite” in the HUD; the
+  empty stage says “NOT CONNECTED” and “Waiting for your band.” without
+  repeating the invitation action or offering a neighboring Band Check.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

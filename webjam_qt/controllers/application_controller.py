@@ -10425,11 +10425,15 @@ class ApplicationController(QObject):
         # The HUD owns the focused action.  The empty stage stays explanatory
         # so an initial 760x600 window never presents a Start/Check/Practice
         # pile alongside the same action in the HUD.
+        music_invite_ready = (
+            facts.creator_profile_key == "music"
+            and presentation.phase is SessionConductorPhase.INVITE_READY
+        )
         self.window.participant_grid.set_session_state(
             SessionUiState(
                 self._conductor_stage_phase(presentation.phase),
-                presentation.title,
-                presentation.message,
+                "Waiting for your band." if music_invite_ready else presentation.title,
+                "" if music_invite_ready else presentation.message,
                 primary_text=presentation.action_label or "Continue",
                 primary_enabled=presentation.primary_enabled,
                 show_primary=False,

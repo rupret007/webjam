@@ -757,6 +757,9 @@ def test_host_invite_uses_hud_copy_action_only_after_real_server_readiness(
     # controls must not repeat the same Copy Invite action.
     assert controller.window.session_strip._invite_button.isHidden()
     assert controller.window.participant_grid._empty_primary.isHidden()
+    assert controller.window.participant_grid._empty_ready.isHidden()
+    assert controller.window.participant_grid._empty_title.text() == "Waiting for your band."
+    assert controller.window.participant_grid._empty_message.isHidden()
     controller.bridge.hosted_server_alive.return_value = False
     controller.shutdown()
 
