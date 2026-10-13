@@ -10,7 +10,7 @@ from uuid import uuid4
 from PySide6.QtCore import QObject, QTimer
 
 from core.art_workspace import art_summary
-from core.session_intelligence import session_notes_facts
+from core.session_intelligence import notes_display_equivalent, session_notes_facts
 from core.session_library import SessionLibrary, SessionLibraryConflict
 
 
@@ -170,17 +170,28 @@ class SessionLibraryCoordinator(QObject):
             # for a real change: this also lets a reverted edit (back to the
             # last captured value) override a stale draft a failed autosave
             # left behind, instead of silently keeping the failed draft.
+            loaded_notes = (
+                self._captured[3]
+                if self._captured and self._captured[0] == self.current.id
+                else latest.notes
+            )
+            untouched = (
+                notes == loaded_notes
+                or notes_display_equivalent(notes, latest.notes)
+            )
+            stored_notes = latest.notes if untouched else notes
             self._captured = context
             changes = {}
             if title:
                 changes["title"] = title
             changes["mode_key"] = mode
             decisions, actions, blockers = session_notes_facts(
-                creator_profile_key=self._profile(), title=title, notes=notes,
-                previous_notes=latest.notes, previous_decisions=latest.decisions,
+                creator_profile_key=self._profile(), title=title, notes=stored_notes,
+                previous_notes=latest.notes if untouched else None,
+                previous_decisions=latest.decisions,
                 previous_actions=latest.actions, previous_blockers=latest.blockers,
             )
-            changes.update(notes=notes, decisions=decisions, actions=actions,
+            changes.update(notes=stored_notes, decisions=decisions, actions=actions,
                            blockers=blockers)
             candidate = replace(latest, **changes)
             if candidate != self.current or self.current.id in self._pending:
@@ -429,15 +440,15 @@ class SessionLibraryCoordinator(QObject):
             self._pending.pop(record.id, None)
         if self.current is not None and self.current.id == record.id:
             self.current = record
-            # The live controls are about to be rewritten to the editor's
-            # saved content; advance the capture baseline to match so a
-            # later revert of the live control back to its pre-edit value
-            # reads as a real change instead of "unchanged since capture".
-            self._captured = (record.id, record.title, record.mode_key, record.notes)
+            # Snapshot the Qt-rendered controls, not the raw stored notes, so
+            # display normalization is not a later Notes edit. Advancing the
+            # baseline to the applied controls also lets a revert of the live
+            # control back to its pre-edit value read as a real change.
             self._applying = True
             try:
                 self._c.window.session_strip.set_session_title(record.title)
                 self._c.window.session_canvas.set_notes(record.notes)
+                self._captured = (record.id,) + self._context()
             finally:
                 self._applying = False
             self._refresh_song_tools()
@@ -499,6 +510,7 @@ class SessionLibraryCoordinator(QObject):
                 if index >= 0:
                     picker.setCurrentIndex(index)
             self._c.window.session_canvas.set_notes(record.notes)
+            self._captured = (record.id,) + self._context()
         finally:
             self._applying = False
         self._refresh_song_tools()

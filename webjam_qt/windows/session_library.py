@@ -15,7 +15,9 @@ from PySide6.QtWidgets import (
 )
 
 from core.art_workspace import art_summary
-from core.session_intelligence import build_session_pulse, session_notes_facts
+from core.session_intelligence import (
+    build_session_pulse, notes_display_equivalent, session_notes_facts,
+)
 from core.session_library import (
     SessionLibrary, SessionLibraryError, SessionLibraryImportUnconfirmed,
     validate_session_record,
@@ -174,6 +176,7 @@ class SessionLibraryDialog(QDialog):
         self.default_profile = profile
         self.record = None
         self.selected_record = None
+        self._loaded_notes = ""
         self._loading = False
         self._dirty = False
         self._import_in_progress = False
@@ -525,6 +528,7 @@ class SessionLibraryDialog(QDialog):
             self.art.load_payload(art, defer_reference_checks=bool(record.import_provenance))
             self.title.setText(record.title)
             self.notes.setPlainText(record.notes)
+            self._loaded_notes = self.notes.toPlainText()
             self.summary.setPlainText(summary)
             self.record = record
             self._base_record = deepcopy(record)
@@ -599,10 +603,18 @@ class SessionLibraryDialog(QDialog):
                 self.timer.start()
 
     def _edited_record(self):
-        notes = self.notes.toPlainText()
+        displayed = self.notes.toPlainText()
+        # Compare against the loaded control, not the raw stored string: Qt
+        # rewrites CRLF and nonbreaking spaces on the way into the editor.
+        untouched = (
+            displayed == self._loaded_notes
+            or notes_display_equivalent(displayed, self.record.notes)
+        )
+        notes = self.record.notes if untouched else displayed
         decisions, actions, blockers = session_notes_facts(
             creator_profile_key=self.record.profile, title=self.title.text(), notes=notes,
-            previous_notes=self.record.notes, previous_decisions=self.record.decisions,
+            previous_notes=self.record.notes if untouched else None,
+            previous_decisions=self.record.decisions,
             previous_actions=self.record.actions, previous_blockers=self.record.blockers,
         )
         return replace(self.record, title=self.title.text().strip() or "Untitled workspace",
@@ -642,6 +654,7 @@ class SessionLibraryDialog(QDialog):
                 self.title.setText(self.record.title)
             if self.notes.toPlainText() != self.record.notes:
                 self.notes.setPlainText(self.record.notes)
+            self._loaded_notes = self.notes.toPlainText()
         finally:
             self._loading = False
         self.pending_records.pop(self.record.id, None)
@@ -654,6 +667,7 @@ class SessionLibraryDialog(QDialog):
             try:
                 self.title.setText(self.record.title)
                 self.notes.setPlainText(self.record.notes)
+                self._loaded_notes = self.notes.toPlainText()
             finally:
                 self._loading = False
         self.summary.setPlainText(workspace_summary(self.record))

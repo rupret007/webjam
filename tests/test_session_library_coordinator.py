@@ -379,6 +379,41 @@ class TestSessionLibraryCoordinator(TestCase):
             owner.deleteLater()
             _app.processEvents()
 
+    def test_mode_only_edit_preserves_imported_crlf_and_nbsp_workspace_facts(self):
+        window = ConductorWindow(mode_entries=[("music_jam", "Music"), ("music_cover", "Covers")],
+                                  initial_mode_key="music_jam", initial_title="Wednesday")
+        window.flash_message = Mock()
+        owner = Owner(window)
+        library = SessionLibrary(self.root / "imported_crlf_facts")
+        coordinator = SessionLibraryCoordinator(owner, library=library)
+        coordinator._imported = True
+        facts = (("Play in D",), ("Send chart",), ("Missing player",))
+        notes = "Practice\u00a0Wednesday\r\nBring charts"
+        try:
+            record = library.create(
+                "music", "Wednesday rehearsal", notes=notes,
+                mode_key="music_jam", decisions=facts[0], actions=facts[1],
+                blockers=facts[2],
+            )
+            self.assertTrue(coordinator.continue_record(record))
+            live_notes = window.session_canvas.current_notes()
+            self.assertEqual(coordinator._captured[3], live_notes)
+            picker = window.session_strip._mode_picker
+            picker.setCurrentIndex(picker.findData("music_cover"))
+            self.assertTrue(coordinator.flush())
+            saved = library.load(record.id)
+            self.assertEqual(saved.mode_key, "music_cover")
+            self.assertEqual(saved.notes, notes)
+            self.assertEqual(saved.decisions, facts[0])
+            self.assertEqual(saved.actions, facts[1])
+            self.assertEqual(saved.blockers, facts[2])
+        finally:
+            coordinator.timer.stop()
+            window.close()
+            window.deleteLater()
+            owner.deleteLater()
+            _app.processEvents()
+
     def test_reverted_notes_edit_overrides_editor_save(self):
         self.window.session_canvas.set_notes("Original notes")
         self.coordinator.ensure_current()

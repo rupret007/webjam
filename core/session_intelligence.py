@@ -172,6 +172,26 @@ def _action_texts(actions: Iterable[SessionAction]) -> tuple[str, ...]:
     )
 
 
+def notes_display_equivalent(left: str, right: str) -> bool:
+    """True when notes match after Qt ``QPlainTextEdit.toPlainText()`` rules.
+
+    Loading stored notes into a Qt control turns CRLF/CR and Unicode
+    line/paragraph separators into LF, and nonbreaking spaces into ordinary
+    spaces. That display rewrite is not an intentional Notes edit.
+    """
+    return _qt_plain_text(left) == _qt_plain_text(right)
+
+
+def _qt_plain_text(text: str) -> str:
+    return (
+        text.replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("\u2028", "\n")
+        .replace("\u2029", "\n")
+        .replace("\u00a0", " ")
+    )
+
+
 def session_notes_facts(
     *,
     creator_profile_key: object | None,
@@ -187,8 +207,9 @@ def session_notes_facts(
     Imported workspaces may carry ``decisions`` / ``actions`` / ``blockers`` that
     are not restated in the notes text. Title, mode, and backup saves must not
     erase those fields. An intentional notes edit still rebuilds them.
+    Qt display normalization of the same notes is not an edit.
     """
-    if previous_notes is not None and notes == previous_notes:
+    if previous_notes is not None and notes_display_equivalent(notes, previous_notes):
         return previous_decisions, previous_actions, previous_blockers
     pulse = build_session_pulse(
         creator_profile_key=creator_profile_key, title=title, notes=notes,

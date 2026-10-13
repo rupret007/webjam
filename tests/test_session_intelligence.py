@@ -3,7 +3,9 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from core.session_intelligence import build_session_pulse, session_notes_facts
+from core.session_intelligence import (
+    build_session_pulse, notes_display_equivalent, session_notes_facts,
+)
 
 
 class TestSessionIntelligence(unittest.TestCase):
@@ -195,6 +197,41 @@ class TestSessionIntelligence(unittest.TestCase):
             title="Wednesday rehearsal",
             notes="Decision: Keep the chorus\nAction: Send chart",
             previous_notes="Practice Wednesday",
+            previous_decisions=stored[0],
+            previous_actions=stored[1],
+            previous_blockers=stored[2],
+        )
+        self.assertEqual(derived[0], ("Keep the chorus",))
+        self.assertEqual(derived[1], ("Send chart",))
+        self.assertEqual(derived[2], ())
+
+    def test_unchanged_notes_keep_stored_facts_across_display_normalization(self):
+        stored = (("Play in D",), ("Send chart",), ("Missing player",))
+        cases = (
+            ("Practice Wednesday\r\nBring charts", "Practice Wednesday\nBring charts"),
+            ("Practice\u00a0Wednesday", "Practice Wednesday"),
+            ("Practice Wednesday\u2028Bring charts", "Practice Wednesday\nBring charts"),
+            ("Practice Wednesday\u2029Bring charts", "Practice Wednesday\nBring charts"),
+            ("Practice Wednesday\rBring charts", "Practice Wednesday\nBring charts"),
+        )
+        for previous, displayed in cases:
+            with self.subTest(previous=previous):
+                self.assertTrue(notes_display_equivalent(displayed, previous))
+                kept = session_notes_facts(
+                    creator_profile_key="music",
+                    title="Wednesday rehearsal",
+                    notes=displayed,
+                    previous_notes=previous,
+                    previous_decisions=stored[0],
+                    previous_actions=stored[1],
+                    previous_blockers=stored[2],
+                )
+                self.assertEqual(kept, stored)
+        derived = session_notes_facts(
+            creator_profile_key="music",
+            title="Wednesday rehearsal",
+            notes="Decision: Keep the chorus\nAction: Send chart",
+            previous_notes="Practice Wednesday\r\nBring charts",
             previous_decisions=stored[0],
             previous_actions=stored[1],
             previous_blockers=stored[2],
