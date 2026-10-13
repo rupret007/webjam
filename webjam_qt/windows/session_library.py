@@ -635,6 +635,17 @@ class SessionLibraryDialog(QDialog):
             return False
         self._dirty = False
         self._base_record = deepcopy(self.record)
+        # A reconciled merge may keep a newer live Notes/title than this
+        # editor's own draft. Resync the controls so they match what was
+        # actually written, or a later save could bounce it back to stale text.
+        self._loading = True
+        try:
+            if self.title.text() != self.record.title:
+                self.title.setText(self.record.title)
+            if self.notes.toPlainText() != self.record.notes:
+                self.notes.setPlainText(self.record.notes)
+        finally:
+            self._loading = False
         self.pending_records.pop(self.record.id, None)
         if self.record.title != edited.title or self.record.notes != edited.notes:
             # The save reconciled newer live Notes/title into the saved record;
@@ -766,6 +777,7 @@ class SessionLibraryDialog(QDialog):
             links = [dict(item) for item in self.record.take_links]
             links[row]["take_path"] = path
             self.record = replace(self.record, take_links=tuple(links))
+            self.rehearsal.relink_take(ref["take_id"], ref.get("source_identity"), path)
             self._dirty = True
             self.save_current()
             self._render_takes()
