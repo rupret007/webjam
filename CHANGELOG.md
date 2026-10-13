@@ -6,6 +6,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Connected Art rooms keep making guidance beside the Conversation action;
+  the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
+
 - Music's launch helper explains: "Host starts the room. Join uses the host's
   invite." The live door remains Host/Join only.
 
