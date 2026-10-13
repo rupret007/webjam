@@ -521,7 +521,9 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     assert dialog._join_button_primary.text() == "Join"
     assert dialog._join_button_primary.isEnabled() is False
     assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
-    assert "never saved" in dialog._join_privacy.text()
+    assert dialog._join_privacy.text() == (
+        "The invite stays on this screen. WebJam does not save it."
+    )
     assert dialog._invite_input.echoMode() is QLineEdit.EchoMode.Password
     dialog._name_input.setText("Drummer")
     dialog._invite_input.setText(
@@ -718,10 +720,13 @@ def test_session_hud_inline_meeting_link_uses_available_width(qapp):
     assert hud._secondary_action.isVisibleTo(hud)
 
 
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
 def test_host_invite_uses_hud_copy_action_only_after_real_server_readiness(
-    qapp, tmp_path
+    qapp, tmp_path, size
 ):
+    from core.session_conductor import SessionConductorPhase, SessionPrimaryAction
     from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.session_state import SessionUiState
     from webjam_qt.windows.conductor_window import ConductorWindow
 
     settings = AppSettings(
@@ -736,29 +741,56 @@ def test_host_invite_uses_hud_copy_action_only_after_real_server_readiness(
         initial_title="Readiness Test",
     )
     controller = ApplicationController(window, settings=settings)
-    controller.bridge.jamulus_launch_intended = True
-    controller.bridge.jamulus_state = "Running"
     controller.bridge.hosted_server_alive = MagicMock(return_value=False)
-    controller._update_session_hud()
-    assert controller.window.session_hud._invite_available is False
-    assert controller.window.session_hud._action.isHidden()
-    controller.bridge.hosted_server_alive.return_value = True
-    with patch.object(
-        controller,
-        "_current_invite_url",
-        return_value=create_invite_link("192.168.1.42"),
-    ):
+    try:
+        window.resize(*size)
+        window.show()
+        grid = window.participant_grid
+        # Begin with the standalone widget's Start Session action. The real
+        # conductor render must retire it when the HUD takes ownership.
+        grid.set_session_state(SessionUiState.idle(hosting=True))
+        assert grid._empty_primary.text() == "Start Session"
+        assert grid._last_session_state.show_primary is True
+        assert grid._empty_primary.isVisibleTo(window)
+        controller.bridge.jamulus_launch_intended = True
+        controller.bridge.jamulus_state = "Running"
         controller._update_session_hud()
-    assert controller.window.session_hud._invite_available is True
-    assert controller.window.session_hud._status.text() == "Invite ready"
-    assert not controller.window.session_hud._action.isHidden()
-    assert controller.window.session_hud._action.text() == "Copy Invite"
-    # The conductor owns the one clear next step.  The older strip and stage
-    # controls must not repeat the same Copy Invite action.
-    assert controller.window.session_strip._invite_button.isHidden()
-    assert controller.window.participant_grid._empty_primary.isHidden()
-    controller.bridge.hosted_server_alive.return_value = False
-    controller.shutdown()
+        assert controller.window.session_hud._invite_available is False
+        assert controller.window.session_hud._action.isHidden()
+        controller.bridge.hosted_server_alive.return_value = True
+        with patch.object(
+            controller,
+            "_current_invite_url",
+            return_value=create_invite_link("192.168.1.42"),
+        ):
+            controller._update_session_hud()
+        assert controller.window.session_hud._invite_available is True
+        assert controller.window.session_hud._status.text() == "Copy the invite"
+        assert not controller.window.session_hud._action.isHidden()
+        assert controller.window.session_hud._action.text() == "Copy Invite"
+        # The conductor owns the one clear next step.  The older strip and stage
+        # controls must not repeat the same Copy Invite action.
+        assert controller.window.session_strip._invite_button.isHidden()
+        assert controller.window.participant_grid._empty_primary.isHidden()
+        presentation = controller._last_session_conductor
+        assert presentation.phase is SessionConductorPhase.INVITE_READY
+        assert presentation.primary_action is SessionPrimaryAction.COPY_INVITE
+        assert grid._last_session_state.title == presentation.title
+        assert grid._last_session_state.show_primary is False
+        qapp.processEvents()
+        assert grid._empty_state.isVisibleTo(window)
+        assert not grid._empty_primary.isVisibleTo(window)
+        assert not grid._empty_ready.isVisibleTo(window)
+        assert not grid._empty_practice.isVisibleTo(window)
+        action = window.session_hud._action
+        assert action.isVisibleTo(window)
+        assert action.isEnabled()
+        assert action.accessibleName() == "Copy Invite"
+        assert window.rect().contains(action.mapTo(window, action.rect().topLeft()))
+        assert window.rect().contains(action.mapTo(window, action.rect().bottomRight()))
+    finally:
+        controller.bridge.hosted_server_alive.return_value = False
+        controller.shutdown()
 
 
 def test_remote_host_copy_and_reset_stay_under_owned_progressive_disclosure(
@@ -1220,7 +1252,7 @@ def test_host_invite_is_ready_without_its_own_roster_entry(qapp, tmp_path):
         return_value=create_invite_link("192.168.1.42"),
     ):
         controller._update_session_hud()
-    assert controller.window.session_hud._status.text() == "Invite ready"
+    assert controller.window.session_hud._status.text() == "Copy the invite"
     assert controller.window.session_hud._action.text() == "Copy Invite"
     assert not controller.window.session_hud._action.isHidden()
     assert controller.window.session_strip._invite_button.isHidden()
@@ -1557,6 +1589,99 @@ def test_running_host_finalizes_recording_before_switching_invites(qapp, tmp_pat
         "new-join-start",
     ]
     assert controller.settings.host_server_enabled is False
+    controller.bridge.hosted_server_alive.return_value = False
+    controller.shutdown()
+
+
+def test_busy_invite_switch_finishes_old_library_run_before_startup(qapp, tmp_path):
+    """A confirmed invite switch must retire the old Library run exactly once.
+
+    Otherwise the replacement jam's start_session() sees a non-empty
+    ``_run_id`` left over from the old jam and silently keeps it, so takes
+    recorded in the new jam get tagged with the old run and its stale live
+    take set.
+    """
+    from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.windows.conductor_window import ConductorWindow
+
+    settings = AppSettings(
+        config_file=str(tmp_path / "settings.json"),
+        host_server_enabled=True,
+        jamulus_server="127.0.0.1",
+    )
+    save_settings(settings)
+    window = ConductorWindow(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title="Old Host Jam",
+    )
+    controller = ApplicationController(window, settings=settings)
+    controller.bridge.jamulus_state = "Running"
+    controller.bridge.hosted_server_alive = MagicMock(return_value=True)
+    controller.bridge.hosted_server_owned = MagicMock(return_value=True)
+    controller.recording.stop_server_recording_for_shutdown = MagicMock(return_value=True)
+    controller.recording.on_audio_session_stopped = MagicMock()
+    controller.bridge.stop_jamulus = MagicMock(return_value=True)
+    dead_client = MagicMock()
+    dead_client.poll.return_value = 1
+    controller.bridge.jamulus_process = dead_client
+    controller.bridge.jamulus_launch_intended = True
+    controller.bridge.attempt_auto_reconnects = MagicMock()
+    controller._jamulus_connected = True
+
+    def stop_hosted_server() -> bool:
+        controller.bridge.hosted_server_alive.return_value = False
+        return True
+
+    controller.bridge.stop_hosted_server = MagicMock(side_effect=stop_hosted_server)
+    controller.begin_startup_journey = MagicMock(return_value=True)
+
+    library = controller.session_library
+    assert library.ensure_current()
+    library.start_session()
+    old_run_id = library._run_id
+    assert old_run_id
+
+    take = SimpleNamespace(
+        take_id="old-run-take",
+        session_id="recording-session",
+        path=tmp_path / "take",
+        display_name="Old run take",
+    )
+    library.recording_started(take.take_id, take.session_id)
+    with patch("core.take_review.take_source_identity", return_value="a" * 64):
+        library.recording_completed(take, validated=True)
+    assert take.take_id in library._live_take_ids
+
+    link = create_invite_link("192.168.1.42", session_name="New Join Jam")
+    with (
+        patch.object(
+            QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes,
+        ),
+        patch(
+            "webjam_qt.controllers.application_controller.threading.Thread",
+            side_effect=lambda *args, **kwargs: _ImmediateThread(*args, **kwargs),
+        ),
+        patch.object(
+            controller._ui_invoker, "invoke", side_effect=lambda callback: callback()
+        ),
+        patch.object(
+            controller, "_stop_reference_track_for_session_end", return_value=True,
+        ),
+    ):
+        assert controller.accept_invite_url(link) is True
+
+    saved = library.library.load(library.current.id)
+    assert len(saved.recaps) == 1
+    assert saved.recaps[0]["run_id"] == old_run_id
+    assert saved.recaps[0]["take_ids"] == [take.take_id]
+    assert library._run_id == ""
+
+    library.start_session()
+    assert library._run_id
+    assert library._run_id != old_run_id
+    assert library._live_take_ids == set()
+
     controller.bridge.hosted_server_alive.return_value = False
     controller.shutdown()
 

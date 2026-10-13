@@ -2481,14 +2481,20 @@ class ApplicationController(QObject):
         profile_key: object,
         *,
         host_owned: bool = False,
-    ) -> None:
-        """Apply one canonical profile; authenticated host state wins for guests."""
+    ) -> bool:
+        """Apply one canonical profile; authenticated host state wins for guests.
+
+        Returns whether the canonical profile is active once this call
+        returns. A pending Library media operation can defer the switch;
+        callers that must not declare success before adoption actually
+        happens (e.g. native room admission) need to check this.
+        """
 
         if getattr(self, "_shutdown", False):
-            return
+            return False
         canonical = canonical_creator_profile_key(profile_key)
         if canonical is None:
-            return
+            return False
         owner_changed = bool(host_owned) != bool(
             getattr(self, "_creator_profile_host_owned", False)
         )
@@ -2507,11 +2513,11 @@ class ApplicationController(QObject):
             or "music"
         )
         if canonical == active_key and not owner_changed:
-            return
+            return True
         library = getattr(self, "session_library", None)
         if canonical != active_key and library is not None:
             if library.profile_changing() is False:
-                return
+                return False
         with ApplicationController._defer_session_pulse_refresh(self):
             if canonical != active_key:
                 self._chat_profile_generation = (
@@ -2544,6 +2550,7 @@ class ApplicationController(QObject):
             shared_track_available = getattr(self, "_shared_track_host_available", None)
             if callable(set_shared_track) and callable(shared_track_available):
                 set_shared_track(shared_track_available())
+        return True
 
     def _guest_media_state(self) -> tuple[GuestMediaState, EvidenceState]:
         """Map the guest transfer owner's finite facts without exposing errors."""
@@ -5042,6 +5049,9 @@ class ApplicationController(QObject):
             return False
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             self._render_remote_fresh_invitation_hud()
+            return False
+        if (getattr(self, "_remote_invitation", None) is not None
+                and self._native_join_blocked_by_workspace_media()):
             return False
         library = getattr(self, "session_library", None)
         if library is not None:
@@ -8043,6 +8053,8 @@ class ApplicationController(QObject):
         failure requires a fresh invitation and never falls into legacy audio.
         """
 
+        if self._native_join_blocked_by_workspace_media():
+            return False
         if invitation.advisory_expired():
             self.window.flash_message(
                 "That invitation expired. Ask the host for a fresh one.",
@@ -8129,6 +8141,12 @@ class ApplicationController(QObject):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return False
+            # Freeze the outgoing jam's Library recap before any teardown
+            # starts, exactly as normal End/Leave does, so the replacement
+            # jam below does not inherit this run's ID or live take set.
+            switch_library = getattr(self, "session_library", None)
+            if switch_library is not None:
+                switch_library.capture_summary()
             self._invite_switch_generation += 1
             switch_generation = self._invite_switch_generation
             self._invite_switch_in_flight = True
@@ -8332,6 +8350,13 @@ class ApplicationController(QObject):
             )
             self._pending_invitation = None
             self._pending_invitation_meeting_url = ""
+            # The old jam's cleanup has fully finished by this point. Finish
+            # its Library run now, exactly once, before any replacement
+            # startup below calls start_session() and could otherwise reuse
+            # this run's ID and live take set for an unrelated jam.
+            switch_library = getattr(self, "session_library", None)
+            if switch_library is not None:
+                switch_library.finish_session()
             if isinstance(selected, RemoteInvitation):
                 # The old jam is now fully retired. Release the switch latch
                 # before entering the normal v3 path so its own cleanup
@@ -8488,6 +8513,8 @@ class ApplicationController(QObject):
         invitation = getattr(self, "_remote_invitation", None)
         if invitation is None or getattr(self, "_shutdown", False):
             return
+        if self._native_join_blocked_by_workspace_media():
+            return
         # A remote invitation always represents a guest attempt, even when
         # this app last used a host profile. There is no owned Jamulus work at
         # this point; replacing an old idle/preflight token prevents the later
@@ -8578,6 +8605,20 @@ class ApplicationController(QObject):
             startup_authorization_generation,
         )
         runtime.start_guest(invitation)
+
+    def _native_join_blocked_by_workspace_media(self) -> bool:
+        """Leave a capability untouched until its workspace can adopt a room."""
+
+        library = getattr(self, "session_library", None)
+        studio = getattr(self.window, "recording_studio", None)
+        if not (bool(getattr(library, "media_operation_pending", False))
+                or bool(getattr(studio, "media_open_pending", False))):
+            return False
+        self.window.flash_message(
+            "Wait for the workspace operation result before continuing another workspace.",
+            ms=7000,
+        )
+        return True
 
     def _begin_remote_host(
         self,
@@ -8967,6 +9008,11 @@ class ApplicationController(QObject):
             return (
                 "Update WebJam on both computers. Ask the host for a fresh "
                 "invitation, then choose Paste New Invite."
+            )
+        if error_value == "local_operation_pending":
+            return (
+                "Local media work kept this room from opening. Finish that work, "
+                "then ask the host for a fresh invitation and choose Paste New Invite."
             )
         if error_value == "expired":
             return (
