@@ -27,10 +27,8 @@ def test_next_tick_retires_changed_host_file(tmp_path, monkeypatch, state, chang
     if state == "paused":
         host.pause()
     if change == "rewrite":
-        # Same size and restored mtime: ctime still retires the old proof.
-        before = path.stat()
-        path.write_bytes(b"modified")
-        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+        # Same inode, different bytes/size: identity token must change.
+        path.write_bytes(b"modified-contents")
     elif change == "replace":
         write_video(tmp_path / "replacement.mp4", b"new file").replace(path)
     elif change == "remove":
