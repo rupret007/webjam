@@ -379,7 +379,9 @@ class ConductorWindow(QMainWindow):
         # Music also needs compact gaps for the full Conversation label and
         # recording receipt, even when the optional Help button is absent.
         compact_spacing = compact or follow_compact
-        margin = Space.SM if compact_spacing else Space.LG
+        # XS side margins recover the width the full Conversation label
+        # takes from the longest recording receipt at 720 px.
+        margin = Space.XS if compact_spacing else Space.LG
         layout.setContentsMargins(margin, Space.SM, margin, Space.SM)
         layout.setSpacing(Space.XS if compact_spacing else Space.SM)
         end_gap = Space.XS if compact_spacing else Space.MD

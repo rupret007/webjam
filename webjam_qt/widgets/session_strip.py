@@ -1333,6 +1333,17 @@ class SessionStrip(QFrame):
             # (a completed/attention take whose session has now ended).
             if phase != "idle":
                 self._record_elapsed.setVisible(True)
+        self._pin_record_elapsed_width()
+
+    def _pin_record_elapsed_width(self) -> None:
+        """Keep the current receipt from shrinking below its readable hint."""
+
+        label = self._record_elapsed
+        if label.isHidden() or not label.text():
+            label.setMinimumWidth(0)
+            return
+        label.setMinimumWidth(0)
+        label.setMinimumWidth(label.minimumSizeHint().width())
 
     def set_recording_available(self, available: bool) -> None:
         """Only the host owns the synchronized take; joiners are recorded there."""
@@ -1770,12 +1781,12 @@ class SessionStrip(QFrame):
     def _update_record_elapsed(self) -> None:
         if self._recording_phase == "count_in":
             self._record_elapsed.setText("COUNT-IN")
-            return
-        if self._recording_phase == "stop_failed":
+        elif self._recording_phase == "stop_failed":
             self._record_elapsed.setText("CLEANUP PENDING")
-            return
-        seconds = self._record_elapsed_seconds
-        self._record_elapsed.setText(f"REC {seconds // 60:02d}:{seconds % 60:02d}")
+        else:
+            seconds = self._record_elapsed_seconds
+            self._record_elapsed.setText(f"REC {seconds // 60:02d}:{seconds % 60:02d}")
+        self._pin_record_elapsed_width()
 
     def _update_timer_label(self) -> None:
         t = QTime(0, 0).addSecs(self._elapsed_seconds)

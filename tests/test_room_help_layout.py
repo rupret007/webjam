@@ -229,13 +229,13 @@ def test_disabling_preview_restores_original_bar_density_and_hides_help(qapp, wi
     margins = layout.contentsMargins()
     baseline = (margins.left(), margins.top(), margins.right(), margins.bottom(), layout.spacing())
     original_invite_hint = window.session_strip._invite_button.sizeHint()
-    assert baseline == (Space.SM, Space.SM, Space.SM, Space.SM, Space.XS)
+    assert baseline == (Space.XS, Space.SM, Space.XS, Space.SM, Space.XS)
     assert window._room_help_button.isHidden()
     window.set_room_help_enabled(True)
     window.room_help.setVisible(True)
     _settle(qapp)
     assert window.session_controls.property("helpPreviewCompact") is True
-    assert layout.contentsMargins().left() == Space.SM
+    assert layout.contentsMargins().left() == Space.XS
     assert layout.spacing() == Space.XS
     assert window.session_strip._invite_button.sizeHint().width() < original_invite_hint.width()
     window._show_room_help()
@@ -258,7 +258,7 @@ def test_preview_density_only_applies_below_900px(qapp, window):
     _settle(qapp)
     assert window.session_controls.property("helpPreviewCompact") is False
     assert window.session_controls.property("followAlongCompact") is True
-    assert window.session_controls.layout().contentsMargins().left() == Space.SM
+    assert window.session_controls.layout().contentsMargins().left() == Space.XS
     window.resize(1100, 560)
     _settle(qapp)
     assert window.session_controls.property("helpPreviewCompact") is False
