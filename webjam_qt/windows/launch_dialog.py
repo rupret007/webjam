@@ -76,10 +76,7 @@ _JOIN_INVITATION_GUIDANCE = (
 )
 
 # Single door line when Paint along is the checked Art start (harvest + UX tests).
-PAINT_ALONG_DOOR_HELPER = (
-    "Host starts Paint along, then chooses a file or lesson link. "
-    "Join uses the host's invite."
-)
+PAINT_ALONG_DOOR_HELPER = "Then choose a file or lesson link."
 
 
 @dataclass(frozen=True)
@@ -1000,7 +997,7 @@ class LaunchDialog(QDialog):
         )
 
     def _refresh_start_presentation(self) -> None:
-        """Explain which choice Host uses and how a guest joins instead."""
+        """Keep only the next step; the cards already name the activity."""
 
         start = self.selected_start
         if start is None:
@@ -1011,7 +1008,7 @@ class LaunchDialog(QDialog):
         next_step = (
             PAINT_ALONG_DOOR_HELPER
             if start.key == "paint_along" else
-            f"Host starts {start.label}. Join uses the host's invite."
+            ""
         )
         self._set_choice_helper(
             next_step
