@@ -529,7 +529,8 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
 
     # Overview Make-together detail stays brief (fits with Conversation closed).
     detail = art_make_together_activity_detail()
-    assert "paper, clay, a model, printer, or your usual app" in detail
+    assert "You do not need an art app" in detail
+    assert "your usual tools, or just talk" in detail
     assert "Choose Set Up Conversation" in detail
     assert WATCH_TOGETHER_ACTIONS not in detail
     assert WEBJAM_DOES_NOT_PLAY_MOVIE not in detail
@@ -601,6 +602,6 @@ def test_make_together_room_names_the_next_action(configured, next_action):
     from core.meeting_companion import art_make_together_activity_detail
 
     assert art_make_together_activity_detail(conversation_configured=configured) == (
-        "Use paper, clay, a model, printer, or your usual app, or just talk. "
+        "You do not need an art app. Use paper, your usual tools, or just talk. "
         + next_action
     )

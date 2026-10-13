@@ -321,8 +321,9 @@ it. Any meeting already open stays open until you leave it in that service.
 
 The room view shows whether you are waiting for artists or connected to the
 host. It does not show a full artist list yet. Without a shared activity,
-**Make from your own space** is a complete place to start: use paper, clay, a
-model, a printer, or your usual app while the room stays open beside you.
+**Make from your own space** is a complete place to start: you do not need an
+art app. Use paper, your usual tools, or just talk while the room stays open
+beside you.
 Conversation is optional when you want to talk or share your screen. When the
 host shares a canvas or Paint along video, the room offers that existing
 panel. When both are offered, each has its own status and Open action in the
@@ -332,7 +333,7 @@ through **Open Paint along**, then choose **Show video** when you want it
 visible again. Your existing local copy stays open.
 
 When the room offers a shared canvas or Paint along, its next step still
-includes paper, clay, a model, printer, or your usual app. Shared activities
+includes paper, your usual tools, or just talk. Shared activities
 are optional. You only need Drawpile to use the shared canvas; artists using
 their own tools can keep making together.
 

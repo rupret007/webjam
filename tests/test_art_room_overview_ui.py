@@ -177,7 +177,7 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         assert "own tools" not in hud.accessibleDescription()
         assert panel._activity.text() == "Make from your own space"
         assert panel._activity_detail.text() == (
-            "Use paper, clay, a model, printer, or your usual app, or just talk. "
+            "You do not need an art app. Use paper, your usual tools, or just talk. "
             "Choose Set Up Conversation to add your meeting link."
         )
         assert panel._activity_detail.isVisibleTo(window)

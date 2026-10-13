@@ -411,21 +411,22 @@ _ART_STARTS = (
     CreatorStart(
         key="talk_and_make",
         label="Make together",
-        summary="Paint, sculpt, 3D print, or just talk.",
+        summary="You do not need an art app. Talk and make with what you have.",
         detail=(
-            "Open one room to talk and make. Everyone can work in their own "
-            "space. The host can open one shared canvas from inside the room "
-            "when the group wants to draw together."
+            "You do not need an art app or special skill. Open one room to "
+            "talk and make. Everyone can work in their own space. The host "
+            "can open one shared canvas from inside the room when the group "
+            "wants to draw together."
         ),
     ),
     CreatorStart(
         key="paint_along",
         label="Paint along",
-        summary="Follow a silent video from a file or lesson link.",
+        summary="Watch one video together and make along.",
         detail=(
-            "Choose a local video file or a lesson link in the room. "
-            "The video stays silent and follows the host. "
-            "Use your own tools. Talk in your meeting."
+            "Choose a local video file or lesson link in the room. "
+            "Watch together and make along with your own tools. "
+            "The video stays silent and follows the host. Talk in your meeting."
         ),
         reference_video=True,
     ),

@@ -524,6 +524,13 @@ def art_watch_share_sentence(
     )
 
 
+# First-screen / idle Art copy: a person with no art skill should see that
+# talking and their usual tools are enough. Clay / printer / 3D lists belong
+# in later help, not the ten-second read.
+ART_NO_SKILL_NEEDED = "You do not need an art app."
+ART_OWN_TOOLS_LINE = "Use paper, your usual tools, or just talk."
+
+
 def art_make_together_activity_detail(
     *,
     meeting_service: str = DEFAULT_MEETING_SERVICE,
@@ -543,10 +550,7 @@ def art_make_together_activity_detail(
         if conversation_configured
         else "Choose Set Up Conversation to add your meeting link."
     )
-    return (
-        "Use paper, clay, a model, printer, or your usual app, or just talk. "
-        f"{next_action}"
-    )
+    return f"{ART_NO_SKILL_NEEDED} {ART_OWN_TOOLS_LINE} {next_action}"
 
 
 def art_conversation_guidance(*, meeting_service: str = "") -> str:
@@ -608,6 +612,8 @@ __all__ = [
     "WATCH_TOGETHER_OPEN",
     "WEBEX_HANDOFF_IS_HTTPS",
     "WEBJAM_DOES_NOT_PLAY_MOVIE",
+    "ART_NO_SKILL_NEEDED",
+    "ART_OWN_TOOLS_LINE",
     "art_conversation_guidance",
     "art_make_together_activity_detail",
     "art_watch_share_sentence",

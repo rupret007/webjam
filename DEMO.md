@@ -52,10 +52,11 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_art_start_ux.
    [docs/MERGE_AND_RELEASE.md](docs/MERGE_AND_RELEASE.md#1-ten-second-ux-gate).
 
 2. **Choose Art.** Two more cards appear:
-   - **Make together** — "Paint, sculpt, 3D print, or just talk." Everyone
-     works in their own space; the host can open one shared canvas from
-     inside the room if the group wants to draw together.
-   - **Paint along** — "Follow a silent video from a file or lesson link."
+   - **Make together** — "You do not need an art app. Talk and make with
+     what you have." Everyone works in their own space; the host can open
+     one shared canvas from inside the room if the group wants to draw
+     together.
+   - **Paint along** — "Watch one video together and make along."
 
    Point out that neither card names Jamulus, Webex, Drawpile, Krita, or any
    other tool — that's enforced by `tests/test_art_start_ux.py`, not a styling
@@ -77,11 +78,11 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_art_start_ux.
    open until WebJam confirms it.
 
 2. **Point out Copy Invite and Waiting for artists to connect.** The room
-   says **Make from your own space** and explains: "Use paper, clay, a model,
-   printer, or your usual app." With no saved meeting link, the next sentence
-   says "Choose Set Up Conversation to add an external meeting link."
-   With a saved link, it says "Choose Conversation for the external meeting
-   controls."
+   says **Make from your own space** and explains: "You do not need an art
+   app. Use paper, your usual tools, or just talk." With no saved meeting
+   link, the next sentence says "Choose Set Up Conversation to add your
+   meeting link." With a saved link, it says "Choose Conversation to talk or
+   share your screen."
    No one else has joined merely because the room is open or the invite was
    copied. For an actual collaborator, follow the invitation steps in
    [First Session](FIRST_JAM.md#start-an-art-room).

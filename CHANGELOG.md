@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Art’s first screens now tell a person with no art skill what to do: the
+  start cards say you do not need an art app, Paint along says watch one
+  video together, and the idle room names Start Session instead of listing
+  clay, printers, or a meeting-share essay.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
