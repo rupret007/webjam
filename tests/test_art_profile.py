@@ -259,6 +259,22 @@ def test_art_offers_exactly_two_starts_in_a_fixed_order(profile):
     ]
 
 
+def test_make_together_room_title_uses_the_door_card_phrase(profile):
+    """The in-room session default is the same phrase as the Art door card.
+
+    A person who chooses Make together must not land on a different gerund
+    ("Making together") or a Preview-in-the-title fallback. Preview honesty
+    stays on the session-strip subtitle.
+    """
+
+    make = profile.starts[0]
+    assert make.key == "talk_and_make"
+    assert make.label == "Make together"
+    assert profile.default_template == make.label
+    assert profile.default_template != "Making together"
+    assert profile.default_template != "Art (Preview)"
+
+
 def test_each_start_carries_at_most_one_add_on(profile):
     make, video = profile.starts
 
