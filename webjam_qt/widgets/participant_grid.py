@@ -363,11 +363,11 @@ class ParticipantGrid(QScrollArea):
         if profile.key == "podcast_voice":
             replacements = (
                 (
-                    "Start the session and invite your band.",
+                    "Start the session and invite others.",
                     "Start the recording session and invite speakers.",
                 ),
                 (
-                    "Start the session to join your band.",
+                    "Start the session to play together.",
                     "Start the session to join the recording.",
                 ),
                 ("Connecting to your band…", "Connecting to the speakers…"),
@@ -411,11 +411,11 @@ class ParticipantGrid(QScrollArea):
         elif profile.key == "art":
             replacements = (
                 (
-                    "Start the session and invite your band.",
+                    "Start the session and invite others.",
                     "Start the room and invite other artists.",
                 ),
                 (
-                    "Start the session to join your band.",
+                    "Start the session to play together.",
                     "Start the session to join the room.",
                 ),
                 ("Connecting to your band…", "Connecting to the artists…"),
@@ -459,11 +459,11 @@ class ParticipantGrid(QScrollArea):
         else:
             replacements = (
                 (
-                    "Start the session and invite your band.",
+                    "Start the session and invite others.",
                     "Start the review session and invite participants.",
                 ),
                 (
-                    "Start the session to join your band.",
+                    "Start the session to play together.",
                     "Start the session to join the review.",
                 ),
                 ("Connecting to your band…", "Connecting to the participants…"),
