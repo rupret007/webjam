@@ -146,6 +146,32 @@ def test_join_title_tracks_visible_profile_and_back_navigation(
         dialog.deleteLater()
 
 
+@pytest.mark.parametrize("profile_key", ["art", "music"])
+def test_join_privacy_line_is_human_and_invite_name_matches_paste(
+    qapp, tmp_path: Path, profile_key: str
+):
+    """Join says the invite stays here and names the paste field."""
+
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        dialog.show_join()
+        qapp.processEvents()
+        privacy = dialog._join_privacy.text()
+        assert privacy == (
+            "The invite stays on this screen. WebJam does not save it."
+        )
+        assert "secrets" not in privacy.casefold()
+        assert "logs" not in privacy.casefold()
+        assert dialog._invite_input.placeholderText() == "Paste the invite"
+        assert dialog._invite_input.accessibleName() == "Paste the invite"
+        spoken = harvest_join_page(dialog)
+        assert privacy.casefold() in spoken
+        assert_no_banned_first_screen_words(spoken)
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_art_adds_no_start_action_beyond_the_cards_and_host_join(
     qapp, tmp_path: Path
 ):
@@ -893,6 +919,24 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
             if not isinstance(button, (StartCard, ProfileCard))
         ]
         assert others == ["Host", "Join"]
+    finally:
+        dialog.deleteLater()
+
+
+def test_make_together_door_card_matches_the_in_room_session_title(
+    qapp, tmp_path: Path
+):
+    """Quoted door words and the room's default title are one phrase."""
+
+    dialog = _dialog(tmp_path)
+    try:
+        cards = _visible_cards(dialog)
+        door_label = cards[0].accessibleName()
+        assert door_label == "Make together"
+        assert cards[0].text() == "Make together"
+        profile = get_creator_profile_by_key("art")
+        assert profile.default_template == door_label
+        assert profile.default_template != "Making together"
     finally:
         dialog.deleteLater()
 
