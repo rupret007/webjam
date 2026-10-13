@@ -97,7 +97,7 @@ def test_real_help_fits_scrolls_and_returns_without_changing_work(app, window, p
         assert dialog._body.isReadOnly()
         assert dialog._body.horizontalScrollBar().maximum() == 0
         text = dialog._body.toPlainText()
-        assert ("Paint along" in text) == (profile == "art")
+        assert ("— Art" in text) == (profile == "art")
         bar = dialog._body.verticalScrollBar()
         # Music's long card still overflows at 22px. Art's three door beats
         # can fit on 760×680; compact Art still overflows and must stay
