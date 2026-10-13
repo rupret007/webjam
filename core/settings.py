@@ -116,6 +116,16 @@ def _coerce_input_maps(value: object) -> list:
     return cleaned
 
 
+def _input_maps_invalid(value: object) -> bool:
+    """Preserve legacy null/empty maps without accepting other falsey types."""
+
+    if value is None:
+        return False
+    if not isinstance(value, list):
+        return True
+    return bool(value) and not _coerce_input_maps(value)
+
+
 def _coerce_settings_data(data: dict) -> None:
     """Coerce config values to expected types; fall back to defaults on invalid data."""
     defaults = asdict(AppSettings())
@@ -171,10 +181,10 @@ def _coerce_settings_data(data: dict) -> None:
     if "input_maps" in data:
         raw_input_maps = data["input_maps"]
         data["input_maps"] = _coerce_input_maps(raw_input_maps)
-        # A non-empty malformed/over-capacity map must never degrade into the
+        # A malformed/over-capacity map must never degrade into the
         # empty-list compatibility default and unexpectedly record inputs 1–2.
         # Disable supplemental capture until the musician repairs the map.
-        if raw_input_maps and not data["input_maps"]:
+        if _input_maps_invalid(raw_input_maps):
             data["local_capture_enabled"] = False
     # String fields: ensure str
     for key in ("jamulus_server", "webex_url", "config_file", "mix_file",
@@ -347,9 +357,10 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         except Exception as exc:
             _logger.warning("Failed to parse settings file %s: %s - using defaults", file_path, exc)
 
-    persisted_input_map_invalid = bool(
-        loaded_data.get("input_maps")
-    ) and not bool(_coerce_input_maps(loaded_data.get("input_maps")))
+    persisted_input_map_invalid = (
+        "input_maps" in loaded_data
+        and _input_maps_invalid(loaded_data["input_maps"])
+    )
 
     # Migrate the one-release legacy bridge flag before coercion.  Explicit
     # new fields always win over their legacy-derived values.

@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Malformed saved input maps, including `{}`, `false`, `0`, and `""`, disable
+  supplemental Local Original capture even with an environment opt-in, so they
+  cannot silently select inputs 1–2. Missing, null, and empty-list maps retain
+  the existing compatibility behavior.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

@@ -303,8 +303,8 @@ def resolve_capture_tracks(settings: object) -> tuple[LocalCaptureTrack, ...]:
     channels in list order. A stereo entry remains one logical track mapped
     to two adjacent channels and therefore becomes one true two-channel WAV.
     Configured stems carry the ``local-`` prefix so take classification
-    recognizes them. With local capture enabled but no valid configuration,
-    the legacy fixed pair applies unchanged; with local capture disabled,
+    recognizes them. With local capture enabled and an absent, null, or empty
+    list configuration, the legacy fixed pair applies; with capture disabled,
     nothing is captured. Entries that are enabled but not Local Originals are
     skipped without consuming channels.
     """
@@ -315,7 +315,7 @@ def resolve_capture_tracks(settings: object) -> tuple[LocalCaptureTrack, ...]:
     bindings = configured_input_map_bindings(settings)
     if not bindings:
         # Only the genuinely empty/default configuration retains the legacy
-        # pair. A malformed non-empty map fails closed instead of unexpectedly
+        # pair. A malformed map fails closed instead of unexpectedly
         # recording the first two inputs.
         return LEGACY_CAPTURE_TRACKS if raw in (None, []) else ()
     tracks: list[LocalCaptureTrack] = []
