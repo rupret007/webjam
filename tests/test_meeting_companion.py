@@ -528,9 +528,11 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
     assert "WebJam window" in next_click
 
     # Overview Make-together detail stays brief (fits with Conversation closed).
+    # HUD Copy Invite is the waiting-room primary; this line does not ask
+    # to set up Conversation.
     detail = art_make_together_activity_detail()
     assert "paper, clay, a model, printer, or your usual app" in detail
-    assert "Choose Set Up Conversation" in detail
+    assert "Conversation" not in detail
     assert WATCH_TOGETHER_ACTIONS not in detail
     assert WEBJAM_DOES_NOT_PLAY_MOVIE not in detail
     assert paint_along_local_note() not in detail
@@ -591,16 +593,23 @@ def test_music_invite_names_meeting_share_for_watching_a_demo():
 
 
 @pytest.mark.parametrize(
-    "configured,next_action",
+    "configured,detail",
     [
-        (False, "Choose Set Up Conversation to add your meeting link."),
-        (True, "Choose Conversation to talk or share your screen."),
+        (
+            False,
+            "Use paper, clay, a model, printer, or your usual app, or just talk.",
+        ),
+        (
+            True,
+            "Use paper, clay, a model, printer, or your usual app, or just talk. "
+            "Choose Conversation to talk or share your screen.",
+        ),
     ],
 )
-def test_make_together_room_names_the_next_action(configured, next_action):
+def test_make_together_activity_keeps_own_space_without_a_setup_ask(configured, detail):
     from core.meeting_companion import art_make_together_activity_detail
 
-    assert art_make_together_activity_detail(conversation_configured=configured) == (
-        "Use paper, clay, a model, printer, or your usual app, or just talk. "
-        + next_action
-    )
+    assert art_make_together_activity_detail(conversation_configured=configured) == detail
+    if not configured:
+        assert "Conversation" not in detail
+        assert "meeting link" not in detail

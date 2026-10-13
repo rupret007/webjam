@@ -535,18 +535,18 @@ def art_make_together_activity_detail(
     Conversation closed (scrollbar maximum 0). Full Talk·Make·share /
     Webex / movie honesty lives on Conversation surfaces
     (art_conversation_guidance / Conversation panel), not here.
+
+    While the host is waiting with no meeting link, HUD Copy Invite is
+    the one primary. This line must not ask to set up Conversation.
     """
 
     del meeting_service  # overview stays brief and service-agnostic
-    next_action = (
-        "Choose Conversation to talk or share your screen."
-        if conversation_configured
-        else "Choose Set Up Conversation to add your meeting link."
+    own_space = (
+        "Use paper, clay, a model, printer, or your usual app, or just talk."
     )
-    return (
-        "Use paper, clay, a model, printer, or your usual app, or just talk. "
-        f"{next_action}"
-    )
+    if not conversation_configured:
+        return own_space
+    return f"{own_space} Choose Conversation to talk or share your screen."
 
 
 def art_conversation_guidance(*, meeting_service: str = "") -> str:

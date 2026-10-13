@@ -55,12 +55,13 @@ def test_cold_guest_room_loss_and_leave_never_show_music_roster(qapp, controller
     assert "0 artists" not in panel.accessibleDescription()
     assert panel._overview.activity_label == "Make from your own space"
     assert "paper, clay, a model, printer, or your usual app" in panel._overview.activity_detail
-    # Make together's next click is talk. An invitation without a meeting
-    # asks for one; adding a room-only link turns it into the way back.
+    # Make together's own-space line does not ask to set up Conversation.
+    # The ghost/footer button still names that optional click; adding a
+    # room-only link turns it into the way back.
     assert not str(app.settings.webex_url or "").strip()
     assert panel._overview.conversation_action_label == "Set Up Conversation"
     assert panel.conversation_button().text() == "Set Up Conversation"
-    assert "Choose Set Up Conversation" in panel._overview.activity_detail
+    assert "Conversation" not in panel._overview.activity_detail
     app._set_session_meeting_url("https://example.webex.com/meet/room")
     app._sync_art_room_overview()
     assert panel._overview.conversation_action_label == "Conversation"
