@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.network_invite import BandInvite, create_invite_link
+from core.network_invite import BandInvite, create_invite_link, parse_invite_link
 from core.remote_invitation import RemoteInvitation, issue_remote_invitation
 from webjam_qt.invitation_ingress import (
     InvitationIngressError,
@@ -246,6 +246,105 @@ def test_quoting_and_punctuation_around_a_forwarded_link_are_tolerated() -> None
             decorated, source=InvitationSource.PASTE
         )
         assert isinstance(parsed, BandInvite)
+
+
+def _private_lan_v2_link() -> str:
+    return create_invite_link(
+        "192.168.1.42",
+        session_id="11111111-1111-4111-8111-111111111111",
+        peer_port=43121,
+        invite_token="t" * 43,
+    )
+
+
+def _move_query_field_last(link: str, name: str) -> str:
+    prefix, separator, query = link.partition("?")
+    assert separator
+    parts = query.split("&")
+    head = [part for part in parts if not part.startswith(f"{name}=")]
+    tail = [part for part in parts if part.startswith(f"{name}=")]
+    assert tail
+    return f"{prefix}?{'&'.join([*head, *tail])}"
+
+
+def test_standalone_and_prose_v2_pastes_strip_the_same_surrounding_punctuation() -> None:
+    """Copying a v2 link out of a sentence must not block Join."""
+
+    link = _private_lan_v2_link()
+    expected = parse_invite_link(link)
+    assert isinstance(expected, BandInvite)
+    assert expected.version == 2
+    assert expected.peer_enabled is True
+    assert expected.host == "192.168.1.42"
+    assert expected.peer_port == 43121
+
+    for pasted in (
+        f"{link}.",
+        f"{link},",
+        f"{link}!",
+        f"<{link}>",
+        f'"{link}"',
+        f"({link}).",
+        f"Join here: {link}.",
+        f"Please use {link}!",
+    ):
+        parsed = parse_invitation_at_ingress(pasted, source=InvitationSource.PASTE)
+        assert parsed == expected
+
+    other = create_invite_link(
+        "10.0.0.8",
+        session_id="22222222-2222-4222-8222-222222222222",
+        peer_port=43122,
+        invite_token="u" * 43,
+    )
+    with pytest.raises(InvitationIngressError) as conflicting:
+        parse_invitation_at_ingress(f"{link} {other}", source=InvitationSource.PASTE)
+    assert conflicting.value.code is InvitationIngressErrorCode.INVALID
+
+    with pytest.raises(InvitationIngressError) as hidden:
+        parse_invitation_at_ingress(f"{link}&hidden=1.", source=InvitationSource.PASTE)
+    assert hidden.value.code is InvitationIngressErrorCode.INVALID
+
+    malformed = link.replace("t" * 43, "t" * 42 + "@")
+    with pytest.raises(InvitationIngressError) as token_error:
+        parse_invitation_at_ingress(f"{malformed}.", source=InvitationSource.PASTE)
+    assert token_error.value.code is InvitationIngressErrorCode.INVALID
+    assert "@" not in str(token_error.value)
+
+    with pytest.raises(InvitationIngressError) as argv_error:
+        parse_invitation_at_ingress(
+            f"{link}.",
+            source=InvitationSource.ARGV,
+            platform="darwin",
+        )
+    assert argv_error.value.code is InvitationIngressErrorCode.SOURCE_NOT_ALLOWED
+    assert "t" * 43 not in str(argv_error.value)
+
+
+def test_bare_invitations_keep_a_session_name_that_ends_in_punctuation() -> None:
+    """A valid pasted link must match the strict parser, including trailing '.'."""
+
+    v1 = create_invite_link("192.168.1.42", session_name="Rehearsal.")
+    expected_v1 = parse_invite_link(v1)
+    assert expected_v1.session_name == "Rehearsal."
+    parsed_v1 = parse_invitation_at_ingress(v1, source=InvitationSource.PASTE)
+    assert parsed_v1 == expected_v1
+
+    v2 = create_invite_link(
+        "192.168.1.42",
+        session_name="Rehearsal.",
+        session_id="11111111-1111-4111-8111-111111111111",
+        peer_port=43121,
+        invite_token="t" * 43,
+    )
+    v2_session_last = _move_query_field_last(v2, "session")
+    assert v2_session_last.endswith("session=Rehearsal.")
+    expected_v2 = parse_invite_link(v2_session_last)
+    assert expected_v2.session_name == "Rehearsal."
+    parsed_v2 = parse_invitation_at_ingress(
+        v2_session_last, source=InvitationSource.PASTE
+    )
+    assert parsed_v2 == expected_v2
 
 
 def test_two_different_jam_links_in_one_paste_are_ambiguous_not_guessed() -> None:

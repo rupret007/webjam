@@ -894,7 +894,7 @@ def _presentation(
         )
         return present(
             SessionPrimaryAction.COPY_INVITE,
-            "Invite ready",
+            "Copy the invite",
             invite_message,
             invite_evidence,
         )
