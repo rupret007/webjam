@@ -24,6 +24,7 @@ from core.session_transfer import (
     SharedCanvasSessionSnapshot,
 )
 from services.lan_room_guest import LanRoomTerminalReason, LessonRequestGuestState
+from services.remote_session_runtime import RemoteSessionPhase
 
 
 LOGGER = logging.getLogger("webjam.qt.room_participant")
@@ -717,17 +718,24 @@ class RoomParticipantController:
     def apply_native(self, source, snapshot):
         state = self.native_state
         if (state is None or snapshot.generation != self.native_generation
-                or source is not self.app._remote_session or self.blocked):
+                or source is not self.app._remote_session or self.blocked
+                or snapshot.phase is not RemoteSessionPhase.CONNECTED):
             return
         key = (source, snapshot.generation, state.revision)
         if key == self.native_applied:
             return
         if time.monotonic() - self.native_received_at >= 5.0:
             return
+        if not self.app._apply_creator_profile_key(state.creator_profile_key, host_owned=True):
+            # A Library media operation is still pending. Retry shortly
+            # without declaring admission complete; the 5s deadline above
+            # bounds how long these retries can run.
+            generation = self.generation
+            QTimer.singleShot(200, lambda: self._retry_apply_native(source, key, generation))
+            return
         self.native_applied = key
         self.probing = False
         self.borrowed_start = state.art_start_key
-        self.app._apply_creator_profile_key(state.creator_profile_key, host_owned=True)
         if state.creator_profile_key == "art":
             self.state = ArtRoomState.CONNECTED
             self.app._remote_invitation = None
@@ -736,6 +744,17 @@ class RoomParticipantController:
         else:
             self.state = ArtRoomState.NONE
             self.app._activate_remote_guest_route(snapshot, source=source)
+
+    def _retry_apply_native(self, source, key, generation):
+        state = self.native_state
+        if (state is None or self.blocked or generation != self.generation
+                or source is not self.app._remote_session
+                or (source, self.native_generation, state.revision) != key):
+            return
+        snapshot = getattr(source, "snapshot", None)
+        if snapshot is None or snapshot.generation != self.native_generation:
+            return
+        self.apply_native(source, snapshot)
 
     def observe_creative_state(self, state):
         for method, field in (("_reference_video_coordinator", "reference_video"),
@@ -968,7 +987,15 @@ class RoomParticipantController:
         if panel is None or getattr(panel, "_shared_lesson_hosting", None) is None:
             return
         binding = self._lesson_binding
-        if not self._lesson_current(binding):
+        # A transient poll failure disables the guest worker's request authority
+        # even while the room connection itself stays current; surface Restart
+        # rather than leaving the guest stuck with no way back in.
+        disarmed_guest = (
+            binding is not None and binding.role == "guest"
+            and self._lesson_current(binding)
+            and not binding.owner.lesson_requests_enabled
+        )
+        if disarmed_guest or not self._lesson_current(binding):
             self.retire_lesson_requests()
             self._wire_lesson_actions(None)
             panel.set_lesson_request_guest(status="Ask the host aloud.")
