@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Reference-service Close starts its one shared shutdown budget when it first
+  joins unfinished work, not when the caller enters Close. Scheduling delay
+  and cancelled-cleanup callbacks no longer consume that budget before
+  listener joiners are registered.
+
 - Native joins wait for Library/Studio media work before consuming an invite.
   After the operation finishes, join explicitly with the same still-valid
   invitation. A local profile deferral after enrollment no longer asks users
