@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- **Stop Recording** can stop an authorized recorder started outside WebJam.
+  Confirmation returns the controls to idle without creating a take. Requests
+  reject changed server/secret authority and ignore replies for later recordings.
+
 - Closing Session library with the window button or **Close** now completes
   the dialog lifecycle, like Escape. Reopening shows current saved or pending
   work; failed saves keep the draft visible and media cancellation retains

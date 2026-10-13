@@ -8,6 +8,7 @@ calls, error surfaces, timeouts) and the Conductor's Record button wiring
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import json
 import os
 import socket
@@ -5912,6 +5913,223 @@ class TestRecordButtonWiring(unittest.TestCase):
         self.assertTrue(c._recorder_armed)
         c._show_actionable_error.assert_not_called()
 
+    @contextmanager
+    def _observed_recorder_stop(self):
+        c = self.controller
+        with TemporaryDirectory() as directory:
+            secret = Path(directory) / "recorder.secret"
+            secret.write_text("authorized-secret\n", encoding="utf-8")
+            rpc = MagicMock()
+            rpc.__enter__.return_value = rpc
+            rpc.stop_recording.return_value = True
+            rpc.get_recorder_status.return_value = {"enabled": False}
+            rpc.get_clients.return_value = {"clients": []}
+            with (
+                patch.object(c.settings, "server_rpc_secret_file", str(secret)),
+                patch.object(c.settings, "server_rpc_port", 41234),
+                patch.object(c.recording, "request_authenticated_roster_observation"),
+                patch("core.jamulus_server_rpc.JamulusServerRpc", return_value=rpc) as factory,
+                patch("webjam_qt.controllers.recording_coordinator.threading.Thread") as thread,
+                patch.object(c._ui_invoker, "invoke", side_effect=lambda callback: callback()),
+            ):
+                c.recording.on_server_state(True)
+                yield secret, rpc, factory, thread
+
+    def _dispatch_captured_stop(self, thread):
+        request = thread.call_args.kwargs
+        request["target"](*request.get("args", ()))
+
+    def test_observed_recorder_stop_confirms_idle_without_a_take(self):
+        c = self.controller
+        with (
+            self._observed_recorder_stop() as (_, rpc, factory, thread),
+            patch.object(c.recording, "_begin_take_validation") as validate,
+            patch.object(c.session_library, "recording_completed") as publish,
+        ):
+            evidence = c.recording._current_session_evidence()
+            self.assertIn("Stop", self.window.session_strip._record_button.text())
+            self.window.session_strip._record_button.click()
+            c.recording.on_record_requested()  # A repeated request is a no-op.
+            thread.assert_called_once()
+            attempt = thread.call_args.kwargs["args"][0]
+            self.assertNotIn("recorder.secret", repr(attempt))
+            self.assertNotIn("authorized-secret", repr(attempt))
+            self.assertFalse(self.window.session_strip._record_button.isEnabled())
+            self._dispatch_captured_stop(thread)
+            # Replaying the captured worker after confirmation cannot send again.
+            self._dispatch_captured_stop(thread)
+            factory.assert_called_once_with(port=41234, secret="authorized-secret")
+            rpc.stop_recording.assert_called_once()
+            rpc.start_recording.assert_not_called()
+            self.assertFalse(c._recorder_armed)
+            self.assertFalse(c._server_recording)
+            self.assertEqual(c.recording.phase.value, "idle")
+            self.assertTrue(self.window.session_strip._record_button.isEnabled())
+            self.assertFalse(self.window.session_strip._record_clock.isActive())
+            self.assertEqual(c.recording._take_id, "")
+            self.assertEqual(c.recording._current_session_evidence(), evidence)
+            validate.assert_not_called()
+            publish.assert_not_called()
+            c._show_actionable_error.assert_not_called()
+
+    def test_observed_recorder_stop_rejects_changed_authority_before_dispatch(self):
+        c = self.controller
+        for change in ("port", "secret_path", "secret_replaced", "secret_removed", "settings_owner", "bridge_owner", "server_retired", "server_replaced"):
+            with self.subTest(change=change), self._observed_recorder_stop() as (secret, _, factory, thread):
+                # An owned server is only inspected, never signalled by this path.
+                process = SimpleNamespace(poll=lambda: None)
+                with patch.object(c.bridge, "hosted_server_process", process):
+                    c.recording.on_server_state(False)
+                    c.recording.on_server_state(True)
+                    c.recording.on_record_requested()
+                    with patch.object(c, "settings", c.settings), patch.object(c, "bridge", c.bridge):
+                        if change == "port":
+                            c.settings.server_rpc_port += 1
+                        elif change == "secret_path":
+                            c.settings.server_rpc_secret_file = str(secret) + ".other"
+                        elif change == "secret_replaced":
+                            replacement = secret.with_suffix(".new")
+                            replacement.write_text("replacement-secret\n", encoding="utf-8")
+                            replacement.replace(secret)
+                        elif change == "secret_removed":
+                            secret.unlink()
+                        elif change == "settings_owner":
+                            c.settings = SimpleNamespace(**vars(c.settings))
+                        elif change == "bridge_owner":
+                            c.bridge = SimpleNamespace(**vars(c.bridge))
+                        elif change == "server_retired":
+                            process.poll = lambda: 0
+                        else:
+                            c.bridge.hosted_server_process = SimpleNamespace(poll=lambda: None)
+                        self._dispatch_captured_stop(thread)
+                    factory.assert_not_called()
+                    self.assertTrue(c._recorder_armed)
+                    self.assertEqual(c.recording.phase.value, "stop_failed")
+                    c.recording.on_server_state(False)
+
+    def test_observed_recorder_stop_rejects_detached_and_readopted_server(self):
+        c = self.controller
+        with (
+            patch.object(c.bridge, "_hosted_server_adopted", True),
+            patch.object(c.bridge, "hosted_server_process", None),
+            patch.object(c.bridge, "_hosted_caffeinate_process", None),
+            patch.object(c.bridge, "_release_hosted_runtime_paths"),
+            patch.object(c.bridge, "_release_runtime_component_lease"),
+            patch.object(c.bridge, "_close_hosted_log_file"),
+            self._observed_recorder_stop() as (_, rpc, factory, thread),
+        ):
+            c.recording.on_record_requested()
+            self.assertTrue(c.bridge.stop_hosted_server())
+            c.bridge._hosted_server_adopted = True
+            self._dispatch_captured_stop(thread)
+            factory.assert_not_called()
+            rpc.stop_recording.assert_not_called()
+            self.assertEqual(c.recording.phase.value, "stop_failed")
+
+    def test_observed_recorder_stop_rechecks_authority_after_authentication(self):
+        c = self.controller
+        with self._observed_recorder_stop() as (_, rpc, _, thread):
+            def authenticated():
+                c.settings.server_rpc_port += 1
+                return rpc
+
+            rpc.__enter__.side_effect = authenticated
+            c.recording.on_record_requested()
+            self._dispatch_captured_stop(thread)
+            rpc.stop_recording.assert_not_called()
+            self.assertEqual(c.recording.phase.value, "stop_failed")
+
+    def test_observed_recorder_stop_failure_keeps_stop_available_for_retry(self):
+        c = self.controller
+        with self._observed_recorder_stop() as (_, rpc, _, thread):
+            rpc.stop_recording.return_value = False
+            c.recording.on_record_requested()
+            self._dispatch_captured_stop(thread)
+            self.assertTrue(c._server_recording)
+            self.assertTrue(c._recorder_armed)
+            self.assertEqual(c.recording.phase.value, "stop_failed")
+            self.assertTrue(self.window.session_strip._record_button.isEnabled())
+            rpc.stop_recording.return_value = True
+            c.recording.on_record_requested()
+            self._dispatch_captured_stop(thread)
+            self.assertEqual(rpc.stop_recording.call_count, 2)
+            self.assertEqual(c.recording.phase.value, "idle")
+
+    def test_observed_recorder_stop_requires_confirmed_disabled_status(self):
+        c = self.controller
+        with self._observed_recorder_stop() as (_, rpc, _, thread):
+            rpc.get_recorder_status.return_value = {"enabled": True}
+            c.recording.on_record_requested()
+            with (
+                patch("webjam_qt.controllers.recording_coordinator.time.monotonic", side_effect=[10, 10, 15]),
+                patch("webjam_qt.controllers.recording_coordinator.time.sleep"),
+            ):
+                self._dispatch_captured_stop(thread)
+            rpc.stop_recording.assert_called_once()
+            self.assertTrue(c._server_recording)
+            self.assertTrue(c._recorder_armed)
+            self.assertEqual(c.recording.phase.value, "stop_failed")
+
+    def test_observed_recorder_stop_retired_before_dispatch_never_sends(self):
+        from core.take_project import new_project_id
+
+        c = self.controller
+        for replacement in ("observed_cycle", "owned_take"):
+            with self.subTest(replacement=replacement), self._observed_recorder_stop() as (_, rpc, factory, thread):
+                c.recording.on_record_requested()
+                c.recording.on_server_state(False)
+                if replacement == "owned_take":
+                    c.recording._take_id = new_project_id()
+                with patch.object(c, "signal_peer_recording_started"):
+                    c.recording.on_server_state(True)
+                self._dispatch_captured_stop(thread)
+                factory.assert_not_called()
+                rpc.stop_recording.assert_not_called()
+                self.assertTrue(c._server_recording)
+                self.assertEqual(c.recording.phase.value, "recording")
+                c.recording._take_id = ""
+                c.recording.on_server_state(False)
+
+    def test_observed_recorder_stop_does_not_rebind_after_observation(self):
+        c = self.controller
+        with self._observed_recorder_stop() as (_, _, factory, thread):
+            c.settings.server_rpc_port += 1
+            c.recording.on_record_requested()
+            if thread.called:
+                self._dispatch_captured_stop(thread)
+            factory.assert_not_called()
+            self.assertTrue(c._recorder_armed)
+            self.assertEqual(c.recording.phase.value, "stop_failed")
+
+    def test_observed_recorder_stop_late_callbacks_cannot_touch_new_cycle_or_take(self):
+        from core.take_project import new_project_id
+
+        c = self.controller
+        for replacement in ("observed_cycle", "owned_take"):
+            for failed in (False, True):
+                with self.subTest(replacement=replacement, failed=failed), self._observed_recorder_stop() as (_, rpc, factory, thread):
+                    callbacks = []
+                    c.recording.on_record_requested()
+                    if failed:
+                        rpc.stop_recording.side_effect = ServerRpcError("unconfirmed")
+                    with patch.object(c._ui_invoker, "invoke", side_effect=callbacks.append):
+                        self._dispatch_captured_stop(thread)
+                    factory.assert_called_once()
+                    self.assertEqual(len(callbacks), 1)
+                    c.recording.on_server_state(False)
+                    if replacement == "owned_take":
+                        c.recording._take_id = new_project_id()
+                    with patch.object(c, "signal_peer_recording_started"):
+                        c.recording.on_server_state(True)
+                    c._show_actionable_error.reset_mock()
+                    callbacks.pop()()
+                    self.assertTrue(c._recorder_armed)
+                    self.assertTrue(c._server_recording)
+                    self.assertEqual(c.recording.phase.value, "recording")
+                    c._show_actionable_error.assert_not_called()
+                    c.recording._take_id = ""
+                    c.recording.on_server_state(False)
+
     def test_validation_retires_take_before_unrelated_recorder_notifications(self):
         """A later manual recorder cycle cannot reuse completed-take ownership."""
         from core.take_project import new_project_id
@@ -5942,7 +6160,12 @@ class TestRecordButtonWiring(unittest.TestCase):
                 needs_attention=False,
                 message="The take is finalized and ready.",
             )
-            c.recording.on_server_state(True)
+            with self._observed_recorder_stop() as (_, rpc, factory, thread):
+                c.recording.on_record_requested()
+                self._dispatch_captured_stop(thread)
+                factory.assert_called_once()
+                rpc.stop_recording.assert_called_once()
+                self.assertEqual(c.recording.phase.value, "idle")
             c.recording.on_server_state(False)
             c.recording.apply_toggle_result(True, take_id=take_id)
 
