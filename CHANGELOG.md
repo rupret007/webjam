@@ -10,6 +10,12 @@ All notable improvements and features for the WebJam creator collaboration platf
   **Open Paint along** stays available as a quiet body action; guest
   **Open my copy…** recovery keeps its emphasis.
 
+- Native joins wait for Library/Studio media work before consuming an invite.
+  After the operation finishes, join explicitly with the same still-valid
+  invitation. A local profile deferral after enrollment no longer asks users
+  to update the host; stale or absent room state still fails closed and an
+  uncertain enrollment still requires a fresh invitation.
+
 - The invite-ready Music HUD says **Copy the invite**. The HUD's **Copy Invite**
   remains the sole primary action; compact and normal window regressions keep
   the empty stage's **Start Session** hidden.
