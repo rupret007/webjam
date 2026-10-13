@@ -1011,7 +1011,8 @@ class RoomParticipantController:
         disarmed_guest = (
             binding is not None and binding.role == "guest"
             and self._lesson_current(binding)
-            and not binding.owner.lesson_requests_enabled
+            and self.state is ArtRoomState.CONNECTED
+            and not getattr(binding.owner, "lesson_requests_enabled", True)
         )
         if disarmed_guest or not self._lesson_current(binding):
             self.retire_lesson_requests()

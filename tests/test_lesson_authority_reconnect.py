@@ -126,6 +126,7 @@ def guest_rig(rig):
     room.role = "guest"
     owner = SimpleNamespace(
         connection_available=True, terminal_reason=None,
+        lesson_requests_enabled=True,
         set_lesson_requests_enabled=Mock(),
         lesson_request_state=LessonRequestGuestState(), stop=Mock(return_value=True),
     )
