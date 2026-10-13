@@ -243,6 +243,73 @@ def test_stop_invalidates_late_worker_result() -> None:
     assert backend.stopped == 1
 
 
+def test_stop_at_securing_connection_never_starts_backend() -> None:
+    backend = Backend()
+    snapshots = []
+
+    def changed(snapshot):
+        snapshots.append(snapshot)
+        if snapshot.stage is RemoteSessionStage.SECURING_CONNECTION:
+            runtime.stop()
+
+    runtime = RemoteSessionRuntime(backend, on_snapshot=changed)
+    runtime.start_guest(_invitation())
+    worker = runtime._worker
+    if worker is not None:
+        worker.join(2)
+        assert not worker.is_alive()
+
+    assert backend.seen is None
+    assert backend.stopped == 1
+    assert runtime.snapshot.phase is RemoteSessionPhase.STOPPED
+    assert runtime._pending_invitation is None
+    assert snapshots[-1].musician_status == "Audio session ended"
+    assert all(s.phase is not RemoteSessionPhase.CONNECTED for s in snapshots)
+
+
+def test_retired_worker_cleans_up_its_own_backend_resource() -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    class ScopedBackend(Backend):
+        def __init__(self):
+            super().__init__()
+            self.running = set()
+            self.retired = []
+
+        def start_guest(self, invitation, *, generation):
+            self.running.add(generation)
+            connection = super().start_guest(invitation, generation=generation)
+            entered.set()
+            assert release.wait(2)
+            return connection
+
+        def stop_guest(self, *, generation):
+            self.retired.append(generation)
+            self.running.discard(generation)
+
+    backend = ScopedBackend()
+    runtime = RemoteSessionRuntime(backend, on_snapshot=lambda _snapshot: None)
+    runtime.start_guest(_invitation())
+    worker = runtime._worker
+    try:
+        assert entered.wait(1)
+        assert runtime.mark_connection_lost(expected_generation=1)
+        # A replacement resource must survive the old worker's cleanup.
+        backend.running.add(2)
+        release.set()
+        worker.join(2)
+        assert not worker.is_alive()
+        assert backend.retired == [1]
+        assert backend.running == {2}
+        assert runtime.snapshot.phase is RemoteSessionPhase.FAILED
+        assert runtime.snapshot.error_code is RemoteSessionErrorCode.TRANSPORT_FAILED
+    finally:
+        release.set()
+        worker.join(2)
+        backend.running.clear()
+
+
 class HelpBackend(Backend):
     def __init__(self) -> None:
         super().__init__()
