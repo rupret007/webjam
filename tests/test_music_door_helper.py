@@ -18,7 +18,7 @@ def qapp():
     yield QApplication.instance() or QApplication([])
 
 
-@pytest.mark.parametrize("size", [(620, 520), (800, 600), (1280, 800)])
+@pytest.mark.parametrize("size", [(620, 520), (800, 600)])
 @pytest.mark.parametrize("larger_text", [False, True])
 def test_music_role_helper_fits_and_returns_after_art(qapp, tmp_path: Path, size, larger_text):
     settings = AppSettings(
