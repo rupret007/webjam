@@ -6152,7 +6152,18 @@ class RecordingCoordinator:
 
     def on_server_state(self, recording: bool) -> None:
         if recording == self._c._server_recording:
-            return
+            # RPC may confirm a take's start without a true notification ever
+            # arriving. Its first false notice still confirms the stop; only
+            # deduplicate it once that take has stop evidence (or never started).
+            with self._evidence_lock:
+                unobserved_stop = bool(
+                    not recording
+                    and self._take_id
+                    and self._recording_started_utc
+                    and not self._recording_ended_utc
+                )
+            if not unobserved_stop:
+                return
         prior_phase = self.phase
         self._c._server_recording = recording
         self._c.session_health.mark_recorder(
