@@ -331,10 +331,11 @@ and video recovery does not hide **Open canvas**. If you hid the video, return
 through **Open Paint along**, then choose **Show video** when you want it
 visible again. Your existing local copy stays open.
 
-When the room offers a shared canvas or Paint along, its next step still
-includes paper, clay, a model, printer, or your usual app. Shared activities
-are optional. You only need Drawpile to use the shared canvas; artists using
-their own tools can keep making together.
+When Paint along is the room's next action, its activity and Open button
+follow the connection status without an extra own-tools paragraph. Make
+together and shared-canvas rooms keep the paper, clay, model, printer, or
+usual-app guidance. Shared activities are optional. You only need Drawpile
+to use the shared canvas; artists using their own tools can keep making together.
 
 In **Notes** or Paint along, choose **Back to room** to see the full room and
 its current activities or recovery action. Your notes, selection and undo

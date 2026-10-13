@@ -205,10 +205,12 @@ def art_room_overview(
         secondary_activity_action=secondary_action,
         secondary_activity_action_label=secondary_action_label,
         secondary_activity_enabled=active and bool(secondary_action),
+        # Paint along already supplies the next step. Keep the own-tools
+        # preamble for canvas-led rooms without stacking it above video.
         making_detail=(
             "Start making with paper, clay, a model, printer, or your usual app. "
             "Shared activities are optional."
-            if active and (action or secondary_action) else ""
+            if active and (action or secondary_action) and action != "video" else ""
         ),
         # Conversation only reveals the separate meeting controls. Its
         # availability is independent of the Art transport connection.

@@ -226,9 +226,11 @@ def test_optional_activity_keeps_an_any_artist_next_step(hosting, canvas_state, 
         if state is ArtRoomState.WAITING and not hosting:
             assert not overview.making_detail
             continue
-        assert overview.making_detail.startswith("Start making with paper, clay")
-        assert "model, printer, or your usual app" in overview.making_detail
-        assert "Shared activities are optional." in overview.making_detail
+        assert overview.making_detail == (
+            "" if presence.target is ArtPresenceTarget.VIDEO else
+            "Start making with paper, clay, a model, printer, or your usual app. "
+            "Shared activities are optional."
+        )
         assert overview.activity_actions == (presence.target.value,)
         assert overview.activity_detail == presence.description
 

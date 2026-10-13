@@ -230,8 +230,16 @@ def test_both_production_activities_fit_and_keep_keyboard_actions_reachable(
     window.session_strip.set_audio_state("End Room" if hosting else "Leave Room")
     panel = window.art_room_overview
     assert current.role_label == ("Host" if hosting else "Guest")
-    assert panel._making_detail.isVisibleTo(window)
-    assert "paper, clay, a model, printer, or your usual app" in panel._making_detail.text()
+    if current.activity_action == "video":
+        assert panel._making_detail.isHidden()
+        assert panel._making_detail.text() == ""
+        assert "Start making with paper" not in panel.accessibleDescription()
+    else:
+        assert panel._making_detail.isVisibleTo(window)
+        assert panel._making_detail.text() == (
+            "Start making with paper, clay, a model, printer, or your usual app. "
+            "Shared activities are optional."
+        )
     # Deterministically exercise wider glyph metrics without changing a
     # machine's font/DPI settings or replacing production stylesheet sizes.
     for widget in panel._content.findChildren(QLabel) + panel._content.findChildren(QPushButton):
