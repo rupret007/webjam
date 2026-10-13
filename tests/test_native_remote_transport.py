@@ -15,6 +15,8 @@ from services.remote_session_runtime import (
     RemoteBackendError,
     RemoteSessionErrorCode,
     RemoteSessionPhase,
+    RemoteSessionRuntime,
+    RemoteSessionStage,
 )
 from services.transport_runtime import TransportEvent
 
@@ -464,6 +466,139 @@ def test_guest_stop_cancels_pre_ready_start_without_enrollment(
     assert process.guest_generations == []
     assert process.closed == 0
     assert process.reaped
+
+
+def test_runtime_stop_at_securing_connection_never_creates_native_process(monkeypatch) -> None:
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    backend = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric", expected_build="abc1234",
+    )
+
+    def changed(snapshot):
+        if snapshot.stage is RemoteSessionStage.SECURING_CONNECTION:
+            runtime.stop()
+
+    runtime = RemoteSessionRuntime(backend, on_snapshot=changed)
+    try:
+        runtime.start_guest(_invitation())
+        worker = runtime._worker
+        if worker is not None:
+            worker.join(2)
+            assert not worker.is_alive()
+        assert runtime.snapshot.phase is RemoteSessionPhase.STOPPED
+        assert FakeProcess.instances == []
+        assert not backend.connection_available
+        assert backend.room_identity is None
+    finally:
+        backend.stop()
+
+
+@pytest.mark.parametrize("replacement", [False, True])
+@pytest.mark.parametrize("timeout", [False, True])
+def test_runtime_stop_fences_native_install_after_dispatch(monkeypatch, replacement, timeout) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+    stopped = threading.Event()
+
+    class DelayedBackend(native.NativeGuestTransportBackend):
+        def start_guest(self, invitation, *, generation):
+            if generation == 1:
+                entered.set()
+                assert release.wait(2)
+            return super().start_guest(invitation, generation=generation)
+
+        def stop_guest(self, *, generation):
+            super().stop_guest(generation=generation)
+            stopped.set()
+
+        def stop(self):
+            super().stop()
+            stopped.set()
+
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    backend = DelayedBackend(binary="/private/webjam-fabric", expected_build="abc1234")
+    snapshots = []
+    runtime = RemoteSessionRuntime(backend, on_snapshot=snapshots.append)
+    runtime.start_guest(_invitation())
+    worker = runtime._worker
+    try:
+        assert entered.wait(1)
+        if timeout:
+            runtime._expire_guest_join(runtime._operation, 1)
+            assert stopped.wait(1)
+            expected_phase = RemoteSessionPhase.FAILED
+            assert runtime.snapshot.error_code is RemoteSessionErrorCode.TIMED_OUT
+            assert not runtime.snapshot.invitation_retry_safe
+        else:
+            runtime.stop()
+            expected_phase = RemoteSessionPhase.STOPPED
+        assert runtime.snapshot.phase is expected_phase
+        assert FakeProcess.instances == []
+        if replacement:
+            backend.start_guest(_invitation(), generation=2)
+        release.set()
+        worker.join(2)
+        assert not worker.is_alive()
+        assert runtime.snapshot.phase is expected_phase
+        assert runtime._pending_invitation is None
+        assert all(s.phase is not RemoteSessionPhase.CONNECTED for s in snapshots)
+        if replacement:
+            process, = FakeProcess.instances
+            assert process.guest_generations == [2]
+            assert process.running
+            assert process.stopped == 0
+        else:
+            assert FakeProcess.instances == []
+            # Once the retired worker exits, the runtime can join again.
+            runtime.start_guest(_invitation())
+            assert runtime.wait_until_settled().phase is RemoteSessionPhase.CONNECTED
+            process, = FakeProcess.instances
+            assert process.guest_generations == [2]
+    finally:
+        release.set()
+        worker.join(2)
+        runtime.stop()
+        backend.stop()
+
+
+def test_late_native_result_cleanup_cannot_stop_replacement(monkeypatch) -> None:
+    returned = threading.Event()
+    release = threading.Event()
+
+    class DelayedResultBackend(native.NativeGuestTransportBackend):
+        def start_guest(self, invitation, *, generation):
+            connection = super().start_guest(invitation, generation=generation)
+            if generation == 1:
+                returned.set()
+                assert release.wait(2)
+            return connection
+
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", FakeProcess)
+    backend = DelayedResultBackend(binary="/private/webjam-fabric", expected_build="abc1234")
+    runtime = RemoteSessionRuntime(backend, on_snapshot=lambda _snapshot: None)
+    runtime.start_guest(_invitation())
+    worker = runtime._worker
+    try:
+        assert returned.wait(1)
+        old_process, = FakeProcess.instances
+        runtime.stop()
+        assert not old_process.running
+        backend.start_guest(_invitation(), generation=2)
+        new_process = FakeProcess.instances[-1]
+        release.set()
+        worker.join(2)
+        assert not worker.is_alive()
+        assert runtime.snapshot.phase is RemoteSessionPhase.STOPPED
+        assert new_process.running
+        assert new_process.stopped == 0
+        assert backend.connection_available
+    finally:
+        release.set()
+        worker.join(2)
+        backend.stop()
 
 
 def test_host_owner_registers_before_copy_and_reset_rotates_one_use_bearer(
