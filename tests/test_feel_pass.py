@@ -228,6 +228,10 @@ def test_join_is_paste_the_invite(qapp, tmp_path: Path):
         assert dialog._join_title.text() == "Join the room."
         assert "paste the invite" in dialog._join_subtitle.text().casefold()
         assert dialog._invite_input.placeholderText() == "Paste the invite"
+        assert dialog._invite_input.accessibleName() == "Paste the invite"
+        assert dialog._join_privacy.text() == (
+            "The invite stays on this screen. WebJam does not save it."
+        )
         spoken = harvest_join_page(dialog)
         assert_no_banned_first_screen_words(spoken)
     finally:
