@@ -1,5 +1,6 @@
 """Actual Recording Setup repairs idle owners and refuses stale live changes."""
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -268,6 +269,74 @@ def test_join_change_after_ordinary_save_does_not_apply_stale_endpoint(rig, monk
     flashed = message.call_args.args[0].lower()
     assert "session setup changed" in flashed
     assert "reopen" in flashed
+
+
+@pytest.mark.parametrize("change", ["generation", "endpoint", "role", "meeting"])
+def test_modal_identity_change_rejects_ordinary_save_without_replacing_settings(
+    rig, monkeypatch, change,
+):
+    app = rig
+    original = app.settings
+    saved = Mock()
+    monkeypatch.setattr("webjam_qt.windows.recording_setup.save_settings", saved)
+
+    def changed(dialog):
+        dialog._capture.setChecked(not dialog._capture.isChecked())
+        draft_capture = dialog._capture.isChecked()
+        generation = app._settings_generation
+        if change == "generation":
+            app._invalidate_band_check_evidence()
+        elif change == "endpoint":
+            app.settings.jamulus_server = "192.168.1.20"
+        elif change == "role":
+            app.settings.host_server_enabled = not app.settings.host_server_enabled
+        else:
+            app.settings.webex_url = "https://example.webex.com/meet/updated"
+        assert app.settings is original
+        if change != "generation":
+            assert app._settings_generation == generation
+        # Persist the new session first; the stale recording draft must leave
+        # both its live owner and these exact saved bytes alone.
+        save_settings(app.settings)
+        settings_path = Path(app.settings.config_file)
+        current_bytes = settings_path.read_bytes()
+
+        dialog._save()
+
+        saved.assert_not_called()
+        assert dialog.result() != dialog.DialogCode.Accepted
+        assert not dialog._error.isHidden()
+        assert dialog._error.text() == (
+            "The session setup changed. Close and reopen Recording Setup to review it."
+        )
+        assert dialog._capture.isChecked() is draft_capture
+        assert settings_path.read_bytes() == current_bytes
+        dialog.reject()
+
+    open_setup(app, monkeypatch, changed)
+    assert app.settings is original
+
+
+def test_generation_change_after_ordinary_save_requires_review_before_applying(
+    rig, monkeypatch,
+):
+    app = rig
+    original = app.settings
+    message = Mock()
+    monkeypatch.setattr(app.window, "flash_message", message)
+
+    def raced(dialog):
+        dialog._save()
+        assert dialog.result() == dialog.DialogCode.Accepted
+        app._invalidate_band_check_evidence()
+
+    open_setup(app, monkeypatch, raced)
+
+    assert app.settings is original
+    message.assert_called_once_with(
+        "The session setup changed. Close and reopen Recording Setup to review it.",
+        ms=8000,
+    )
 
 
 def test_end_cancel_cleanup_retry_then_repair_preserves_notes_and_restarts_only_on_request(

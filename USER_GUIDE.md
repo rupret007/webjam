@@ -1216,6 +1216,11 @@ restarting WebJam. Start Session and Band Check use the saved setup; choose
 **Record Session** again for a fresh plan and input checks. Jamulus manages its
 live audio settings separately.
 
+If the session settings change while Recording Setup is open, Save asks you
+to close and reopen Setup to review them. Your edits stay visible until you
+close it; review and reapply them after reopening. You can still turn off Local
+Originals during an active session when its settings have not changed.
+
 When supported guests report input failures, the host sees their names and
 the specific problems. Older guests retain generic Setup guidance. Fresh guest
 checks must confirm the repaired choice before recording can start.
