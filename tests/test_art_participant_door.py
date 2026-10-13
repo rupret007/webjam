@@ -16,6 +16,7 @@ from core.settings import AppSettings
 from tests.support.start_ux import (
     assert_no_banned_first_screen_words,
     harvest_first_screen,
+    harvest_join_page,
     harvest_spoken_page,
 )
 from webjam_qt.theme import load_stylesheet
@@ -184,11 +185,21 @@ def test_paste_is_unchecked_and_replacing_it_clears_spoken_errors(door, reset):
             dialog._invite_input.setText("another unchecked value")
         parse.assert_not_called()
         assert dialog._join_status.text() == "Invitation pasted — choose Join"
+        assert dialog._join_status.accessibleDescription() == (
+            "Invitation pasted — choose Join"
+        )
+        assert LaunchDialog._EMPTY_JOIN_PROMPT.casefold() not in harvest_join_page(
+            dialog
+        )
     else:
         dialog.show_choices()
         dialog.show_join()
         assert dialog._join_status.text() == ""
+        assert dialog._join_status.accessibleDescription() == ""
         assert dialog._invite_input.text() == ""
+        assert LaunchDialog._EMPTY_JOIN_PROMPT.casefold() not in harvest_join_page(
+            dialog
+        )
     assert dialog._join_error.text() == ""
     assert dialog._join_error.accessibleDescription() == ""
     assert not dialog._join_error.isVisibleTo(dialog)

@@ -13,6 +13,7 @@ from shiboken6 import isValid
 
 from core.network_invite import create_invite_link
 from core.settings import AppSettings
+from tests.support.start_ux import harvest_join_page
 from webjam_qt.invitation_ingress import (
     InvitationIngressError,
     InvitationIngressErrorCode,
@@ -109,11 +110,16 @@ def test_paste_does_not_parse_or_claim_a_network_type(join_door, profile):
         for value in ("A nearby-room message", "A remote-room message"):
             dialog._invite_input.setText(value)
             assert dialog._join_status.text() == "Invitation pasted — choose Join"
+            assert dialog._join_status.accessibleDescription() == (
+                "Invitation pasted — choose Join"
+            )
             assert dialog._join_subtitle.text() == guidance
             assert dialog.selected_role == ""
         parse.assert_not_called()
     dialog._invite_input.clear()
     assert dialog._join_status.text() == ""
+    assert dialog._join_status.accessibleDescription() == ""
+    assert LaunchDialog._EMPTY_JOIN_PROMPT.casefold() not in harvest_join_page(dialog)
     assert dialog._join_subtitle.text() == guidance
 
 
@@ -149,6 +155,7 @@ def test_join_keyboard_route_keeps_field_action_and_back_reachable(
     assert field.hasFocus()
     assert dialog._invite_input.accessibleDescription() == dialog._join_subtitle.text()
     assert dialog._join_status.text() == "Needs attention"
+    assert dialog._join_status.accessibleDescription() == "Needs attention"
     assert dialog._join_error.isVisibleTo(dialog)
     assert not dialog.showing_choices
     assert dialog._join_error.accessibleDescription() == dialog._join_error.text()

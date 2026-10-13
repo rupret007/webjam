@@ -28,6 +28,7 @@ from core.network_invite import (
 )
 from core.jamulus_name import DEFAULT_JAMULUS_NAME
 from core.settings import AppSettings, load_settings, save_settings
+from tests.support.start_ux import harvest_join_page
 from webjam_qt.widgets.session_hud import SessionHud
 from webjam_qt.windows.launch_dialog import (
     LaunchDialog,
@@ -521,6 +522,8 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     assert dialog._join_button_primary.text() == "Join"
     assert dialog._join_button_primary.isEnabled() is False
     assert dialog._join_status.text() == ""
+    assert dialog._join_status.accessibleDescription() == ""
+    assert LaunchDialog._EMPTY_JOIN_PROMPT.casefold() not in harvest_join_page(dialog)
     assert dialog._join_privacy.text() == "The invite stays on this computer."
     assert dialog._invite_input.echoMode() is QLineEdit.EchoMode.Password
     dialog._name_input.setText("Drummer")

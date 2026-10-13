@@ -1450,7 +1450,7 @@ class LaunchDialog(QDialog):
         self.invitation_meeting_url = ""
         self._invite_input.clear()
         self._clear_join_error()
-        self._join_status.setText("")
+        self._set_join_status("")
         self._pages.setCurrentWidget(self._choice_page)
         # First-screen rooms hide the picker. Host is the next click.
         if (
@@ -1472,6 +1472,12 @@ class LaunchDialog(QDialog):
         self._join_error.setAccessibleDescription("")
         self._join_error.setVisible(False)
 
+    def _set_join_status(self, text: str) -> None:
+        """Keep Join status visible text and assistive description in lockstep."""
+
+        self._join_status.setText(text)
+        self._join_status.setAccessibleDescription(text)
+
     def _on_invite_text_changed(self, *_args: object) -> None:
         """Describe an unchecked paste without claiming it is a valid invite."""
 
@@ -1480,7 +1486,7 @@ class LaunchDialog(QDialog):
         self.invitation_meeting_url = ""
         self._clear_join_error()
         has_invite = bool(self._invite_input.text().strip())
-        self._join_status.setText(
+        self._set_join_status(
             "Invitation pasted — choose Join" if has_invite else ""
         )
         self._join_status.setProperty("joinReady", "true" if has_invite else "false")
@@ -1561,7 +1567,7 @@ class LaunchDialog(QDialog):
     _EMPTY_JOIN_PROMPT = "Paste your invitation to continue"
 
     def _prompt_empty_join_invite(self) -> None:
-        self._join_status.setText(self._EMPTY_JOIN_PROMPT)
+        self._set_join_status(self._EMPTY_JOIN_PROMPT)
         self._announce_error(self._join_status, focus=self._invite_input)
 
     def _join(self) -> None:
@@ -1584,7 +1590,7 @@ class LaunchDialog(QDialog):
         self.invitation_meeting_url = ""
         raw = str(value or "")
         self._invite_input.clear()
-        self._join_status.setText("Checking invite")
+        self._set_join_status("Checking invite")
         try:
             invitation = parse_invitation_at_ingress(
                 raw,
@@ -1608,7 +1614,7 @@ class LaunchDialog(QDialog):
             # Restore controls before showing the error; refreshing invite status
             # would clear the message we are about to present.
             self._restore_submission(refresh_invite_status=False)
-            self._join_status.setText("Needs attention")
+            self._set_join_status("Needs attention")
             self._join_error.setText(str(exc))
             self._join_error.setVisible(True)
             self._announce_error(self._join_error, focus=self._invite_input)
@@ -1667,7 +1673,7 @@ class LaunchDialog(QDialog):
                 "The invitation was cleared. Paste the full invitation again, then choose Join."
             )
             self._join_error.setVisible(True)
-            self._join_status.setText("Needs attention")
+            self._set_join_status("Needs attention")
             self._announce_error(self._join_error, focus=self._invite_input)
             return False
         self.selected_role = "join"
@@ -1705,7 +1711,7 @@ class LaunchDialog(QDialog):
         self._pages.setCurrentWidget(self._join_page)
         self.invitation_meeting_url = ""
         self._invite_input.clear()
-        self._join_status.setText("Needs attention")
+        self._set_join_status("Needs attention")
         self._join_error.setText(
             str(message or "WebJam could not open that invitation.")
         )
