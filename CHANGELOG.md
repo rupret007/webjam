@@ -6,6 +6,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Connected Art rooms keep making guidance beside the Conversation action;
+  the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
+
 - Help's Current workspace and follow-along instructions describe live audio
   and Shared Track actions without naming the audio engine. Help navigation
   and recording-boundary guidance are unchanged.

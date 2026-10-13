@@ -54,8 +54,9 @@ def test_current_workspace_help_does_not_name_the_audio_engine(app, window, prof
         assert "Preview" in text
         assert "playback-only" in text
     if profile == "music" and not offline_studio:
-        assert "without a WebJam room or completed live audio setup" in text
-        assert "Open Shared Track uses a supported local backing file for ensemble playing" in text
+        assert "without a WebJam room or a finished live-audio setup" in text
+        assert "Open Shared Track" in text
+        assert "shared with the room for playing" in text
         assert "disconnect meeting audio" in text
 
 
