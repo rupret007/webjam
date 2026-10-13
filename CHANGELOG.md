@@ -6,10 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-- Aligned-originals export rejects a source recording that changes after its
-  declared hash is checked, including a same-format rewrite. No package is
-  published, the take files are left as they are, and Studio does not show a
-  success or an export receipt.
+- Aligned-originals export hashes and renders each source through one open
+  file descriptor. A same-format rewrite or path replacement after that
+  handle is bound cannot publish. No package is published, the take files
+  are left as they are, and Studio does not show a success or an export
+  receipt.
 
 - Native joins wait for Library/Studio media work before consuming an invite.
   After the operation finishes, join explicitly with the same still-valid
