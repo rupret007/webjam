@@ -6,6 +6,12 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- A legacy (v1) Music invitation pasted from the Art door now starts the
+  Music guest journey instead of reopening Join. The saved Art preference is
+  preserved; peer-enabled (v2) invitations still discover the host's room.
+  Offline paste → validate → join coverage and a CI 800×600 / compact layout
+  smoke now guard both invite versions and the launch door.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

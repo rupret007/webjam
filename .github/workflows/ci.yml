@@ -201,6 +201,12 @@ jobs:
       - name: Run UX smoke gate
         run: python ux_smoke_test.py
 
+      - name: Run compact layout smoke (800x600 and compact door)
+        run: python -m pytest tests/test_compact_layout_smoke.py -q
+
+      - name: Run offline invite-path e2e (paste, validate, join)
+        run: python -m pytest tests/test_offline_invite_path.py -q
+
       # test_elevation_edge.py uses @skipUnless(win32) so runs safely on Linux
       # (skips all tests) — no --ignore needed for it.
       - name: Run test suite
