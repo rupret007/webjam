@@ -108,7 +108,8 @@ moment's **Open in take** also continues the imported workspace directly.
 If its saved context or media changes before Studio opens, select and open it again.
 
 In **Art project**, select a local file and choose **Verify reference**.
-**Open reference** checks it before opening its external app. **Relink…** locates
+**Open reference** checks it before opening its external app. Keep the filename
+you already use, including everyday Mac names. **Relink…** locates
 the same content while preserving the brief and bookmarks. A metadata-only file
 without an original checksum can be checked for availability, but cannot be
 proven to be the original or relinked as matching content.

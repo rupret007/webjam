@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Local Art files with ordinary Mac names (`CON.png`, a colon in the name, or
+  decomposed accents such as `café.png`) can be verified, opened after that
+  check, and backed up under generated archive names. The original file is not
+  renamed. Portable archive-member and `relative_path` checks stay unchanged.
+
 - Closing Session library with the window button or **Close** now completes
   the dialog lifecycle, like Escape. Reopening shows current saved or pending
   work; failed saves keep the draft visible and media cancellation retains

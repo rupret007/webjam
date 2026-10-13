@@ -8,6 +8,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import unicodedata
 from uuid import uuid4
 import wave
 import zipfile
@@ -21,7 +22,7 @@ from core.session_library import (
 )
 from core import workspace_media_backup as media
 from core.workspace_backup import export_workspace_backup, preview_workspace_backup, import_workspace_backup
-from core.workspace_media_schema import relative_path
+from core.workspace_media_schema import local_source_basename, relative_path
 
 
 def _digest(data):
@@ -220,10 +221,73 @@ def test_two_real_take_consumers_roundtrip_with_exact_manifests_reviews_and_edit
     assert {name: Path(name).read_bytes() for name in original} == original
 
 
-@pytest.mark.parametrize("name", ["../x", "/x", "a//b", "a/./b", "a\\b", "C:x", "CON", "COM¹.wav", "a?b", "x.", "e\u0301.wav"])
+@pytest.mark.parametrize("name", [
+    "../x", "/x", "a//b", "a/./b", "a\\b", "C:x", "CON", "CON.png", "COM¹.wav",
+    "a?b", "x.", "e\u0301.wav", "Study: blue.png", "cafe\u0301.png",
+])
 def test_cross_platform_member_names_are_rejected(name):
     with pytest.raises(ValueError):
         relative_path(name)
+
+
+@pytest.mark.parametrize("name", ["CON.png", "Study: blue.png", "cafe\u0301.png", "normal.png"])
+def test_local_source_basename_allows_ordinary_mac_art_names(name):
+    assert local_source_basename(name) == name
+
+
+@pytest.mark.parametrize("name", ["../x", "/x", "a/b", "a\\b", ".", "..", "", "a\x00b"])
+def test_local_source_basename_still_rejects_path_escape(name):
+    with pytest.raises(ValueError):
+        local_source_basename(name)
+
+
+def test_default_inspect_still_rejects_nonportable_source_basenames(tmp_path):
+    path = tmp_path / "CON.png"
+    path.write_bytes(b"owned artwork")
+    work = media._Work("Inspect")
+    with pytest.raises(ValueError, match="unsafe on a supported platform"):
+        media._inspect(tmp_path, path.name, "art/example/content.png", "art", work)
+
+
+@pytest.mark.parametrize("filename", ["CON.png", "Study: blue.png", "cafe\u0301.png"])
+def test_ordinary_mac_art_filenames_verify_open_and_roundtrip_unchanged(tmp_path, filename):
+    payload = b"mac artwork\x00\xff" + filename.encode("utf-8")
+    original = tmp_path / filename
+    original.write_bytes(payload)
+    assert original.name == filename
+    if filename == "cafe\u0301.png":
+        assert unicodedata.normalize("NFC", original.name) != original.name
+    record = SessionLibrary(tmp_path / "original").create(
+        "art", "Painting",
+        art=normalize_art_workspace({"version": 1, "references": [
+            {"id": "painting", "kind": "file", "locator": str(original), "title": "Painting"}]}))
+    checked = media.verify_workspace_media(record, "art", "painting")
+    checked.assert_current()
+    assert original.read_bytes() == payload and original.name == filename
+    plan = media.plan_workspace_package(record, media.WorkspacePackageSelection(art_reference_ids=("painting",)))
+    assert not plan.blockers and plan.exportable
+    for source in plan._sources:
+        relative_path(source.member)
+        assert source.local_source and source.relative == filename
+        assert filename not in source.member
+    package = tmp_path / "work.webjambackup"
+    media.export_workspace_package(plan, package)
+    with zipfile.ZipFile(package) as archive:
+        members = [info.filename for info in archive.infolist()]
+        for name in members:
+            relative_path(name)
+            assert filename not in name
+        content = next(name for name in members if name != "workspace.json")
+        assert archive.read(content) == payload
+    imported = media.import_workspace_package(
+        SessionLibrary(tmp_path / "restored"), media.preview_workspace_package(package))
+    restored = Path(imported.art["references"][0]["locator"])
+    assert restored.read_bytes() == payload
+    assert original.read_bytes() == payload and original.name == filename
+    assert media.verify_workspace_media(imported, "art", "painting").matches_expected_content
+    proof_path = imported.media_provenance[0]["files"][0]["path"]
+    relative_path(proof_path)
+    assert proof_path != filename
 
 
 def test_source_replacement_after_plan_refuses_new_backup(tmp_path, art):

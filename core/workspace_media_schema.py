@@ -32,6 +32,21 @@ def relative_path(value: object) -> str:
     return value
 
 
+def local_source_basename(value: object) -> str:
+    """Single-component name of an explicitly selected local file.
+
+    Ordinary Mac names (``CON.png``, a colon, decomposed accents) are allowed
+    here. This is not a portable archive or package member; those stay under
+    ``relative_path``.
+    """
+    if (not isinstance(value, str) or not value or len(value.encode("utf-8")) > 1024
+            or "/" in value or "\\" in value
+            or any(ord(c) < 32 or ord(c) == 127 for c in value)
+            or value in {".", ".."}):
+        raise ValueError("Local media source must be a single bounded file name.")
+    return value
+
+
 def file_inventory(files: object) -> None:
     if not isinstance(files, (list, tuple)) or not 1 <= len(files) <= MAX_PACKAGE_FILES:
         raise ValueError("Media inventory is empty or exceeds its file limit.")
