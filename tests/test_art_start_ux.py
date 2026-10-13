@@ -131,7 +131,7 @@ def test_join_title_tracks_visible_profile_and_back_navigation(
                     dialog._join_title.fontMetrics().horizontalAdvance(expected)
                 )
                 assert dialog._join_subtitle.text() == (
-                    "Paste the invite or the whole message.\n"
+                    "Paste the invite.\n"
                     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
                 )
                 assert dialog._join_button_primary.text() == "Join"
@@ -141,6 +141,56 @@ def test_join_title_tracks_visible_profile_and_back_navigation(
                 dialog._join_back_button.click()
                 qapp.processEvents()
                 assert dialog.showing_choices
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+_JOIN_SUBTITLE = (
+    "Paste the invite.\n"
+    "If your invitation says “same network,” use your host’s Wi-Fi or local network."
+)
+_JOIN_PRIVACY = "The invite stays on this computer."
+
+
+@pytest.mark.parametrize("profile_key", ["art", "music"])
+def test_join_keeps_one_paste_instruction_and_human_privacy(
+    qapp, tmp_path: Path, profile_key: str
+):
+    """Idle Join is one paste line, the Wi-Fi line, and one human privacy line."""
+
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        dialog.show_join()
+        dialog.show()
+        qapp.processEvents()
+
+        assert dialog._join_subtitle.text() == _JOIN_SUBTITLE
+        assert dialog._invite_input.placeholderText() == "Paste the invite"
+        assert dialog._invite_input.accessibleDescription() == _JOIN_SUBTITLE
+        assert dialog._join_privacy.text() == _JOIN_PRIVACY
+        assert dialog._join_status.text() == ""
+        assert not dialog._join_button_primary.isEnabled()
+        assert dialog._join_button_primary.property("joinBlocked") is True
+
+        spoken = harvest_join_page(dialog)
+        assert_no_banned_first_screen_words(spoken)
+        assert "paste the invite" in spoken
+        assert "same network" in spoken
+        assert "the invite stays on this computer." in spoken
+        assert "or the whole message" not in spoken
+        assert "paste your invitation to continue" not in spoken
+        assert "secrets" not in spoken
+        assert "logs" not in spoken
+
+        dialog._invite_input.setText("unchecked invitation")
+        qapp.processEvents()
+        assert dialog._join_button_primary.isEnabled()
+        assert dialog._join_button_primary.property("joinBlocked") is False
+        assert dialog._join_status.text() == "Invitation pasted — choose Join"
+        assert dialog._join_subtitle.text() == _JOIN_SUBTITLE
+        assert dialog._join_privacy.text() == _JOIN_PRIVACY
+        assert_no_banned_first_screen_words(harvest_join_page(dialog))
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -552,13 +602,13 @@ def test_join_paste_prompt_is_shared_from_first_paint_through_empty_submit(
     try:
         expected = "Paste your invitation to continue"
         assert LaunchDialog._EMPTY_JOIN_PROMPT == expected
-        assert dialog._join_status.text() == expected
+        assert dialog._join_status.text() == ""
         dialog.resize(*size)
         dialog.show_join()
         dialog.show()
         qapp.processEvents()
         assert dialog._join_status.isVisible()
-        assert dialog._join_status.text() == expected
+        assert dialog._join_status.text() == ""
         initial_result = dialog.result()
         QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
         qapp.processEvents()
@@ -569,10 +619,10 @@ def test_join_paste_prompt_is_shared_from_first_paint_through_empty_submit(
         dialog._invite_input.setText("unchecked invitation")
         assert dialog._join_status.text() == "Invitation pasted — choose Join"
         dialog.show_choices()
-        assert dialog._join_status.text() == expected
+        assert dialog._join_status.text() == ""
         dialog.show_join()
         qapp.processEvents()
-        assert dialog._join_status.text() == expected
+        assert dialog._join_status.text() == ""
         assert dialog._join_button_primary.property("joinBlocked") is True
     finally:
         dialog.close()
@@ -636,7 +686,7 @@ def test_whitespace_only_invite_stays_blocked_and_empty_join_on_submit(
         dialog._invite_input.setText(whitespace)
         dialog._on_invite_text_changed()
         assert dialog._join_button_primary.property("joinBlocked") is True
-        assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == ""
         initial_result = dialog.result()
         QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
         qapp.processEvents()
@@ -668,7 +718,7 @@ def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
 
         dialog._invite_input.clear()
         dialog._on_invite_text_changed()
-        assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == ""
         assert dialog._join_button_primary.property("joinBlocked") is True
     finally:
         dialog.deleteLater()

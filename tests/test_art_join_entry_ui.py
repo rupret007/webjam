@@ -79,7 +79,10 @@ def test_all_entry_profiles_explain_whole_message_and_conditional_network(
 ):
     dialog = join_door(profile)
     guidance = dialog._join_subtitle.text()
-    assert "whole message" in guidance
+    assert guidance == (
+        "Paste the invite.\n"
+        "If your invitation says “same network,” use your host’s Wi-Fi or local network."
+    )
     assert "If your invitation says “same network,”" in guidance
     assert "your host’s Wi-Fi or local network" in guidance
     assert dialog._invite_input.accessibleDescription() == guidance
@@ -110,7 +113,7 @@ def test_paste_does_not_parse_or_claim_a_network_type(join_door, profile):
             assert dialog.selected_role == ""
         parse.assert_not_called()
     dialog._invite_input.clear()
-    assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+    assert dialog._join_status.text() == ""
     assert dialog._join_subtitle.text() == guidance
 
 

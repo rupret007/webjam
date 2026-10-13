@@ -71,9 +71,10 @@ from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 LOGGER = logging.getLogger("webjam.qt.launch_dialog")
 
 _JOIN_INVITATION_GUIDANCE = (
-    "Paste the invite or the whole message.\n"
+    "Paste the invite.\n"
     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
 )
+_JOIN_PRIVACY_NOTE = "The invite stays on this computer."
 
 # Single door line when Paint along is the checked Art start (harvest + UX tests).
 PAINT_ALONG_DOOR_HELPER = (
@@ -1076,7 +1077,7 @@ class LaunchDialog(QDialog):
         layout.addWidget(self._join_subtitle)
         layout.addStretch(1)
 
-        self._join_status = QLabel(self._EMPTY_JOIN_PROMPT)
+        self._join_status = QLabel("")
         self._join_status.setObjectName("LaunchJoinStatus")
         self._join_status.setAccessibleName("Join status")
         self._join_status.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -1096,9 +1097,7 @@ class LaunchDialog(QDialog):
         self._invite_input.textChanged.connect(self._on_invite_text_changed)
         layout.addWidget(self._invite_input)
 
-        self._join_privacy = QLabel(
-            "Private invitation secrets stay hidden and are never saved in settings or logs."
-        )
+        self._join_privacy = QLabel(_JOIN_PRIVACY_NOTE)
         self._join_privacy.setObjectName("LaunchPrivacyNote")
         self._join_privacy.setAccessibleName("Invitation privacy")
         self._join_privacy.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -1451,7 +1450,7 @@ class LaunchDialog(QDialog):
         self.invitation_meeting_url = ""
         self._invite_input.clear()
         self._clear_join_error()
-        self._join_status.setText(self._EMPTY_JOIN_PROMPT)
+        self._join_status.setText("")
         self._pages.setCurrentWidget(self._choice_page)
         # First-screen rooms hide the picker. Host is the next click.
         if (
@@ -1482,7 +1481,7 @@ class LaunchDialog(QDialog):
         self._clear_join_error()
         has_invite = bool(self._invite_input.text().strip())
         self._join_status.setText(
-            "Invitation pasted — choose Join" if has_invite else self._EMPTY_JOIN_PROMPT
+            "Invitation pasted — choose Join" if has_invite else ""
         )
         self._join_status.setProperty("joinReady", "true" if has_invite else "false")
         join_style = self._join_status.style()
