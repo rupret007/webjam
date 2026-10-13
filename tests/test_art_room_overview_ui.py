@@ -236,9 +236,10 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         assert "own tools" not in hud.accessibleDescription()
         assert panel._activity.text() == "Make from your own space"
         assert panel._activity_detail.text() == (
-            "Use paper, clay, a model, printer, or your usual app, or just talk."
+            "Use paper, clay, a model, printer, or your usual app, or just talk. "
+            "Choose Set Up Conversation to add your meeting link."
         )
-        assert "Conversation" not in panel._activity_detail.text()
+        assert "Choose Set Up Conversation" in panel._activity_detail.text()
         assert panel._activity_detail.isVisibleTo(window)
         assert panel._connection_detail.text() == (
             "An artist has connected to this room. WebJam does not yet show a full artist list."
