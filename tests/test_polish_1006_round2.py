@@ -207,6 +207,63 @@ def test_make_together_room_fits_compact_larger_text(qapp):
         _assert_no_horizontal_scroll(window)
         assert "Preview" in window.windowTitle()
         assert "Preview" in window.session_strip._subtitle.text()
+        footer = window.session_strip._video_button
+        assert footer.isVisibleTo(window)
+        assert footer.text() == "Set up"
+        assert footer.text() != "Talk"
+        assert footer.text().casefold() in conversation.text().casefold()
+    finally:
+        window.session_strip._record_clock.stop()
+        window.session_strip.stop_session_clock()
+        window._room_help_dialog.close()
+        window.close()
+        window.deleteLater()
+        _settle(qapp)
+
+
+def test_compact_footer_talk_matches_set_up_conversation(qapp):
+    window = ConductorWindow(
+        mode_entries=[("music_jam", "Music jam")],
+        initial_mode_key="music_jam",
+        initial_title="Making together",
+    )
+    window.menuBar().setNativeMenuBar(False)
+    window.setStyleSheet(load_stylesheet())
+    window.set_creator_profile(get_creator_profile_by_key("art"))
+    panel = window.art_room_overview
+    footer = window.session_strip._video_button
+    try:
+        window.set_art_room_overview(
+            art_room_overview(state=ArtRoomState.CONNECTED, hosting=True)
+        )
+        window.resize(800, 600)
+        window.show()
+        _settle(qapp)
+        assert window.width() <= 800
+        assert panel.conversation_button().text() == "Set Up Conversation"
+        assert panel.conversation_button().accessibleName() == "Set Up Conversation"
+        assert footer.text() == "Set up"
+        assert footer.text() != "Talk"
+        assert footer.text().casefold() in panel.conversation_button().text().casefold()
+        assert footer.geometry().left() >= 0
+        assert footer.geometry().right() <= window.session_controls.width()
+
+        window.set_art_room_overview(
+            art_room_overview(
+                state=ArtRoomState.CONNECTED,
+                hosting=True,
+                conversation_configured=True,
+            )
+        )
+        _settle(qapp)
+        assert panel.conversation_button().text() == "Conversation"
+        assert panel.conversation_button().accessibleName() == "Conversation"
+        assert footer.text() == "Talk"
+
+        window.resize(1280, 800)
+        _settle(qapp)
+        assert footer.text() == "Conversation"
+        assert panel.conversation_button().text() == "Conversation"
     finally:
         window.session_strip._record_clock.stop()
         window.session_strip.stop_session_clock()

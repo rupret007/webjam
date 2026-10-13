@@ -987,10 +987,24 @@ class SessionStrip(QFrame):
             action.setVisible(available)
             action.setEnabled(available and self._tools_enabled)
 
+    def _conversation_action_label(self) -> str:
+        return "Conversation" if self._video_configured else "Set Up Conversation"
+
+    def _visible_conversation_control_label(self) -> str:
+        """Shorten to Set up / Talk only when that stays in the action family."""
+
+        action = self._conversation_action_label()
+        if not self._compact_control_labels:
+            return "Conversation"
+        compact = {
+            "Set Up Conversation": "Set up",
+            "Conversation": "Talk",
+        }.get(action)
+        return compact if compact is not None else "Conversation"
+
     def _sync_conversation_presentation(self) -> None:
-        self._video_action.setText(
-            "Conversation" if self._video_configured else "Set Up Conversation"
-        )
+        self._video_action.setText(self._conversation_action_label())
+        self._video_button.setText(self._visible_conversation_control_label())
         tooltip = (
             "Show WebJam's conversation controls.\n"
             "This does not open or rejoin the meeting."
@@ -1102,6 +1116,7 @@ class SessionStrip(QFrame):
         return {
             "Copy Invite": "Invite",
             "Conversation": "Talk",
+            "Set Up Conversation": "Set up",
             "● Record Session": "● Record",
             "■ Stop Recording": "■ Stop",
             "■ Finish Stop": "■ Finish",
@@ -1137,9 +1152,7 @@ class SessionStrip(QFrame):
         self._invite_button.setText(
             self._compact_control_label("Copy Invite")
         )
-        self._video_button.setText(
-            self._compact_control_label("Conversation")
-        )
+        self._video_button.setText(self._visible_conversation_control_label())
         self._record_button.setText(
             self._compact_control_label(self._record_button_full_text)
         )

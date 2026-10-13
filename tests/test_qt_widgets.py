@@ -606,6 +606,22 @@ class TestSessionStrip(unittest.TestCase):
         s.set_video_configured(True)
         self.assertEqual(s._video_action.text(), "Conversation")
 
+    def test_compact_footer_talk_matches_set_up_conversation_family(self):
+        s = self._strip()
+        s.set_video_configured(False)
+        s.set_compact_control_labels(True)
+        self.assertEqual(s._video_action.text(), "Set Up Conversation")
+        self.assertEqual(s._video_button.text(), "Set up")
+        self.assertNotEqual(s._video_button.text(), "Talk")
+        s.set_video_configured(True)
+        self.assertEqual(s._video_action.text(), "Conversation")
+        self.assertEqual(s._video_button.text(), "Talk")
+        s.set_compact_control_labels(False)
+        self.assertEqual(s._video_button.text(), "Conversation")
+        s.set_video_configured(False)
+        self.assertEqual(s._video_action.text(), "Set Up Conversation")
+        self.assertEqual(s._video_button.text(), "Conversation")
+
     def test_external_handoff_progress_never_disables_conversation_navigation(self):
         s = self._strip()
 
