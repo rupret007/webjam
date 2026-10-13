@@ -550,7 +550,9 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
         key="art",
         label="Art",
         release_tier=RELEASE_TIER_PREVIEW,
-        default_template="Art (Preview)",
+        # Same phrase as the Make together door card. Preview honesty stays
+        # on the session-strip subtitle ("Art · Preview"), not a second title.
+        default_template=_ART_STARTS[0].label,
         default_goal="Share a table, talk, and move one piece forward.",
         quick_help=(
             "Preview is a room to talk and make. The host may add a shared "
