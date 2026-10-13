@@ -263,6 +263,20 @@ def test_paint_along_waiting_host_has_one_orange_open_paint_along(
         assert footer.isVisibleTo(window) and footer.isEnabled()
         assert footer.objectName() == "GhostButton"
         assert "invite" in footer.accessibleName().lower()
+        invite_guidance = (
+            "Your room is open. Share its invitation using Copy Invite; "
+            "an invitation alone does not mean someone has joined."
+        )
+        displayed = panel._connection_detail.text()
+        spoken = panel.accessibleDescription()
+        assert panel._connection_detail.isVisibleTo(window)
+        assert displayed == invite_guidance
+        assert displayed == panel._connection_detail.accessibleDescription()
+        assert invite_guidance.rstrip(".") in spoken
+        assert "action above" not in displayed
+        assert "action above" not in spoken
+        assert "above" not in displayed.lower()
+        assert "above" not in spoken.lower()
         assert _visible_primary_labels(window) == ["Open Paint along"]
         activity_rect = QRect(
             activity.mapTo(panel.viewport(), QPoint()), activity.size()

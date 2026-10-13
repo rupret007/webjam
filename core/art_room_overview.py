@@ -155,7 +155,7 @@ def art_room_overview(
         phase, label, title = "waiting", "Room open", "Make from your own space"
         connection = "Waiting for artists to connect"
         detail = (
-            "Your room is open. Share its invitation using the action above; "
+            "Your room is open. Share its invitation using Copy Invite; "
             "an invitation alone does not mean someone has joined."
         )
     else:

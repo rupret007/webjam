@@ -73,6 +73,29 @@ def test_cleanup_and_end_remove_stale_room_activity_before_connection_facts(host
     assert "own leave controls" in ended.connection_detail
 
 
+def test_waiting_host_invite_guidance_names_copy_invite_not_a_direction():
+    """Waiting-host copy must stay honest after HUD Copy Invite can hide.
+
+    Paint along keeps Copy Invite in the footer, below the overview. Naming
+    the action (not 'above' / 'below') stays true for Make together too.
+    """
+
+    waiting = art_room_overview(state=ArtRoomState.WAITING, hosting=True)
+    paint = art_room_overview(
+        state=ArtRoomState.WAITING, hosting=True, presence=paint_along(),
+    )
+    for overview in (waiting, paint):
+        assert overview.connection_detail == (
+            "Your room is open. Share its invitation using Copy Invite; "
+            "an invitation alone does not mean someone has joined."
+        )
+        lowered = overview.connection_detail.lower()
+        assert "above" not in lowered
+        assert "below" not in lowered
+        assert "footer" not in lowered
+        assert "an invitation alone does not mean someone has joined" in lowered
+
+
 def test_make_together_is_complete_without_optional_tools_or_a_roster():
     waiting = art_room_overview(state=ArtRoomState.WAITING, hosting=True)
     joined = art_room_overview(state=ArtRoomState.CONNECTED, hosting=False)
