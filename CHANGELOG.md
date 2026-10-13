@@ -6,6 +6,12 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- A Paint along seek that the local player cannot honor now marks the
+  transport failed and stops sharing a healthy paused clock. The host panel
+  shows “WebJam couldn't move that video on this computer.” with
+  **Choose process video…** as the next action, instead of remaining
+  **Paused.** Physical playback remains **NOT RUN**.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 

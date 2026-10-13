@@ -690,6 +690,14 @@ class ReferenceVideoHostController:
                 self._player.seek(target)
                 if operation != self._load_generation:
                     return self._snapshot_locked()
+            except ReferenceVideoPlayerError:
+                if operation != self._load_generation:
+                    return self._snapshot_locked()
+                # A typed player failure is the same as any other unconfirmed
+                # move: do not keep telling the room this computer is paused.
+                return self._fail_locked(
+                    "WebJam couldn't move that video on this computer."
+                )
             except ReferenceVideoError:
                 raise
             except Exception:

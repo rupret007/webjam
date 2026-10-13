@@ -356,8 +356,44 @@ def test_seek_is_clamped_to_the_shared_duration(tmp_path):
     controller, _, _ = make_host(tmp_path, duration=42.0)
     controller.share(write_video(tmp_path / "lesson.mp4"))
     assert controller.seek(9_999.0).position_s == pytest.approx(42.0)
+    before = controller.snapshot
     with pytest.raises(ReferenceVideoError):
         controller.seek(-1.0)
+    assert controller.snapshot == before
+    assert controller.snapshot.needs_attention is False
+
+
+def test_typed_player_seek_failure_marks_transport_failed(tmp_path):
+    """A backend seek error is not a healthy paused share.
+
+    Qt and YouTube adapters raise ``ReferenceVideoPlayerError``. Re-raising
+    that typed failure would leave the host paused and still advertised.
+    """
+
+    controller, player, events = make_host(tmp_path)
+    controller.share(write_video(tmp_path / "lesson.mp4"))
+    controller.play()
+    paused = controller.pause()
+    assert paused.state is ReferenceVideoState.PAUSED
+    assert paused.shared is True
+    assert paused.needs_attention is False
+
+    def refuse_seek(_position_s: float) -> None:
+        raise ReferenceVideoPlayerError(
+            "WebJam couldn't play that video on this computer."
+        )
+
+    player.seek = refuse_seek
+    snapshot = controller.seek(12.0)
+
+    assert snapshot.state is ReferenceVideoState.FAILED
+    assert snapshot.needs_attention is True
+    assert snapshot.shared is False
+    assert snapshot.identity_digest == ""
+    assert snapshot.source_display_name == ""
+    assert "couldn't move that video" in snapshot.error
+    assert events[-1] == snapshot
+    assert controller.snapshot == snapshot
 
 
 def test_playback_generation_marks_each_new_play_attempt(tmp_path):
