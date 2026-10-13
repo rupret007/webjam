@@ -190,6 +190,8 @@ class NativeGuestTransportBackend:
         self._process: TransportProcess | None = None
         self._phase = "idle"
         self._generation = 0
+        self._process_generation = 0
+        self._retired_guest_generation = 0
 
     def start_guest(
         self,
@@ -201,6 +203,8 @@ class NativeGuestTransportBackend:
             raise TypeError("invitation must be a RemoteInvitation")
         try:
             with self._lock:
+                if generation <= self._retired_guest_generation:
+                    raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE)
                 if self._process is not None:
                     raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE)
                 process = TransportProcess(
@@ -216,6 +220,7 @@ class NativeGuestTransportBackend:
                     **_integrity_options(self._binary),
                 )
                 self._process = process
+                self._process_generation = generation
                 self._phase = "starting"
         except RemoteBackendError:
             raise
@@ -414,21 +419,34 @@ class NativeGuestTransportBackend:
                 if self._process is process:
                     if stopped:
                         self._process = None
+                        self._process_generation = 0
                     self._phase = "idle" if stopped else "failed"
                     self._generation = 0
                     self._room_identity = None
                     self._room_revision = 0
 
     def stop(self) -> None:
+        self._stop_guest_process()
+
+    def stop_guest(self, *, generation: int) -> None:
+        """Retire a runtime launch even if its process is not installed yet."""
+
+        self._stop_guest_process(generation=generation)
+
+    def _stop_guest_process(self, *, generation: int | None = None) -> None:
         with self._lock:
+            if generation is not None:
+                self._retired_guest_generation = max(
+                    self._retired_guest_generation, generation,
+                )
+                if self._process is not None and self._process_generation != generation:
+                    return
             process = self._process
-            self._phase = "stopping"
+            self._phase = "stopping" if process is not None else "idle"
             self._generation = 0
             self._room_identity = None
             self._room_revision = 0
         if process is None:
-            with self._lock:
-                self._phase = "idle"
             return
         # Retire queued callbacks immediately, but retain the child handle
         # until bounded whole-process shutdown proves cleanup succeeded.
@@ -436,6 +454,7 @@ class NativeGuestTransportBackend:
         with self._lock:
             if self._process is process:
                 self._process = None
+                self._process_generation = 0
                 self._phase = "idle"
 
 
