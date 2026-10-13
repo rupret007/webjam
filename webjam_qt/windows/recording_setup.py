@@ -35,6 +35,10 @@ from webjam_qt.theme.tokens import Space
 
 LOGGER = logging.getLogger("webjam.qt.recording_setup")
 
+SESSION_CHANGE_REVIEW_GUIDANCE = (
+    "The session setup changed. Close and reopen Recording Setup to review it."
+)
+
 
 def _resolve_creator_profile(
     creator_profile: CreatorProfile | str | None,
@@ -179,6 +183,7 @@ class RecordingSetupDialog(QDialog):
         takes_folder_editable: bool = True,
         creator_profile: CreatorProfile | str | None = None,
         format_change_guard: Callable[[], str] | None = None,
+        session_change_guard: Callable[[], str] | None = None,
     ) -> None:
         super().__init__(parent)
         profile = _resolve_creator_profile(creator_profile)
@@ -189,6 +194,7 @@ class RecordingSetupDialog(QDialog):
         self._local_originals_available = bool(local_originals_available)
         self._takes_folder_editable = bool(takes_folder_editable)
         self._format_change_guard = format_change_guard or (lambda: "")
+        self._session_change_guard = session_change_guard or (lambda: "")
         self.setObjectName("RecordingSetupDialog")
         self.setWindowTitle("WebJam Recording Setup")
         self.setModal(True)
@@ -518,6 +524,14 @@ class RecordingSetupDialog(QDialog):
             block_text = "Invalid"
         return f"WebJam local audio: {rate_text} · Buffer: {block_text}"
 
+    def _session_change_block_reason(self) -> str:
+        """Reject every save when Host/Join identity changed under this modal."""
+
+        try:
+            return str(self._session_change_guard() or "")
+        except Exception:  # noqa: BLE001 - lifecycle failures stay path-free
+            return SESSION_CHANGE_REVIEW_GUIDANCE
+
     def _format_change_block_reason(self) -> str:
         try:
             guard_reason = self._format_change_guard()
@@ -629,6 +643,10 @@ class RecordingSetupDialog(QDialog):
             self._refresh_tracks_summary()
 
     def _save(self) -> None:
+        stale = self._session_change_block_reason()
+        if stale:
+            self._show_error(stale)
+            return
         repair_format = self._repair_format.isChecked()
         if repair_format:
             reason = self._format_change_block_reason()

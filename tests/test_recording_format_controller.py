@@ -144,6 +144,132 @@ def test_modal_owner_change_rejects_selected_repair_before_writing(rig, monkeypa
         assert app.settings.audio_samplerate == 44100
 
 
+def test_modal_join_settings_change_rejects_ordinary_save_before_writing(rig, monkeypatch):
+    app = rig
+    original = replace(
+        app.settings,
+        jamulus_server="192.168.1.10",
+        musician_name="Original",
+        host_server_enabled=False,
+        local_capture_enabled=True,
+        audio_input_device_index=7,
+    )
+    save_settings(original)
+    previous = app.settings
+    app._replace_settings_object(load_settings(original.config_file))
+    app._reconfigure_services_after_settings(previous)
+
+    def changed(dialog):
+        assert not dialog._repair_format.isChecked()
+        assert dialog._repair_format.isEnabled()
+        dialog._capture.setChecked(False)
+        updated = replace(
+            app.settings,
+            jamulus_server="192.168.1.20",
+            musician_name="Updated",
+        )
+        save_settings(updated)
+        app._replace_settings_object(load_settings(updated.config_file))
+        dialog._save()
+        assert dialog.result() != dialog.DialogCode.Accepted
+        assert not dialog._error.isHidden()
+        assert "session setup changed" in dialog._error.text().lower()
+        assert "reopen" in dialog._error.text().lower()
+        assert not dialog._capture.isChecked()
+        loaded = load_settings(app.settings.config_file)
+        assert loaded.jamulus_server == "192.168.1.20"
+        assert loaded.musician_name == "Updated"
+        assert loaded.local_capture_enabled is True
+        dialog.reject()
+
+    open_setup(app, monkeypatch, changed)
+    assert app.settings.jamulus_server == "192.168.1.20"
+    assert app.settings.musician_name == "Updated"
+    assert app.settings.local_capture_enabled is True
+
+
+def test_modal_guest_owner_change_rejects_ordinary_save_without_writing(rig, monkeypatch):
+    app = rig
+    before = load_settings(app.settings.config_file)
+    opening_guest = app.guest_peer
+
+    def changed(dialog):
+        assert not dialog._repair_format.isChecked()
+        app.guest_peer = SimpleNamespace(active_take_id="")
+        dialog._save()
+        assert dialog.result() != dialog.DialogCode.Accepted
+        assert "session setup changed" in dialog._error.text().lower()
+        assert "reopen" in dialog._error.text().lower()
+        dialog.reject()
+
+    open_setup(app, monkeypatch, changed)
+    app.guest_peer = opening_guest
+    loaded = load_settings(app.settings.config_file)
+    assert loaded.jamulus_server == before.jamulus_server
+    assert loaded.musician_name == before.musician_name
+    assert loaded.audio_samplerate == before.audio_samplerate
+
+
+def test_live_session_still_allows_ordinary_opt_out_when_identity_holds(rig, monkeypatch):
+    app = rig
+    enabled = replace(
+        app.settings,
+        local_capture_enabled=True,
+        audio_input_device_index=7,
+    )
+    save_settings(enabled)
+    previous = app.settings
+    app._replace_settings_object(load_settings(enabled.config_file))
+    app._reconfigure_services_after_settings(previous)
+    with monkeypatch.context() as patch:
+        patch.setattr(app.bridge, "jamulus_state", "Running")
+
+        def opt_out(dialog):
+            assert not dialog._repair_format.isEnabled()
+            assert dialog._capture.isEnabled()
+            dialog._capture.setChecked(False)
+            dialog._save()
+            assert dialog.result() == dialog.DialogCode.Accepted
+
+        open_setup(app, patch, opt_out)
+    assert app.settings.local_capture_enabled is False
+    assert load_settings(app.settings.config_file).local_capture_enabled is False
+    assert (app.settings.audio_samplerate, app.settings.audio_blocksize) == (44100, 256)
+
+
+def test_join_change_after_ordinary_save_does_not_apply_stale_endpoint(rig, monkeypatch):
+    app = rig
+    original = replace(
+        app.settings,
+        jamulus_server="192.168.1.10",
+        musician_name="Original",
+        host_server_enabled=False,
+        local_capture_enabled=True,
+        audio_input_device_index=7,
+    )
+    save_settings(original)
+    previous = app.settings
+    app._replace_settings_object(load_settings(original.config_file))
+    app._reconfigure_services_after_settings(previous)
+    message = Mock()
+    monkeypatch.setattr(app.window, "flash_message", message)
+
+    def raced(dialog):
+        dialog._capture.setChecked(False)
+        dialog._save()
+        assert dialog.result() == dialog.DialogCode.Accepted
+        app._replace_settings_object(
+            replace(app.settings, jamulus_server="192.168.1.20", musician_name="Updated")
+        )
+
+    open_setup(app, monkeypatch, raced)
+    assert app.settings.jamulus_server == "192.168.1.20"
+    assert app.settings.musician_name == "Updated"
+    flashed = message.call_args.args[0].lower()
+    assert "session setup changed" in flashed
+    assert "reopen" in flashed
+
+
 def test_end_cancel_cleanup_retry_then_repair_preserves_notes_and_restarts_only_on_request(
     rig, monkeypatch, qapp,
 ):

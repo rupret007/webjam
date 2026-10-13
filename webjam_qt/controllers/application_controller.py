@@ -13175,7 +13175,10 @@ class ApplicationController(QObject):
         """Open the focused Studio preferences without exposing RPC plumbing."""
         from core.settings import load_settings
         from copy import deepcopy
-        from webjam_qt.windows.recording_setup import RecordingSetupDialog
+        from webjam_qt.windows.recording_setup import (
+            SESSION_CHANGE_REVIEW_GUIDANCE,
+            RecordingSetupDialog,
+        )
 
         if self._shutdown_cleanup_blocks_action():
             return
@@ -13191,14 +13194,19 @@ class ApplicationController(QObject):
         opening_generation = getattr(self, "_settings_generation", 0)
         opening_guest = getattr(self, "guest_peer", None)
 
-        def format_change_guard() -> str:
+        def session_change_guard() -> str:
             if (
                 self.settings != opening_settings
                 or getattr(self, "_settings_generation", 0) != opening_generation
                 or getattr(self, "guest_peer", None) is not opening_guest
             ):
-                return "The session setup changed. Close and reopen Recording Setup to review it."
-            return ApplicationController._recording_format_change_blocker(self)
+                return SESSION_CHANGE_REVIEW_GUIDANCE
+            return ""
+
+        def format_change_guard() -> str:
+            return session_change_guard() or (
+                ApplicationController._recording_format_change_blocker(self)
+            )
 
         dialog = RecordingSetupDialog(
             self.settings,
@@ -13207,11 +13215,24 @@ class ApplicationController(QObject):
             takes_folder_editable=takes_folder_editable,
             creator_profile=self.creator_profile,
             format_change_guard=format_change_guard,
+            session_change_guard=session_change_guard,
         )
         if dialog.exec() != RecordingSetupDialog.DialogCode.Accepted:
             return
         format_repaired = getattr(dialog, "format_repair_requested", False) is True
         committed = load_settings(settings_path)
+        stale = session_change_guard()
+        if stale:
+            self.window.flash_message(
+                (
+                    "Format preferences were saved but not applied to the current session. "
+                    + stale
+                )
+                if format_repaired
+                else stale,
+                ms=8000,
+            )
+            return
         if format_repaired:
             blocker = format_change_guard()
             if blocker or (committed.audio_samplerate, committed.audio_blocksize) != (48000, 0):
