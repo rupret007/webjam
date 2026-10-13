@@ -5058,6 +5058,9 @@ class ApplicationController(QObject):
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             self._render_remote_fresh_invitation_hud()
             return False
+        if (getattr(self, "_remote_invitation", None) is not None
+                and self._native_join_blocked_by_workspace_media()):
+            return False
         library = getattr(self, "session_library", None)
         if library is not None:
             library.start_session()
@@ -8058,6 +8061,8 @@ class ApplicationController(QObject):
         failure requires a fresh invitation and never falls into legacy audio.
         """
 
+        if self._native_join_blocked_by_workspace_media():
+            return False
         if invitation.advisory_expired():
             self.window.flash_message(
                 "That invitation expired. Ask the host for a fresh one.",
@@ -8516,6 +8521,8 @@ class ApplicationController(QObject):
         invitation = getattr(self, "_remote_invitation", None)
         if invitation is None or getattr(self, "_shutdown", False):
             return
+        if self._native_join_blocked_by_workspace_media():
+            return
         # A remote invitation always represents a guest attempt, even when
         # this app last used a host profile. There is no owned Jamulus work at
         # this point; replacing an old idle/preflight token prevents the later
@@ -8606,6 +8613,20 @@ class ApplicationController(QObject):
             startup_authorization_generation,
         )
         runtime.start_guest(invitation)
+
+    def _native_join_blocked_by_workspace_media(self) -> bool:
+        """Leave a capability untouched until its workspace can adopt a room."""
+
+        library = getattr(self, "session_library", None)
+        studio = getattr(self.window, "recording_studio", None)
+        if not (bool(getattr(library, "media_operation_pending", False))
+                or bool(getattr(studio, "media_open_pending", False))):
+            return False
+        self.window.flash_message(
+            "Wait for the workspace operation result before continuing another workspace.",
+            ms=7000,
+        )
+        return True
 
     def _begin_remote_host(
         self,
@@ -8995,6 +9016,11 @@ class ApplicationController(QObject):
             return (
                 "Update WebJam on both computers. Ask the host for a fresh "
                 "invitation, then choose Paste New Invite."
+            )
+        if error_value == "local_operation_pending":
+            return (
+                "Local media work kept this room from opening. Finish that work, "
+                "then ask the host for a fresh invitation and choose Paste New Invite."
             )
         if error_value == "expired":
             return (

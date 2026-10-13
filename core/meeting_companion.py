@@ -540,6 +540,7 @@ def art_make_together_activity_detail(
     *,
     meeting_service: str = DEFAULT_MEETING_SERVICE,
     conversation_configured: bool = False,
+    waiting_host: bool = False,
 ) -> str:
     """Brief Make-together activity detail for the room overview.
 
@@ -547,18 +548,22 @@ def art_make_together_activity_detail(
     Conversation closed (scrollbar maximum 0). Full Talk·Make·share /
     Webex / movie honesty lives on Conversation surfaces
     (art_conversation_guidance / Conversation panel), not here.
+
+    While the host is waiting with no meeting link, HUD Copy Invite is
+    the one primary. That waiting-host line must not ask to set up
+    Conversation. Other unconfigured room states keep the existing
+    setup-Conversation next step.
     """
 
     del meeting_service  # overview stays brief and service-agnostic
-    next_action = (
-        "Choose Conversation to talk or share your screen."
-        if conversation_configured
-        else "Choose Set Up Conversation to add your meeting link."
+    own_space = (
+        "Use paper, clay, a model, printer, or your usual app, or just talk."
     )
-    return (
-        "Use paper, clay, a model, printer, or your usual app, or just talk. "
-        f"{next_action}"
-    )
+    if conversation_configured:
+        return f"{own_space} Choose Conversation to talk or share your screen."
+    if waiting_host:
+        return own_space
+    return f"{own_space} Choose Set Up Conversation to add your meeting link."
 
 
 def art_conversation_guidance(*, meeting_service: str = "") -> str:
