@@ -241,19 +241,58 @@ def test_local_source_basename_still_rejects_path_escape(name):
         local_source_basename(name)
 
 
+_WINDOWS_RESERVED_STEMS = frozenset({
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+})
+_ORDINARY_MAC_ART_FILENAMES = ("CON.png", "Study: blue.png", "cafe\u0301.png")
+
+
+def _host_can_create_ordinary_file(filename):
+    if os.name != "nt":
+        return True
+    return (filename.split(".", 1)[0].upper() not in _WINDOWS_RESERVED_STEMS
+            and not any(c in filename for c in '<>:"/\\|?*'))
+
+
+def _ordinary_mac_art_file(directory, filename, payload):
+    assert _host_can_create_ordinary_file(filename), (
+        "refusing to write a Windows reserved or illegal filename as a test fixture")
+    path = directory / filename
+    path.write_bytes(payload)
+    assert path.is_file() and path.name == filename
+    return path
+
+
 def test_default_inspect_still_rejects_nonportable_source_basenames(tmp_path):
-    path = tmp_path / "CON.png"
-    path.write_bytes(b"owned artwork")
     work = media._Work("Inspect")
     with pytest.raises(ValueError, match="unsafe on a supported platform"):
-        media._inspect(tmp_path, path.name, "art/example/content.png", "art", work)
+        media._inspect(tmp_path, "CON.png", "art/example/content.png", "art", work)
+    assert "CON.png" not in {path.name for path in tmp_path.iterdir()}
 
 
-@pytest.mark.parametrize("filename", ["CON.png", "Study: blue.png", "cafe\u0301.png"])
+@pytest.mark.parametrize("filename", ["CON.png", "Study: blue.png"])
+def test_ordinary_mac_art_filenames_fixtures_refuse_windows_device_writes(filename, tmp_path, monkeypatch):
+    monkeypatch.setattr(os, "name", "nt")
+    with pytest.raises(AssertionError, match="refusing to write"):
+        _ordinary_mac_art_file(tmp_path, filename, b"owned artwork")
+    assert filename not in {path.name for path in tmp_path.iterdir()}
+
+
+@pytest.mark.parametrize("filename", [
+    pytest.param(
+        name,
+        marks=pytest.mark.skipif(
+            not _host_can_create_ordinary_file(name),
+            reason="Windows cannot create this Mac-originated name as a regular file",
+        ),
+    )
+    for name in _ORDINARY_MAC_ART_FILENAMES
+])
 def test_ordinary_mac_art_filenames_verify_open_and_roundtrip_unchanged(tmp_path, filename):
     payload = b"mac artwork\x00\xff" + filename.encode("utf-8")
-    original = tmp_path / filename
-    original.write_bytes(payload)
+    original = _ordinary_mac_art_file(tmp_path, filename, payload)
     assert original.name == filename
     if filename == "cafe\u0301.png":
         assert unicodedata.normalize("NFC", original.name) != original.name
