@@ -1018,7 +1018,7 @@ jobs:
           - os: windows-2025
             target: windows-x64
             python: "3.11.9"
-          - os: macos-14
+          - os: [self-hosted, mini]
             target: macos-arm64
             python: "3.11.9"
           - os: macos-15-intel
