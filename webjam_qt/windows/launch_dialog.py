@@ -508,6 +508,8 @@ class _LaunchLayout(QVBoxLayout):
 
         top = self.itemAt(0)
         bottom = self.itemAt(self.count() - 1)
+        if top.spacerItem() is None or bottom.spacerItem() is None:
+            return  # Layout order changed; keep Qt's plain allocation.
         spare = top.geometry().height() + bottom.geometry().height()
         above_brand = spare // 3
         offset = top.geometry().top() + above_brand - self.itemAt(1).geometry().top()
