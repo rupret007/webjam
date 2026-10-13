@@ -14,7 +14,8 @@ from shiboken6 import isValid
 
 from core.art_room_overview import ArtRoomOverview, art_room_overview
 from core.session_conductor import (
-    ArtRoomState, SessionFacts, SessionRole, derive_session_presentation,
+    ArtRoomState, SessionFacts, SessionPrimaryAction, SessionRole,
+    derive_session_presentation,
 )
 from core.creative_modes import get_creator_profile_by_key
 from webjam_qt.theme import load_stylesheet
@@ -140,6 +141,64 @@ def test_own_tools_guidance_has_one_heading_and_keeps_recovery_context(window, q
     assert not panel._title.isVisibleTo(window)
 
 
+def test_waiting_host_copy_invite_is_the_one_hud_primary_at_800x600(window, qapp):
+    """Compact waiting room: HUD Copy Invite owns the next click.
+
+    Conversation stays a ghost/footer. The activity line keeps own-space
+    copy and does not ask to set up Conversation.
+    """
+
+    facts = SessionFacts(
+        role=SessionRole.HOST,
+        creator_profile_key="art",
+        setup_requested=True,
+        art_room=ArtRoomState.WAITING,
+    )
+    view = derive_session_presentation(facts)
+    current = art_room_overview(
+        state=ArtRoomState.WAITING, hosting=True, conversation_configured=False,
+    )
+    window.set_art_room_overview(current)
+    hud = window.session_hud
+    hud.set_state(
+        view.title,
+        view.message,
+        invite_available=True,
+        action_text=view.action_label,
+        action_visible=True,
+        action_kind="invite",
+    )
+    window.resize(800, 600)
+    window.session_strip.set_compact_control_labels(True)
+    _settle(qapp)
+
+    own_space = (
+        "You do not need an art app. Use paper, your usual tools, or just talk."
+    )
+    panel = window.art_room_overview
+    assert view.primary_action is SessionPrimaryAction.COPY_INVITE
+    assert view.action_label == "Copy Invite"
+    assert hud._status.text() == "Your room is open"
+    assert hud._action.isVisibleTo(window)
+    assert hud._action.isEnabled()
+    assert hud._action.text() == "Copy Invite"
+    assert hud._action.objectName() == "PrimaryButton"
+    action_rect = QRect(hud._action.mapTo(window, QPoint()), hud._action.size())
+    assert window.rect().contains(action_rect)
+    assert not hud._action.visibleRegion().isEmpty()
+    assert hud._secondary_action.isHidden() or not hud._secondary_action.isVisibleTo(window)
+
+    assert panel._activity_detail.text() == own_space
+    assert "Conversation" not in panel._activity_detail.text()
+    assert panel._activity_detail.isVisibleTo(window)
+    conversation = panel.conversation_button()
+    assert conversation.isVisibleTo(window)
+    assert conversation.isEnabled()
+    assert conversation.text() == "Set Up Conversation"
+    assert conversation.objectName() == "GhostButton"
+    assert not panel.activity_button().isVisibleTo(window)
+
+
 @pytest.mark.parametrize("role", [SessionRole.HOST, SessionRole.GUEST])
 @pytest.mark.parametrize("size", [(720, 560), (1440, 900)])
 def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
@@ -180,6 +239,7 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
             "You do not need an art app. Use paper, your usual tools, or just talk. "
             "Choose Set Up Conversation to add your meeting link."
         )
+        assert "Choose Set Up Conversation" in panel._activity_detail.text()
         assert panel._activity_detail.isVisibleTo(window)
         assert panel._connection_detail.text() == (
             "An artist has connected to this room. WebJam does not yet show a full artist list."
