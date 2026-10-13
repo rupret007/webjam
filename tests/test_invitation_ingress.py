@@ -248,6 +248,69 @@ def test_quoting_and_punctuation_around_a_forwarded_link_are_tolerated() -> None
         assert isinstance(parsed, BandInvite)
 
 
+def _private_lan_v2_link() -> str:
+    return create_invite_link(
+        "192.168.1.42",
+        session_id="11111111-1111-4111-8111-111111111111",
+        peer_port=43121,
+        invite_token="t" * 43,
+    )
+
+
+def test_standalone_and_prose_v2_pastes_strip_the_same_surrounding_punctuation() -> None:
+    """Copying a v2 link out of a sentence must not block Join."""
+
+    link = _private_lan_v2_link()
+    bare = parse_invitation_at_ingress(link, source=InvitationSource.PASTE)
+    assert isinstance(bare, BandInvite)
+    assert bare.version == 2
+    assert bare.peer_enabled is True
+    assert bare.host == "192.168.1.42"
+    assert bare.peer_port == 43121
+
+    for pasted in (
+        f"{link}.",
+        f"{link},",
+        f"{link}!",
+        f"<{link}>",
+        f'"{link}"',
+        f"({link}).",
+        f"Join here: {link}.",
+        f"Please use {link}!",
+    ):
+        parsed = parse_invitation_at_ingress(pasted, source=InvitationSource.PASTE)
+        assert parsed == bare
+
+    other = create_invite_link(
+        "10.0.0.8",
+        session_id="22222222-2222-4222-8222-222222222222",
+        peer_port=43122,
+        invite_token="u" * 43,
+    )
+    with pytest.raises(InvitationIngressError) as conflicting:
+        parse_invitation_at_ingress(f"{link} {other}", source=InvitationSource.PASTE)
+    assert conflicting.value.code is InvitationIngressErrorCode.INVALID
+
+    with pytest.raises(InvitationIngressError) as hidden:
+        parse_invitation_at_ingress(f"{link}&hidden=1.", source=InvitationSource.PASTE)
+    assert hidden.value.code is InvitationIngressErrorCode.INVALID
+
+    malformed = link.replace("t" * 43, "t" * 42 + "@")
+    with pytest.raises(InvitationIngressError) as token_error:
+        parse_invitation_at_ingress(f"{malformed}.", source=InvitationSource.PASTE)
+    assert token_error.value.code is InvitationIngressErrorCode.INVALID
+    assert "@" not in str(token_error.value)
+
+    with pytest.raises(InvitationIngressError) as argv_error:
+        parse_invitation_at_ingress(
+            f"{link}.",
+            source=InvitationSource.ARGV,
+            platform="darwin",
+        )
+    assert argv_error.value.code is InvitationIngressErrorCode.SOURCE_NOT_ALLOWED
+    assert "t" * 43 not in str(argv_error.value)
+
+
 def test_two_different_jam_links_in_one_paste_are_ambiguous_not_guessed() -> None:
     first = create_invite_link("192.168.1.5", port=22124, session_name="One")
     second = create_invite_link("192.168.1.9", port=22124, session_name="Two")

@@ -188,13 +188,13 @@ def parse_invitation_at_ingress(
             InvitationIngressErrorCode.EMPTY,
             "Paste the complete invitation your host sent you.",
         )
-    # Extract the link from a longer paste before any policy check, so the
-    # version guards below see the same string the parser will. A paste that
-    # is already exactly one bare link takes the original path untouched.
+    # Extract the single pasted WebJam link before any policy check, so the
+    # version guards below see the same string the parser will. Surrounding
+    # sentence punctuation is unwrapped for a standalone paste the same way
+    # as a forwarded message. argv and OS file-open keep the original text
+    # so credential-bearing command lines stay rejected.
     if source == InvitationSource.PASTE and "webjam://" in value.lower():
-        tokens = value.split()
-        if len(tokens) != 1 or not tokens[0].lower().startswith("webjam://"):
-            value = _link_from_pasted_text(value)
+        value = _link_from_pasted_text(value)
     if ingress_source is InvitationSource.MAC_FILE_OPEN and current_platform != "darwin":
         raise InvitationIngressError(
             InvitationIngressErrorCode.SOURCE_NOT_ALLOWED,
