@@ -331,6 +331,10 @@ and video recovery does not hide **Open canvas**. If you hid the video, return
 through **Open Paint along**, then choose **Show video** when you want it
 visible again. Your existing local copy stays open.
 
+Art **Settings** opens with “Your name and optional meeting link.” Edit
+**Your name**, optionally add a meeting link, then choose **Save**. Art Settings
+does not offer **Verify Sound**.
+
 When the room offers a shared canvas or Paint along, its next step still
 includes paper, clay, a model, printer, or your usual app. Shared activities
 are optional. You only need Drawpile to use the shared canvas; artists using

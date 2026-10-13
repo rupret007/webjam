@@ -110,7 +110,9 @@ class SimpleSettingsDialog(QDialog):
         title = QLabel("WebJam Settings")
         title.setObjectName("SimpleSettingsTitle")
         subtitle = QLabel(
-            "Jamulus carries the music. WebJam keeps your jam organized."
+            "Your name and optional meeting link."
+            if self._creator_profile_key == "art"
+            else "Jamulus carries the music. WebJam keeps your jam organized."
         )
         subtitle.setObjectName("SimpleSettingsSubtitle")
         subtitle.setWordWrap(True)
@@ -121,10 +123,14 @@ class SimpleSettingsDialog(QDialog):
         name_label = self._field_label("Your name")
         self._name = QLineEdit(default_musician_name(settings))
         self._name.setPlaceholderText("Your name")
-        self._name.setAccessibleName("Your musician name")
+        self._name.setAccessibleName(
+            "Your name" if self._creator_profile_key == "art" else "Your musician name"
+        )
         identity.layout().addWidget(name_label)
         identity.layout().addWidget(self._name)
-        self._name_preview = JamulusNamePreview(self._name)
+        self._name_preview = JamulusNamePreview(
+            self._name, plain_words=self._creator_profile_key == "art"
+        )
         identity.layout().addWidget(self._name_preview)
         root.addWidget(identity)
 
@@ -258,7 +264,7 @@ class SimpleSettingsDialog(QDialog):
         root.addStretch(1)
 
         footer = QHBoxLayout()
-        if show_band_check_action:
+        if show_band_check_action and self._creator_profile_key != "art":
             band_check = QPushButton("Verify Sound")
             band_check.setObjectName("GhostButton")
             band_check.setAccessibleName("Save these settings and verify sound")
