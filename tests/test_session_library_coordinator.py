@@ -10,9 +10,12 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PySide6.QtCore import QObject  # noqa: E402
-from PySide6.QtWidgets import QApplication, QInputDialog  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication, QDialog, QInputDialog, QPushButton  # noqa: E402
 from core.creative_modes import get_creator_profile_by_key_or_default  # noqa: E402
 from core.session_library import SessionLibrary  # noqa: E402
 from webjam_qt.controllers.session_library import (  # noqa: E402
@@ -22,6 +25,115 @@ from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 from webjam_qt.windows.session_library import SessionLibraryDialog  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
+
+
+def _close_library(dialog, action):
+    if action == "window":
+        dialog.close()  # Dispatch the same close event as the window button.
+    elif action == "escape":
+        QTest.keyClick(dialog, Qt.Key.Key_Escape)
+    else:
+        next(button for button in dialog.findChildren(QPushButton)
+             if button.text() == "Close").click()
+
+
+@pytest.fixture
+def library_coordinator(tmp_path):
+    window = ConductorWindow(mode_entries=[("music_jam", "Music")],
+                             initial_mode_key="music_jam", initial_title="Wednesday")
+    window.flash_message = Mock()
+    owner = Owner(window)
+    coordinator = SessionLibraryCoordinator(owner, library=SessionLibrary(tmp_path / "library"))
+    coordinator._imported = True
+    yield coordinator, window
+    coordinator.timer.stop()
+    if coordinator.dialog is not None:
+        coordinator.dialog.timer.stop()
+        coordinator.dialog._dirty = False
+        coordinator.dialog.close()
+    window.close()
+    window.deleteLater()
+    owner.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+@pytest.mark.parametrize("action", ["window", "escape", "button"])
+@pytest.mark.parametrize("state", ["disk", "pending"])
+def test_close_finishes_once_and_reopens_current_workspace(library_coordinator, action, state):
+    coordinator, window = library_coordinator
+    coordinator.show()
+    dialog = coordinator.dialog
+    record_id = dialog.record.id
+    finished, destroyed, saved = [], [], []
+    dialog.finished.connect(finished.append)
+    dialog.destroyed.connect(lambda: destroyed.append(True))
+    dialog.record_saved.connect(saved.append)
+    dialog.notes.setPlainText("Draft saved when closing")
+
+    _close_library(dialog, action)
+
+    assert not dialog.isVisible()
+    assert finished == [QDialog.DialogCode.Rejected]
+    assert len(saved) == 1
+    assert coordinator.dialog is None
+    assert coordinator.library.load(record_id).notes == "Draft saved when closing"
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert destroyed == [True]
+    assert finished == [QDialog.DialogCode.Rejected]
+
+    title = "Renamed while Library closed"
+    window.session_strip.set_session_title(title)
+    window.session_canvas.set_notes("New notes while Library closed")
+    with patch.object(coordinator.library, "save", side_effect=OSError("disk unavailable")):
+        assert not coordinator.flush()
+        assert coordinator._pending[record_id].title == title
+        if state == "pending":
+            coordinator.show()
+    if state == "disk":
+        assert coordinator.flush()
+        assert coordinator.library.load(record_id).title == title
+        coordinator.show()
+    else:
+        assert coordinator.library.load(record_id).title != title
+        assert coordinator.dialog._dirty
+
+    reopened = coordinator.dialog
+    assert reopened is not dialog
+    assert reopened.isVisible()
+    assert reopened.title.text() == title
+    assert reopened.notes.toPlainText() == "New notes while Library closed"
+    owner = coordinator._c
+    owner.audio.start.assert_not_called()
+    owner.recording.start.assert_not_called()
+
+
+@pytest.mark.parametrize("action", ["window", "escape", "button"])
+def test_failed_close_keeps_visible_draft_until_retry(library_coordinator, action):
+    coordinator, _window = library_coordinator
+    coordinator.show()
+    dialog = coordinator.dialog
+    record_id = dialog.record.id
+    finished = []
+    dialog.finished.connect(finished.append)
+    dialog.notes.setPlainText("Keep this unsaved draft")
+    with patch.object(coordinator.library, "save", side_effect=OSError("disk unavailable")):
+        _close_library(dialog, action)
+        assert dialog.isVisible()
+        assert coordinator.dialog is dialog
+        assert finished == []
+        assert dialog._dirty
+        assert dialog.notes.toPlainText() == "Keep this unsaved draft"
+        assert "not saved" in dialog.status.text()
+        assert coordinator.library.load(record_id).notes != "Keep this unsaved draft"
+        coordinator.show()
+        assert coordinator.dialog is dialog
+        assert dialog.notes.toPlainText() == "Keep this unsaved draft"
+
+    _close_library(dialog, action)
+    assert finished == [QDialog.DialogCode.Rejected]
+    assert coordinator.dialog is None
+    assert not dialog.isVisible()
+    assert coordinator.library.load(record_id).notes == "Keep this unsaved draft"
 
 
 class Owner(QObject):
