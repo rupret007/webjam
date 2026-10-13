@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- After a brief Art guest poll failure, pause-request guidance names the
+  available **Restart pause requests** action and keeps the ask-aloud fallback.
+  Restart still requires an explicit click and never resends abandoned requests.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
