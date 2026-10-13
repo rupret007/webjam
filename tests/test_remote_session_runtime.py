@@ -536,6 +536,25 @@ def test_connection_loss_rejects_freeform_or_retry_safe_reason(reason) -> None:
         runtime.stop()
 
 
+def test_local_admission_deferral_never_authorizes_capability_replay() -> None:
+    pending, seen = [], []
+    runtime = RemoteSessionRuntime(Backend(), on_snapshot=seen.append, schedule_callback=pending.append)
+    runtime.start_guest(_invitation())
+    connected = runtime.wait_until_settled()
+    try:
+        assert runtime.mark_connection_lost(
+            expected_generation=connected.generation,
+            error_code=RemoteSessionErrorCode.LOCAL_OPERATION_PENDING,
+        )
+        assert runtime.snapshot.phase is RemoteSessionPhase.FAILED
+        assert not runtime.snapshot.invitation_retry_safe
+        for callback in pending:
+            callback()
+        assert [snapshot.error_code for snapshot in seen] == [RemoteSessionErrorCode.LOCAL_OPERATION_PENDING]
+    finally:
+        runtime.stop()
+
+
 @pytest.mark.parametrize("wrong_generation", [2, True])
 def test_backend_cannot_replace_local_generation_with_wire_or_stale_value(wrong_generation) -> None:
     class WrongGenerationBackend(Backend):
