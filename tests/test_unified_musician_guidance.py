@@ -6,6 +6,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QCoreApplication
@@ -56,13 +58,35 @@ def _close(controller, window, old_home):
         os.environ["HOME"] = old_home
 
 
-def test_one_snapshot_drives_hud_stage_canvas_studio_and_public_surfaces(tmp_path):
-    controller, window, old_home = _controller(tmp_path)
+@pytest.mark.parametrize("microphone_status", ["authorized", "denied", "restricted"])
+def test_one_snapshot_drives_hud_stage_canvas_studio_and_public_surfaces(
+    tmp_path, monkeypatch, microphone_status
+):
+    monkeypatch.setattr(
+        "webjam_qt.platform_permissions.microphone_permission_status",
+        lambda: microphone_status,
+    )
+    controller, window, old_home = _controller(tmp_path, last_creator_profile_key="music")
     try:
         guidance = controller._last_musician_guidance
         assert guidance is not None
+        assert controller.creator_profile.key == "music"
+        assert guidance.phase is SessionConductorPhase.IDLE
         assert window.session_hud._status.text() == guidance.title
-        assert window.participant_grid._empty_title.text() == guidance.title
+        grid = window.participant_grid
+        if microphone_status == "authorized":
+            # Idle Music leaves the next click in the HUD; the stage explains
+            # where the band will appear without repeating the headline.
+            assert guidance.title == "Ready when you are"
+            assert grid._empty_title.text() == ""
+            assert grid._empty_title.isHidden()
+            assert grid._empty_eyebrow.text() == "NOT CONNECTED"
+            assert grid._empty_message.text() == "Your band will appear here when connected."
+            assert grid._empty_state.accessibleDescription() == grid._empty_message.text()
+        else:
+            assert guidance.title == "Microphone access is off"
+            assert grid._empty_title.text() == guidance.title
+            assert not grid._empty_title.isHidden()
         assert window.session_canvas._guidance_status.text() == guidance.title
         assert guidance.title in window.recording_studio.accessibleDescription()
 
