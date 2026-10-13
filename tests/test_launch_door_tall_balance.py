@@ -57,20 +57,6 @@ def _vertical_slack_in_pages(dialog: LaunchDialog) -> tuple[int, int]:
     return top_slack, bottom_slack
 
 
-def _music_block_vertical_slack(dialog: LaunchDialog) -> tuple[int, int]:
-    """Slack around Music's shrink-wrapped brand+door block, not inside _pages."""
-
-    top = min(
-        widget.mapTo(dialog, QPoint(0, 0)).y()
-        for widget in (dialog._logo, dialog._wordmark)
-    )
-    join = _rect_in(dialog._join_button, dialog)
-    margins = dialog.layout().contentsMargins()
-    available_top = dialog._menu_bar.height() + margins.top()
-    available_bottom = dialog.height() - margins.bottom()
-    return max(0, top - available_top), max(0, available_bottom - join.bottom())
-
-
 @pytest.mark.parametrize("profile_key", ["art", "music"])
 @pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
 def test_launch_door_centers_in_tall_windows(qapp, tmp_path: Path, profile_key: str, size: tuple[int, int]):
@@ -91,16 +77,9 @@ def test_launch_door_centers_in_tall_windows(qapp, tmp_path: Path, profile_key: 
             rect = _rect_in(widget, dialog)
             assert dialog.rect().contains(rect), widget.accessibleName()
 
-        if dialog._visible_start_cards():
-            top_slack, bottom_slack = _vertical_slack_in_pages(dialog)
-            extra = top_slack + bottom_slack
-            assert extra >= 40, "tall sizes should leave slack inside the pages stack"
-        else:
-            # Music shrink-wraps the choice page and centers brand+Host/Join
-            # with the outer layout. Slack is around that block, not in _pages.
-            top_slack, bottom_slack = _music_block_vertical_slack(dialog)
-            extra = top_slack + bottom_slack
-            assert extra >= 40, "Music door should leave slack around the brand row"
+        top_slack, bottom_slack = _vertical_slack_in_pages(dialog)
+        extra = top_slack + bottom_slack
+        assert extra >= 40, "tall sizes should leave slack inside the pages stack"
         # Before centering, essentially all slack sat below Host/Join.
         assert top_slack >= 24
         assert bottom_slack >= 24
