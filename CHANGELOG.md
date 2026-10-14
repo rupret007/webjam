@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Local Art files with ordinary Mac names (`CON.png`, a colon in the name, or
+  decomposed accents such as `café.png`) can be verified, opened after that
+  check, and backed up under generated archive names. The original file is not
+  renamed. Portable archive-member and `relative_path` checks stay unchanged.
+
 - Song tools Stems keeps each Vocals/Drums/Bass row and the Sing this one /
   Send to jam actions at their natural height at the 800×600 window floor
   and at 1280×800. The side panel scrolls instead of squashing mute/solo
