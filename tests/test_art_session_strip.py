@@ -72,6 +72,26 @@ def test_art_hides_studio_because_it_has_no_take_or_local_project(qapp):
         strip.deleteLater()
 
 
+def test_make_together_session_title_matches_the_door_card(qapp):
+    """The strip title a person sees is Make together; Preview stays a subtitle."""
+
+    profile = get_creator_profile_by_key("art")
+    make = profile.starts[0]
+    strip = SessionStrip(
+        mode_entries=ApplicationController.mode_entries(),
+        initial_mode_key="music_jam",
+        initial_title=profile.default_template,
+    )
+    try:
+        strip.set_creator_profile(profile)
+        assert make.label == "Make together"
+        assert strip.current_title() == make.label
+        assert strip.current_title() != "Making together"
+        assert strip._subtitle.text() == "Art · Preview"
+    finally:
+        strip.deleteLater()
+
+
 def test_art_strip_copy_addresses_artists_not_a_review(qapp):
     strip = _strip()
     try:
