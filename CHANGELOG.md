@@ -15,6 +15,12 @@ All notable improvements and features for the WebJam creator collaboration platf
   keeps only “Then choose a file or lesson link.” Both cards and Host/Join
   remain visible, including with larger text at 800×600.
 
+- Aligned-originals export hashes and renders each source through one open
+  file descriptor. A same-format rewrite or path replacement after that
+  handle is bound cannot publish. No package is published, the take files
+  are left as they are, and Studio does not show a success or an export
+  receipt.
+
 - Art/Music launch File menus keep Session library and hide New Music Project,
   Podcast, and Review starts, including the New shortcut. Help's Music setup
   appears only for Music with an available verified Windows installer and
