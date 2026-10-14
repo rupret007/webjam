@@ -21,8 +21,15 @@ then **New workspace…** and a title. The **Notes**, **Rehearsal plan**, **Art 
 Changes save locally; check the save status and use **Save** before leaving.
 Search finds previous work. **Continue** brings its saved context
 back into the app; it does not connect a room or start recording. **Save as
-copy…** makes a separate workspace. Invitations and meeting credentials are
-not a reusable workspace template.
+copy…** makes a separate workspace. Close the Library with its window button,
+**Close**, or Escape; reopening shows your current saved or pending work.
+If saving fails, the Library stays open with your draft so you can retry.
+Invitations and meeting credentials are not a reusable workspace template.
+
+If saving fails, keep the workspace open and choose **Save** to retry. WebJam
+can confirm an interrupted save without making a separate workspace, including
+edits made while you waited. Changes made by another writer still require
+review or **Save as copy…**.
 
 For Music, **More → Session library… → Rehearsal plan** opens the ordered setlist. Add song titles,
 key, tempo, goals, notes, and next steps. **Previous** / **Next** selects a song;
@@ -39,6 +46,8 @@ clock and room timer do not certify recording time. **Open in take** rechecks
 the saved take before navigation; a moved or changed recording needs attention.
 The **Summary** tab and **Export summary** collect progress and next steps;
 ending a rehearsal retains its recap with the workspace.
+**Export summary** includes the latest live Notes and saved recap even if the
+library editor has no new edits. Conflicting drafts must be resolved before export.
 
 For Art, open **More → Session library… → Art project**. Keep a **Project brief**, **Progress**,
 and **Next steps** alongside references added with **Add file…** or **Add
@@ -207,7 +216,10 @@ buttons; **Page Down / Page Up** scrolls the instructions. **OK** or **Esc**
 closes Help without changing the room, notes or recording. Compact screens
 and enlarged text keep the instructions scrollable and the actions reachable.
 
-The always-visible Session HUD is the dominant action surface. **Notes** opens
+The always-visible Session HUD is the dominant action surface. When a Music
+host's invite is ready, it says **Copy the invite** with a **Copy Invite** button.
+The empty stage keeps its primary button hidden while the HUD owns this action.
+**Notes** opens
 your local writing area. In Music, Podcast & Voice, and Review & Rehearsal,
 choose **Session details** to read the same
 status, next step, evidence-based reason, output results, and recent events in
@@ -232,9 +244,11 @@ create a take or unlock export.
 
 At launch, choose **Art** or **Music**. Those are the equal first clicks.
 Art is **Make together** or **Paint along**, then **Host** or **Join**. Music
-is **Host** or **Join** only. The launch **File** menu opens **New Music
-Project…**, **Podcast & Voice…**, or **Review & Rehearsal…** before a live session
-starts. The profile follows the
+is **Host** or **Join** only. On these live doors, **File → Session library…**
+opens saved work; File does not offer Music projects, Podcast, or Review as
+additional starts. **Help → Music setup…** appears only for Music when a
+verified Windows installer is available. In a Music room, **Studio** still
+opens completed-take review. The profile follows the
 launch, live session, recording, Studio, local session metadata, and new
 standalone projects. Legacy content without a saved profile opens as Music.
 Review & Rehearsal allows live WebJam-audio Host/Join, Record Session, local
@@ -243,6 +257,10 @@ standalone projects, take editing/comp/mix mutation, track export, shared
 notes, visual sync, and media timecode. Art is a room for artists in any
 medium; see [Art](#art) below. No profile directly or automatically taps a
 meeting app, browser, or system output.
+
+If a file-access error prevents WebJam from reading your saved profile titles
+and modes, it leaves that file untouched. Your title edit stays visible; a
+later successful save keeps the other profiles' saved titles and modes.
 
 Local notes save shortly after an edit. If a save fails, choose **Save Notes**.
 The Notes notice names retained workspaces, including a draft outside the one
@@ -321,8 +339,9 @@ it. Any meeting already open stays open until you leave it in that service.
 
 The room view shows whether you are waiting for artists or connected to the
 host. It does not show a full artist list yet. Without a shared activity,
-**Make from your own space** is a complete place to start: use paper, clay, a
-model, a printer, or your usual app while the room stays open beside you.
+**Make from your own space** is a complete place to start: you do not need an
+art app. Use paper, your usual tools, or just talk while the room stays open
+beside you.
 Conversation is optional when you want to talk or share your screen. When the
 host shares a canvas or Paint along video, the room offers that existing
 panel. When both are offered, each has its own status and Open action in the
@@ -332,7 +351,7 @@ through **Open Paint along**, then choose **Show video** when you want it
 visible again. Your existing local copy stays open.
 
 When the room offers a shared canvas or Paint along, its next step still
-includes paper, clay, a model, printer, or your usual app. Shared activities
+includes paper, your usual tools, or just talk. Shared activities
 are optional. You only need Drawpile to use the shared canvas; artists using
 their own tools can keep making together.
 
@@ -363,6 +382,13 @@ Another Invite**. Cancelling that choice leaves the current recovery available.
 A native invitation that may have been consumed still needs **Paste New Invite**
 with a fresh invitation from the host. If a peer needs an update, update
 WebJam on both computers and use a fresh invitation.
+
+If Library or Studio is already working with local media, wait for its result
+before joining. WebJam leaves the native invitation unused; open that same
+still-valid invitation again, or choose **Start Session** if it was already
+loaded. Finishing the local operation does not join automatically. If local
+work delays a join that has already enrolled, WebJam keeps the room closed
+and asks for a fresh invitation instead of replaying one that may be used.
 
 Choose **End Room** as host or **Leave Room** as guest. If cleanup needs another
 attempt, **Try End Room** or **Try Leave Room** stays available. Your external
@@ -568,8 +594,15 @@ For the existing **silent local-file option**, the host chooses one video file:
 
 Things worth knowing:
 
+- If the host's chosen file changes or moves after sharing, WebJam checks it
+  again on the next refresh or Play, stops using its old sharing identity, and
+  offers **Choose process video…** to open it again. This also applies while
+  the video is ready or paused.
 - **Only the host controls playback.** Guests have no play, pause, stop, or
   scrub control, by design.
+- If this computer cannot move the video, Paint along shows that it needs
+  attention instead of remaining **Paused.** Choose **Choose process video…**
+  to open a local video again. Guests wait until the host recovers it.
 - **The video is silent from its first frame.** Use an optional meeting app
   for conversation. Art does not start Jamulus, and Paint along adds no
   soundtrack.
@@ -727,6 +760,10 @@ It reuses progress only when the role and dedicated Jamulus profile fingerprint
 still match. Otherwise it returns safely to native Jamulus setup.
 
 ## Join a live session
+
+In Unreleased builds, a same-network join waits for pending Library media
+work to finish before switching to the host's Art or Music room. During that
+wait, WebJam keeps “Contacting the host” visible and does not start audio.
 
 Choose **Join**, **Join Recording**, or **Join Review**, then paste one WebJam
 invite—or open it from Finder. WebJam parses it at ingress,
