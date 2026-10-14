@@ -194,6 +194,23 @@ def test_make_together_is_complete_without_optional_tools_or_a_roster():
         assert "open canvas" not in public
 
 
+@pytest.mark.parametrize("hosting", [False, True])
+def test_connected_detail_is_short_and_moves_the_roster_caveat_to_the_note(hosting):
+    overview = art_room_overview(state=ArtRoomState.CONNECTED, hosting=hosting)
+    assert "does not yet" not in overview.connection_detail
+    assert "full artist list" not in overview.connection_detail
+    assert overview.connection_detail == (
+        "An artist is here with you." if hosting else "You’re connected and ready to make."
+    )
+    assert overview.connection_note == "WebJam does not yet show a full artist list."
+
+    # Once a named roster is actually shown, the caveat no longer applies.
+    named = art_room_overview(
+        state=ArtRoomState.CONNECTED, hosting=True, named_connections=True,
+    )
+    assert named.connection_note == ""
+
+
 def test_guest_paint_along_needs_file_names_open_my_copy_button():
     """Room overview must name the same next click as Paint along's panel button.
 
