@@ -352,6 +352,11 @@ and video recovery does not hide **Open canvas**. If you hid the video, return
 through **Open Paint along**, then choose **Show video** when you want it
 visible again. Your existing local copy stays open.
 
+While a Paint along host waits for artists in Room, **Copy Invite** is the
+orange action. **Open Paint along** stays available as a quiet button below
+it to choose a local file or lesson link. Guest **Open my copy…** recovery
+keeps its emphasis.
+
 When the room offers a shared canvas or Paint along, its next step still
 includes paper, your usual tools, or just talk. Shared activities
 are optional. You only need Drawpile to use the shared canvas; artists using
@@ -849,7 +854,7 @@ route to each.
 | Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
 | Conversation | Routes to the same panel as the direct action; it has no launch side effect |
 | Jamulus Updates… | Checks WebJam's signed compatibility catalog, downloads an approved update, waits until the session is idle, and offers explicit OS approval; managed previous-version rollback is macOS-only |
-| Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
+| Recording Setup | Sets Local Originals and takes storage; host takes stay in WebJam's host folder. It does not alter Jamulus music routing |
 | Shared Track… | Routes to the same host-only transport; source loading is independent, and current-source Play becomes eligible only after the Mac proves the required local BlackHole route |
 | Use iPhone as Pocket Stage… | Starts an explicit, private-Wi-Fi developer-preview pairing window; it does not put phone audio in the live session |
 | Notes | Opens session notes |
