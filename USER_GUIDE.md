@@ -610,6 +610,10 @@ For the existing **silent local-file option**, the host chooses one video file:
 
 Things worth knowing:
 
+- If sharing, pausing, or stopping the shared video is not confirmed, Paint
+  along says **WebJam is retrying**. Local controls still work. The message
+  clears when the current room update succeeds; it does not confirm what
+  guests are watching.
 - If the host's chosen file changes or moves after sharing, WebJam checks it
   again on the next refresh or Play, stops using its old sharing identity, and
   offers **Choose process video…** to open it again. This also applies while
