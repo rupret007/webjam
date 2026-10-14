@@ -99,7 +99,7 @@ def test_music_idle_shows_one_guidance_block(tmp_path, monkeypatch, hosting, siz
         assert (window.width(), window.height()) == size
         guidance = controller._last_musician_guidance
         assert guidance.phase is SessionConductorPhase.IDLE
-        assert guidance.title == "Ready when you are"
+        assert guidance.title == "Start when you are"
         grid = window.participant_grid
         # Roster refreshes must not bring back the duplicate idle card.
         grid.set_participants([])
