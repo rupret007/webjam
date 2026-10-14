@@ -377,10 +377,15 @@ class ApplicationController(QObject):
             or "music"
         )
         self._creator_profile_host_owned = False
-        if session_invite is not None and not session_invite.peer_enabled:
-            # Legacy v1 invites carry only a Music endpoint, with no room peer
-            # to discover a profile from. Borrow Music for this join without
-            # changing the artist's saved door choice.
+        if (
+            session_invite is not None
+            and not session_invite.peer_enabled
+            and self._active_creator_profile_key == "art"
+        ):
+            # Art's join path reopens paste when there is no peer. A v1
+            # invite has only a Music endpoint, so borrow that journey
+            # without changing the saved Art door choice. Podcast and
+            # other local profiles keep their own route.
             self._active_creator_profile_key = "music"
             self._creator_profile_host_owned = True
         self._chat_profile_generation = 0
@@ -5106,11 +5111,13 @@ class ApplicationController(QObject):
 
         room = getattr(self, "_room_participant", None)
         invite = getattr(self, "_guest_invite", None)
-        if ApplicationController._band_invite_is_legacy_music(invite):
-            # Legacy invitations carry only a Music endpoint. Borrow that
-            # profile without replacing the artist's saved workspace choice.
-            # A media-operation veto must retain the invite for a later retry
-            # instead of reopening Join on the same paste.
+        if (
+            ApplicationController._band_invite_is_legacy_music(invite)
+            and self.creator_profile.key == "art"
+        ):
+            # Art would reopen Join for a non-peer invite. Borrow Music
+            # without replacing the saved Art preference. A media-operation
+            # veto must retain the invite for a later retry.
             self._apply_creator_profile_key("music", host_owned=True)
             if self.creator_profile.key != "music":
                 self.window.flash_message(
@@ -8296,7 +8303,7 @@ class ApplicationController(QObject):
             if bool(getattr(invitation, "peer_enabled", False)):
                 self._room_participant.probing = True
                 self._room_participant.role = "guest"
-            else:
+            elif self.creator_profile.key == "art":
                 # As on cold entry, a legacy endpoint starts the existing
                 # Music guest journey instead of Art's paste-invite prompt.
                 self._apply_creator_profile_key("music", host_owned=True)

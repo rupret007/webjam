@@ -19,7 +19,7 @@ from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication, QDialog
 from shiboken6 import isValid
 
-from core.network_invite import BandInvite, create_invite_link
+from core.network_invite import BandInvite, create_invite_link, parse_invite_link
 from core.session_transfer import SessionCredentials
 from core.settings import AppSettings, load_settings, save_settings
 from tests.test_art_room_controller import arm_lan
@@ -270,3 +270,35 @@ def test_running_art_window_v2_paste_validate_join_probes_host(apps, qapp, tmp_p
     app._start_hosted_server_for_startup.assert_not_called()
     app._paste_new_invitation.assert_not_called()
     assert app.settings.last_creator_profile_key == "art"
+
+
+def test_v1_invite_does_not_override_podcast_voice(apps, tmp_path, monkeypatch):
+    """A v1 Music invite must not steal Podcast's local profile.
+
+    The Art-door borrow is only for Art's paste-loop. Podcast (and other
+    local profiles) keep their route while still starting the existing
+    Music guest audio path.
+    """
+
+    settings = _settings(tmp_path, "podcast_voice")
+    invite = parse_invite_link(v1_link())
+    assert not invite.peer_enabled
+    app = apps(settings, invite=invite)
+    _intercept_native(app, monkeypatch)
+    monkeypatch.setattr(app._room_participant, "start_lan_guest", mock.Mock())
+    assert app.creator_profile.key == "podcast_voice"
+    assert not app._creator_profile_host_owned
+    assert app.begin_startup_journey()
+    assert app.creator_profile.key == "podcast_voice"
+    assert app._startup_attempt["role"] == "guest"
+    assert app._startup_attempt["phase"] == "launching_client"
+    app._launch_native_jamulus_for_startup.assert_called_once_with(
+        app._startup_generation
+    )
+    app._start_hosted_server_for_startup.assert_not_called()
+    app._paste_new_invitation.assert_not_called()
+    app._room_participant.start_lan_guest.assert_not_called()
+    assert app.settings.last_creator_profile_key == "podcast_voice"
+    assert load_settings(settings.config_file).last_creator_profile_key == (
+        "podcast_voice"
+    )
