@@ -9,6 +9,12 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Art Settings now says “Your name and optional meeting link.”, uses the plain
   name hint and accessible name “Your name”, and omits Verify Sound. The name
   display says “Others see”; optional keys use the visible label for accessibility.
+- New `Test integrity guards` CI job (add-only). It fails when global test
+  config fakes the clock (`faketime`, `LD_PRELOAD` / `DYLD_INSERT_LIBRARIES`
+  injection, a `TZ` override, or global freezegun / time-machine / fake
+  timers), or when a change leaves tests weaker than `master` (deleted test
+  files, fewer test functions, new skip/xfail markers). Per-test clock
+  control is still allowed.
 - Test, lint, and integration jobs still run on pull requests and on push
   to `master`. `Build Desktop` (linux-x64, macos-arm64, macos-x64,
   windows-x64) no longer runs on `pull_request` or on push to `master` /
@@ -32,6 +38,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   Send to jam actions at their natural height at the 800×600 window floor
   and at 1280×800. The side panel scrolls instead of squashing mute/solo
   chips or stacking the buttons on the helper line.
+
+- Art's Make together door hides the repeated Host/Join helper. Paint along
+  keeps only “Then choose a file or lesson link.” Both cards and Host/Join
+  remain visible, including with larger text at 800×600.
 
 - A waiting Paint along host has one orange room action: **Copy Invite**.
   **Open Paint along** stays available as a quiet body action; guest
@@ -275,6 +285,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Idle host Recording Setup no longer offers a Takes folder that reload
   discards. **Show Folder** opens WebJam's managed host location, with a short
   explanation. Guest folder choice is unchanged.
+
+- Retrying **Send to jam** keeps the previous completed stem mix if saving
+  its replacement fails. A failed first export leaves no partial final WAV.
 
 ### Follow-along pilot readiness — draft test-build scope
 ### Follow-along clarity and saved lessons — draft test-build scope
