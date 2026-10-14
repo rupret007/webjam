@@ -343,3 +343,94 @@ def test_a_bounce_into_an_impossible_place_is_reported(bench, tmp_path):
 
     with pytest.raises(StemBenchError):
         bounce_stems(list(bench.stems), blocker / "nested" / "out.wav")
+
+
+@pytest.fixture
+def publication_stems(tmp_path):
+    mono = tmp_path / "mono.wav"
+    stereo = tmp_path / "stereo.wav"
+    soundfile.write(str(mono), numpy.full(8, 0.5), 48000)
+    soundfile.write(str(stereo), numpy.tile([0.25, -0.25], (16, 1)), 48000)
+    return [
+        StemTarget(name="bass", path=str(mono), gain=0.5),
+        StemTarget(name="drums", path=str(stereo)),
+    ]
+
+
+@pytest.mark.parametrize("existing", [False, True], ids=["first", "replacement"])
+@pytest.mark.parametrize(
+    "failure",
+    ["encode-oserror", "encode-runtimeerror", "invalid-wav", "frames", "channels", "rate", "publish"],
+)
+def test_failed_bounce_publication_preserves_files(
+    publication_stems, tmp_path, monkeypatch, existing, failure
+):
+    destination = tmp_path / "mix.wav"
+    if existing:
+        bounce_stems(publication_stems, destination)
+    # Include an unrelated staging-looking file: cleanup must only remove ours.
+    (tmp_path / ".mix.wav.other.wav").write_bytes(b"another export")
+    before = {path: path.read_bytes() for path in tmp_path.iterdir()}
+    real_write = soundfile.write
+
+    def failed_write(path, data, samplerate, **kwargs):
+        if failure.startswith("encode-"):
+            Path(path).write_bytes(b"partial WAV")
+            error = OSError if failure == "encode-oserror" else RuntimeError
+            raise error("injected encoder failure")
+        if failure == "invalid-wav":
+            Path(path).write_bytes(b"partial WAV")
+            return
+        if failure == "frames":
+            data = data[:-1]
+        elif failure == "channels":
+            data = data[:, :1]
+        elif failure == "rate":
+            samplerate = 44100
+        real_write(path, data, samplerate, **kwargs)
+
+    def failed_replace(source, target):
+        raise OSError("injected publication failure")
+
+    monkeypatch.setattr(soundfile, "write", failed_write)
+    if failure == "publish":
+        monkeypatch.setattr("os.replace", failed_replace)
+    with pytest.raises(StemBenchError, match="could not save the mixed stems"):
+        bounce_stems(publication_stems, destination)
+
+    assert {path: path.read_bytes() for path in tmp_path.iterdir()} == before
+    assert destination.exists() is existing
+
+
+@pytest.mark.parametrize("existing", [False, True], ids=["first", "replacement"])
+def test_successful_bounce_publication_has_expected_mix(
+    publication_stems, tmp_path, monkeypatch, existing
+):
+    destination = tmp_path / "out" / "mix.wav"
+    if existing:
+        bounce_stems([publication_stems[0]], destination)
+    old_output = destination.read_bytes() if existing else None
+    sources = {Path(stem.path): Path(stem.path).read_bytes() for stem in publication_stems}
+    real_write = soundfile.write
+    write_paths = []
+
+    def observed_write(path, *args, **kwargs):
+        write_paths.append(Path(path))
+        real_write(path, *args, **kwargs)
+        # The completed output only changes after encoding finishes.
+        assert (destination.read_bytes() if destination.exists() else None) == old_output
+
+    monkeypatch.setattr(soundfile, "write", observed_write)
+    assert bounce_stems(publication_stems, destination) == str(destination)
+    assert len(write_paths) == 1
+    assert write_paths[0].parent == destination.parent
+    assert write_paths[0] != destination
+    assert set(destination.parent.iterdir()) == {destination}
+    info = soundfile.info(str(destination))
+    assert (info.frames, info.channels, info.samplerate) == (16, 2, 48000)
+    assert (info.format, info.subtype) == ("WAV", "PCM_24")
+    data, rate = soundfile.read(str(destination), always_2d=True)
+    assert rate == 48000
+    numpy.testing.assert_allclose(data[:8], numpy.tile([0.25, 0.0], (8, 1)), atol=2**-23)
+    numpy.testing.assert_allclose(data[8:], numpy.tile([0.125, -0.125], (8, 1)), atol=2**-23)
+    assert {path: path.read_bytes() for path in sources} == sources
