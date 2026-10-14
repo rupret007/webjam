@@ -20,6 +20,8 @@ from webjam_qt.controllers.workflow_help import WorkflowHelpCoordinator
     ("art", "full artist list", "art_room_people"),
     ("art", "talk screen sharing names", "art_room_people"),
     ("art", "YouTube Bob Ross", "follow_along"),
+    ("art", "Shared Canvas", "art_relink"),
+    ("art", "process video F11", "follow_along"),
     ("music", "play along latency", "follow_along"),
 ])
 def test_search_finds_specific_workflow_offline(profile, query, key):
@@ -36,6 +38,28 @@ def test_art_help_holds_the_full_artist_list_sentence_music_does_not():
     music = " ".join(topic.body for topic in workflow_topics("music"))
     assert "full artist list" not in music
     assert "art_room_people" not in {topic.key for topic in workflow_topics("music")}
+
+
+def test_art_follow_along_topic_holds_youtube_process_video_and_keyboard():
+    follow = next(topic for topic in workflow_topics("art") if topic.key == "follow_along")
+    for token in (
+        "Choose process video…",
+        "YouTube link…",
+        "Open my copy…",
+        "Open lesson",
+        "Local files are not transferred",
+        "Back to room",
+        "F11",
+        "Esc",
+    ):
+        assert token in follow.body, token
+
+
+def test_art_relink_topic_holds_shared_canvas_and_end_room():
+    relink = next(topic for topic in workflow_topics("art") if topic.key == "art_relink")
+    assert "Shared Canvas…" in relink.body
+    assert "End Room" in relink.body
+    assert "Leave Room" in relink.body
 
 
 def test_search_is_literal_and_does_not_search_private_workspaces():
