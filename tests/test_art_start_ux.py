@@ -228,6 +228,32 @@ def test_join_title_tracks_visible_profile_and_back_navigation(
         dialog.deleteLater()
 
 
+@pytest.mark.parametrize("profile_key", ["art", "music"])
+def test_join_privacy_line_is_human_and_invite_name_matches_paste(
+    qapp, tmp_path: Path, profile_key: str
+):
+    """Join says the invite stays here and names the paste field."""
+
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        dialog.show_join()
+        qapp.processEvents()
+        privacy = dialog._join_privacy.text()
+        assert privacy == (
+            "The invite stays on this screen. WebJam does not save it."
+        )
+        assert "secrets" not in privacy.casefold()
+        assert "logs" not in privacy.casefold()
+        assert dialog._invite_input.placeholderText() == "Paste the invite"
+        assert dialog._invite_input.accessibleName() == "Paste the invite"
+        spoken = harvest_join_page(dialog)
+        assert privacy.casefold() in spoken
+        assert_no_banned_first_screen_words(spoken)
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_art_adds_no_start_action_beyond_the_cards_and_host_join(
     qapp, tmp_path: Path
 ):
@@ -915,6 +941,24 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+def test_make_together_door_card_matches_the_in_room_session_title(
+    qapp, tmp_path: Path
+):
+    """Quoted door words and the room's default title are one phrase."""
+
+    dialog = _dialog(tmp_path)
+    try:
+        cards = _visible_cards(dialog)
+        door_label = cards[0].accessibleName()
+        assert door_label == "Make together"
+        assert cards[0].text() == "Make together"
+        profile = get_creator_profile_by_key("art")
+        assert profile.default_template == door_label
+        assert profile.default_template != "Making together"
+    finally:
+        dialog.deleteLater()
+
+
 @pytest.mark.parametrize(
     "profile_key", ["music", "podcast_voice", "review_rehearsal", "art"]
 )
@@ -1032,6 +1076,14 @@ def test_windows_door_with_missing_music_component_stays_compact(qapp, tmp_path,
         assert dialog._join_button.isEnabled()
         assert not dialog._install_jamulus_button.isVisibleTo(dialog)
         assert_no_banned_first_screen_words(harvest_first_screen(dialog))
+        assert dialog._setup_action.isVisible() is (profile == "music")
+        # Music setup is a Music-only menu route; triggering a hidden QAction
+        # from Art would bypass the live door's menu contract.
+        if profile == "art":
+            dialog._music_profile_card.click()
+            qapp.processEvents()
+        assert dialog._setup_action.isVisible()
+        assert dialog._setup_action.isEnabled()
         dialog._setup_action.trigger()
         assert dialog._install_jamulus_button.isVisibleTo(dialog)
     finally:
