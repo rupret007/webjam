@@ -53,7 +53,6 @@ class HelpDialog(QDialog):
         layout.addLayout(content)
 
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Search help, for example: unsaved draft")
         self._search.setAccessibleName("Search workflow help")
         self._search.setMaxLength(256)
         self._search.setClearButtonEnabled(True)
@@ -108,6 +107,8 @@ class HelpDialog(QDialog):
         self.resize(640, 600)
 
     def set_context(self, body: str, *, profile: str, offline_studio: bool) -> None:
+        example = "paint along" if profile == "art" else "unsaved draft"
+        self._search.setPlaceholderText(f"Search help, for example: {example}")
         self._all_topics = (HelpTopic("overview", "Current workspace", body),
                             *workflow_topics(profile, offline_studio=offline_studio))
         self._filter_topics()
