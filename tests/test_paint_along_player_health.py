@@ -161,6 +161,22 @@ def test_healthy_playback_and_unloaded_position_preserve_the_silent_seam(player)
     assert player.muted is True
 
 
+def test_end_of_media_is_observed_and_replay_rewinds(player):
+    player.load(Path("lesson.mp4"))
+    player.play()
+    backend = player.media_player
+    backend.position_ms = backend.duration_ms
+    backend.status = _QT_STATUS.EndOfMedia
+
+    assert player.playback_state() == "ended"
+    assert player.position_s() == 9.0
+
+    player.play()
+
+    assert backend.position_ms == 0
+    assert backend.calls[-2:] == ["seek", "play"]
+
+
 @pytest.mark.parametrize("operation", ["play", "seek", "position_s"])
 @pytest.mark.parametrize("error", [
     _QT_ERROR.ResourceError,
