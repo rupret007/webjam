@@ -23,6 +23,7 @@ from core.provider_credentials import (  # noqa: E402
     TEXT_PROVIDER_IDS,
 )
 from core.settings import AppSettings, load_settings  # noqa: E402
+from webjam_qt.widgets.jamulus_name_preview import PLAIN_NAME_HELP  # noqa: E402
 from webjam_qt.windows.simple_settings import SimpleSettingsDialog  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
@@ -324,7 +325,12 @@ def test_settings_name_preview_and_validation_share_jamulus_contract(
 
     dialog._name.setText("123456789")
     assert "12345678 / 9" in dialog._name_preview.text()
-    assert JAMULUS_NAME_HELP in dialog._name.accessibleDescription()
+    # The "You" section stays identity-neutral: the mixer-wrap contract
+    # (preview text, too-long rejection, focus) holds without naming Jamulus.
+    assert PLAIN_NAME_HELP in dialog._name.accessibleDescription()
+    assert "Jamulus" not in dialog._name.accessibleDescription()
+    assert "Jamulus" not in dialog._name_preview.text()
+    assert "Jamulus" not in dialog._name_preview.accessibleName()
 
     with patch(
         "webjam_qt.windows.simple_settings.save_settings"
@@ -443,3 +449,74 @@ def test_settings_keeps_live_music_section_pixel_identical_for_music_profile(
             "in Jamulus." in labels
         )
         assert dialog._open_jamulus.text() == "Open Jamulus Audio Settings"
+
+
+def test_settings_hero_is_profile_neutral(tmp_path):
+    music_dialog = SimpleSettingsDialog(
+        AppSettings(config_file=str(tmp_path / "music-settings.json")),
+        webex_opener=lambda _url: True,
+        creator_profile_key="music",
+    )
+    art_dialog = SimpleSettingsDialog(
+        AppSettings(config_file=str(tmp_path / "art-settings.json")),
+        webex_opener=lambda _url: True,
+        creator_profile_key="art",
+    )
+
+    for dialog in (music_dialog, art_dialog):
+        subtitle = dialog.findChild(QLabel, "SimpleSettingsSubtitle")
+        assert subtitle.text() == "Your name and optional meeting link."
+        assert "Jamulus" not in subtitle.text()
+
+    # The explanation of what Jamulus does stays scoped to the Live music
+    # section: present for music, absent (section hidden) for art.
+    music_labels = " ".join(
+        label.text() for label in music_dialog.findChildren(QLabel)
+    )
+    art_labels = " ".join(
+        label.text() for label in art_dialog.findChildren(QLabel)
+    )
+    assert (
+        "Choose your interface, input channels, headphones, and buffer "
+        "in Jamulus." in music_labels
+    )
+    assert (
+        "Choose your interface, input channels, headphones, and buffer "
+        "in Jamulus." not in art_labels
+    )
+
+
+def test_identity_section_name_preview_stays_profile_neutral(tmp_path):
+    """The You section must never leak Jamulus, for any profile.
+
+    The hero subtitle is not the only first-paint text in the "You" section:
+    the musician-name preview sits right below it and used to carry
+    JAMULUS_NAME_HELP ("Jamulus displays up to 16 characters...") for every
+    profile, including Art. That sentence belongs only in Live music, which
+    is itself scoped to non-art profiles already. Checking the aggregate
+    label text (as the hero test above does) is not enough, because it
+    cannot tell whether a given "Jamulus" mention lives in "You" or in
+    "Live music" — this test checks the identity widgets directly.
+    """
+
+    for profile in ("music", "art"):
+        dialog = SimpleSettingsDialog(
+            AppSettings(config_file=str(tmp_path / f"{profile}-settings.json")),
+            webex_opener=lambda _url: True,
+            creator_profile_key=profile,
+        )
+        dialog._name.setText("123456789")
+        identity_text = " ".join(
+            (
+                dialog._name_preview.text(),
+                dialog._name_preview.accessibleName(),
+                dialog._name_preview.accessibleDescription(),
+                dialog._name.accessibleDescription(),
+            )
+        )
+        assert "Jamulus" not in identity_text
+        assert JAMULUS_NAME_HELP not in identity_text
+        assert PLAIN_NAME_HELP in identity_text
+        # The mixer-wrap contract itself (what the preview actually shows)
+        # must survive the wording change.
+        assert "12345678 / 9" in dialog._name_preview.text()

@@ -236,6 +236,7 @@ class ParticipantGrid(QScrollArea):
         self.setWidget(container)
 
         self._cards: dict[int, ParticipantCard] = {}
+        self._show_empty_state = True
         # The hero lobby card floats centered over the (empty) stage rather
         # than sitting in the flow layout, which packs children top-left.
         self._empty_state = self._build_empty_state(self.viewport())
@@ -571,7 +572,7 @@ class ParticipantGrid(QScrollArea):
                 self._cards[channel_id].update_presentation(presentation)
             else:
                 self._add_card(presentation)
-        self._empty_state.setVisible(not bool(incoming))
+        self._empty_state.setVisible(self._show_empty_state and not bool(incoming))
         self._center_empty_state()
         vocabulary = self._creator_profile.vocabulary
         self._sync_participant_accessibility()
@@ -607,6 +608,7 @@ class ParticipantGrid(QScrollArea):
         show_practice: bool = False,
         hint: str = "",
         primary_action: str = "start",
+        show_empty_state: bool = True,
     ) -> None:
         """Show persistent session truth when no real participants exist."""
         title = self._profile_text(title)
@@ -638,6 +640,7 @@ class ParticipantGrid(QScrollArea):
         self._empty_state.setProperty("sessionState", state)
         phase_labels = {
             "not_connected": "NOT CONNECTED",
+            "connected": "CONNECTED",
             "connecting": "STARTING",
             "practice": "PRIVATE PRACTICE",
             "reconnecting": "RECONNECTING",
@@ -675,7 +678,8 @@ class ParticipantGrid(QScrollArea):
         self._empty_state.setAccessibleDescription(
             ". ".join(part.rstrip(".") for part in accessible_parts) + "."
         )
-        self._empty_state.setVisible(not bool(self._cards))
+        self._show_empty_state = show_empty_state
+        self._empty_state.setVisible(show_empty_state and not bool(self._cards))
         style = self._empty_state.style()
         style.unpolish(self._empty_state)
         style.polish(self._empty_state)
@@ -695,6 +699,7 @@ class ParticipantGrid(QScrollArea):
             show_practice=state.show_practice,
             hint=state.hint,
             primary_action=state.primary_action,
+            show_empty_state=state.show_empty_state,
         )
 
     def update_level(self, channel_id: int, level: float) -> None:

@@ -531,10 +531,12 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
     # Default / non-waiting rooms still name the Conversation setup step.
     # Waiting hosts omit that ask so HUD Copy Invite stays the one primary.
     detail = art_make_together_activity_detail()
-    assert "paper, clay, a model, printer, or your usual app" in detail
+    assert "You do not need an art app" in detail
+    assert "your usual tools, or just talk" in detail
     assert "Choose Set Up Conversation" in detail
     waiting = art_make_together_activity_detail(waiting_host=True)
-    assert "paper, clay, a model, printer, or your usual app" in waiting
+    assert "You do not need an art app" in waiting
+    assert "your usual tools, or just talk" in waiting
     assert "Conversation" not in waiting
     assert WATCH_TOGETHER_ACTIONS not in detail
     assert WEBJAM_DOES_NOT_PLAY_MOVIE not in detail
@@ -605,7 +607,7 @@ def test_music_invite_names_meeting_share_for_watching_a_demo():
 
 
 OWN_SPACE = (
-    "Use paper, clay, a model, printer, or your usual app, or just talk."
+    "You do not need an art app. Use paper, your usual tools, or just talk."
 )
 SETUP_ASK = "Choose Set Up Conversation to add your meeting link."
 CONVERSATION_NEXT = "Choose Conversation to talk or share your screen."

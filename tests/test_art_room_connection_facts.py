@@ -54,7 +54,7 @@ def test_art_room_can_connect_with_no_audio_evidence(role):
     )
     assert overview.activity_label == "Make from your own space"
     assert overview.activity_detail == (
-        "Use paper, clay, a model, printer, or your usual app, or just talk. "
+        "You do not need an art app. Use paper, your usual tools, or just talk. "
         "Choose Set Up Conversation to add your meeting link."
     )
     assert overview.conversation_action_label == "Set Up Conversation"
@@ -324,7 +324,7 @@ def test_waiting_art_host_without_meeting_has_copy_invite_as_the_one_primary():
     assert view.action_label == "Copy Invite"
     assert view.title == "Your room is open"
     assert overview.activity_detail == (
-        "Use paper, clay, a model, printer, or your usual app, or just talk."
+        "You do not need an art app. Use paper, your usual tools, or just talk."
     )
     assert "Conversation" not in overview.activity_detail
     assert overview.conversation_action_label == "Set Up Conversation"
