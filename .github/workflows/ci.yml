@@ -1034,6 +1034,10 @@ jobs:
 
       - name: Set up service test Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        env:
+          # Self-hosted Mac mini: setup-python defaults to /Users/runner/hostedtoolcache,
+          # which does not exist there. Use the runner's own tool cache (no-op on hosted).
+          AGENT_TOOLSDIRECTORY: ${{ runner.tool_cache }}
         with:
           python-version: "3.12"
 
@@ -1076,6 +1080,10 @@ jobs:
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        env:
+          # Self-hosted Mac mini: setup-python defaults to /Users/runner/hostedtoolcache,
+          # which does not exist there. Use the runner's own tool cache (no-op on hosted).
+          AGENT_TOOLSDIRECTORY: ${{ runner.tool_cache }}
         with:
           python-version: "${{ matrix.python }}"
 
