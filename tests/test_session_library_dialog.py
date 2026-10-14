@@ -508,6 +508,27 @@ def test_tab_leaves_workspace_notes_without_changing_the_draft(tmp_path, make_di
     assert not dialog._dirty
 
 
+def test_post_publication_create_retry_reuses_one_workspace(tmp_path, make_dialog, monkeypatch):
+    from tests.support.workspace_save_faults import fail_create_sync
+
+    library = SessionLibrary(tmp_path)
+    dialog = make_dialog(library)
+    monkeypatch.setattr(
+        "PySide6.QtWidgets.QInputDialog.getText",
+        lambda *args, **kwargs: ("Friday rehearsal", True),
+    )
+    with fail_create_sync():
+        _click(dialog, "New workspace…")
+    assert dialog.record is None
+    listed = library.list()
+    assert len(listed) == 1
+    _click(dialog, "New workspace…")
+    assert dialog.record is not None
+    assert dialog.record.id == listed[0].id
+    assert dialog.record.title == "Friday rehearsal"
+    assert len(library.list()) == 1
+
+
 @pytest.mark.parametrize("newer_draft", [False, True])
 def test_post_primary_sync_failure_explicit_save_retains_editor(tmp_path, make_dialog, newer_draft):
     from tests.support.workspace_save_faults import fail_primary_sync
