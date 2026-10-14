@@ -11,6 +11,12 @@ All notable improvements and features for the WebJam creator collaboration platf
   and at 1280×800. The side panel scrolls instead of squashing mute/solo
   chips or stacking the buttons on the helper line.
 
+- Art/Music launch File menus keep Session library and hide New Music Project,
+  Podcast, and Review starts, including the New shortcut. Help's Music setup
+  appears only for Music with an available verified Windows installer and
+  disappears if installer integrity validation fails. Host/Join and Art's
+  two start cards are unchanged; physical/live checks remain **NOT RUN**.
+
 - Send to jam loads a finished stem mix only for the room and source that
   asked for it. An old mix after End/Leave, a host-to-guest change, a
   workspace switch, or a newer song choice stays in Song tools and does not
@@ -71,7 +77,6 @@ All notable improvements and features for the WebJam creator collaboration platf
   the dialog lifecycle, like Escape. Reopening shows current saved or pending
   work; failed saves keep the draft visible and media cancellation retains
   its existing recovery guard.
-
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
