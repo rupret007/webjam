@@ -827,6 +827,11 @@ class SessionPersistence:
             path = _persistence_home() / _SESSION_FILE
             try:
                 records = _load_profile_records(path)
+            except OSError:
+                # An unreadable file may still contain other profiles. Keep it
+                # intact so a later save can re-read and merge the visible edit.
+                self._log.debug("Could not read session metadata; save deferred")
+                return
             except Exception:  # noqa: BLE001 - replace corrupt metadata safely
                 records = {}
             title = _bounded_title(self._strip.current_title())
