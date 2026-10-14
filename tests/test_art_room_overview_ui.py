@@ -259,6 +259,77 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         assert panel.verticalScrollBar().maximum() == 0
 
 
+def _set_paint_room(window, *, hosting, state, video=VideoCompanionState.NONE):
+    presence = art_room_presence(
+        ArtCompanionProjection(in_room=True, video=video),
+        hosting=hosting, intended_video=hosting, paint_along_room=True,
+    )
+    current = art_room_overview(state=state, hosting=hosting, presence=presence)
+    view = derive_session_presentation(SessionFacts(
+        role=SessionRole.HOST if hosting else SessionRole.GUEST,
+        creator_profile_key="art", setup_requested=True, art_room=state,
+    ))
+    window.set_art_room_overview(current)
+    window.session_hud.set_state(
+        view.title, view.message, action_text=view.action_label,
+        action_visible=view.primary_action not in {
+            SessionPrimaryAction.NONE, SessionPrimaryAction.WAIT,
+        },
+        invite_available=view.primary_action is SessionPrimaryAction.COPY_INVITE,
+    )
+
+
+def _visible_room_primaries(window):
+    return [button for button in window.findChildren(QPushButton)
+            if button.isVisibleTo(window) and button.objectName() == "PrimaryButton"]
+
+
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_paint_host_room_has_one_orange_action_and_restores_emphasis(window, qapp, size):
+    window.resize(*size)
+    panel = window.art_room_overview
+    activity = panel.activity_button()
+    requested = []
+    panel.activity_requested.connect(requested.append)
+    # Reusing the same widget must update its actual styled appearance both ways.
+    for state in (ArtRoomState.WAITING, ArtRoomState.CONNECTED, ArtRoomState.WAITING):
+        _set_paint_room(window, hosting=True, state=state)
+        _settle(qapp)
+        waiting = state is ArtRoomState.WAITING
+        primary = window.session_hud._action if waiting else activity
+        assert _visible_room_primaries(window) == [primary]
+        assert primary.text() == ("Copy Invite" if waiting else "Open Paint along")
+        assert primary.isEnabled()
+        assert window.rect().contains(QRect(primary.mapTo(window, QPoint()), primary.size()))
+        assert activity.isVisibleTo(window) and activity.isEnabled()
+        assert panel.viewport().rect().contains(
+            QRect(activity.mapTo(panel.viewport(), QPoint()), activity.size())
+        )
+        assert activity.text() == activity.accessibleName() == "Open Paint along"
+        assert activity.objectName() == ("GhostButton" if waiting else "PrimaryButton")
+        if waiting:
+            assert activity.palette().button().color() != primary.palette().button().color()
+        assert panel.conversation_button().objectName() == "GhostButton"
+        QTest.mouseClick(activity, Qt.MouseButton.LeftButton)
+    assert requested == ["video", "video", "video"]
+
+
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_paint_guest_missing_copy_stays_primary_after_host_view(window, qapp, size):
+    window.resize(*size)
+    _set_paint_room(window, hosting=True, state=ArtRoomState.WAITING)
+    _settle(qapp)
+    _set_paint_room(window, hosting=False, state=ArtRoomState.CONNECTED,
+                    video=VideoCompanionState.NEEDS_FILE)
+    _settle(qapp)
+    panel = window.art_room_overview
+    assert _visible_room_primaries(window) == [panel.activity_button()]
+    assert panel.activity_button().text() == "Open my copy…"
+    assert panel.activity_button().accessibleName() == "Open my copy…"
+    assert panel._activity_detail.text() == "Open your own copy of the same video to follow along."
+    assert panel.activity_button().isEnabled()
+
+
 def test_art_body_replaces_empty_mixer_and_preserves_music_cards(window, qapp):
     card = ParticipantPresentation(channel_id=3, name="Alex", is_local=True)
     window.participant_grid.set_participants([card])
