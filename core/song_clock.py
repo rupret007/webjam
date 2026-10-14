@@ -325,14 +325,14 @@ class SongClock:
             else:
                 self._key = ""
                 self._key_source = ""
-            if form.tempo is not None and form.tempo.value:
-                try:
-                    tempo = float(form.tempo.value)
-                except (TypeError, ValueError):
-                    tempo = 0.0
-                if MIN_TEMPO_BPM <= tempo <= MAX_TEMPO_BPM:
-                    self._tempo = tempo
-                    self._tempo_source = form.tempo.source
+            tempo, tempo_source = self._tempo_facts_from_form(form)
+            self._tempo = tempo
+            self._tempo_source = tempo_source
+            if tempo <= 0 and self._state != STATE_STOPPED:
+                # A withdrawn tempo is not a count. Do not keep a running or
+                # paused bar derived from a song that no longer states one.
+                self._state = STATE_STOPPED
+                self._offset_s = 0.0
             self._clamp_offset()
             self._generation += 1
 
@@ -530,6 +530,25 @@ class SongClock:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+    def _tempo_facts_from_form(self, form: SongForm) -> tuple[float, str]:
+        """Return the current form's tempo as a unit, or a cleared pair.
+
+        Adopting a song replaces tempo facts the same way it replaces key.
+        An absent or invalid tempo must not keep a prior song's BPM or
+        ``stated``/``detected`` source. Explicit ``set_tempo`` remains the
+        override that can supply a count after the form has none.
+        """
+
+        if form.tempo is None or not form.tempo.value:
+            return 0.0, ""
+        try:
+            tempo = float(form.tempo.value)
+        except (TypeError, ValueError):
+            return 0.0, ""
+        if not MIN_TEMPO_BPM <= tempo <= MAX_TEMPO_BPM:
+            return 0.0, ""
+        return tempo, form.tempo.source
+
     def _effective_tempo(self) -> float:
         return self._tempo if self._tempo > 0 else 0.0
 
