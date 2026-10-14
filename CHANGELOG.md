@@ -6,11 +6,20 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+<<<<<<< HEAD
 - Aligned-originals export hashes and renders each source through one open
   file descriptor. A same-format rewrite or path replacement after that
   handle is bound cannot publish. No package is published, the take files
   are left as they are, and Studio does not show a success or an export
   receipt.
+=======
+- Keep saved profile titles and modes intact when reading their file hits an I/O error.
+  A later successful save merges the current edit with the other profiles.
+
+- Workspace summary export reconciles live Notes and late recap/take facts even
+  with a clean library editor. Conflicts retain both drafts and block export;
+  the summary stays bound to the workspace selected before the file picker.
+>>>>>>> origin/master
 
 - Art’s idle first screen now tells a person with no art skill what to do:
   the room names Start Session and says you do not need an art app, instead
