@@ -288,11 +288,6 @@ All notable improvements and features for the WebJam creator collaboration platf
   physical observations at **NOT RUN**, with exact package/hash fields and a
   ten-minute Music/Art try list. Jeff retains feel and Final Build judgment.
 
-- Art invitation switching uses room wording in its confirmation, progress,
-  and failure messages, with End Room / Leave Room cleanup retries.
-  If cleanup finishes but the invitation cannot be applied, the disabled
-  control keeps the established Start Session label.
-
 - Music Help opens with “Host. Share. Join. Play.” and three short steps.
   Engine, meeting, room-control and keyboard details stay in searchable topics.
 - Idle host Recording Setup no longer offers a Takes folder that reload
