@@ -537,6 +537,40 @@ class _LaunchLayout(QVBoxLayout):
             if item.widget() is self.centered_pages:
                 geometry.setBottom(bottom.geometry().bottom() - below_pages)
             item.setGeometry(geometry)
+        self._recenter_brand_through_join()
+
+    def _recenter_brand_through_join(self) -> None:
+        """Keep brand-through-Join centered when a helper sits below Join.
+
+        Art Make together keeps its consequence line under Join. The compact
+        door tests measure the cluster to the Join button, not that helper, so
+        the helper must not lift the brand+Host/Join block.
+        """
+
+        dialog = self.parentWidget()
+        if dialog is None:
+            return
+        logo = getattr(dialog, "_logo", None)
+        wordmark = getattr(dialog, "_wordmark", None)
+        join = getattr(dialog, "_join_button", None)
+        menu = getattr(dialog, "_menu_bar", None)
+        if logo is None or join is None or menu is None:
+            return
+        brand_top = logo.mapTo(dialog, QPoint()).y()
+        if wordmark is not None:
+            brand_top = min(brand_top, wordmark.mapTo(dialog, QPoint()).y())
+        join_bottom = join.mapTo(dialog, QPoint()).y() + join.height()
+        margins = self.contentsMargins()
+        available_top = menu.height() + margins.top()
+        available_bottom = dialog.height() - margins.bottom()
+        correction = ((available_bottom - join_bottom) - (brand_top - available_top)) // 2
+        if correction == 0:
+            return
+        for index in range(1, self.count() - 1):
+            item = self.itemAt(index)
+            if item is None or item.isEmpty():
+                continue
+            item.setGeometry(item.geometry().translated(0, correction))
 
     def _footer_below_cluster(self) -> int:
         """Pixels of visible choice-page content sitting under Join."""

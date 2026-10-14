@@ -662,7 +662,7 @@ def test_stage_can_be_passive_when_hud_owns_primary_action(styled_qapp):
     window.participant_grid.set_session_state(
         SessionUiState(
             SessionPhase.NOT_CONNECTED,
-            "Ready when you are",
+            "Start when you are",
             "Start from the session bar when your band is ready.",
             show_primary=False,
             show_ready_check=False,
@@ -670,7 +670,7 @@ def test_stage_can_be_passive_when_hud_owns_primary_action(styled_qapp):
         )
     )
     window.session_hud.set_state(
-        "Ready when you are",
+        "Start when you are",
         "Start when your band is ready.",
         action_text="Start Session",
         action_kind="primary",
