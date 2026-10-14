@@ -57,7 +57,7 @@ Use one current release branch and one PR. Do not merge duplicate paths.
 | 2 | Prepare source and docs from current `master` | isolated checkout; intended product scope and version agree |
 | 3 | Verify the exact candidate | source checks and all required hosted jobs pass; failures are fixed on a new tip |
 | 4 | Merge the authorized release PR to `master` | one reviewed tip; no force-push |
-| 5 | Annotate the unused version tag at exact master and build it | tag/version/source match; all tag CI gates pass and create a new draft |
+| 5 | Annotate the unused version tag at exact master and dispatch `final_build` against that tag | tag/version/source match; the dispatch packaging lane passes and creates a new draft |
 | 6 | Verify and promote the unsigned testing draft | exact inventory, warnings, hashes, current master/tag, and user authorization; reverify immutable public Latest |
 
 Jeff's authorization for this named round covers the merge and unsigned test
@@ -95,7 +95,8 @@ dispatch it or claim catalog approval for this candidate. The baked, unchanged
 Jamulus 3.12.2/3.12.3 records extend through v0.29.0; they are a different policy
 from managed-update signatures.
 
-The tag lane in `ci.yml` creates an unsigned draft after source/package gates.
+Dispatching `final_build` against the annotated tag in `ci.yml` creates an
+unsigned draft after source/package gates. A tag push alone does not package.
 For this authorized maintainer round, verify all eight assets and seven
 package checksums, then promote that exact draft and verify public Latest.
 The [desktop runbook](DESKTOP_RELEASE_RUNBOOK.md#current-unsigned-testing-release)
@@ -123,17 +124,20 @@ marked module passes once, in a fresh process, with local-socket permission.
 
 ### Complete hosted suite second
 
-Pull-request CI keeps the test, lint, and integration jobs. The four
-`Build Desktop` targets do not run on `pull_request`. They run on push to
-`master`, on version tags, and on `workflow_dispatch` when `final_build` is
-selected (the default) or a signing rehearsal needs those artifacts. Art
-companion and Pocket Stage stay on pull requests because they are the only
-hosted XCTest / simulator suites; a paths filter limits those two jobs to
-changes under `ios/` or the shared Python/protocol sources they exercise.
+Pull-request and `master` push CI keep the test, lint, and integration
+jobs. The four `Build Desktop` targets do not run on `pull_request` and
+do not run on push to `master` or on a tag push. They run only on
+`workflow_dispatch` when `final_build` is selected (the default) or a
+signing rehearsal needs those artifacts. Art companion and Pocket Stage
+stay on pull requests and on push to `master` because they are the only
+hosted XCTest / simulator suites; a paths filter limits those two jobs on
+PRs to changes under `ios/` or the shared Python/protocol sources they
+exercise.
 
 The exact candidate head must then pass all 13 required hosted jobs in one
-automatic workflow run of the packaging lane (push to `master`, tag, or
-`final_build` dispatch), not on every pull request:
+automatic `final_build` dispatch (against `master`, or against the
+annotated tag when creating the unsigned draft), not on every pull request
+or every master push:
 
 - `test`
 - `Integration (real Jamulus 3.12.2)` and
@@ -166,7 +170,7 @@ These stay **NOT RUN** unless real evidence exists for the exact candidate:
 | `Certify Jamulus/JACK (one hour, manual)` | manual dispatch only (`run_one_hour_certification`) |
 | `Windows Release Trust (windows-x64)`, `macOS Release Trust` | credentialed signing/notarization rehearsals behind `windows_signing_rehearsal` / `macos_signing_rehearsal` |
 | `Jamulus 3.12.3 HEADLESS evidence` | quarantined dispatch-only evidence build |
-| `Publish GitHub Release` | tag-only draft creation; check the exact tag workflow and GitHub release for its status |
+| `Publish GitHub Release` | `final_build` dispatch against the annotated tag; a tag push alone does not draft |
 | Two-Mac Art room video and Drawpile | two physical machines, real observation |
 | Live Music AI | needs a real service credential |
 | Physical and hardware checklist rows | real musician observation against an exact package |

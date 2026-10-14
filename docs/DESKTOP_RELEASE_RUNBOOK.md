@@ -19,10 +19,12 @@ For the owner-authorized v0.29.0 testing round:
    baked compatibility ceiling, SBOMs, and current docs together. The existing
    Jamulus binaries and their hashes remain unchanged.
 2. Create an unused annotated version tag at exact `origin/master`; package
-   version and tag must agree. Keep master stationary while tag CI runs.
-3. Require the entire tag workflow to pass, including independent Art companion
-   checks and all four desktop builds. The tag-only release job refuses an
-   existing release and creates an unsigned draft with seven packages plus
+   version and tag must agree. Keep master stationary. A tag push runs the
+   test lane only; it does not package.
+3. Dispatch `final_build` against that annotated tag and require the entire
+   packaging run to pass, including independent Art companion checks and all
+   four desktop builds. The release job refuses an existing release and
+   creates an unsigned draft with seven packages plus
    `WebJam-v0.29.0-SHA256SUMS.txt`.
 4. Before promotion, bind the tag object/commit, CI run/attempt, draft release ID,
    body, and each asset's ID/name/size/SHA-256. Verify exactly eight assets, all
@@ -121,10 +123,13 @@ and must not be read as current Latest facts.
 > v0.28.1 for Host/Join and component-input CI.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
-Actions `build-desktop` matrix is the authoritative source builder. It runs on
-push to `master`, on version tags, and on `workflow_dispatch` when
-`final_build` is selected (the default) or a signing rehearsal needs those
-artifacts. It does not run on `pull_request`. Version
+Actions `build-desktop` matrix is the authoritative source builder. It runs
+only on `workflow_dispatch` when `final_build` is selected (the default) or a
+signing rehearsal needs those artifacts. It does not run on `pull_request`
+and does not run on push to `master` or on a tag push. To create the unsigned
+draft, dispatch `final_build` against the annotated version tag so
+`Publish GitHub Release` sees `refs/tags/v*` in the same run that built the
+artifacts. Version
 tags may promote its explicitly unsigned/ad-hoc outputs as a private test
 candidate. The environment-bound `windows-release-trust` and
 `macos-release-trust` jobs remain the only authoritative packagers for a future

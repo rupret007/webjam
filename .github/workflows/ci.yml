@@ -46,10 +46,10 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  # Only cancel superseded PR runs. Pushes to branches/tags must run to
-  # completion so master always produces a green build + release artifacts
-  # (rapid successive pushes previously cancelled every run, leaving the
-  # branch with no green CI and no downloadable builds).
+  # Only cancel superseded PR runs. Pushes to master/tags must run the
+  # test lane to completion (rapid successive pushes previously cancelled
+  # every run, leaving the branch with no green CI). Desktop packaging is
+  # workflow_dispatch final_build only.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -779,9 +779,10 @@ jobs:
 
   # ------------------------------------------------------------------
   # iOS jobs are the only hosted XCTest / simulator UI suites. Keep them
-  # on pull_request, but only when ios/ or the shared Python/protocol
-  # sources those suites exercise have changed. Every push and
-  # workflow_dispatch still runs them so packaging keeps a compile proof.
+  # on pull_request and on push to master. On pull_request, run them only
+  # when ios/ or the shared Python/protocol sources they exercise change.
+  # workflow_dispatch always runs them so a final_build still has a
+  # compile proof.
   # ------------------------------------------------------------------
   ios-change-gate:
     name: iOS change gate
@@ -1096,20 +1097,20 @@ jobs:
   # macOS:   dist/WebJam.app bundle → zipped with ditto
   # Linux:   dist/WebJam/ directory → zipped with zip
   #
-  # Packaging stays off pull_request so PR CI is the test/lint/integration
-  # lane. The four targets still run on push to master, on tags (release
-  # needs the artifacts), and on workflow_dispatch when final_build is on
-  # (the default) or a signing rehearsal needs those artifacts.
+  # Packaging stays off pull_request and off push to master/tags. The
+  # four targets run only on workflow_dispatch when final_build is on
+  # (the default) or a signing rehearsal needs those artifacts. A tag
+  # draft still needs this job in the same run: dispatch final_build
+  # against the annotated tag so github.ref is refs/tags/v*.
   # ------------------------------------------------------------------
   build-desktop:
     name: Build Desktop (${{ matrix.target }})
     needs: [test, integration-jamulus, jamulus-platform-update-inputs, transport, reference-service, pocket-stage-ios]
     if: >-
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_dispatch' &&
-       (inputs.final_build ||
-        inputs.macos_signing_rehearsal ||
-        inputs.windows_signing_rehearsal))
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.final_build ||
+       inputs.macos_signing_rehearsal ||
+       inputs.windows_signing_rehearsal)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
@@ -3624,15 +3625,22 @@ jobs:
 
   # ------------------------------------------------------------------
   # GitHub Release
-  # Only runs on tag pushes matching v*.*.* (e.g. v0.3.0).
   # Publishes the exact tested unsigned/ad-hoc cross-platform candidate plus
-  # its checksum manifest as a draft. Existing published tags are immutable,
-  # and no release or asset is pruned or silently replaced by this job.
+  # its checksum manifest as a draft. Packaging is dispatch-only, so a tag
+  # push no longer builds or drafts. Dispatch final_build against the
+  # annotated v*.*.* tag so this job and build-desktop share one run.
+  # Existing published tags are immutable, and no release or asset is
+  # pruned or silently replaced by this job.
   # ------------------------------------------------------------------
   release:
     name: Publish GitHub Release
     needs: build-desktop
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      (inputs.final_build ||
+       inputs.macos_signing_rehearsal ||
+       inputs.windows_signing_rehearsal)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

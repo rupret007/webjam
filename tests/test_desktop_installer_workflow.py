@@ -523,17 +523,19 @@ def test_source_job_is_bounded_and_runs_required_environment_gates() -> None:
     assert "if:" not in test_job.split("    steps:\n", 1)[0]
 
 
-def test_desktop_packaging_runs_on_master_and_final_build_not_pull_request() -> None:
+def test_desktop_packaging_runs_only_on_final_build_dispatch() -> None:
     build = _workflow_job("build-desktop")
     header = build.split("    steps:\n", 1)[0]
     condition = " ".join(
         header.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0].split()
     )
-    assert "github.event_name == 'push'" in condition
-    assert "github.event_name == 'workflow_dispatch'" in condition
-    assert "inputs.final_build" in condition
-    assert "inputs.macos_signing_rehearsal" in condition
-    assert "inputs.windows_signing_rehearsal" in condition
+    assert condition == (
+        "github.event_name == 'workflow_dispatch' && "
+        "(inputs.final_build || "
+        "inputs.macos_signing_rehearsal || "
+        "inputs.windows_signing_rehearsal)"
+    )
+    assert "github.event_name == 'push'" not in condition
     assert "pull_request" not in condition
     dispatch = WORKFLOW.split("  workflow_dispatch:\n", 1)[1].split(
         "\n\n# Default:", 1
@@ -545,7 +547,7 @@ def test_desktop_packaging_runs_on_master_and_final_build_not_pull_request() -> 
     assert "Upload non-Windows build artifact" in build
 
 
-def test_pr_test_and_integration_jobs_stay_on_every_pull_request() -> None:
+def test_pr_and_master_test_jobs_are_not_event_gated() -> None:
     for name in (
         "windows-diagnostic-control",
         "test",
@@ -556,6 +558,7 @@ def test_pr_test_and_integration_jobs_stay_on_every_pull_request() -> None:
     ):
         header = _workflow_job(name).split("    steps:\n", 1)[0]
         assert "pull_request" not in header, name
+        assert "workflow_dispatch" not in header, name
         assert "ios-change-gate" not in header, name
 
 

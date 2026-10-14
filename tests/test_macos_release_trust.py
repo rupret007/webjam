@@ -268,7 +268,16 @@ def test_candidate_release_is_a_tag_only_draft_from_tested_builds() -> None:
     assert "needs: build-desktop" in release
     assert "windows-release-trust" not in release
     assert "macos-release-trust" not in release
-    assert "if: startsWith(github.ref, 'refs/tags/v')" in release
+    condition = " ".join(
+        release.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0].split()
+    )
+    assert condition == (
+        "github.event_name == 'workflow_dispatch' && "
+        "startsWith(github.ref, 'refs/tags/v') && "
+        "(inputs.final_build || "
+        "inputs.macos_signing_rehearsal || "
+        "inputs.windows_signing_rehearsal)"
+    )
     assert "name: webjam-macos-arm64" in release
     assert "name: webjam-macos-x64" in release
     create = _workflow_step("Create GitHub Release")
