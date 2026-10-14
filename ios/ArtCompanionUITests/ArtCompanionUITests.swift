@@ -61,10 +61,25 @@ final class ArtCompanionUITests: XCTestCase {
         )
     }
 
+    /// How far `target` sits outside `visible`. Zero when they overlap.
+    @MainActor private func offscreenDistance(_ target: CGRect, from visible: CGRect) -> CGFloat {
+        if target.maxY < visible.minY { return visible.minY - target.maxY }
+        if target.minY > visible.maxY { return target.minY - visible.maxY }
+        return 0
+    }
+
     /// Move the form toward `element` without hitting the keyboard.
-    /// A center swipe is fine when the keyboard is down; with the keyboard up it
-    /// can land on the keys or a TextEditor and leave invitation unhittable.
-    @MainActor private func nudgeForm(_ scroll: XCUIElement, in app: XCUIApplication, towardTop: Bool) {
+    /// A center swipe is fine when the keyboard is down and the target is still
+    /// a page away. With the keyboard up it can land on the keys or a TextEditor
+    /// and leave invitation unhittable. A reverse page swipe after a near miss
+    /// is the AccessibilityXXXL bounce that left canvas-elsewhere unhittable
+    /// on iPhone SE (run 38610587063).
+    @MainActor private func nudgeForm(
+        _ scroll: XCUIElement,
+        in app: XCUIApplication,
+        towardTop: Bool,
+        far: Bool
+    ) {
         if softwareKeyboardUp(app) {
             let frame = scroll.frame
             let visible = visibleFormFrame(scroll, in: app)
@@ -76,22 +91,38 @@ final class ArtCompanionUITests: XCTestCase {
             let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
             let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: endY))
             start.press(forDuration: 0.05, thenDragTo: end)
-        } else if towardTop {
-            scroll.swipeUp()
+        } else if far {
+            if towardTop {
+                scroll.swipeUp()
+            } else {
+                scroll.swipeDown()
+            }
         } else {
-            scroll.swipeDown()
+            // Short correction after a page swipe that landed just off-screen.
+            let frame = scroll.frame
+            let visible = visibleFormFrame(scroll, in: app)
+            guard frame.height > 1, visible.height > 8 else { return }
+            let mid = (visible.minY - frame.minY + visible.height * 0.5) / frame.height
+            let half = (visible.height * 0.20) / frame.height
+            let startY = towardTop ? min(mid + half, 0.92) : max(mid - half, 0.08)
+            let endY = towardTop ? max(mid - half, 0.08) : min(mid + half, 0.92)
+            let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
+            let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: endY))
+            start.press(forDuration: 0.05, thenDragTo: end)
         }
     }
 
-    /// True when enough of `target` sits inside the unobscured form that further
-    /// swipes would more likely throw it off-screen than make it hittable.
+    /// True when the hittable point already sits in the unobscured form.
+    /// Requiring the whole short frame inside the inset band made XXXL titles
+    /// near the edge look unfinished; the next page swipe threw them off-screen.
     @MainActor private func comfortablyOnScreen(_ target: CGRect, in visible: CGRect) -> Bool {
         guard target != .zero, !visible.isEmpty else { return false }
         let comfortable = visible.insetBy(dx: 4, dy: 16)
+        let hit = CGPoint(x: target.midX, y: target.midY)
         if target.height > comfortable.height {
-            return comfortable.contains(CGPoint(x: target.midX, y: target.midY))
+            return comfortable.intersects(target)
         }
-        return comfortable.contains(target)
+        return comfortable.contains(hit)
     }
 
     @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
@@ -112,10 +143,17 @@ final class ArtCompanionUITests: XCTestCase {
             if comfortablyOnScreen(target, in: visible) {
                 continue
             }
-            if target == .zero || visible.isEmpty {
+            if visible.isEmpty {
                 continue
             }
-            nudgeForm(scroll, in: app, towardTop: target.midY > visible.midY)
+            // Off-screen queries can report a zero frame. Room actions live
+            // below the first page, so search downward instead of spinning.
+            if target == .zero {
+                nudgeForm(scroll, in: app, towardTop: true, far: true)
+                continue
+            }
+            let far = offscreenDistance(target, from: visible) > visible.height * 0.55
+            nudgeForm(scroll, in: app, towardTop: target.midY > visible.midY, far: far)
         }
         XCTAssertTrue(element.isHittable, "not hittable after scrolling \(debugName(element))")
     }

@@ -9,10 +9,12 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Art companion's iPhone/iPad Join UI test waits for the name and invitation
   fields to exist, be hittable, and hold keyboard focus before typing, and
   scrolls the form from each field's real position above the keyboard. Large
-  Dynamic Type room actions keep scrolling until they sit inside the visible
-  form, using a page swipe when the software keyboard is not shown. The
-  keyboard toolbar's Done control is not treated as the keyboard. The same
-  keyboard and recovery checks remain.
+  Dynamic Type room actions keep scrolling until the hittable point sits
+  inside the visible form. A page swipe is used only when the control is
+  still a page away and the software keyboard is down; a near miss uses a
+  short correction instead of a reverse page swipe. The keyboard toolbar's
+  Done control is not treated as the keyboard. The same keyboard and
+  recovery checks remain.
 - Test, lint, and integration jobs still run on pull requests and on push
   to `master`. `Build Desktop` (linux-x64, macos-arm64, macos-x64,
   windows-x64) no longer runs on `pull_request` or on push to `master` /
