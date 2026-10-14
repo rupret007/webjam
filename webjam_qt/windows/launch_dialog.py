@@ -1670,7 +1670,7 @@ class LaunchDialog(QDialog):
         self.remote_invitation = None
         self.accept()
 
-    _EMPTY_JOIN_PROMPT = "Paste your invitation to continue"
+    _EMPTY_JOIN_PROMPT = "Paste an invite to continue"
 
     def _prompt_empty_join_invite(self) -> None:
         self._join_status.setText(self._EMPTY_JOIN_PROMPT)

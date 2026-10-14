@@ -722,7 +722,7 @@ def test_join_paste_prompt_is_shared_from_first_paint_through_empty_submit(
 ):
     dialog = _dialog(tmp_path, profile_key)
     try:
-        expected = "Paste your invitation to continue"
+        expected = "Paste an invite to continue"
         assert LaunchDialog._EMPTY_JOIN_PROMPT == expected
         assert dialog._join_status.text() == expected
         dialog.resize(*size)
@@ -792,6 +792,7 @@ def test_empty_join_return_in_invite_field_announces_paste_prompt(
         assert dialog.result() == initial_result
         assert dialog._invite_input.hasFocus()
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
     finally:
         dialog.deleteLater()
 
@@ -809,11 +810,13 @@ def test_whitespace_only_invite_stays_blocked_and_empty_join_on_submit(
         dialog._on_invite_text_changed()
         assert dialog._join_button_primary.property("joinBlocked") is True
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
         initial_result = dialog.result()
         QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
         qapp.processEvents()
         assert dialog.result() == initial_result
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
         assert dialog._invite_input.hasFocus()
     finally:
         dialog.deleteLater()
@@ -832,6 +835,7 @@ def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
         QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
         qapp.processEvents()
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
 
         dialog._invite_input.setText("webjam://invite?v=2&token=test")
         dialog._on_invite_text_changed()
@@ -841,6 +845,7 @@ def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
         dialog._invite_input.clear()
         dialog._on_invite_text_changed()
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
         assert dialog._join_button_primary.property("joinBlocked") is True
     finally:
         dialog.deleteLater()
