@@ -10,7 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core.art_room_presence import ABSENT, ArtPresenceTarget, ArtRoomPresence
-from core.meeting_companion import art_make_together_activity_detail
+from core.meeting_companion import (
+    ART_NO_SKILL_NEEDED,
+    ART_OWN_TOOLS_LINE,
+    art_make_together_activity_detail,
+)
 from core.session_conductor import ArtRoomState
 
 
@@ -18,14 +22,14 @@ from core.session_conductor import ArtRoomState
 class ArtRoomOverview:
     phase: str = "idle"
     phase_label: str = "Before you join"
-    title: str = "Make room for your art"
+    title: str = "Open the room, then make with what you have"
     role_label: str = "Guest"
     connection_label: str = "No room connected"
-    connection_detail: str = "Use a host's invitation to join their room."
-    activity_label: str = "Make from your own space"
-    activity_detail: str = (
-        "Use paper, clay, a model, printer, or your usual app."
+    connection_detail: str = (
+        "Choose Start Session and paste the host's invitation."
     )
+    activity_label: str = "Make from your own space"
+    activity_detail: str = f"{ART_NO_SKILL_NEEDED} {ART_OWN_TOOLS_LINE}"
     activity_action: str = ""
     activity_action_label: str = ""
     activity_enabled: bool = False
@@ -40,6 +44,20 @@ class ArtRoomOverview:
     secondary_activity_action_label: str = ""
     secondary_activity_enabled: bool = False
     making_detail: str = ""
+
+    @property
+    def open_my_copy_recovery(self) -> bool:
+        """Guest NEEDS_FILE: Room's emphasized next click is **Open my copy…**."""
+        return _is_open_my_copy_recovery(
+            self.activity_label, self.activity_action, self.activity_action_label,
+        ) or (
+            self.secondary_activity_enabled
+            and _is_open_my_copy_recovery(
+                self.secondary_activity_label,
+                self.secondary_activity_action,
+                self.secondary_activity_action_label,
+            )
+        )
 
     @property
     def activity_actions(self) -> tuple[str, ...]:
@@ -159,18 +177,23 @@ def art_room_overview(
             "an invitation alone does not mean someone has joined."
         )
     else:
-        phase, label, title = "idle", "Before you host" if hosting else "Before you join", "Make room for your art"
+        phase, label, title = (
+            "idle",
+            "Before you host" if hosting else "Before you join",
+            "Open the room, then make with what you have",
+        )
         connection = "No room connected"
         detail = (
-            "Start a room, then share its invitation with the artists you want to join."
+            "Choose Start Session to open the room, then share its invitation."
             if hosting
-            else "Use a host's invitation to join their room."
+            else "Choose Start Session and paste the host's invitation."
         )
 
     active = phase in {"waiting", "connected"}
     activity = "Make from your own space"
     activity_detail = art_make_together_activity_detail(
         conversation_configured=conversation_configured,
+        waiting_host=phase == "waiting" and hosting,
     )
     action = ""
     action_label = ""
@@ -188,6 +211,18 @@ def art_room_overview(
             secondary_activity = secondary_presence.label
             secondary_detail = secondary_presence.description
             secondary_action, secondary_action_label = candidate, candidate_label
+    if (
+        _is_open_my_copy_recovery(
+            secondary_activity, secondary_action, secondary_action_label,
+        )
+        and not _is_open_my_copy_recovery(activity, action, action_label)
+    ):
+        # Missing-file recovery owns Room emphasis even when canvas attention
+        # ranked first. The strip chip can still name the other request.
+        activity, secondary_activity = secondary_activity, activity
+        activity_detail, secondary_detail = secondary_detail, activity_detail
+        action, secondary_action = secondary_action, action
+        action_label, secondary_action_label = secondary_action_label, action_label
     return ArtRoomOverview(
         phase=phase,
         phase_label=label,
@@ -206,9 +241,12 @@ def art_room_overview(
         secondary_activity_action_label=secondary_action_label,
         secondary_activity_enabled=active and bool(secondary_action),
         making_detail=(
-            "Start making with paper, clay, a model, printer, or your usual app. "
-            "Shared activities are optional."
-            if active and (action or secondary_action) else ""
+            f"{ART_NO_SKILL_NEEDED} Start making with paper, your usual tools, "
+            "or just talk. Shared activities are optional."
+            if active and (action or secondary_action) and not (
+                _is_open_my_copy_recovery(activity, action, action_label)
+                and not secondary_action
+            ) else ""
         ),
         # Conversation only reveals the separate meeting controls. Its
         # availability is independent of the Art transport connection.
@@ -218,6 +256,15 @@ def art_room_overview(
         conversation_action_label=(
             "Conversation" if conversation_configured else "Set Up Conversation"
         ),
+    )
+
+
+def _is_open_my_copy_recovery(activity: str, action: str, action_label: str) -> bool:
+    """True only for guest NEEDS_FILE, not mismatched-copy or Open lesson."""
+    return (
+        action == "video"
+        and activity == "Open my copy…"
+        and action_label == "Open my copy…"
     )
 
 

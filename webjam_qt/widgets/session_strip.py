@@ -316,7 +316,7 @@ class SessionStrip(QFrame):
 
         self._video_button = QPushButton("Conversation")
         self._video_button.setObjectName("GhostButton")
-        self._video_button.setAccessibleName("Show conversation controls")
+        self._video_button.setAccessibleName("Conversation")
         self._video_button.setToolTip(
             "Show WebJam's conversation controls.\n"
             "This does not open or rejoin the meeting."
@@ -742,7 +742,7 @@ class SessionStrip(QFrame):
                 "workspace when WebJam was opened in Reference Studio."
             )
             studio_tip = "Open Studio to review completed takes and work on the song."
-            conversation_name = "Show conversation controls"
+            conversation_name = "Conversation"
             check_label = "Band Check"
             check_menu_label = "Band Check / Verify Sound"
             practice_label = "Practice Solo"
@@ -836,7 +836,7 @@ class SessionStrip(QFrame):
                 "Art rooms have no take review and no local Studio project."
             )
             studio_tip = "Art has no Studio take or local project."
-            conversation_name = "Show conversation controls"
+            conversation_name = "Conversation"
             check_label = "Session Check"
             check_menu_label = "Session Check / Verify Audio"
             practice_label = "Private Room Audio"
@@ -1101,7 +1101,6 @@ class SessionStrip(QFrame):
 
         return {
             "Copy Invite": "Invite",
-            "Conversation": "Talk",
             "● Record Session": "● Record",
             "■ Stop Recording": "■ Stop",
             "■ Finish Stop": "■ Finish",
@@ -1146,6 +1145,22 @@ class SessionStrip(QFrame):
         self._audio_button.setText(
             self._compact_control_label(self._audio_button_full_text)
         )
+        self._apply_compact_strip_density()
+
+    def _apply_compact_strip_density(self) -> None:
+        """Recover width so the full Conversation name fits at 720 px."""
+
+        layout = self.layout()
+        if layout is None:
+            return
+        if self._compact_control_labels:
+            layout.setContentsMargins(Space.SM, Space.SM, Space.SM, Space.SM)
+            layout.setSpacing(Space.XS)
+            self._title_input.setMinimumWidth(118)
+        else:
+            layout.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.SM)
+            layout.setSpacing(Space.SM)
+            self._title_input.setMinimumWidth(128)
 
     def set_video_state(self, label: str, *, enabled: bool = True) -> None:
         """Retain external-launch status without changing navigation semantics.
@@ -1318,6 +1333,17 @@ class SessionStrip(QFrame):
             # (a completed/attention take whose session has now ended).
             if phase != "idle":
                 self._record_elapsed.setVisible(True)
+        self._pin_record_elapsed_width()
+
+    def _pin_record_elapsed_width(self) -> None:
+        """Keep the current receipt from shrinking below its readable hint."""
+
+        label = self._record_elapsed
+        if label.isHidden() or not label.text():
+            label.setMinimumWidth(0)
+            return
+        label.setMinimumWidth(0)
+        label.setMinimumWidth(label.minimumSizeHint().width())
 
     def set_recording_available(self, available: bool) -> None:
         """Only the host owns the synchronized take; joiners are recorded there."""
@@ -1721,14 +1747,25 @@ class SessionStrip(QFrame):
                     if self._creator_profile_locked
                     else "Preview"
                 )
+            elif self._creator_profile_locked:
+                status = "Host profile"
             else:
-                status = "Host profile" if self._creator_profile_locked else "Ready"
-            self._subtitle.setText(
-                f"{self._creator_profile_label} · {status}"
-            )
-            self._subtitle.setAccessibleName(
-                f"Creator profile: {self._creator_profile_label}; {status}"
-            )
+                # No session-state claim here: this fires before a session
+                # is connected, so a bare "Ready" would overstate what's
+                # actually true yet. The label alone says what it is.
+                status = ""
+            if status:
+                self._subtitle.setText(
+                    f"{self._creator_profile_label} · {status}"
+                )
+                self._subtitle.setAccessibleName(
+                    f"Creator profile: {self._creator_profile_label}; {status}"
+                )
+            else:
+                self._subtitle.setText(self._creator_profile_label)
+                self._subtitle.setAccessibleName(
+                    f"Creator profile: {self._creator_profile_label}"
+                )
             return
         label = self._mode_picker.currentText()
         self._subtitle.setText(f"{label} · WebJam")
@@ -1744,12 +1781,12 @@ class SessionStrip(QFrame):
     def _update_record_elapsed(self) -> None:
         if self._recording_phase == "count_in":
             self._record_elapsed.setText("COUNT-IN")
-            return
-        if self._recording_phase == "stop_failed":
+        elif self._recording_phase == "stop_failed":
             self._record_elapsed.setText("CLEANUP PENDING")
-            return
-        seconds = self._record_elapsed_seconds
-        self._record_elapsed.setText(f"REC {seconds // 60:02d}:{seconds % 60:02d}")
+        else:
+            seconds = self._record_elapsed_seconds
+            self._record_elapsed.setText(f"REC {seconds // 60:02d}:{seconds % 60:02d}")
+        self._pin_record_elapsed_width()
 
     def _update_timer_label(self) -> None:
         t = QTime(0, 0).addSecs(self._elapsed_seconds)
