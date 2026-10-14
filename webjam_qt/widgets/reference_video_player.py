@@ -118,6 +118,8 @@ class QtReferenceVideoPlayer:
 
     def play(self) -> None:
         self._require_healthy()
+        if self.playback_state() == "ended":
+            self._player.setPosition(0)
         self._player.play()
         self._require_healthy()
 
@@ -148,6 +150,29 @@ class QtReferenceVideoPlayer:
         position_s = max(0.0, self._player.position() / _MS)
         self._require_healthy()
         return position_s
+
+    def playback_state(self) -> str:
+        """Observed local transport, including natural end of media."""
+
+        from PySide6.QtMultimedia import QMediaPlayer
+
+        if self._closed:
+            return "ended"
+        self._require_healthy()
+        if self._player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia:
+            return "ended"
+        playback = getattr(self._player, "playbackState", None)
+        if not callable(playback):
+            return "ready"
+        state = playback()
+        states = getattr(QMediaPlayer, "PlaybackState", None)
+        if states is None:
+            return "ready"
+        if state == states.PlayingState:
+            return "playing"
+        if state == states.PausedState:
+            return "paused"
+        return "ready"
 
     def close(self) -> None:
         if self._closed:

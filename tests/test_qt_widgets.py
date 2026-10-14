@@ -1604,7 +1604,12 @@ class TestConductorWindow(unittest.TestCase):
         body = set_text.call_args.args[0]
         self.assertIn("Choose <b>Studio</b>", body)
         self.assertNotIn("build a song project", body)
-        self.assertIn("choose <b>Music</b>, then <b>Host</b> or <b>Join</b>", body)
+        self.assertIn(
+            "choose <b>Music</b> or <b>Art</b> "
+            "(<b>Make together</b> / <b>Paint along</b>), then <b>Host</b> "
+            "or <b>Join</b>",
+            body,
+        )
         self.assertNotIn("Host a Jam", body)
         self.assertNotIn("Join a Jam", body)
         self.assertIn("review completed session takes", body)
@@ -1678,21 +1683,27 @@ class TestConductorWindow(unittest.TestCase):
                     self.assertIs(window.workspace_stack.currentWidget(), workspace)
                     if profile_key == "art":
                         for token in (
-                            "— Art", "Make together", "Paint along", "<b>More</b>",
-                            "Shared Canvas…", "Choose process video…",
-                            "YouTube link…", "Open my copy…", "Open lesson",
-                            "silent", "Local files are not transferred", "Conversation",
-                            "Back to room", "Notes", "End Room", "Leave Room",
+                            "— Art", "Make together", "Paint along",
+                            "<b>Host</b> or <b>Join</b>", "invite", "silent",
+                            "keep making", "open the lesson",
                         ):
                             self.assertIn(token, body)
+                        self.assertNotIn("one next action is enough", body)
+                        self.assertIn("<b>1.</b>", body)
+                        self.assertIn("<b>3.</b>", body)
+                        self.assertNotIn("<b>4.</b>", body)
                         for token in (
                             "musician", "Record Session", "Studio", "Shared Track",
                             "Band Check", "monitor mix", "fader", "F2", "Song", "AI Image",
+                            "Shared Canvas", "Choose process video", "YouTube",
+                            "F11", "Continue your work",
                         ):
                             self.assertNotIn(token, body)
                     else:
                         self.assertIn("review completed session takes", body)
-                        self.assertNotIn("Paint along", body)
+                        self.assertNotIn("— Art", body)
+                        self.assertIn("Make together", body)
+                        self.assertIn("Paint along", body)
         finally:
             window.close()
 

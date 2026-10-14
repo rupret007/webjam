@@ -143,6 +143,11 @@ class SessionLibraryCoordinator(QObject):
         if not self._applying and self.current is not None:
             self.timer.start()
 
+    def _borrowed_title(self):
+        """Return the invitation's name if the strip title is still just that."""
+        persistence = getattr(self._c, "_persistence", None)
+        return getattr(persistence, "_borrowed_title", None)
+
     def _capture_current_notes(self):
         """Keep live Notes ahead of editor saves without dropping pending facts."""
         if self._applying:
@@ -168,7 +173,10 @@ class SessionLibraryCoordinator(QObject):
             # left behind, instead of silently keeping the failed draft.
             self._captured = context
             changes = {}
-            if title:
+            borrowed = self._borrowed_title()
+            if title and (
+                borrowed is None or " ".join(title.split()) != borrowed
+            ):
                 changes["title"] = title
             changes["mode_key"] = mode
             pulse = build_session_pulse(creator_profile_key=self._profile(), title=title, notes=notes)
