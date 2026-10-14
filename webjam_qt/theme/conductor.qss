@@ -1930,7 +1930,7 @@ QPushButton#StudioRecordButton {
  * recording-status text at the compact floor; only horizontal padding changes. */
 #SessionControlBar[followAlongCompact="true"] QPushButton#GhostButton,
 #SessionControlBar[followAlongCompact="true"] QToolButton#GhostButton {
-    padding: 0 6px;
+    padding: 0 4px;
 }
 
 #SessionControlBar[followAlongCompact="true"] QPushButton#StudioRecordButton {
@@ -1944,7 +1944,7 @@ QPushButton#StudioRecordButton {
 #SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QPushButton#GhostButton,
 #SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QToolButton#GhostButton,
 #SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QPushButton#StudioRecordButton {
-    padding: 0 4px;
+    padding: 0 3px;
 }
 
 #SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QPushButton#AudioButton[destructive="true"] {

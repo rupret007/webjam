@@ -9577,7 +9577,7 @@ class ApplicationController(QObject):
             and self.bridge.jamulus_state in {"Not launched", "Not running"}
         ):
             self.window.session_hud.set_state(
-                "Ready when you are",
+                "Start when you are",
                 "WebJam will handle the connection automatically.",
             )
             return
