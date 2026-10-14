@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Art companion's iPhone/iPad Join UI test waits for the name and invitation
+  fields to exist, be hittable, and hold keyboard focus before typing, and
+  scrolls the form from each field's real position above the keyboard. The
+  same keyboard and recovery checks remain.
+
 - Song tools Stems keeps each Vocals/Drums/Bass row and the Sing this one /
   Send to jam actions at their natural height at the 800×600 window floor
   and at 1280×800. The side panel scrolls instead of squashing mute/solo
