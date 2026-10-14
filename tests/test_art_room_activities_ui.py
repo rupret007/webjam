@@ -234,12 +234,15 @@ def test_both_production_activities_fit_and_keep_keyboard_actions_reachable(
         assert panel._making_detail.isHidden()
         assert panel._making_detail.text() == ""
         assert "Start making with paper" not in panel.accessibleDescription()
+        assert "You do not need an art app" not in panel.accessibleDescription()
     else:
         assert panel._making_detail.isVisibleTo(window)
         assert panel._making_detail.text() == (
-            "Start making with paper, clay, a model, printer, or your usual app. "
-            "Shared activities are optional."
+            "You do not need an art app. Start making with paper, your usual tools, "
+            "or just talk. Shared activities are optional."
         )
+        assert "You do not need an art app" in panel._making_detail.text()
+        assert "your usual tools, or just talk" in panel._making_detail.text()
     # Deterministically exercise wider glyph metrics without changing a
     # machine's font/DPI settings or replacing production stylesheet sizes.
     for widget in panel._content.findChildren(QLabel) + panel._content.findChildren(QPushButton):

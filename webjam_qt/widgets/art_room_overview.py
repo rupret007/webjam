@@ -182,7 +182,11 @@ class ArtRoomOverviewWidget(QScrollArea):
         label.setTextFormat(Qt.TextFormat.PlainText)
         label.setWordWrap(True)
         label.setMinimumWidth(0)
-        label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        # Wrapped text needs the height for its actual width, not the taller
+        # natural size hint as a minimum that can force needless scrolling.
+        policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        policy.setHeightForWidth(True)
+        label.setSizePolicy(policy)
         return label
 
     def clear_room_connections(self) -> None:

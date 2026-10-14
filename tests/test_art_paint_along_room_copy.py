@@ -56,6 +56,7 @@ def test_paint_along_action_fits_without_scroll_and_copy_returns(window, qapp, h
         assert panel._making_detail.accessibleDescription() == ""
         assert not panel._title.isVisibleTo(window)
         assert "Start making with paper" not in panel.accessibleDescription()
+        assert "You do not need an art app" not in panel.accessibleDescription()
         assert panel._connection_detail.text() == current.connection_detail
         assert current.connection_detail.rstrip(".") in panel.accessibleDescription()
         assert panel._activity_detail.text() == current.activity_detail
@@ -72,6 +73,10 @@ def test_paint_along_action_fits_without_scroll_and_copy_returns(window, qapp, h
         window.set_art_room_overview(own_tools)
         _settle(qapp)
         assert panel._activity_detail.isVisibleTo(window)
-        assert "paper, clay, a model, printer, or your usual app" in panel._activity_detail.text()
+        # Returning to Make together restores the current no-art-app guidance.
+        assert panel._activity_detail.text() == (
+            "You do not need an art app. Use paper, your usual tools, or just talk. "
+            "Choose Set Up Conversation to add your meeting link."
+        )
         assert not button.isVisibleTo(window)
     assert actions == ["video", "video"]
