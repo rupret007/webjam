@@ -6951,6 +6951,9 @@ class RecordingCoordinator:
         )
         self.last_validation = result
         self.last_completed_take = refreshed.path
+        library = getattr(self._c, "session_library", None)
+        if library is not None:
+            library.recording_completed(refreshed, validated=not needs_attention)
         if needs_attention != previous_attention:
             self._set_phase(
                 RecorderPhase.NEEDS_ATTENTION

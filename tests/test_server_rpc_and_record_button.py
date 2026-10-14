@@ -6397,6 +6397,47 @@ class TestRecordButtonWiring(unittest.TestCase):
             c.recording.last_validation = previous_validation
             c.recording.phase = RecorderPhase.IDLE
 
+    def test_late_peer_reconciliation_forwards_accepted_manifest_to_library(self):
+        """Library status/source identity must track a late-accepted manifest."""
+        from core.take_library import TakeInfo, TakeValidationResult
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        take_path = Path("/tmp/webjam-late-peer-library-update")
+        transfer_error = "Peer transfer: Alex's local original has not arrived."
+        prior = TakeInfo(
+            path=take_path,
+            name="Late peer reconciliation",
+            validation_status="needs_attention",
+            manifest_errors=(transfer_error,),
+            take_id=take_id,
+        )
+        refreshed = TakeInfo(
+            path=take_path,
+            name="Late peer reconciliation",
+            validation_status="complete",
+            take_id=take_id,
+        )
+        previous_validation = c.recording.last_validation
+        c.recording.last_validation = TakeValidationResult(
+            prior,
+            (transfer_error,),
+        )
+        try:
+            with (
+                patch(
+                    "webjam_qt.controllers.recording_coordinator.load_take",
+                    return_value=refreshed,
+                ),
+                patch.object(c, "signal_peer_recording_stopped"),
+                patch.object(c.session_library, "recording_completed") as linked,
+            ):
+                c.recording.on_peer_take_reconciled(take_id, take_path)
+            linked.assert_called_once_with(refreshed, validated=True)
+        finally:
+            c.recording.last_validation = previous_validation
+
     def test_peer_reconciliation_racing_validation_is_reloaded_before_complete(self):
         from core.take_library import TakeInfo, TakeValidationResult
         from core.take_project import new_project_id
