@@ -211,6 +211,15 @@ def art_room_overview(
             secondary_activity = secondary_presence.label
             secondary_detail = secondary_presence.description
             secondary_action, secondary_action_label = candidate, candidate_label
+    if active and (action or secondary_action):
+        # The heading already states the connection evidence. Keep its limits
+        # brief so the next activity action stays in view in a compact room.
+        if phase == "waiting":
+            detail = "Share an invitation; no artist is confirmed yet."
+        elif hosting and named_connections:
+            detail = "Guest-chosen names. Talk and sharing are separate."
+        else:
+            detail = "WebJam does not show a full artist list yet."
     if (
         _is_open_my_copy_recovery(
             secondary_activity, secondary_action, secondary_action_label,
