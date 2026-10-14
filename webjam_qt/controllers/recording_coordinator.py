@@ -967,6 +967,15 @@ class RecordingCoordinator:
             take_id and take_id == self._take_id and take_id != self._validation_take_id
         )
 
+    def _start_result_is_current(self) -> bool:
+        """Reject a late start RPC once this take has entered Stop."""
+
+        return self.phase not in {
+            RecorderPhase.STOPPING,
+            RecorderPhase.STOP_FAILED,
+            RecorderPhase.FINALIZING,
+        }
+
     @staticmethod
     def _utc_timestamp() -> str:
         return (
@@ -6000,8 +6009,12 @@ class RecordingCoordinator:
                 )
             else:
                 self._c._ui_invoker.invoke(
-                    lambda message=str(exc), take_id=callback_take_id: (
-                        self.apply_toggle_failure(message, take_id=take_id)
+                    lambda message=str(exc), take_id=callback_take_id, start_attempt=target_armed: (
+                        self.apply_toggle_failure(
+                            message,
+                            take_id=take_id,
+                            target_armed=start_attempt,
+                        )
                     )
                 )
         except Exception:  # noqa: BLE001
@@ -6021,15 +6034,26 @@ class RecordingCoordinator:
                 )
             else:
                 self._c._ui_invoker.invoke(
-                    lambda take_id=callback_take_id: self.apply_toggle_failure(
-                        "WebJam couldn't confirm the band server's recording state.",
-                        take_id=take_id,
+                    lambda take_id=callback_take_id, start_attempt=target_armed: (
+                        self.apply_toggle_failure(
+                            "WebJam couldn't confirm the band server's recording state.",
+                            take_id=take_id,
+                            target_armed=start_attempt,
+                        )
                     )
                 )
 
     def apply_toggle_result(self, armed: bool, *, take_id: str | None = None) -> None:
         if not self._toggle_callback_is_current(take_id):
             LOGGER.debug("Ignoring stale recorder RPC result for a retired take")
+            return
+        if armed and not self._start_result_is_current():
+            # Stop already owns this take. Keep STARTING evidence if the
+            # notification never arrived, but do not restore Record/Stop
+            # controls or relabel a requested stop as unexpected.
+            LOGGER.debug("Ignoring late recorder start result after Stop")
+            if self._take_id:
+                self._confirmed_recording_started()
             return
         self._c._recorder_armed = armed
         self._c.session_health.mark_recorder(
@@ -6069,9 +6093,18 @@ class RecordingCoordinator:
                 self._set_phase(RecorderPhase.IDLE)
                 self._c.window.flash_message("Recording stopped.", ms=3000)
 
-    def apply_toggle_failure(self, message: str, *, take_id: str | None = None) -> None:
+    def apply_toggle_failure(
+        self,
+        message: str,
+        *,
+        take_id: str | None = None,
+        target_armed: bool | None = None,
+    ) -> None:
         if not self._toggle_callback_is_current(take_id):
             LOGGER.debug("Ignoring stale recorder RPC failure for a retired take")
+            return
+        if target_armed and not self._start_result_is_current():
+            LOGGER.debug("Ignoring late recorder start failure after Stop")
             return
         ambiguous_start = (
             self.phase is RecorderPhase.STARTING and not self._c._recorder_armed
@@ -6119,7 +6152,18 @@ class RecordingCoordinator:
 
     def on_server_state(self, recording: bool) -> None:
         if recording == self._c._server_recording:
-            return
+            # RPC may confirm a take's start without a true notification ever
+            # arriving. Its first false notice still confirms the stop; only
+            # deduplicate it once that take has stop evidence (or never started).
+            with self._evidence_lock:
+                unobserved_stop = bool(
+                    not recording
+                    and self._take_id
+                    and self._recording_started_utc
+                    and not self._recording_ended_utc
+                )
+            if not unobserved_stop:
+                return
         prior_phase = self.phase
         self._c._server_recording = recording
         self._c.session_health.mark_recorder(
