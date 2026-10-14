@@ -118,7 +118,7 @@ def test_join_page_fits_800x600_and_compact(qapp, tmp_path: Path, profile_key: s
         _assert_fits(dialog, size, dialog._join_page)
         assert dialog._join_button_primary.isVisibleTo(dialog)
         assert dialog._invite_input.isVisibleTo(dialog)
-        assert dialog._invite_input.accessibleName() == "Invite"
+        assert dialog._invite_input.accessibleName() == "Paste the invite"
         assert dialog._join_button_primary.accessibleName() == "Join"
         assert dialog.rect().contains(_mapped(dialog._join_button_primary, dialog))
         assert dialog.rect().contains(_mapped(dialog._invite_input, dialog))
