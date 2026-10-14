@@ -360,6 +360,9 @@ and video recovery does not hide **Open canvas**. If you hid the video, return
 through **Open Paint along**, then choose **Show video** when you want it
 visible again. Your existing local copy stays open.
 
+Art **Settings** opens with “Your name and optional meeting link.” Edit
+**Your name**, optionally add a meeting link, then choose **Save**. Art Settings
+shows how your name wraps under **Others see** and does not offer **Verify Sound**.
 While a Paint along host waits for artists in Room, **Copy Invite** is the
 orange action. **Open Paint along** stays available as a quiet button below
 it to choose a local file or lesson link. Guest **Open my copy…** recovery
