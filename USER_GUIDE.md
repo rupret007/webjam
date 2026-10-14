@@ -346,7 +346,9 @@ its guest. Your personal meeting stays saved for later; leaving the room restore
 it. Any meeting already open stays open until you leave it in that service.
 
 The room view shows whether you are waiting for artists or connected to the
-host. It does not show a full artist list yet. Without a shared activity,
+host. It does not show a full artist list yet. When a shared activity action
+is available, the connection explanation stays short so the action fits in
+an 800×600 window. Without a shared activity,
 **Make from your own space** is a complete place to start: you do not need an
 art app. Use paper, your usual tools, or just talk while the room stays open
 beside you.
@@ -476,8 +478,13 @@ when a local copy or embedded YouTube lesson cannot play. The focused action is 
 Link**, **Join / Open Meeting**, or the available meeting-app action. Merely
 showing these controls does not join a meeting or start a lesson.
 
+Below that action, **Choose a silent reference** offers a local process video
+or YouTube link for silent playback inside WebJam.
+
 For a YouTube lesson, such as a Bob Ross mountain painting, the host chooses
 **Choose YouTube…**, pastes its video link, then chooses **Open in browser**.
+Use an individual video link; playlist and channel-live embed links are rejected
+with “Paste a YouTube video link, such as youtube.com/watch?v=….”
 An existing embedded lesson supplies its current reference link and position;
 **Change YouTube…** selects a different browser lesson. Choosing a link starts
 nothing. Add the meeting link if needed, then **Join / Open Meeting**.
@@ -519,7 +526,9 @@ volume and microphone details. Use **Conversation** to return after Notes;
 your selected lesson stays available. Changing the meeting link retires old
 pause requests. In a supported LAN Art room, **Restart pause requests**
 creates fresh controls without leaving the setup. Rejoining another room
-does not revive old request authority. Small windows and larger text scroll;
+does not revive old request authority. After a brief connection problem, use
+**Restart pause requests** when it appears; old requests are not resent.
+You can still ask the host aloud. Small windows and larger text scroll;
 Tab reveals the focused control and End/Leave remains outside that scroll.
 
 ### Playing along to a song
@@ -573,6 +582,10 @@ available only after continuing into the workspace.
 
 ### Silent Paint Along references
 
+For an embedded YouTube lesson, **Play** works while Paint along and its video
+surface are shown, including when a compact window clips the picture. Return
+to Paint along and restore the window before starting a hidden lesson.
+
 For the existing **silent local-file option**, the host chooses one video file:
 
 1. When a host chose **Paint along**, WebJam opens the large Paint along
@@ -607,6 +620,10 @@ For the existing **silent local-file option**, the host chooses one video file:
 
 Things worth knowing:
 
+- If sharing, pausing, or stopping the shared video is not confirmed, Paint
+  along says **WebJam is retrying**. Local controls still work. The message
+  clears when the current room update succeeds; it does not confirm what
+  guests are watching.
 - If the host's chosen file changes or moves after sharing, WebJam checks it
   again on the next refresh or Play, stops using its old sharing identity, and
   offers **Choose process video…** to open it again. This also applies while
@@ -1269,6 +1286,12 @@ not start audio. Setup explains when a launch override must be changed before
 restarting WebJam. Start Session and Band Check use the saved setup; choose
 **Record Session** again for a fresh plan and input checks. Jamulus manages its
 live audio settings separately.
+
+If the session settings change while Recording Setup is open, Save asks you
+to close and reopen Setup to review them. Setup scrolls the message into view.
+Your edits stay visible until you close it; review and reapply them after
+reopening. You can still turn off Local Originals during an active session
+when its settings have not changed.
 
 When supported guests report input failures, the host sees their names and
 the specific problems. Older guests retain generic Setup guidance. Fresh guest
