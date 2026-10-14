@@ -17,7 +17,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QRect, QSize, QTimer, Qt
+from PySide6.QtCore import QEvent, QPoint, QRect, QSize, QTimer, Qt
 from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeyEvent, QKeySequence, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -504,6 +504,7 @@ class _LaunchLayout(QVBoxLayout):
     """Share compact-door slack between the brand row and the page interior."""
 
     centered_pages: QWidget | None = None
+    cluster_bottom: QWidget | None = None
 
     def setGeometry(self, rect: QRect) -> None:
         super().setGeometry(rect)
@@ -515,16 +516,18 @@ class _LaunchLayout(QVBoxLayout):
         if top.spacerItem() is None or bottom.spacerItem() is None:
             return  # Layout order changed; keep Qt's plain allocation.
         spare = top.geometry().height() + bottom.geometry().height()
-        page_slack = min(28, spare // 3)
-        above_brand = (spare - page_slack) // 2
+        footer = self._footer_below_cluster()
+        page_slack = min(28, max(0, (spare - footer) // 3))
+        above_brand = (spare - page_slack + footer) // 2
         below_pages = spare - 2 * page_slack - above_brand
         offset = top.geometry().top() + above_brand - self.itemAt(1).geometry().top()
 
         # QBoxLayout stretch weights divide total sizes, not extra height.
         # Start with Qt's content-sized pages (including wrapped text), then
         # cap each page bookend at 28px so the brand stays close to the cards.
-        # Below Join includes the bottom bookend: above_brand must match
-        # below_pages + page_slack to center the whole visible block.
+        # Below Join includes the bottom bookend plus any Art door footer
+        # sitting under Host/Join: above_brand must match
+        # below_pages + page_slack + footer to center brand through Join.
         # Only geometry changes; hints/minimums stay small enough to shrink.
         # Keep the invisible outer spacers as Qt's allocation anchors and use
         # absolute positions: Qt can reuse its allocation for an unchanged
@@ -537,6 +540,38 @@ class _LaunchLayout(QVBoxLayout):
             if item.widget() is self.centered_pages:
                 geometry.setBottom(bottom.geometry().bottom() - below_pages)
             item.setGeometry(geometry)
+
+    def _footer_below_cluster(self) -> int:
+        """Pixels of visible choice-page content sitting under Join."""
+
+        pages = self.centered_pages
+        anchor = self.cluster_bottom
+        if pages is None or anchor is None or not anchor.isVisible():
+            return 0
+        page = pages.currentWidget()
+        if page is None:
+            return 0
+        join_bottom = anchor.mapTo(page, QPoint(0, anchor.height())).y()
+        layout = page.layout()
+        if layout is None:
+            return 0
+        content_bottom = join_bottom
+        for index in range(layout.count()):
+            item = layout.itemAt(index)
+            if item is None or item.spacerItem() is not None:
+                continue
+            widget = item.widget()
+            if widget is not None:
+                if widget.isVisible():
+                    content_bottom = max(
+                        content_bottom, widget.y() + widget.height()
+                    )
+                continue
+            child = item.layout()
+            if child is not None:
+                geo = child.geometry()
+                content_bottom = max(content_bottom, geo.y() + geo.height())
+        return max(0, content_bottom - join_bottom)
 
 
 class _LaunchPageLayout(QStackedLayout):
@@ -1277,6 +1312,7 @@ class LaunchDialog(QDialog):
         self._pages.set_fit_current_page(centered)
         root = self.layout()
         root.centered_pages = self._pages if centered else None
+        root.cluster_bottom = self._join_button if centered else None
         root.setStretch(0, int(centered))
         root.setStretch(root.count() - 1, int(centered))
         root.setStretch(root.indexOf(self._pages), int(not centered))
