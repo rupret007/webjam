@@ -227,7 +227,9 @@ deadlines. Startup and teardown belong to a single-use service instance. Close
 immediately refuses new work, cancels and joins startup, retires late-created
 listeners, wipes room state and aborts tracked peers before joining tasks. The
 five-second TLS handshake deadline contributes to one overall eight-second
-default shutdown budget; the budget does not reset per peer or cleanup stage.
+default shutdown budget. The budget starts when Close first joins unfinished
+work, so scheduling delay before that wait does not consume it. The budget
+does not reset per peer or later cleanup stage.
 Cancelling a caller awaiting Close does not cancel teardown. A failed join reports
 failure and retains cleanup ownership; it never reports success by dropping task
 records. These bounds do not establish Internet availability or complete abuse

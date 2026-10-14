@@ -9,6 +9,7 @@ from core.art_companion import (
     CanvasCompanionState,
     VideoCompanionState,
 )
+from core.art_room_activities import art_room_activities
 from core.art_room_overview import ArtRoomOverview, art_room_overview
 from core.meeting_companion import art_make_together_activity_detail
 from core.art_room_presence import ABSENT, ArtPresenceTarget, ArtRoomPresence, art_room_presence
@@ -179,6 +180,71 @@ def test_guest_paint_along_needs_file_names_open_my_copy_button():
     assert overview.activity_action == "video"
     assert overview.activity_action_label == "Open my copy…"
     assert overview.activity_label == "Open my copy…"
+    assert overview.activity_detail == (
+        "Open your own copy of the same video to follow along."
+    )
+    assert overview.open_my_copy_recovery
+    assert not overview.making_detail
+    assert overview.conversation_enabled
+
+
+def test_guest_needs_file_keeps_making_detail_when_a_canvas_is_also_offered():
+    """W08 omits making-detail only when Open my copy… is the one next line."""
+
+    overview = art_room_overview(
+        state=ArtRoomState.CONNECTED, hosting=False,
+        presence=paint_along(), secondary_presence=canvas(),
+    )
+    assert overview.open_my_copy_recovery
+    assert overview.activity_actions == ("video", "canvas")
+    assert overview.making_detail.startswith("You do not need an art app")
+    assert "your usual tools, or just talk" in overview.making_detail
+    assert "Shared activities are optional." in overview.making_detail
+
+
+@pytest.mark.parametrize("canvas_state", [
+    CanvasCompanionState.MISSING_APP,
+    CanvasCompanionState.UNREADABLE,
+    CanvasCompanionState.READY,
+])
+def test_guest_needs_file_owns_emphasis_when_canvas_is_also_offered(canvas_state):
+    """NEEDS_FILE stays the Room primary even when canvas attention ranked first."""
+
+    activities = art_room_activities(ArtCompanionProjection(
+        in_room=True, canvas=canvas_state, video=VideoCompanionState.NEEDS_FILE,
+    ))
+    overview = art_room_overview(
+        state=ArtRoomState.CONNECTED, hosting=False,
+        presence=activities[0],
+        secondary_presence=activities[1] if len(activities) > 1 else ABSENT,
+    )
+    assert overview.open_my_copy_recovery
+    assert overview.activity_action == "video"
+    assert overview.activity_label == "Open my copy…"
+    assert overview.activity_action_label == "Open my copy…"
+    assert overview.activity_detail == (
+        "Open your own copy of the same video to follow along."
+    )
+    assert overview.secondary_activity_action == "canvas"
+    assert overview.secondary_activity_action_label == "Open workspace"
+    assert overview.activity_actions == ("video", "canvas")
+    assert overview.making_detail.startswith("You do not need an art app")
+    assert "your usual tools, or just talk" in overview.making_detail
+    assert overview.conversation_enabled
+
+
+def test_mismatched_copy_is_not_the_needs_file_open_my_copy_emphasis():
+    presence = art_room_presence(ArtCompanionProjection(
+        in_room=True, video=VideoCompanionState.MISMATCHED_FILE,
+    ))
+    overview = art_room_overview(
+        state=ArtRoomState.CONNECTED, hosting=False, presence=presence,
+    )
+    assert not overview.open_my_copy_recovery
+    assert overview.activity_action_label == "Open my copy…"
+    assert overview.activity_label == "Paint along needs a look"
+    assert overview.making_detail.startswith("You do not need an art app")
+    assert "your usual tools, or just talk" in overview.making_detail
 
 
 @pytest.mark.parametrize("hosting", [False, True])
@@ -264,28 +330,31 @@ def test_both_offered_panels_keep_their_status_and_action(primary, secondary):
         state=ArtRoomState.CONNECTED, hosting=False,
         presence=primary, secondary_presence=secondary,
     )
-    assert overview.activity_label == primary.label
-    assert overview.activity_detail == primary.description
-    assert overview.secondary_activity_label == secondary.label
-    assert overview.secondary_activity_detail == secondary.description
-    assert overview.activity_action_label == (
-        "Open my copy…" if primary.target is ArtPresenceTarget.VIDEO else "Open workspace"
+    recovery, other = (
+        (primary, secondary) if primary.target is ArtPresenceTarget.VIDEO
+        else (secondary, primary)
     )
-    assert overview.secondary_activity_action_label == (
-        "Open workspace" if secondary.target is ArtPresenceTarget.CANVAS else "Open my copy…"
-    )
-    assert overview.activity_actions == (primary.target.value, secondary.target.value)
+    assert overview.activity_label == recovery.label
+    assert overview.activity_detail == recovery.description
+    assert overview.secondary_activity_label == other.label
+    assert overview.secondary_activity_detail == other.description
+    assert overview.activity_action_label == "Open my copy…"
+    assert overview.secondary_activity_action_label == "Open workspace"
+    assert overview.activity_actions == ("video", "canvas")
+    assert overview.open_my_copy_recovery
     assert overview.conversation_enabled
 
 
 @pytest.mark.parametrize("hosting", [False, True])
-@pytest.mark.parametrize("canvas_state,video_state", [
-    (CanvasCompanionState.READY, VideoCompanionState.NONE),
-    (CanvasCompanionState.MISSING_APP, VideoCompanionState.NONE),
-    (CanvasCompanionState.NONE, VideoCompanionState.NEEDS_FILE),
-    (CanvasCompanionState.NONE, VideoCompanionState.PLAYING),
+@pytest.mark.parametrize("canvas_state,video_state,expect_making_detail", [
+    (CanvasCompanionState.READY, VideoCompanionState.NONE, True),
+    (CanvasCompanionState.MISSING_APP, VideoCompanionState.NONE, True),
+    (CanvasCompanionState.NONE, VideoCompanionState.NEEDS_FILE, False),
+    (CanvasCompanionState.NONE, VideoCompanionState.PLAYING, True),
 ])
-def test_optional_activity_keeps_an_any_artist_next_step(hosting, canvas_state, video_state):
+def test_optional_activity_keeps_an_any_artist_next_step(
+    hosting, canvas_state, video_state, expect_making_detail,
+):
     presence = art_room_presence(ArtCompanionProjection(
         in_room=True, transport_allowed=hosting, canvas=canvas_state, video=video_state,
     ), hosting=hosting)
@@ -294,9 +363,13 @@ def test_optional_activity_keeps_an_any_artist_next_step(hosting, canvas_state, 
         if state is ArtRoomState.WAITING and not hosting:
             assert not overview.making_detail
             continue
-        assert overview.making_detail.startswith("You do not need an art app")
-        assert "your usual tools, or just talk" in overview.making_detail
-        assert "Shared activities are optional." in overview.making_detail
+        if expect_making_detail:
+            assert overview.making_detail.startswith("You do not need an art app")
+            assert "your usual tools, or just talk" in overview.making_detail
+            assert "Shared activities are optional." in overview.making_detail
+        else:
+            assert not overview.making_detail
+            assert overview.open_my_copy_recovery
         assert overview.activity_actions == (presence.target.value,)
         assert overview.activity_detail == presence.description
 
