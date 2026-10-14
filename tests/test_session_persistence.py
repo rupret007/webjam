@@ -5,6 +5,7 @@ plus failure modes (missing files, corrupt JSON) and atomic-write usage.
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import tempfile
@@ -63,6 +64,71 @@ def _make_window_and_persistence(
         creator_profile_key=creator_profile_key,
     )
     return window, persistence
+
+
+@pytest.mark.parametrize("profile", ["music", "art"])
+@pytest.mark.parametrize("error_code", [errno.EACCES, errno.EIO, errno.EMFILE])
+def test_metadata_read_error_preserves_profiles_and_later_save_merges(
+    profile, error_code,
+):
+    with _TempHome() as home:
+        path = home / ".webjam_session.json"
+        profiles = {
+            "music": {"title": "Band work", "mode": "music_jam"},
+            "art": {"title": "Art work", "mode": "visual_studio"},
+        }
+        path.write_text(
+            json.dumps({"schema_version": 2, "profiles": profiles}),
+            encoding="utf-8",
+        )
+        original = path.read_bytes()
+        window, persistence = _make_window_and_persistence(
+            home, creator_profile_key=profile,
+        )
+        try:
+            persistence.load()
+            window.session_strip._title_input.setText("Revised title")
+            with mock.patch.object(
+                persistence_module, "_load_profile_records",
+                side_effect=OSError(error_code, "metadata read unavailable"),
+            ), mock.patch.object(
+                persistence_module, "atomic_write_text",
+                wraps=persistence_module.atomic_write_text,
+            ) as writer:
+                persistence.save_title_and_mode()
+                assert path.read_bytes() == original
+                writer.assert_not_called()
+            assert window.session_strip.current_title() == "Revised title"
+
+            # Retry must re-read the file, including another profile's new edit.
+            other_profile = "art" if profile == "music" else "music"
+            profiles[other_profile]["title"] = "Updated elsewhere"
+            path.write_text(
+                json.dumps({"schema_version": 2, "profiles": profiles}),
+                encoding="utf-8",
+            )
+            persistence.save_title_and_mode()
+            profiles[profile]["title"] = "Revised title"
+            assert json.loads(path.read_text(encoding="utf-8")) == {
+                "schema_version": 2, "profiles": profiles,
+            }
+        finally:
+            window.close()
+
+
+def test_corrupt_metadata_can_still_be_replaced_on_save():
+    with _TempHome() as home:
+        path = home / ".webjam_session.json"
+        path.write_text("{ not valid JSON", encoding="utf-8")
+        window, persistence = _make_window_and_persistence(home)
+        try:
+            persistence.save_title_and_mode()
+            assert json.loads(path.read_text(encoding="utf-8")) == {
+                "schema_version": 2,
+                "profiles": {"music": {"title": "Original", "mode": "music_jam"}},
+            }
+        finally:
+            window.close()
 
 
 class TestSessionPersistence(unittest.TestCase):
