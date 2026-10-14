@@ -277,6 +277,9 @@ All notable improvements and features for the WebJam creator collaboration platf
   discards. **Show Folder** opens WebJam's managed host location, with a short
   explanation. Guest folder choice is unchanged.
 
+- Retrying **Send to jam** keeps the previous completed stem mix if saving
+  its replacement fails. A failed first export leaves no partial final WAV.
+
 ### Follow-along pilot readiness — draft test-build scope
 ### Follow-along clarity and saved lessons — draft test-build scope
 ### Paint Along and Play Along — draft test-build scope
