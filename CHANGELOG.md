@@ -288,10 +288,6 @@ All notable improvements and features for the WebJam creator collaboration platf
   physical observations at **NOT RUN**, with exact package/hash fields and a
   ten-minute Music/Art try list. Jeff retains feel and Final Build judgment.
 
-- Recording Setup rejects Save if the session settings changed while it was
-  open, with guidance to close and reopen Setup to review them. The first rejected
-  Save scrolls the full guidance into view even in compact windows. Local Originals
-  opt-out remains available during an unchanged active session.
 - Music Help opens with “Host. Share. Join. Play.” and three short steps.
   Engine, meeting, room-control and keyboard details stay in searchable topics.
 - Idle host Recording Setup no longer offers a Takes folder that reload
