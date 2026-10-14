@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Song tools Stems keeps each Vocals/Drums/Bass row and the Sing this one /
+  Send to jam actions at their natural height at the 800×600 window floor
+  and at 1280×800. The side panel scrolls instead of squashing mute/solo
+  chips or stacking the buttons on the helper line.
+
 - A waiting Paint along host has one orange room action: **Copy Invite**.
   **Open Paint along** stays available as a quiet body action; guest
   **Open my copy…** recovery keeps its emphasis.
