@@ -42,6 +42,9 @@ from webjam_qt.widgets.scrollable_content import ScrollableContent
 _HOST_EMPTY_HEADLINE = "Pick a shared lesson or a silent video file."
 _GUEST_EMPTY_HEADLINE = _HOST_EMPTY_HEADLINE
 _HOST_SILENT_SECTION = "Silent reference in WebJam"
+_STANDALONE_SURFACE_FLOOR = 360
+_COMPACT_SURFACE_FLOOR = 40
+_COMPACT_WINDOW_HEIGHT = 600
 _HOST_EMPTY_STATUS = (
     "Choose a local video or YouTube link for silent playback. You control it in WebJam."
 )
@@ -287,7 +290,7 @@ class ReferenceVideoDialog(QDialog):
 
         self._surface_holder = QFrame()
         self._surface_holder.setObjectName("PaintAlongSurface")
-        self._surface_holder.setMinimumHeight(360)
+        self._surface_holder.setMinimumHeight(_STANDALONE_SURFACE_FLOOR)
         self._surface_holder.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
@@ -463,11 +466,17 @@ class ReferenceVideoDialog(QDialog):
             # minimum. Stretch gives the video all remaining space on larger
             # windows without forcing it over the controls on compact ones.
             self.setMinimumSize(0, 0)
-            self._surface_holder.setMinimumHeight(40)
         else:
             self.setMinimumSize(720, 520)
-            self._surface_holder.setMinimumHeight(360)
         self._update_layout_spacing()
+
+    def _surface_minimum_height(self) -> int:
+        # Standalone keeps a 360px video floor on tall windows. Compact 800x600
+        # must still show Watch a shared lesson, Choose process video…, and
+        # YouTube link… in the first viewport; stretch fills leftover height.
+        if self._embedded or self.height() <= _COMPACT_WINDOW_HEIGHT:
+            return _COMPACT_SURFACE_FLOOR
+        return _STANDALONE_SURFACE_FLOOR
 
     def _update_layout_spacing(self) -> None:
         # An inline File/Help menu reduces the compact workspace's height.
@@ -475,18 +484,22 @@ class ReferenceVideoDialog(QDialog):
         # overlap; larger workspaces keep the original breathing room.
         # The empty-state silent-section row is extra height, so compact
         # empty panels tighten further to keep the honesty hint on-screen.
-        layout = self._body_layout
-        if layout is None:
-            return
-        compact = bool(self._embedded and self.height() < 360)
-        silent = getattr(self, "_silent_section", None)
-        extra_row = silent is not None and not silent.isHidden()
-        if compact:
-            layout.setContentsMargins(Space.XL, Space.SM, Space.XL, Space.SM)
-            layout.setSpacing(Space.XS if extra_row else Space.SM)
-        else:
-            layout.setContentsMargins(Space.XL, Space.LG, Space.XL, Space.LG)
-            layout.setSpacing(Space.MD)
+        layout = getattr(self, "_body_layout", None)
+        if layout is not None:
+            compact = bool(self._embedded and self.height() < 360)
+            silent = getattr(self, "_silent_section", None)
+            extra_row = silent is not None and not silent.isHidden()
+            if compact:
+                layout.setContentsMargins(Space.XL, Space.SM, Space.XL, Space.SM)
+                layout.setSpacing(Space.XS if extra_row else Space.SM)
+            else:
+                layout.setContentsMargins(Space.XL, Space.LG, Space.XL, Space.LG)
+                layout.setSpacing(Space.MD)
+        surface = getattr(self, "_surface_holder", None)
+        if surface is not None:
+            floor = self._surface_minimum_height()
+            if surface.minimumHeight() != floor:
+                surface.setMinimumHeight(floor)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

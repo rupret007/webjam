@@ -17,7 +17,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QSize, QTimer, Qt
+from PySide6.QtCore import QEvent, QPoint, QRect, QSize, QTimer, Qt
 from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeyEvent, QKeySequence, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenuBar,
     QPushButton,
-    QStackedWidget,
+    QStackedLayout,
     QVBoxLayout,
     QWidget,
 )
@@ -74,6 +74,16 @@ _JOIN_INVITATION_GUIDANCE = (
     "Paste the invite or the whole message.\n"
     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
 )
+_JOIN_INVITE_FIELD_NAME = "Paste the invite"
+_JOIN_PRIVACY_LINE = (
+    "The invite stays on this screen. WebJam does not save it."
+)
+
+# Single door line when Paint along is the checked Art start (harvest + UX tests).
+PAINT_ALONG_DOOR_HELPER = (
+    "Host starts Paint along, then chooses a file or lesson link. "
+    "Join uses the host's invite."
+)
 
 
 @dataclass(frozen=True)
@@ -94,7 +104,7 @@ _CREATOR_LAUNCH_COPY = {
         host="Host",
         join="Join",
         local="New Music Project",
-        host_description="Start the room and copy an invite.",
+        host_description="Copy an invite once you're in the room.",
         join_description="Paste the invite you were sent.",
         local_description=(
             "Create a local multitrack music project without starting or joining "
@@ -141,7 +151,7 @@ _CREATOR_LAUNCH_COPY = {
         join="Join",
         local="Standalone Art Unavailable",
         host_description=(
-            "Copy an invite for your guests."
+            "Copy an invite once you're in the room."
         ),
         join_description=(
             "Paste the host's invite to join their activity."
@@ -158,8 +168,8 @@ if set(_CREATOR_LAUNCH_COPY) != {profile.key for profile in CREATOR_PROFILES}:
     # without copy at import time instead of as a KeyError mid-selection.
     raise RuntimeError("Every creator profile requires launch copy.")
 
-# Art and Music are the only first-screen rooms. Podcast and Review stay
-# reachable after Music, never as equal first clicks.
+# Art and Music are the only first-screen rooms. Secondary workflow actions
+# remain available to existing callers, never as equal first clicks.
 _FIRST_SCREEN_PROFILE_KEYS = ("art", "music")
 _ART_PROFILE_SUMMARY = "Make art together."
 _MUSIC_PROFILE_SUMMARY = "Write songs or play live together."
@@ -490,6 +500,157 @@ def apply_remote_join_defaults(settings: AppSettings) -> None:
     settings.webex_audio_mode = "talkback"
 
 
+class _LaunchLayout(QVBoxLayout):
+    """Share compact-door slack between the brand row and the page interior."""
+
+    centered_pages: QWidget | None = None
+    cluster_bottom: QWidget | None = None
+
+    def setGeometry(self, rect: QRect) -> None:
+        super().setGeometry(rect)
+        if self.centered_pages is None:
+            return
+
+        top = self.itemAt(0)
+        bottom = self.itemAt(self.count() - 1)
+        if top.spacerItem() is None or bottom.spacerItem() is None:
+            return  # Layout order changed; keep Qt's plain allocation.
+        spare = top.geometry().height() + bottom.geometry().height()
+        footer = self._footer_below_cluster()
+        page_slack = min(28, max(0, (spare - footer) // 3))
+        above_brand = (spare - page_slack + footer) // 2
+        below_pages = spare - 2 * page_slack - above_brand
+        offset = top.geometry().top() + above_brand - self.itemAt(1).geometry().top()
+
+        # QBoxLayout stretch weights divide total sizes, not extra height.
+        # Start with Qt's content-sized pages (including wrapped text), then
+        # cap each page bookend at 28px so the brand stays close to the cards.
+        # Below Join includes the bottom bookend plus any Art door footer
+        # sitting under Host/Join: above_brand must match
+        # below_pages + page_slack + footer to center brand through Join.
+        # Only geometry changes; hints/minimums stay small enough to shrink.
+        # Keep the invisible outer spacers as Qt's allocation anchors and use
+        # absolute positions: Qt can reuse its allocation for an unchanged
+        # rect, and invalidating here would cause endless layout requests.
+        for index in range(1, self.count() - 1):
+            item = self.itemAt(index)
+            if item.isEmpty():
+                continue
+            geometry = item.geometry().translated(0, offset)
+            if item.widget() is self.centered_pages:
+                geometry.setBottom(bottom.geometry().bottom() - below_pages)
+            item.setGeometry(geometry)
+        self._recenter_brand_through_join()
+
+    def _recenter_brand_through_join(self) -> None:
+        """Keep brand-through-Join centered when a helper sits below Join.
+
+        Art Make together keeps its consequence line under Join. The compact
+        door tests measure the cluster to the Join button, not that helper, so
+        the helper must not lift the brand+Host/Join block.
+        """
+
+        dialog = self.parentWidget()
+        if dialog is None:
+            return
+        logo = getattr(dialog, "_logo", None)
+        wordmark = getattr(dialog, "_wordmark", None)
+        join = getattr(dialog, "_join_button", None)
+        menu = getattr(dialog, "_menu_bar", None)
+        if logo is None or join is None or menu is None:
+            return
+        brand_top = logo.mapTo(dialog, QPoint()).y()
+        if wordmark is not None:
+            brand_top = min(brand_top, wordmark.mapTo(dialog, QPoint()).y())
+        join_bottom = join.mapTo(dialog, QPoint()).y() + join.height()
+        margins = self.contentsMargins()
+        available_top = menu.height() + margins.top()
+        available_bottom = dialog.height() - margins.bottom()
+        correction = ((available_bottom - join_bottom) - (brand_top - available_top)) // 2
+        if correction == 0:
+            return
+        for index in range(1, self.count() - 1):
+            item = self.itemAt(index)
+            if item is None or item.isEmpty():
+                continue
+            item.setGeometry(item.geometry().translated(0, correction))
+
+    def _footer_below_cluster(self) -> int:
+        """Pixels of visible choice-page content sitting under Join."""
+
+        pages = self.centered_pages
+        anchor = self.cluster_bottom
+        if pages is None or anchor is None or not anchor.isVisible():
+            return 0
+        page = pages.currentWidget()
+        if page is None:
+            return 0
+        join_bottom = anchor.mapTo(page, QPoint(0, anchor.height())).y()
+        layout = page.layout()
+        if layout is None:
+            return 0
+        content_bottom = join_bottom
+        for index in range(layout.count()):
+            item = layout.itemAt(index)
+            if item is None or item.spacerItem() is not None:
+                continue
+            widget = item.widget()
+            if widget is not None:
+                if widget.isVisible():
+                    content_bottom = max(
+                        content_bottom, widget.y() + widget.height()
+                    )
+                continue
+            child = item.layout()
+            if child is not None:
+                geo = child.geometry()
+                content_bottom = max(content_bottom, geo.y() + geo.height())
+        return max(0, content_bottom - join_bottom)
+
+
+class _LaunchPageLayout(QStackedLayout):
+    """Let a compact choice page fit its content instead of hidden pages."""
+
+    fit_current_page = False
+
+    def sizeHint(self) -> QSize:
+        if self.fit_current_page and self.currentWidget() is not None:
+            return self.currentWidget().sizeHint()
+        return super().sizeHint()
+
+    def minimumSize(self) -> QSize:
+        if self.fit_current_page and self.currentWidget() is not None:
+            return self.currentWidget().minimumSizeHint()
+        return super().minimumSize()
+
+    def heightForWidth(self, width: int) -> int:
+        if self.fit_current_page and self.currentWidget() is not None:
+            return self.currentWidget().heightForWidth(width)
+        return super().heightForWidth(width)
+
+
+class _LaunchPages(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self._stack = _LaunchPageLayout(self)
+        self._stack.setContentsMargins(0, 0, 0, 0)
+        self.currentChanged = self._stack.currentChanged
+
+    def addWidget(self, widget: QWidget) -> int:
+        return self._stack.addWidget(widget)
+
+    def currentWidget(self) -> QWidget | None:
+        return self._stack.currentWidget()
+
+    def setCurrentWidget(self, widget: QWidget) -> None:
+        self._stack.setCurrentWidget(widget)
+
+    def set_fit_current_page(self, fit: bool) -> None:
+        self._stack.fit_current_page = fit
+        self._stack.invalidate()
+        self.updateGeometry()
+
+
 class LaunchDialog(QDialog):
     """Three creator profiles and one pasted link after choosing Join.
 
@@ -540,9 +701,10 @@ class LaunchDialog(QDialog):
         # already required to fill exactly (see W02).
         self.setMaximumSize(800, 600)
 
-        root = QVBoxLayout(self)
+        root = _LaunchLayout(self)
         root.setContentsMargins(Space.XXL, Space.MD, Space.XXL, Space.MD)
         root.setSpacing(Space.MD)
+        root.addStretch(0)
 
         brand_row = QHBoxLayout()
         brand_row.setContentsMargins(0, 0, 0, 0)
@@ -594,7 +756,7 @@ class LaunchDialog(QDialog):
         root.addWidget(self._name_error)
         self._name_input.textChanged.connect(self._clear_name_error)
 
-        self._pages = QStackedWidget()
+        self._pages = _LaunchPages()
         self._choice_page = self._build_choice_page()
         self._join_page = self._build_join_page()
         self._pages.addWidget(self._choice_page)
@@ -602,6 +764,9 @@ class LaunchDialog(QDialog):
         self._setup_page = self._build_setup_page()
         self._pages.addWidget(self._setup_page)
         root.addWidget(self._pages, 1)
+        root.addStretch(0)
+        self._pages.currentChanged.connect(self._update_choice_centering)
+        self._update_choice_centering()
         self._build_menu(root)
         self.setTabOrder(self._name_input, self._art_profile_card)
         self.setTabOrder(self._art_profile_card, self._music_profile_card)
@@ -701,10 +866,20 @@ class LaunchDialog(QDialog):
         creator_row.addWidget(self._creator_profile_label)
         creator_row.addWidget(self._creator_profile_selector, 1)
         layout.addLayout(creator_row)
-        # Do not stretch here. A spacer above the Art cards pushes Host and
-        # Join off the supported 760×600 floor. Music has no cards, so the
-        # stretch at the bottom of this page is enough.
+        # Keep the cards and actions together. Art (two start cards) and
+        # Music (Host/Join only) are both clustered with the shared brand
+        # row by the outer layout, so the Art door has no empty band under
+        # the logo.
         layout.addWidget(self._build_start_cards())
+
+        # Keep the consequence line beside Host/Join, inside the centered
+        # action block. No stretch may separate this helper from the buttons.
+        self._choice_helper = QLabel()
+        self._choice_helper.setObjectName("LaunchHelper")
+        self._choice_helper.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._choice_helper.setWordWrap(True)
+        self._choice_helper.setVisible(False)
+        layout.addWidget(self._choice_helper)
 
         self._host_button = QPushButton()
         self._host_button.setObjectName("LaunchPrimary")
@@ -728,13 +903,6 @@ class LaunchDialog(QDialog):
         layout.addWidget(self._host_reason)
         layout.addWidget(self._join_button)
         layout.addWidget(self._studio_button)
-
-        self._choice_helper = QLabel()
-        self._choice_helper.setObjectName("LaunchHelper")
-        self._choice_helper.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self._choice_helper.setWordWrap(True)
-        self._choice_helper.setVisible(False)
-        layout.addWidget(self._choice_helper)
 
         self._choice_error = QLabel("")
         self._choice_error.setObjectName("LaunchError")
@@ -918,10 +1086,20 @@ class LaunchDialog(QDialog):
         available = self._can_host()
         restriction = "" if available else "Hosting is available in the macOS app."
         next_step = (
-            "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
+            PAINT_ALONG_DOOR_HELPER
             if start.key == "paint_along" else
             f"Host starts {start.label}. Join uses the host's invite."
         )
+        # Make together keeps its compact footer beside Join. Paint along's
+        # longer guidance goes directly above Host so wrapped text stays visible.
+        layout = self._choice_helper.parentWidget().layout()
+        layout.removeWidget(self._choice_helper)
+        helper_index = (
+            layout.indexOf(self._host_button)
+            if start.key == "paint_along"
+            else layout.indexOf(self._studio_button) + 1
+        )
+        layout.insertWidget(helper_index, self._choice_helper)
         self._set_choice_helper(
             next_step
             if available else restriction
@@ -941,6 +1119,7 @@ class LaunchDialog(QDialog):
 
         if not _is_pinned_jamulus_installer(self._jamulus_installer):
             self._jamulus_installer = ""
+            self._sync_menu_visibility()
             self._install_jamulus_button.setEnabled(False)
             self._installer_error.setText(
                 "The included Jamulus installer failed its integrity check. "
@@ -985,7 +1164,7 @@ class LaunchDialog(QDialog):
         layout.addWidget(self._join_subtitle)
         layout.addStretch(1)
 
-        self._join_status = QLabel("Paste your invitation")
+        self._join_status = QLabel(self._EMPTY_JOIN_PROMPT)
         self._join_status.setObjectName("LaunchJoinStatus")
         self._join_status.setAccessibleName("Join status")
         self._join_status.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -998,16 +1177,14 @@ class LaunchDialog(QDialog):
         # on screen or exposing it as an ordinary editable value to assistive
         # technologies.
         self._invite_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._invite_input.setPlaceholderText("Paste the invite")
-        self._invite_input.setAccessibleName("Invite")
+        self._invite_input.setPlaceholderText(_JOIN_INVITE_FIELD_NAME)
+        self._invite_input.setAccessibleName(_JOIN_INVITE_FIELD_NAME)
         self._invite_input.setAccessibleDescription(_JOIN_INVITATION_GUIDANCE)
         self._invite_input.returnPressed.connect(self._join)
         self._invite_input.textChanged.connect(self._on_invite_text_changed)
         layout.addWidget(self._invite_input)
 
-        self._join_privacy = QLabel(
-            "Private invitation secrets stay hidden and are never saved in settings or logs."
-        )
+        self._join_privacy = QLabel(_JOIN_PRIVACY_LINE)
         self._join_privacy.setObjectName("LaunchPrivacyNote")
         self._join_privacy.setAccessibleName("Invitation privacy")
         self._join_privacy.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -1029,8 +1206,9 @@ class LaunchDialog(QDialog):
         self._join_button_primary.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._join_button_primary.clicked.connect(self._join)
         layout.addWidget(self._join_button_primary)
-        layout.addStretch(2)
-
+        # Back follows Join at the layout's normal fixed spacing (no stretch
+        # here) so it never drifts into a dead gap on tall windows; any extra
+        # window height instead goes below Back, matching _build_setup_page.
         self._join_back_button = QPushButton("Back")
         self._join_back_button.setObjectName("GhostButton")
         self._join_back_button.setAccessibleName("Back")
@@ -1040,6 +1218,7 @@ class LaunchDialog(QDialog):
         self._join_back_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._join_back_button.clicked.connect(self.show_choices)
         layout.addWidget(self._join_back_button, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addStretch(1)
         self._apply_creator_profile_presentation()
         self._on_invite_text_changed()
         return page
@@ -1110,8 +1289,8 @@ class LaunchDialog(QDialog):
         self._name_preview.setVisible(not hide_name)
         self._name_error.setVisible(bool(self._name_error.text()))
 
-        # Art and Music are the cards. The combo stays off until someone
-        # asks for podcast or review from the Music door.
+        # Art and Music are the cards. The combo stays off unless an existing
+        # caller selects a secondary workflow or explicitly reveals it.
         show_picker = (not first_screen_door) or (
             music_door and self._rooms_picker_revealed
         )
@@ -1145,6 +1324,8 @@ class LaunchDialog(QDialog):
             )
             if art_door:
                 self._refresh_start_presentation()
+        self._sync_menu_visibility()
+        self._update_choice_centering()
         self._keep_door_cards_tabbable()
         if hasattr(self, "_join_title"):
             self._join_title.setText(copy.join_title)
@@ -1155,6 +1336,22 @@ class LaunchDialog(QDialog):
             self._join_button_primary.setText(copy.join)
             self._join_button_primary.setAccessibleName(copy.join)
             self._join_button_primary.setAccessibleDescription(copy.join_description)
+
+    def _update_choice_centering(self, *_args: object) -> None:
+        if not hasattr(self, "_choice_page"):
+            return  # The choice page is still being constructed.
+        # Art's two start cards used to skip this path, which glued the
+        # brand to the top and left an empty band under the logo. Music
+        # already clusters brand + cards + Host/Join; Art uses the same
+        # compact door. Join / setup pages stay top-aligned.
+        centered = self._pages.currentWidget() is self._choice_page
+        self._pages.set_fit_current_page(centered)
+        root = self.layout()
+        root.centered_pages = self._pages if centered else None
+        root.cluster_bottom = self._join_button if centered else None
+        root.setStretch(0, int(centered))
+        root.setStretch(root.count() - 1, int(centered))
+        root.setStretch(root.indexOf(self._pages), int(not centered))
 
     def _set_choice_helper(self, text: str) -> None:
         """Show a helper line only when it has something to say.
@@ -1167,6 +1364,19 @@ class LaunchDialog(QDialog):
         helper = str(text or "").strip()
         self._choice_helper.setText(helper)
         self._choice_helper.setVisible(bool(helper))
+        self._sync_choice_helper_height()
+
+    def _sync_choice_helper_height(self) -> None:
+        """Reserve the wrapped height so Paint along's door line cannot clip."""
+
+        helper = self._choice_helper
+        if not helper.isVisible() or not helper.text().strip():
+            helper.setMinimumHeight(0)
+            return
+        width = helper.width()
+        if width <= 0:
+            width = max(helper.sizeHint().width(), 280)
+        helper.setMinimumHeight(helper.heightForWidth(width))
 
     def _keep_door_cards_tabbable(self) -> None:
         """Restore Tab focus after setTabOrder, which can drop it on command-links."""
@@ -1180,7 +1390,9 @@ class LaunchDialog(QDialog):
     def showEvent(self, event) -> None:
         super().showEvent(event)
         self._keep_door_cards_tabbable()
+        self._sync_choice_helper_height()
         QTimer.singleShot(0, self, self._keep_door_cards_tabbable)
+        QTimer.singleShot(0, self, self._sync_choice_helper_height)
 
     def _build_menu(self, root: QVBoxLayout) -> None:
         self._menu_bar = QMenuBar(self)
@@ -1189,9 +1401,10 @@ class LaunchDialog(QDialog):
         self._workspace_actions = {}
         if self._allow_workspace_choices:
             file_menu = self._menu_bar.addMenu("&File")
+            self._file_menu = file_menu
             self._session_library_action = file_menu.addAction("Session library…")
             self._session_library_action.triggered.connect(self._open_session_library)
-            file_menu.addSeparator()
+            self._workspace_separator = file_menu.addSeparator()
             for key, label in (("music", "New Music Project…"),
                                ("podcast_voice", "Podcast & Voice…"),
                                ("review_rehearsal", "Review & Rehearsal…")):
@@ -1206,6 +1419,28 @@ class LaunchDialog(QDialog):
         self._setup_action = help_menu.addAction("Music setup…")
         self._setup_action.triggered.connect(self._show_music_setup)
         self._setup_action.setEnabled(bool(self._jamulus_installer))
+        self._sync_menu_visibility()
+
+    def _sync_menu_visibility(self) -> None:
+        # The choice page is built before its menus. Keep secondary starts
+        # out of both live doors, including their Join and Back transitions.
+        if not hasattr(self, "_setup_action"):
+            return
+        profile = self.selected_creator_profile_key
+        secondary_starts = profile not in _FIRST_SCREEN_PROFILE_KEYS
+        if hasattr(self, "_file_menu"):
+            # Detach these actions (and their shortcuts) from the live menu.
+            # Retain their enabled state for existing programmatic workflow
+            # and save-retry callers; QAction.setVisible(False) disables them.
+            for action in (self._workspace_separator, *self._workspace_actions.values()):
+                if secondary_starts:
+                    if action not in self._file_menu.actions():
+                        self._file_menu.addAction(action)
+                else:
+                    self._file_menu.removeAction(action)
+        # The resolver supplies a verified bundled path only on Windows
+        # when the music component is missing; revalidation can revoke it.
+        self._setup_action.setVisible(profile == "music" and bool(self._jamulus_installer))
 
     def _open_session_library(self) -> None:
         if self._submitting or not self._allow_workspace_choices:
@@ -1328,7 +1563,7 @@ class LaunchDialog(QDialog):
         self.invitation_meeting_url = ""
         self._invite_input.clear()
         self._clear_join_error()
-        self._join_status.setText("Paste your invitation")
+        self._join_status.setText(self._EMPTY_JOIN_PROMPT)
         self._pages.setCurrentWidget(self._choice_page)
         # First-screen rooms hide the picker. Host is the next click.
         if (
@@ -1359,7 +1594,7 @@ class LaunchDialog(QDialog):
         self._clear_join_error()
         has_invite = bool(self._invite_input.text().strip())
         self._join_status.setText(
-            "Invitation pasted — choose Join" if has_invite else "Paste your invitation"
+            "Invitation pasted — choose Join" if has_invite else self._EMPTY_JOIN_PROMPT
         )
         self._join_status.setProperty("joinReady", "true" if has_invite else "false")
         join_style = self._join_status.style()

@@ -90,6 +90,31 @@ def test_keyboard_moment_and_take_open_retain_evidence(panel, qapp):
     assert len(panel.payload()["songs"][0]["bookmarks"]) == 1
 
 
+def test_relink_take_updates_only_matching_bookmark_paths(panel):
+    panel.add_song("Tune")
+    panel.add_bookmark(
+        "Chorus",
+        timing_verified=True,
+        take_id="take-1",
+        take_path="/old/take",
+        source_identity="sha256:one",
+        position_seconds=4.0,
+    )
+    panel.add_bookmark(
+        "Other identity",
+        timing_verified=True,
+        take_id="take-1",
+        take_path="/old/take",
+        source_identity="sha256:two",
+        position_seconds=8.0,
+    )
+    panel.relink_take("take-1", "sha256:one", "/new/take")
+    bookmarks = panel.payload()["songs"][0]["bookmarks"]
+    assert bookmarks[0]["take_path"] == "/new/take"
+    assert bookmarks[0]["position_seconds"] == 4.0
+    assert bookmarks[1]["take_path"] == "/old/take"
+
+
 def test_template_save_and_add_keep_notes_and_no_recording_claims(panel, monkeypatch, tmp_path):
     panel.add_song("A tune")
     panel._goals.setPlainText("Keep time")
@@ -108,6 +133,102 @@ def test_template_save_and_add_keep_notes_and_no_recording_claims(panel, monkeyp
     songs = panel.payload()["songs"]
     assert len(songs) == 2 and songs[0] == original
     assert not songs[1]["completed"] and not songs[1]["bookmarks"]
+
+
+def _fill_template_to_size(panel, size, character):
+    # Include the real JSON structure, whitespace, escaping and UTF-8 overhead.
+    panel._goals.setPlainText("")
+    overhead = len(json.dumps(panel._plan.template_payload(), ensure_ascii=False, indent=2).encode("utf-8"))
+    # Short paragraphs avoid making this a stress test of Qt's line wrapping.
+    unit = character * 80 + "\n"
+    unit_bytes = len(json.dumps(unit, ensure_ascii=False).encode("utf-8")) - 2
+    count, remainder = divmod(size - overhead, unit_bytes)
+    panel._goals.setPlainText(unit * count + "x" * remainder)
+
+
+@pytest.mark.parametrize("character", ["x", "é", "🎵", '"'])
+@pytest.mark.parametrize("replace_existing", [False, True])
+def test_oversized_template_export_keeps_destination_and_all_drafts(
+    panel, monkeypatch, tmp_path, character, replace_existing
+):
+    panel.add_song("First song")
+    panel._notes.setPlainText("First song's private notes")
+    panel.add_song("Second song")
+    panel._title.setText("Weekly plan")
+    panel._key.setText("E minor")
+    panel._tempo.setValue(104)
+    panel._notes.setPlainText("Keep these notes")
+    panel._next_steps.setPlainText("Keep these next steps")
+    panel._completed.setChecked(True)
+    panel.add_bookmark("Keep this moment")
+    panel._moment_note.setText("Unfinished moment")
+    path = tmp_path / "weekly.json"
+    warnings = []
+    monkeypatch.setattr("webjam_qt.widgets.rehearsal_plan.QFileDialog.getSaveFileName", lambda *_: (str(path), ""))
+    monkeypatch.setattr("webjam_qt.widgets.rehearsal_plan.QMessageBox.warning", lambda *args: warnings.append(args))
+    if replace_existing:
+        panel._save.click()
+        previous_bytes = path.read_bytes()
+        previous_stat = path.stat()
+        assert panel._feedback.text() == "Song order and goals saved for another rehearsal."
+    _fill_template_to_size(panel, MAX_PLAN_FILE_BYTES + 1, character)
+    before = panel.payload()
+    panel._save.click()
+
+    if replace_existing:
+        assert path.read_bytes() == previous_bytes
+        assert path.stat().st_ino == previous_stat.st_ino
+        assert path.stat().st_mtime_ns == previous_stat.st_mtime_ns
+    else:
+        assert not path.exists()
+    assert list(tmp_path.iterdir()) == ([path] if replace_existing else [])
+    assert panel.payload() == before
+    assert panel._title.text() == before["title"]
+    song = before["songs"][1]
+    assert panel._song_title.text() == song["title"]
+    assert panel._key.text() == song["key"]
+    assert panel._tempo.value() == song["tempo"]
+    assert panel._goals.toPlainText() == song["goals"]
+    assert panel._notes.toPlainText() == song["notes"]
+    assert panel._next_steps.toPlainText() == song["next_steps"]
+    assert panel._moment_note.text() == song["moment_draft"]
+    assert len(warnings) == 1
+    assert warnings[0][1] == "Plan not saved"
+    assert "Shorten the goals" in warnings[0][2]
+    assert panel._feedback.text().startswith("Plan not saved.")
+    assert "saved for another rehearsal" not in panel._feedback.text()
+
+
+@pytest.mark.parametrize("character", ["x", "🎵"])
+@pytest.mark.parametrize("size", [MAX_PLAN_FILE_BYTES - 1, MAX_PLAN_FILE_BYTES])
+def test_template_export_at_import_limit_round_trips(panel, monkeypatch, tmp_path, character, size):
+    panel.add_song("First song")
+    panel._goals.setPlainText("Keep the order")
+    panel.add_song("Café 🎵")
+    panel._key.setText("E minor")
+    panel._tempo.setValue(104)
+    panel._notes.setPlainText("Private session notes")
+    _fill_template_to_size(panel, size, character)
+    before = panel.payload()
+    path = tmp_path / "boundary.json"
+    warnings = []
+    monkeypatch.setattr("webjam_qt.widgets.rehearsal_plan.QMessageBox.warning", lambda *args: warnings.append(args))
+    monkeypatch.setattr("webjam_qt.widgets.rehearsal_plan.QFileDialog.getSaveFileName", lambda *_: (str(path), ""))
+    panel._save.click()
+    assert path.stat().st_size == size
+    assert panel.payload() == before
+    assert panel._feedback.text() == "Song order and goals saved for another rehearsal."
+    monkeypatch.setattr("webjam_qt.widgets.rehearsal_plan.QFileDialog.getOpenFileName", lambda *_: (str(path), ""))
+    panel._load.click()
+    songs = panel.payload()["songs"]
+    assert songs[:2] == before["songs"]
+    assert len(songs) == 4
+    for original, imported in zip(before["songs"], songs[2:]):
+        for field in ("title", "key", "tempo", "goals"):
+            assert imported[field] == original[field]
+        assert imported["notes"] == ""
+        assert not imported["completed"] and not imported["bookmarks"]
+    assert warnings == []
 
 
 @pytest.mark.parametrize("bad", [b'{"version":2}', b"{broken", b" " * (MAX_PLAN_FILE_BYTES + 1)])
