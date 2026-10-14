@@ -109,11 +109,7 @@ class SimpleSettingsDialog(QDialog):
 
         title = QLabel("WebJam Settings")
         title.setObjectName("SimpleSettingsTitle")
-        subtitle = QLabel(
-            "Your name and optional meeting link."
-            if self._creator_profile_key == "art"
-            else "Jamulus carries the music. WebJam keeps your jam organized."
-        )
+        subtitle = QLabel("Your name and optional meeting link.")
         subtitle.setObjectName("SimpleSettingsSubtitle")
         subtitle.setWordWrap(True)
         root.addWidget(title)
@@ -128,9 +124,10 @@ class SimpleSettingsDialog(QDialog):
         )
         identity.layout().addWidget(name_label)
         identity.layout().addWidget(self._name)
-        self._name_preview = JamulusNamePreview(
-            self._name, plain_words=self._creator_profile_key == "art"
-        )
+        # The "You" section is identity, not engine setup: it must read the
+        # same for every profile, including Art, which has no Jamulus path.
+        # The engine-specific explanation lives only in Live music below.
+        self._name_preview = JamulusNamePreview(self._name, plain_words=True)
         identity.layout().addWidget(self._name_preview)
         root.addWidget(identity)
 

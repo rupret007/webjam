@@ -9,9 +9,114 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Art Settings now says “Your name and optional meeting link.”, uses the plain
   name hint and accessible name “Your name”, and omits Verify Sound. The name
   display says “Others see”; optional keys use the visible label for accessibility.
+- Test, lint, and integration jobs still run on pull requests and on push
+  to `master`. `Build Desktop` (linux-x64, macos-arm64, macos-x64,
+  windows-x64) no longer runs on `pull_request` or on push to `master` /
+  tags. Packaging stays `workflow_dispatch` `final_build` only (default
+  on), or when a signing rehearsal needs those artifacts, and still
+  uploads the same files. A tag draft needs `final_build` against the
+  annotated tag. `macos_signing_rehearsal` / `windows_signing_rehearsal`
+  do not create a GitHub Release draft. Art companion and Pocket Stage
+  stay on `master`, on `workflow_dispatch`, and on pull requests that
+  touch `ios/` or their shared sources — they are the only hosted XCTest
+  / simulator suites. Branch protection was not changed; if those Build
+  Desktop names are required checks, skipped PR or master jobs may need a
+  maintainer review.
+
+- Local Art files with ordinary Mac names (`CON.png`, a colon in the name, or
+  decomposed accents such as `café.png`) can be verified, opened after that
+  check, and backed up under generated archive names. The original file is not
+  renamed. Portable archive-member and `relative_path` checks stay unchanged.
+
+- Song tools Stems keeps each Vocals/Drums/Bass row and the Sing this one /
+  Send to jam actions at their natural height at the 800×600 window floor
+  and at 1280×800. The side panel scrolls instead of squashing mute/solo
+  chips or stacking the buttons on the helper line.
+
+- A waiting Paint along host has one orange room action: **Copy Invite**.
+  **Open Paint along** stays available as a quiet body action; guest
+  **Open my copy…** recovery keeps its emphasis.
+
+- Aligned-originals export hashes and renders each source through one open
+  file descriptor. A same-format rewrite or path replacement after that
+  handle is bound cannot publish. No package is published, the take files
+  are left as they are, and Studio does not show a success or an export
+  receipt.
+
+- Art/Music launch File menus keep Session library and hide New Music Project,
+  Podcast, and Review starts, including the New shortcut. Help's Music setup
+  appears only for Music with an available verified Windows installer and
+  disappears if installer integrity validation fails. Host/Join and Art's
+  two start cards are unchanged; physical/live checks remain **NOT RUN**.
+
+- Send to jam loads a finished stem mix only for the room and source that
+  asked for it. An old mix after End/Leave, a host-to-guest change, a
+  workspace switch, or a newer song choice stays in Song tools and does not
+  claim Sending. Switching a workspace or audible mix away and back still
+  rejects the old mix. Playback stays under host control.
+
+- Same-network joins wait for pending Library media work before adopting the
+  host's Art or Music profile. Art no longer reports connected early, and
+  Music waits to start audio. Deferred receipts retry briefly and cannot
+  reopen a room after connection loss, Leave, or a replacement invitation.
+
+- Reference-service Close starts its one shared shutdown budget when it first
+  joins unfinished work, not when the caller enters Close. Scheduling delay
+  and cancelled-cleanup callbacks no longer consume that budget before
+  listener joiners are registered.
+
+- Session library Save can recover after a directory-sync failure without a
+  duplicate workspace. Retry confirms the exact attempted publication before
+  saving newer drafts; external changes still retain the conflict/copy path.
+
+- Studio keeps ownership of its input device when close fails, including
+  cleanup after a failed start. Cleanup retries reach the original stream,
+  and another start stays blocked until the device is confirmed closed.
+
+- A Paint along seek that the local player cannot honor now marks the
+  transport failed and stops sharing a healthy paused clock. The host panel
+  shows “WebJam couldn't move that video on this computer.” with
+  **Choose process video…** as the next action, instead of remaining
+  **Paused.** Physical playback remains **NOT RUN**.
+
+- When Paint along needs a guest file, Room’s only emphasized action is
+  **Open my copy…**, including when a shared canvas also needs attention.
+  Conversation stays in the footer, and the missing-file line is not buried
+  by the optional making-detail sentence.
+
+- Keep saved profile titles and modes intact when reading their file hits an I/O error.
+  A later successful save merges the current edit with the other profiles.
+
+- Workspace summary export reconciles live Notes and late recap/take facts even
+  with a clean library editor. Conflicts retain both drafts and block export;
+  the summary stays bound to the workspace selected before the file picker.
+
+- Art’s idle first screen now tells a person with no art skill what to do:
+  the room names Start Session and says you do not need an art app, instead
+  of listing clay, printers, or a meeting-share essay.
+
+- Native joins wait for Library/Studio media work before consuming an invite.
+  After the operation finishes, join explicitly with the same still-valid
+  invitation. A local profile deferral after enrollment no longer asks users
+  to update the host; stale or absent room state still fails closed and an
+  uncertain enrollment still requires a fresh invitation.
+
+- The invite-ready Music HUD says **Copy the invite**. The HUD's **Copy Invite**
+  remains the sole primary action; compact and normal window regressions keep
+  the empty stage's **Start Session** hidden.
+
+- Closing Session library with the window button or **Close** now completes
+  the dialog lifecycle, like Escape. Reopening shows current saved or pending
+  work; failed saves keep the draft visible and media cancellation retains
+  its existing recovery guard.
 
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
+
+- Paint along rechecks the host's shared local file before Play and on each
+  refresh, including while ready or paused. A changed or missing file retires
+  its sharing proof and offers the existing Choose process video recovery.
+  YouTube lessons and silent playback retain their existing behavior.
 
 - README, contributing, and development guides now describe this checkout’s
   unreleased stack (saved work/backup, Paint/Play along, follow-along, Windows
@@ -35,57 +140,55 @@ All notable improvements and features for the WebJam creator collaboration platf
   lesson context, and guest reconnect admission. Unacknowledged pause requests
   rotate admission after presence TTL on re-read.
 
-### Follow-along pilot readiness — draft test-build scope
-
 - Lesson setup explains how a host shares a meeting link added after the room
   invitation. Guests can add or change it without leaving their room; a meeting
   link opens in the meeting app/browser and is distinct from a WebJam invite.
+
 - Saved Art reopened locally explains the existing Start Session/Join path
   before lesson reuse, preserving the workspace and save/recovery status.
+
 - Music practice documents its explicit meeting-only path after ensemble
   startup failure. Room invitation readiness and audio failure remain truthful.
+
 - First-test instructions and a pilot record distinguish software checks from
   unobserved sound, sharing, cameras, reconnects and ensemble latency.
+
 - Service shutdown verification waits for burst TCP connects to finish before
   Close, then restores the strict None/CancelledError assertion. Connect,
   send, and receive deadlines are not classified as success.
 
-### Follow-along clarity and saved lessons — draft test-build scope
-
 - Paint Along puts the lesson-with-sound route first. Host/guest setup uses
   three steps and expandable sound tips; compact and enlarged-text views
   scroll without clipping controls or hiding End/Leave.
+
 - Conversation returns to the current lesson after Notes. First workspace
   saves and meeting-only edits preserve the choice while retiring old actions.
+
 - Music songs can remember a YouTube lesson; Art references and matching
   bookmarks can explicitly return to lesson setup. Existing draft/conflict
   handling owns saves. Templates and backups retain optional song links;
   loading saved work never opens a browser or meeting.
+
 - Supported LAN Art rooms can explicitly restart retired pause requests after
   a meeting edit. Embedding refusal and unavailable-video messages explain
   the browser fallback without starting it. Physical sound and feel remain
   **NOT RUN** until observed.
 
-### Paint Along and Play Along — draft test-build scope
-
 - Paint Along keeps **Watch a shared lesson** reachable with an embedded
   YouTube lesson or failed player. The host can select a canonical lesson
   link, explicitly open its browser and reach meeting sharing controls.
   **Remember lesson** saves the Art reference through the existing draft owner.
+
 - Music adds **Play along**: guided video practice through the meeting, or
   live ensemble with Jamulus and the supported Shared Track route. Host and
   guest actions differ; guidance distinguishes listening mute, instrument
   send, meeting sound and delayed video.
+
 - Meeting edits preserve the chosen lesson, while canceled/replaced media,
   room retirement and old queued actions cannot reuse its authority. Ordinary
   Music updates preserve the practice helper. Compact controls and enlarged
   text retain the lesson actions. Physical two-person sound and feel remain
   **NOT RUN**; these changes do not publish a release.
-
-### Workflow continuity — PR and test-build scope
-
-Source remains v0.29.0. These changes are after the published v0.29.0 baseline;
-they do not request a new release/tag or claim new published package evidence.
 
 - Draft Session library builds add **Back up…** and **Import backup…**
   with metadata-only defaults or explicitly selected completed takes/local Art,
@@ -93,9 +196,11 @@ they do not request a new release/tag or claim new published package evidence.
   Imported media remains unchecked until an explicit action.
   Repackaged Art must match its saved content checksum and size; changing a
   relinked file's name or extension keeps that identity intact.
+
 - Background Notes saves and late recording results leave the Library's
   retained import draft unsaved. Explicit Save or closing still reconciles
   that draft and any pending recording facts; later typing resumes its autosave.
+
 - **Verify take**, **Verify reference**, **Locate take…** and
   **Relink…** check expected content while retaining drafts and bookmarks.
   Restored Studio takes retain exact alternate-source locations through
@@ -107,9 +212,11 @@ they do not request a new release/tag or claim new published package evidence.
   deliberate playback/export. The frozen hook adds a synthetic portability journey;
   hosted/package verification is recorded against each delivered test build.
   Physical acceptance remains **NOT RUN**.
+
 - Compact Session library controls scroll without overlapping at enlarged text;
   save/recovery status stays visible. Packaged workflow proofs isolate their
   settings, database, startup state and logs and restore the caller's environment.
+
 - Windows recording checkpoints use protected current-user/SYSTEM permissions,
   flush files before publication and recheck published evidence. Unsafe storage
   blocks recording; Windows does not promise POSIX directory-flush durability.
@@ -122,9 +229,11 @@ they do not request a new release/tag or claim new published package evidence.
   Wider-font cases now reproduce rounded Windows glyph widths independently
   of the platform's font engine. Library, Takes and import-recovery captions
   fit those widths while keeping their full action names for accessibility.
+
 - The initial launch-screen Library can open an imported take or timed moment
   directly into its saved workspace. Changed media/context, cancellation and late
   drafts prevent stale activation; verified source locations transfer to the new Studio owner.
+
 - **File → Return to launch** is available from live and local Studio work.
   Explicit End/Leave, successful saves, recording finalization and owned
   cleanup precede a fresh launch screen; failure retains the current work.
@@ -136,6 +245,7 @@ they do not request a new release/tag or claim new published package evidence.
   Studio and take-review editors stop accepting changes once saved work
   begins irreversible cleanup, preventing unsaved edits during a failed-close
   retry.
+
 - **F1 / More → Help** gains local topic search and deliberate navigation to
   existing workspaces. The window stays modeless so live Stop/End remains
   reachable, and follows profile changes without taking focus. No model,
@@ -143,20 +253,37 @@ they do not request a new release/tag or claim new published package evidence.
   Compact Art guidance, Paint along and Notes reserve room for the in-window
   File/Help menu, retaining enlarged recovery text, editor space and session
   controls.
+
 - Atomic-write failures stop closing a descriptor after its file object has
   already released it, protecting unrelated files that reuse the descriptor.
   Invalid Unicode in the recent-project index becomes a recoverable error;
   the original index and ordinary project work remain available.
+
 - Jamulus integration CI gains an outer deadline and bounded diagnostics so
   a blocked test can retain evidence and stop its owned process group before
   the job deadline. A timeout remains a failure, not an automatic retry.
+
 - Desktop dependency locks select urllib3 2.8.0, and the build bootstrap
   selects pip 26.2, addressing newly reported dependency advisories. Their
   archive hashes and the runtime package inventory are updated together.
+
 - Current guides and roadmap distinguish the shipped baseline from this work.
   The [workflow continuity pilot](docs/WORKFLOW_CONTINUITY_PILOT.md) starts all
   physical observations at **NOT RUN**, with exact package/hash fields and a
   ten-minute Music/Art try list. Jeff retains feel and Final Build judgment.
+
+- Idle host Recording Setup no longer offers a Takes folder that reload
+  discards. **Show Folder** opens WebJam's managed host location, with a short
+  explanation. Guest folder choice is unchanged.
+
+### Follow-along pilot readiness — draft test-build scope
+### Follow-along clarity and saved lessons — draft test-build scope
+### Paint Along and Play Along — draft test-build scope
+### Workflow continuity — PR and test-build scope
+
+Source remains v0.29.0. These changes are after the published v0.29.0 baseline;
+
+they do not request a new release/tag or claim new published package evidence.
 
 ## [0.29.0] — Unsigned testing candidate
 

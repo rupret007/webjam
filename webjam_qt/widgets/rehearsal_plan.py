@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QSpinBox, QTextEdit, QVBoxLayout, QWidget,
 )
 
-from core.file_io import atomic_write_text
+from core.file_io import atomic_write_bytes
 from core.rehearsal_plan import (
     MAX_BOOKMARKS, MAX_PLAN_FILE_BYTES, MAX_SONGS, RehearsalPlan, make_bookmark,
 )
@@ -458,8 +458,14 @@ class RehearsalPlanPanel(QFrame):
         path, _ = QFileDialog.getSaveFileName(self, "Save rehearsal plan", "rehearsal-plan.json", "Rehearsal plans (*.json)")
         if not path:
             return
+        data = json.dumps(self._plan.template_payload(), ensure_ascii=False, indent=2).encode("utf-8")
+        if len(data) > MAX_PLAN_FILE_BYTES:
+            message = "This plan is too large. Shorten the goals and try again. Your text is still here."
+            self._feedback.setText(f"Plan not saved. {message}")
+            QMessageBox.warning(self, "Plan not saved", message)
+            return
         try:
-            atomic_write_text(path, json.dumps(self._plan.template_payload(), ensure_ascii=False, indent=2), mode=0o600)
+            atomic_write_bytes(path, data, mode=0o600)
         except OSError:
             QMessageBox.warning(self, "Plan not saved", "Choose another folder and try again.")
             return

@@ -27,6 +27,7 @@ from core.song_clock import (
     form_sections,
 )
 from core.song_form import DETECTED, STATED, parse_song_form
+from core.song_workbench import SongWorkbench
 
 SONG = """Key: G major
 Tempo: 120
@@ -179,6 +180,103 @@ def test_a_clock_with_no_tempo_will_not_start():
 
     assert clock.start() is False
     assert clock.snapshot().tempo_bpm == 0
+
+
+def test_removing_notes_tempo_clears_stale_bpm_and_source():
+    """A Tempo line deleted from Notes must not leave the prior song's count."""
+
+    clock = SongClock()
+    clock.set_form(parse_song_form("Tempo: 120\n[Verse x8]\nG D\n"))
+    assert clock.snapshot().tempo_bpm == 120
+    assert clock.snapshot().tempo_source == STATED
+    assert clock.start() is True
+    clock.stop()
+
+    clock.set_form(parse_song_form("[Chorus x8]\nC G\n"))
+    snapshot = clock.snapshot()
+
+    assert snapshot.tempo_bpm == 0
+    assert snapshot.tempo_source == ""
+    assert snapshot.to_public_dict()["bpm"] == 0.0
+    assert snapshot.to_public_dict()["bpm_source"] == ""
+    assert snapshot.state == STATE_STOPPED
+    assert clock.start() is False
+
+
+def test_switching_to_a_saved_song_without_tempo_clears_the_clock():
+    """The workbench reuses one clock when Library switches the active song."""
+
+    workbench = SongWorkbench(notes="Tempo: 120\n[Verse x8]\nG D\n")
+    assert workbench.form.tempo is not None
+    assert workbench.clock_snapshot().tempo_bpm == 120
+    assert workbench.clock_snapshot().tempo_source == STATED
+    assert workbench.clock.start() is True
+    workbench.clock.stop()
+
+    workbench.set_notes("[Chorus x8]\nC G\n")
+    snapshot = workbench.clock_snapshot()
+
+    assert workbench.form.tempo is None
+    assert snapshot.tempo_bpm == 0
+    assert snapshot.tempo_source == ""
+    assert snapshot.state == STATE_STOPPED
+    assert workbench.clock.start() is False
+
+
+def test_an_invalid_replacement_tempo_is_cleared_rather_than_kept():
+    clock = SongClock()
+    clock.set_form(parse_song_form("Tempo: 120\n[Verse]\nG D\n"))
+
+    clock.set_form(parse_song_form("Tempo: 15\n[Verse]\nG D\n"))
+    snapshot = clock.snapshot()
+
+    assert snapshot.tempo_bpm == 0
+    assert snapshot.tempo_source == ""
+    assert clock.start() is False
+
+
+def test_a_detected_tempo_on_the_current_form_still_counts():
+    clock = SongClock()
+    clock.set_form(
+        parse_song_form("[Verse x8]\nG D\n").with_detected(tempo="108")
+    )
+    snapshot = clock.snapshot()
+
+    assert snapshot.tempo_bpm == 108
+    assert snapshot.tempo_source == DETECTED
+    assert clock.start() is True
+
+
+def test_an_explicit_tempo_override_still_counts_after_the_form_has_none():
+    clock = SongClock()
+    clock.set_form(parse_song_form("[Verse]\nG D\n"))
+
+    assert clock.start() is False
+    assert clock.set_tempo(96)
+    assert clock.snapshot().tempo_bpm == 96
+    assert clock.snapshot().tempo_source == STATED
+    assert clock.start() is True
+
+
+def test_withdrawing_tempo_stops_a_running_count_rather_than_keeping_its_bar():
+    now = {"value": 0.0}
+    clock = SongClock(monotonic=lambda: now["value"])
+    clock.set_form(parse_song_form("Tempo: 120\n[Verse x8]\nG D\n"))
+    clock.start()
+    now["value"] = 8.0
+    assert clock.snapshot().running
+    assert clock.snapshot().bar > 1
+
+    clock.set_form(parse_song_form("[Chorus x8]\nC G\n"))
+    snapshot = clock.snapshot()
+
+    assert snapshot.tempo_bpm == 0
+    assert snapshot.tempo_source == ""
+    assert snapshot.state == STATE_STOPPED
+    assert snapshot.running is False
+    assert snapshot.bar == 0
+    assert snapshot.states_place is False
+    assert clock.start() is False
 
 
 # ----------------------------------------------------------------------
