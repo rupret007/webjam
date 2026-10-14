@@ -88,6 +88,10 @@ def test_oversized_peer_port_restores_door_and_allows_valid_paste(
         dialog.show_join()
         dialog.show()
         qapp.processEvents()
+        # Music Host is macOS-only; Art LAN Host is available on Linux/Windows.
+        # Recovery must restore that same availability, not leave submission lock.
+        host_available = dialog._host_button.isEnabled()
+        join_available = dialog._join_button.isEnabled()
         raw = private_link("9" * 5000)
         dialog._invite_input.setText(raw)
         if entry == "paste-button":
@@ -104,8 +108,9 @@ def test_oversized_peer_port_restores_door_and_allows_valid_paste(
         assert dialog._invite_input.isEnabled()
         assert dialog._invite_input.hasFocus()
         assert dialog._invite_input.text() == ""
-        assert dialog._host_button.isEnabled()
-        assert dialog._join_button.isEnabled()
+        assert dialog._host_button.isEnabled() is host_available
+        assert dialog._join_button.isEnabled() is join_available
+        assert join_available
         assert not dialog._join_button_primary.submission_locked()
         assert dialog._join_status.text() == "Needs attention"
         assert dialog._join_error.isVisibleTo(dialog)
@@ -116,7 +121,7 @@ def test_oversized_peer_port_restores_door_and_allows_valid_paste(
         dialog._join_back_button.click()
         assert dialog.showing_choices
         assert dialog._host_button.isVisibleTo(dialog)
-        assert dialog._host_button.isEnabled()
+        assert dialog._host_button.isEnabled() is host_available
         dialog._join_button.click()
         assert dialog._invite_input.isVisibleTo(dialog)
         dialog._invite_input.setText(private_link())
