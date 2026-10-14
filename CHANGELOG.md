@@ -6,6 +6,12 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- New `Test integrity guards` CI job (add-only). It fails when global test
+  config fakes the clock (`faketime`, `LD_PRELOAD` / `DYLD_INSERT_LIBRARIES`
+  injection, a `TZ` override, or global freezegun / time-machine / fake
+  timers), or when a change leaves tests weaker than `master` (deleted test
+  files, fewer test functions, new skip/xfail markers). Per-test clock
+  control is still allowed.
 - Test, lint, and integration jobs still run on pull requests and on push
   to `master`. `Build Desktop` (linux-x64, macos-arm64, macos-x64,
   windows-x64) no longer runs on `pull_request` or on push to `master` /
