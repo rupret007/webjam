@@ -32,9 +32,9 @@ def canvas():
     (ArtRoomState.WAITING, True, False,
      "Share an invitation; no artist is confirmed yet."),
     (ArtRoomState.CONNECTED, True, False,
-     "WebJam does not show a full artist list yet."),
+     "An artist is here."),
     (ArtRoomState.CONNECTED, False, False,
-     "WebJam does not show a full artist list yet."),
+     "You’re connected."),
     (ArtRoomState.CONNECTED, True, True,
      "Guest-chosen names. Talk and sharing are separate."),
 ])

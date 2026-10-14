@@ -226,7 +226,9 @@ def art_room_overview(
         elif hosting and named_connections:
             detail = "Guest-chosen names. Talk and sharing are separate."
         else:
-            detail = "WebJam does not show a full artist list yet."
+            # Keep #279's human connected line; the roster caveat lives only
+            # in connection_note (accessibleDescription), never visible copy.
+            detail = "An artist is here." if hosting else "You’re connected."
     if (
         _is_open_my_copy_recovery(
             secondary_activity, secondary_action, secondary_action_label,

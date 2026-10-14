@@ -1,0 +1,1 @@
+- Fixed: with a shared Art activity available, the connected room line stays short and human ("An artist is here." / "You’re connected.") instead of bringing back the "full artist list" caveat, which stays in the screen-reader description.
