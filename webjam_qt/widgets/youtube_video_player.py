@@ -304,11 +304,10 @@ class NativeYouTubeBridge:
         )
 
     def is_visible(self):
-        size = self.surface.size()
-        visible = self.surface.visibleRegion().boundingRect()
-        return (self.surface.isVisible() and not self.surface.window().isMinimized()
-                and size.width() >= 200 and size.height() >= 200
-                and visible.width() * visible.height() > size.width() * size.height() / 2)
+        # The workspace stack hides inactive pages. A compact Paint along
+        # holder can clip the shown 200x200 surface without leaving this page;
+        # clipping must not tell someone already here to return to Paint along.
+        return self.surface.isVisible() and not self.surface.window().isMinimized()
 
     def clear(self):
         from PySide6.QtCore import QUrl

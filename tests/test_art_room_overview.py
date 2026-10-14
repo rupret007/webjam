@@ -28,6 +28,37 @@ def canvas():
     ))
 
 
+@pytest.mark.parametrize("state,hosting,named_connections,detail", [
+    (ArtRoomState.WAITING, True, False,
+     "Share an invitation; no artist is confirmed yet."),
+    (ArtRoomState.CONNECTED, True, False,
+     "An artist is here."),
+    (ArtRoomState.CONNECTED, False, False,
+     "You’re connected."),
+    (ArtRoomState.CONNECTED, True, True,
+     "Guest-chosen names. Talk and sharing are separate."),
+])
+@pytest.mark.parametrize("presence,secondary_presence", [
+    (paint_along(), ABSENT), (canvas(), ABSENT),
+    (ABSENT, paint_along()), (paint_along(), canvas()),
+])
+def test_presence_action_keeps_connection_detail_short_and_truthful(
+    state, hosting, named_connections, detail, presence, secondary_presence,
+):
+    view = art_room_overview(
+        state=state, hosting=hosting, named_connections=named_connections,
+        presence=presence, secondary_presence=secondary_presence,
+    )
+    without_action = art_room_overview(
+        state=state, hosting=hosting, named_connections=named_connections,
+    )
+    assert view.activity_actions
+    assert view.connection_label == without_action.connection_label
+    assert view.connection_detail == detail
+    assert len(view.connection_detail) <= 55
+    assert len(view.connection_detail) < len(without_action.connection_detail)
+
+
 @pytest.mark.parametrize("hosting", [False, True])
 def test_only_confirmed_room_connection_offers_shared_activity(hosting):
     presence = paint_along()
@@ -161,6 +192,23 @@ def test_make_together_is_complete_without_optional_tools_or_a_roster():
         assert "mixer" not in public
         assert "setup required" not in public
         assert "open canvas" not in public
+
+
+@pytest.mark.parametrize("hosting", [False, True])
+def test_connected_detail_is_short_and_moves_the_roster_caveat_to_the_note(hosting):
+    overview = art_room_overview(state=ArtRoomState.CONNECTED, hosting=hosting)
+    assert "does not yet" not in overview.connection_detail
+    assert "full artist list" not in overview.connection_detail
+    assert overview.connection_detail == (
+        "An artist is here with you." if hosting else "You’re connected and ready to make."
+    )
+    assert overview.connection_note == "WebJam does not yet show a full artist list."
+
+    # Once a named roster is actually shown, the caveat no longer applies.
+    named = art_room_overview(
+        state=ArtRoomState.CONNECTED, hosting=True, named_connections=True,
+    )
+    assert named.connection_note == ""
 
 
 def test_guest_paint_along_needs_file_names_open_my_copy_button():

@@ -415,6 +415,7 @@ class RoomParticipantController:
         self.probing = False
         self.probe_failed = False
         self.state = ArtRoomState.CONNECTED
+        self.borrowed_start = state.art_start_key
         self.observe_creative_state(state)
         self.app._refresh_readiness()
 
@@ -1039,17 +1040,21 @@ class RoomParticipantController:
         if disarmed_guest or not self._lesson_current(binding):
             self.retire_lesson_requests()
             self._wire_lesson_actions(None)
-            panel.set_lesson_request_guest(status="Ask the host aloud.")
             panel.set_lesson_request_host(())
+            status = "Ask the host aloud."
             handoff = getattr(panel, "lesson_handoff", None)
             if handoff is not None:
                 owner = self.app.host_peer if panel._shared_lesson_hosting else self.lan_guest
                 supported = (callable(getattr(getattr(owner, "server", None), "activate_lesson_requests", None))
                              if panel._shared_lesson_hosting else owner is not None)
-                handoff.restart_button.setVisible(
+                can_restart = (
                     supported and not self.blocked and self.app.creator_profile.key == "art"
                     and self.app._remote_session is None and self.app._remote_invite_owner is None
                 )
+                handoff.restart_button.setVisible(can_restart)
+                if can_restart and not panel._shared_lesson_hosting:
+                    status = "Restart pause requests, or ask the host aloud."
+            panel.set_lesson_request_guest(status=status)
             return
         handoff = getattr(panel, "lesson_handoff", None)
         if handoff is not None:
