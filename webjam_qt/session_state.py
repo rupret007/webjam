@@ -7,6 +7,7 @@ from enum import Enum
 
 class SessionPhase(str, Enum):
     NOT_CONNECTED = "not_connected"
+    CONNECTED = "connected"
     CONNECTING = "connecting"
     PRACTICE = "practice"
     RECONNECTING = "reconnecting"
@@ -29,17 +30,20 @@ class SessionUiState:
     show_practice: bool = False
     hint: str = ""
     primary_action: str = "start"
-    # Kept last to preserve existing positional construction of UI snapshots.
+    # Appended flags preserve existing positional construction of UI snapshots.
     # False lets the HUD own the sole primary call to action.
     show_primary: bool = True
+    # The HUD can own idle guidance as well as its action. Retain the snapshot
+    # while hiding the redundant empty-stage card, including on roster refresh.
+    show_empty_state: bool = True
 
     @classmethod
     def idle(cls, server: str = "", hosting: bool = False) -> SessionUiState:
         return cls(
             SessionPhase.NOT_CONNECTED,
             "Ready when you are",
-            "Start the session and invite your band."
-            if hosting else "Start the session to join your band.",
+            "Start the session and invite others."
+            if hosting else "Start the session to play together.",
             primary_text="Start Session",
             show_ready_check=False,
             show_practice=False,
