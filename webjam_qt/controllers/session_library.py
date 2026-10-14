@@ -11,7 +11,10 @@ from PySide6.QtCore import QObject, QTimer
 
 from core.art_workspace import art_summary
 from core.session_intelligence import notes_display_equivalent, session_notes_facts
-from core.session_library import SessionLibrary, SessionLibraryConflict, SessionLibrarySaveUnconfirmed
+from core.session_library import (
+    SessionLibrary, SessionLibraryConflict, SessionLibraryCreateUnconfirmed,
+    SessionLibrarySaveUnconfirmed,
+)
 
 
 _EDITABLE_FIELDS = ("title", "mode_key", "notes", "decisions", "actions", "blockers",
@@ -87,6 +90,7 @@ class SessionLibraryCoordinator(QObject):
         self._saved_editor_record = None
         self._pending = {}
         self._save_attempts = {}
+        self._create_attempt = None
         self._captured = None
         self._applying = False
         self._run_id = ""
@@ -130,12 +134,20 @@ class SessionLibraryCoordinator(QObject):
                     self._flash(" ".join(warnings))
             title, mode, notes = self._context()
             first_workspace = self.current is None
-            self.current = self.library.create(self._profile(), title or "Untitled workspace",
-                                               notes=notes, mode_key=mode)
+            created = self.library.create(
+                self._profile(), title or "Untitled workspace",
+                notes=notes, mode_key=mode, retry=self._create_attempt,
+            )
+            self._create_attempt = None
+            self.current = created
             follow_along = getattr(self._c, "follow_along", None)
             if first_workspace and follow_along is not None:
                 follow_along.workspace_created()
             return True
+        except SessionLibraryCreateUnconfirmed as error:
+            self._create_attempt = error.attempt
+            self._flash("This workspace was not confirmed saved. Your current Notes remain available; retry Session library.")
+            return False
         except (OSError, ValueError):
             self._flash("Workspace history could not be saved. Your current Notes remain available; retry Session library.")
             return False
