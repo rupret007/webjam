@@ -274,6 +274,8 @@ def test_live_record_action_stays_distinct_and_reachable_at_720px() -> None:
         assert max(control.geometry().right() for control in visible_controls) < 720
         for left, right in zip(visible_controls, visible_controls[1:]):
             assert left.geometry().right() < right.geometry().left()
+        assert strip._video_button.text() == "Conversation"
+        assert strip._video_button.accessibleName() == "Conversation"
         assert strip._record_button.text() == "● Record"
         assert strip._record_button.accessibleName() == (
             "Start or stop band-server multitrack recording"

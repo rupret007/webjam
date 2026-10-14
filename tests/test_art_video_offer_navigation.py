@@ -243,8 +243,13 @@ def test_deferred_video_is_reachable_when_canvas_recovery_owns_the_room_chip(roo
     app._tick_creator_start()
     qapp.processEvents()
     overview = app.window.art_room_overview
-    assert overview._overview.activity_actions == ("canvas", "video")
-    button = overview.secondary_activity_button()
+    # The strip chip can still name canvas recovery; Room emphasizes the
+    # missing-file next click so Open my copy… is not a ghost beside it.
+    assert overview._overview.open_my_copy_recovery
+    assert overview._overview.activity_actions == ("video", "canvas")
+    button = overview.activity_button()
+    assert button.text() == "Open my copy…"
+    assert button.objectName() == "PrimaryButton"
     assert button.isVisibleTo(app.window) and button.isEnabled()
     QTest.mouseClick(button, Qt.MouseButton.LeftButton)
     qapp.processEvents()
