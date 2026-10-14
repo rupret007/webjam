@@ -91,8 +91,11 @@ available **Record Session** button opens the checks; it is not a readiness
 verdict, and checking free storage does not reserve disk space.
 
 When storage fails during a session, repair free space or write access and
-choose **Try Again**. Changing the Takes folder requires ending the session
-first, choosing the folder in **Recording Setup**, and starting again. A retry
+choose **Try Again**. Host takes stay in WebJam's host folder; Recording Setup
+does not offer a different folder while hosting, and **Show Folder** opens that
+location. When you are not hosting, changing the Takes folder requires ending
+the session first, choosing the folder in **Recording Setup**, and starting
+again. A retry
 builds a new take plan from the current participants and inputs before asking
 to record; it does not reuse the failed plan.
 
