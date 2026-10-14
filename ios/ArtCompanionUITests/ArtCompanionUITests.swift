@@ -1,6 +1,10 @@
 import XCTest
 
 final class ArtCompanionUITests: XCTestCase {
+    /// Bounded wait for launch, first-responder, and keyboard-avoidance layout.
+    /// Fresh simulators in CI are slow; this is not a sleep and not a retry of the test.
+    private let ready: TimeInterval = 8
+
     override func setUpWithError() throws { continueAfterFailure = false }
 
     @MainActor private func launch(_ fixture: String = "", largeText: Bool = false) -> XCUIApplication {
@@ -11,14 +15,161 @@ final class ArtCompanionUITests: XCTestCase {
         return app
     }
 
-    @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
-        for _ in 0..<12 {
-            if element.isHittable { return }
-            // Swiping the application can hit the keyboard. Exercise the form's
-            // actual scroll view, whose visible bounds follow keyboard avoidance.
-            app.scrollViews["companion-scroll"].swipeUp()
+    /// Wait until `format` is true for `element`. Used for exists/hittable/focus, not for sleeping.
+    @MainActor private func awaiting(
+        _ element: XCUIElement,
+        _ format: String,
+        timeout: TimeInterval? = nil
+    ) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: format),
+            object: element
+        )
+        return XCTWaiter().wait(for: [expectation], timeout: timeout ?? ready) == .completed
+    }
+
+    @MainActor private func debugName(_ element: XCUIElement) -> String {
+        element.identifier.isEmpty ? element.label : element.identifier
+    }
+
+    /// Software keyboard only. The toolbar Done button is always in the view
+    /// hierarchy (`ToolbarItemGroup(placement: .keyboard)`), so `Done.exists`
+    /// stays true on room screens that never showed a keyboard and after Done
+    /// dismisses it. Treating that as "keyboard up" kept reveal() on tiny
+    /// toolbar-avoiding drags — two of them in eight seconds on iPhone SE XXXL.
+    @MainActor private func softwareKeyboardUp(_ app: XCUIApplication) -> Bool {
+        app.keyboards.element.exists
+    }
+
+    /// Visible, keyboard-unobscured portion of the Join/room scroll view.
+    @MainActor private func visibleFormFrame(_ scroll: XCUIElement, in app: XCUIApplication) -> CGRect {
+        let frame = scroll.frame
+        var bottom = frame.maxY
+        if softwareKeyboardUp(app) {
+            bottom = min(bottom, app.keyboards.element.frame.minY)
+            let done = app.buttons["Done"]
+            if done.exists {
+                // The keyboard toolbar can sit above app.keyboards and still steal hits.
+                bottom = min(bottom, done.frame.minY)
+            }
         }
-        XCTAssertTrue(element.isHittable)
+        return CGRect(
+            x: frame.minX,
+            y: frame.minY,
+            width: frame.width,
+            height: max(bottom - frame.minY, 0)
+        )
+    }
+
+    /// How far `target` sits outside `visible`. Zero when they overlap.
+    @MainActor private func offscreenDistance(_ target: CGRect, from visible: CGRect) -> CGFloat {
+        if target.maxY < visible.minY { return visible.minY - target.maxY }
+        if target.minY > visible.maxY { return target.minY - visible.maxY }
+        return 0
+    }
+
+    /// Move the form toward `element` without hitting the keyboard.
+    /// A center swipe is fine when the keyboard is down and the target is still
+    /// a page away. With the keyboard up it can land on the keys or a TextEditor
+    /// and leave invitation unhittable. A reverse page swipe after a near miss
+    /// is the AccessibilityXXXL bounce that left canvas-elsewhere unhittable
+    /// on iPhone SE (run 38610587063).
+    @MainActor private func nudgeForm(
+        _ scroll: XCUIElement,
+        in app: XCUIApplication,
+        towardTop: Bool,
+        far: Bool
+    ) {
+        if softwareKeyboardUp(app) {
+            let frame = scroll.frame
+            let visible = visibleFormFrame(scroll, in: app)
+            guard frame.height > 1, visible.height > 8 else { return }
+            let low = (visible.minY - frame.minY + visible.height * 0.25) / frame.height
+            let high = (visible.minY - frame.minY + visible.height * 0.75) / frame.height
+            let startY = towardTop ? min(high, 0.92) : max(low, 0.08)
+            let endY = towardTop ? max(low, 0.08) : min(high, 0.92)
+            let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
+            let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: endY))
+            start.press(forDuration: 0.05, thenDragTo: end)
+        } else if far {
+            if towardTop {
+                scroll.swipeUp()
+            } else {
+                scroll.swipeDown()
+            }
+        } else {
+            // Short correction after a page swipe that landed just off-screen.
+            let frame = scroll.frame
+            let visible = visibleFormFrame(scroll, in: app)
+            guard frame.height > 1, visible.height > 8 else { return }
+            let mid = (visible.minY - frame.minY + visible.height * 0.5) / frame.height
+            let half = (visible.height * 0.20) / frame.height
+            let startY = towardTop ? min(mid + half, 0.92) : max(mid - half, 0.08)
+            let endY = towardTop ? max(mid - half, 0.08) : min(mid + half, 0.92)
+            let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
+            let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: endY))
+            start.press(forDuration: 0.05, thenDragTo: end)
+        }
+    }
+
+    /// True when the hittable point already sits in the unobscured form.
+    /// Requiring the whole short frame inside the inset band made XXXL titles
+    /// near the edge look unfinished; the next page swipe threw them off-screen.
+    @MainActor private func comfortablyOnScreen(_ target: CGRect, in visible: CGRect) -> Bool {
+        guard target != .zero, !visible.isEmpty else { return false }
+        let comfortable = visible.insetBy(dx: 4, dy: 16)
+        let hit = CGPoint(x: target.midX, y: target.midY)
+        if target.height > comfortable.height {
+            return comfortable.intersects(target)
+        }
+        return comfortable.contains(hit)
+    }
+
+    @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        XCTAssertTrue(element.waitForExistence(timeout: ready), "missing \(debugName(element))")
+        if element.isHittable { return }
+
+        let scroll = app.scrollViews["companion-scroll"]
+        XCTAssertTrue(scroll.waitForExistence(timeout: ready), "missing companion-scroll")
+
+        // AccessibilityXXXL on iPhone SE needs several page moves; each XCTest
+        // gesture also waits for idle. This is still a bounded isHittable wait.
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            if awaiting(element, "isHittable == true", timeout: 0.4) { return }
+
+            let target = element.frame
+            let visible = visibleFormFrame(scroll, in: app)
+            if comfortablyOnScreen(target, in: visible) {
+                continue
+            }
+            if visible.isEmpty {
+                continue
+            }
+            // Off-screen queries can report a zero frame. Room actions live
+            // below the first page, so search downward instead of spinning.
+            if target == .zero {
+                nudgeForm(scroll, in: app, towardTop: true, far: true)
+                continue
+            }
+            let far = offscreenDistance(target, from: visible) > visible.height * 0.55
+            nudgeForm(scroll, in: app, towardTop: target.midY > visible.midY, far: far)
+        }
+        XCTAssertTrue(element.isHittable, "not hittable after scrolling \(debugName(element))")
+    }
+
+    /// Tap only after the control is hittable, then type only after it is first responder.
+    @MainActor private func typeOnceReady(_ element: XCUIElement, _ text: String, in app: XCUIApplication) {
+        reveal(element, in: app)
+        XCTAssertTrue(element.isHittable, "not hittable before tap \(debugName(element))")
+        element.tap()
+        XCTAssertTrue(
+            awaiting(element, "hasKeyboardFocus == true"),
+            "no keyboard focus after tap \(debugName(element))"
+        )
+        // Software keyboard toolbar is the recovery path under test.
+        XCTAssertTrue(app.buttons["Done"].waitForExistence(timeout: ready), "keyboard toolbar missing")
+        element.typeText(text)
     }
 
     @MainActor private func capture(_ name: String, app: XCUIApplication) {
@@ -31,23 +182,34 @@ final class ArtCompanionUITests: XCTestCase {
     @MainActor func testJoinKeyboardAndRecovery() {
         let app = launch()
         let join = app.buttons["join-room"]
+        let name = app.textFields["guest-name"]
+        XCTAssertTrue(join.waitForExistence(timeout: ready))
+        XCTAssertTrue(name.waitForExistence(timeout: ready))
+        XCTAssertTrue(awaiting(name, "isHittable == true"), "guest-name not hittable after launch")
         XCTAssertFalse(join.isEnabled)
         capture("join-phone-or-tablet", app: app)
-        let name = app.textFields["guest-name"]
-        name.tap()
-        name.typeText("Mobile Artist\n")
+        typeOnceReady(name, "Mobile Artist\n", in: app)
+        XCTAssertTrue((name.value as? String)?.contains("Mobile Artist") == true)
         let invite = app.textViews["invitation"]
-        reveal(invite, in: app)
-        invite.tap()
-        invite.typeText("incomplete invitation")
+        typeOnceReady(invite, "incomplete invitation", in: app)
+        XCTAssertTrue((invite.value as? String)?.contains("incomplete invitation") == true)
         capture("join-keyboard", app: app)
         // A keyboard can cover the lower action; Done always returns the scrollable form.
-        app.buttons["Done"].tap()
+        let done = app.buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: ready))
+        done.tap()
+        XCTAssertTrue(
+            awaiting(app.keyboards.element, "exists == false"),
+            "keyboard still present after Done"
+        )
         reveal(join, in: app)
         XCTAssertTrue(join.isEnabled)
         XCTAssertGreaterThanOrEqual(join.frame.height, 44)
         join.tap()
-        XCTAssertTrue(app.otherElements["join-error"].exists || app.staticTexts["join-error"].exists)
+        XCTAssertTrue(
+            app.otherElements["join-error"].waitForExistence(timeout: ready)
+                || app.staticTexts["join-error"].waitForExistence(timeout: 2)
+        )
         XCTAssertEqual(invite.value as? String, "")
         capture("join-recovery", app: app)
         reveal(app.staticTexts["Make together"], in: app)
@@ -59,7 +221,7 @@ final class ArtCompanionUITests: XCTestCase {
     @MainActor func testArtRoomsAndConversationAtLargeText() {
         for fixture in ["make", "paint", "legacy"] {
             let app = launch(fixture, largeText: true)
-            XCTAssertTrue(app.staticTexts["room-title"].exists)
+            XCTAssertTrue(app.staticTexts["room-title"].waitForExistence(timeout: ready))
             capture("\(fixture)-large-text-top", app: app)
             reveal(app.staticTexts["canvas-elsewhere"], in: app)
             capture("\(fixture)-canvas-elsewhere", app: app)
@@ -75,7 +237,9 @@ final class ArtCompanionUITests: XCTestCase {
 
     @MainActor func testMusicHonesty() {
         let app = launch("music")
-        XCTAssertEqual(app.staticTexts["room-title"].label, "Follow the Music room")
+        let title = app.staticTexts["room-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: ready))
+        XCTAssertEqual(title.label, "Follow the Music room")
         reveal(app.staticTexts["music-room-honesty"], in: app)
         capture("music-follow-only", app: app)
         reveal(app.buttons["open-conversation"], in: app)
