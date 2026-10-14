@@ -227,7 +227,7 @@ def test_the_host_panel_does_not_keep_paused_copy_after_a_failed_seek(host_dialo
     assert status.startswith("WebJam couldn't move that video on this computer.")
     assert "Paused." not in status
     assert "Choose process video" in status
-    assert host_dialog._headline.text() == "Or choose a silent reference"
+    assert host_dialog._headline.text() == "Choose a silent reference"
     assert host_dialog._play_button.isEnabled() is False
     assert host_dialog._share_button.isHidden() is False
     assert host_dialog._share_button.isEnabled() is True
