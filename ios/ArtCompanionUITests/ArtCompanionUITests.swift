@@ -51,19 +51,37 @@ final class ArtCompanionUITests: XCTestCase {
         )
     }
 
-    /// Drag inside the unobscured form. A center `swipeUp` can hit the keyboard or
-    /// a TextEditor and leave invitation off-screen (iPad) or still covered (iPhone).
+    /// Move the form toward `element` without hitting the keyboard.
+    /// A center swipe is fine when the keyboard is down; with the keyboard up it
+    /// can land on the keys or a TextEditor and leave invitation unhittable.
     @MainActor private func nudgeForm(_ scroll: XCUIElement, in app: XCUIApplication, towardTop: Bool) {
-        let frame = scroll.frame
-        let visible = visibleFormFrame(scroll, in: app)
-        guard frame.height > 1, visible.height > 8 else { return }
-        let low = (visible.minY - frame.minY + visible.height * 0.25) / frame.height
-        let high = (visible.minY - frame.minY + visible.height * 0.75) / frame.height
-        let startY = towardTop ? min(high, 0.92) : max(low, 0.08)
-        let endY = towardTop ? max(low, 0.08) : min(high, 0.92)
-        let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
-        let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: endY))
-        start.press(forDuration: 0.05, thenDragTo: end)
+        if app.keyboards.element.exists || app.buttons["Done"].exists {
+            let frame = scroll.frame
+            let visible = visibleFormFrame(scroll, in: app)
+            guard frame.height > 1, visible.height > 8 else { return }
+            let low = (visible.minY - frame.minY + visible.height * 0.25) / frame.height
+            let high = (visible.minY - frame.minY + visible.height * 0.75) / frame.height
+            let startY = towardTop ? min(high, 0.92) : max(low, 0.08)
+            let endY = towardTop ? max(low, 0.08) : min(high, 0.92)
+            let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: startY))
+            let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: endY))
+            start.press(forDuration: 0.05, thenDragTo: end)
+        } else if towardTop {
+            scroll.swipeUp()
+        } else {
+            scroll.swipeDown()
+        }
+    }
+
+    /// True when enough of `target` sits inside the unobscured form that further
+    /// swipes would more likely throw it off-screen than make it hittable.
+    @MainActor private func comfortablyOnScreen(_ target: CGRect, in visible: CGRect) -> Bool {
+        guard target != .zero, !visible.isEmpty else { return false }
+        let comfortable = visible.insetBy(dx: 4, dy: 16)
+        if target.height > comfortable.height {
+            return comfortable.contains(CGPoint(x: target.midX, y: target.midY))
+        }
+        return comfortable.contains(target)
     }
 
     @MainActor private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
@@ -73,15 +91,15 @@ final class ArtCompanionUITests: XCTestCase {
         let scroll = app.scrollViews["companion-scroll"]
         XCTAssertTrue(scroll.waitForExistence(timeout: ready), "missing companion-scroll")
 
-        let deadline = Date().addingTimeInterval(ready)
+        // AccessibilityXXXL on iPhone SE needs several page moves; each XCTest
+        // gesture also waits for idle. This is still a bounded isHittable wait.
+        let deadline = Date().addingTimeInterval(20)
         while Date() < deadline {
             if awaiting(element, "isHittable == true", timeout: 0.4) { return }
 
             let target = element.frame
             let visible = visibleFormFrame(scroll, in: app)
-            // Mid-layout or keyboard animation: the field is already on screen.
-            // Swiping here is what sent invitation off-screen on iPad.
-            if target != .zero, visible.contains(CGPoint(x: target.midX, y: target.midY)) {
+            if comfortablyOnScreen(target, in: visible) {
                 continue
             }
             if target == .zero || visible.isEmpty {
