@@ -41,6 +41,8 @@ clock and room timer do not certify recording time. **Open in take** rechecks
 the saved take before navigation; a moved or changed recording needs attention.
 The **Summary** tab and **Export summary** collect progress and next steps;
 ending a rehearsal retains its recap with the workspace.
+**Export summary** includes the latest live Notes and saved recap even if the
+library editor has no new edits. Conflicting drafts must be resolved before export.
 
 For Art, open **More → Session library… → Art project**. Keep a **Project brief**, **Progress**,
 and **Next steps** alongside references added with **Add file…** or **Add
@@ -248,6 +250,10 @@ standalone projects, take editing/comp/mix mutation, track export, shared
 notes, visual sync, and media timecode. Art is a room for artists in any
 medium; see [Art](#art) below. No profile directly or automatically taps a
 meeting app, browser, or system output.
+
+If a file-access error prevents WebJam from reading your saved profile titles
+and modes, it leaves that file untouched. Your title edit stays visible; a
+later successful save keeps the other profiles' saved titles and modes.
 
 Local notes save shortly after an edit. If a save fails, choose **Save Notes**.
 The Notes notice names retained workspaces, including a draft outside the one

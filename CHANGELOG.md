@@ -11,6 +11,13 @@ All notable improvements and features for the WebJam creator collaboration platf
   Music waits to start audio. Deferred receipts retry briefly and cannot
   reopen a room after connection loss, Leave, or a replacement invitation.
 
+- Keep saved profile titles and modes intact when reading their file hits an I/O error.
+  A later successful save merges the current edit with the other profiles.
+
+- Workspace summary export reconciles live Notes and late recap/take facts even
+  with a clean library editor. Conflicts retain both drafts and block export;
+  the summary stays bound to the workspace selected before the file picker.
+
 - Art’s idle first screen now tells a person with no art skill what to do:
   the room names Start Session and says you do not need an art app, instead
   of listing clay, printers, or a meeting-share essay.
@@ -60,57 +67,55 @@ All notable improvements and features for the WebJam creator collaboration platf
   lesson context, and guest reconnect admission. Unacknowledged pause requests
   rotate admission after presence TTL on re-read.
 
-### Follow-along pilot readiness — draft test-build scope
-
 - Lesson setup explains how a host shares a meeting link added after the room
   invitation. Guests can add or change it without leaving their room; a meeting
   link opens in the meeting app/browser and is distinct from a WebJam invite.
+
 - Saved Art reopened locally explains the existing Start Session/Join path
   before lesson reuse, preserving the workspace and save/recovery status.
+
 - Music practice documents its explicit meeting-only path after ensemble
   startup failure. Room invitation readiness and audio failure remain truthful.
+
 - First-test instructions and a pilot record distinguish software checks from
   unobserved sound, sharing, cameras, reconnects and ensemble latency.
+
 - Service shutdown verification waits for burst TCP connects to finish before
   Close, then restores the strict None/CancelledError assertion. Connect,
   send, and receive deadlines are not classified as success.
 
-### Follow-along clarity and saved lessons — draft test-build scope
-
 - Paint Along puts the lesson-with-sound route first. Host/guest setup uses
   three steps and expandable sound tips; compact and enlarged-text views
   scroll without clipping controls or hiding End/Leave.
+
 - Conversation returns to the current lesson after Notes. First workspace
   saves and meeting-only edits preserve the choice while retiring old actions.
+
 - Music songs can remember a YouTube lesson; Art references and matching
   bookmarks can explicitly return to lesson setup. Existing draft/conflict
   handling owns saves. Templates and backups retain optional song links;
   loading saved work never opens a browser or meeting.
+
 - Supported LAN Art rooms can explicitly restart retired pause requests after
   a meeting edit. Embedding refusal and unavailable-video messages explain
   the browser fallback without starting it. Physical sound and feel remain
   **NOT RUN** until observed.
 
-### Paint Along and Play Along — draft test-build scope
-
 - Paint Along keeps **Watch a shared lesson** reachable with an embedded
   YouTube lesson or failed player. The host can select a canonical lesson
   link, explicitly open its browser and reach meeting sharing controls.
   **Remember lesson** saves the Art reference through the existing draft owner.
+
 - Music adds **Play along**: guided video practice through the meeting, or
   live ensemble with Jamulus and the supported Shared Track route. Host and
   guest actions differ; guidance distinguishes listening mute, instrument
   send, meeting sound and delayed video.
+
 - Meeting edits preserve the chosen lesson, while canceled/replaced media,
   room retirement and old queued actions cannot reuse its authority. Ordinary
   Music updates preserve the practice helper. Compact controls and enlarged
   text retain the lesson actions. Physical two-person sound and feel remain
   **NOT RUN**; these changes do not publish a release.
-
-### Workflow continuity — PR and test-build scope
-
-Source remains v0.29.0. These changes are after the published v0.29.0 baseline;
-they do not request a new release/tag or claim new published package evidence.
 
 - Draft Session library builds add **Back up…** and **Import backup…**
   with metadata-only defaults or explicitly selected completed takes/local Art,
@@ -118,9 +123,11 @@ they do not request a new release/tag or claim new published package evidence.
   Imported media remains unchecked until an explicit action.
   Repackaged Art must match its saved content checksum and size; changing a
   relinked file's name or extension keeps that identity intact.
+
 - Background Notes saves and late recording results leave the Library's
   retained import draft unsaved. Explicit Save or closing still reconciles
   that draft and any pending recording facts; later typing resumes its autosave.
+
 - **Verify take**, **Verify reference**, **Locate take…** and
   **Relink…** check expected content while retaining drafts and bookmarks.
   Restored Studio takes retain exact alternate-source locations through
@@ -132,9 +139,11 @@ they do not request a new release/tag or claim new published package evidence.
   deliberate playback/export. The frozen hook adds a synthetic portability journey;
   hosted/package verification is recorded against each delivered test build.
   Physical acceptance remains **NOT RUN**.
+
 - Compact Session library controls scroll without overlapping at enlarged text;
   save/recovery status stays visible. Packaged workflow proofs isolate their
   settings, database, startup state and logs and restore the caller's environment.
+
 - Windows recording checkpoints use protected current-user/SYSTEM permissions,
   flush files before publication and recheck published evidence. Unsafe storage
   blocks recording; Windows does not promise POSIX directory-flush durability.
@@ -147,9 +156,11 @@ they do not request a new release/tag or claim new published package evidence.
   Wider-font cases now reproduce rounded Windows glyph widths independently
   of the platform's font engine. Library, Takes and import-recovery captions
   fit those widths while keeping their full action names for accessibility.
+
 - The initial launch-screen Library can open an imported take or timed moment
   directly into its saved workspace. Changed media/context, cancellation and late
   drafts prevent stale activation; verified source locations transfer to the new Studio owner.
+
 - **File → Return to launch** is available from live and local Studio work.
   Explicit End/Leave, successful saves, recording finalization and owned
   cleanup precede a fresh launch screen; failure retains the current work.
@@ -161,6 +172,7 @@ they do not request a new release/tag or claim new published package evidence.
   Studio and take-review editors stop accepting changes once saved work
   begins irreversible cleanup, preventing unsaved edits during a failed-close
   retry.
+
 - **F1 / More → Help** gains local topic search and deliberate navigation to
   existing workspaces. The window stays modeless so live Stop/End remains
   reachable, and follows profile changes without taking focus. No model,
@@ -168,21 +180,33 @@ they do not request a new release/tag or claim new published package evidence.
   Compact Art guidance, Paint along and Notes reserve room for the in-window
   File/Help menu, retaining enlarged recovery text, editor space and session
   controls.
+
 - Atomic-write failures stop closing a descriptor after its file object has
   already released it, protecting unrelated files that reuse the descriptor.
   Invalid Unicode in the recent-project index becomes a recoverable error;
   the original index and ordinary project work remain available.
+
 - Jamulus integration CI gains an outer deadline and bounded diagnostics so
   a blocked test can retain evidence and stop its owned process group before
   the job deadline. A timeout remains a failure, not an automatic retry.
+
 - Desktop dependency locks select urllib3 2.8.0, and the build bootstrap
   selects pip 26.2, addressing newly reported dependency advisories. Their
   archive hashes and the runtime package inventory are updated together.
+
 - Current guides and roadmap distinguish the shipped baseline from this work.
   The [workflow continuity pilot](docs/WORKFLOW_CONTINUITY_PILOT.md) starts all
   physical observations at **NOT RUN**, with exact package/hash fields and a
   ten-minute Music/Art try list. Jeff retains feel and Final Build judgment.
 
+### Follow-along pilot readiness — draft test-build scope
+### Follow-along clarity and saved lessons — draft test-build scope
+### Paint Along and Play Along — draft test-build scope
+### Workflow continuity — PR and test-build scope
+
+Source remains v0.29.0. These changes are after the published v0.29.0 baseline;
+
+they do not request a new release/tag or claim new published package evidence.
 ## [0.29.0] — Unsigned testing candidate
 
 > Source identity is **v0.29.0**. For current download and publication status,
