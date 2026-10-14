@@ -230,7 +230,7 @@ QLabel#PaintAlongTitle {
 }
 
 QLabel#PaintAlongRole {
-    color: ${COLOR_TEXT_MUTED};
+    color: ${COLOR_TEXT_SECONDARY};
     border: 1px solid ${COLOR_BORDER_SUBTLE};
     border-radius: ${RADIUS_PILL}px;
     padding: ${SPACE_XS}px ${SPACE_SM}px;
@@ -816,6 +816,7 @@ QLineEdit#CanvasChatInput {
     color: ${COLOR_TEXT_MUTED};
     font-size: ${FONT_SIZE_SM}px;
     padding-top: ${SPACE_XS}px;
+    padding-bottom: 0px;
 }
 
 QPushButton#LaunchMoreRooms {

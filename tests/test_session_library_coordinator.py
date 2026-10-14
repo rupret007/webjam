@@ -10,9 +10,12 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PySide6.QtCore import QObject  # noqa: E402
-from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QPushButton  # noqa: E402
 from core.creative_modes import get_creator_profile_by_key_or_default  # noqa: E402
 from core.session_library import SessionLibrary  # noqa: E402
 from webjam_qt.controllers.session_library import (  # noqa: E402
@@ -22,6 +25,115 @@ from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
 from webjam_qt.windows.session_library import SessionLibraryDialog  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
+
+
+def _close_library(dialog, action):
+    if action == "window":
+        dialog.close()  # Dispatch the same close event as the window button.
+    elif action == "escape":
+        QTest.keyClick(dialog, Qt.Key.Key_Escape)
+    else:
+        next(button for button in dialog.findChildren(QPushButton)
+             if button.text() == "Close").click()
+
+
+@pytest.fixture
+def library_coordinator(tmp_path):
+    window = ConductorWindow(mode_entries=[("music_jam", "Music")],
+                             initial_mode_key="music_jam", initial_title="Wednesday")
+    window.flash_message = Mock()
+    owner = Owner(window)
+    coordinator = SessionLibraryCoordinator(owner, library=SessionLibrary(tmp_path / "library"))
+    coordinator._imported = True
+    yield coordinator, window
+    coordinator.timer.stop()
+    if coordinator.dialog is not None:
+        coordinator.dialog.timer.stop()
+        coordinator.dialog._dirty = False
+        coordinator.dialog.close()
+    window.close()
+    window.deleteLater()
+    owner.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+@pytest.mark.parametrize("action", ["window", "escape", "button"])
+@pytest.mark.parametrize("state", ["disk", "pending"])
+def test_close_finishes_once_and_reopens_current_workspace(library_coordinator, action, state):
+    coordinator, window = library_coordinator
+    coordinator.show()
+    dialog = coordinator.dialog
+    record_id = dialog.record.id
+    finished, destroyed, saved = [], [], []
+    dialog.finished.connect(finished.append)
+    dialog.destroyed.connect(lambda: destroyed.append(True))
+    dialog.record_saved.connect(saved.append)
+    dialog.notes.setPlainText("Draft saved when closing")
+
+    _close_library(dialog, action)
+
+    assert not dialog.isVisible()
+    assert finished == [QDialog.DialogCode.Rejected]
+    assert len(saved) == 1
+    assert coordinator.dialog is None
+    assert coordinator.library.load(record_id).notes == "Draft saved when closing"
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert destroyed == [True]
+    assert finished == [QDialog.DialogCode.Rejected]
+
+    title = "Renamed while Library closed"
+    window.session_strip.set_session_title(title)
+    window.session_canvas.set_notes("New notes while Library closed")
+    with patch.object(coordinator.library, "save", side_effect=OSError("disk unavailable")):
+        assert not coordinator.flush()
+        assert coordinator._pending[record_id].title == title
+        if state == "pending":
+            coordinator.show()
+    if state == "disk":
+        assert coordinator.flush()
+        assert coordinator.library.load(record_id).title == title
+        coordinator.show()
+    else:
+        assert coordinator.library.load(record_id).title != title
+        assert coordinator.dialog._dirty
+
+    reopened = coordinator.dialog
+    assert reopened is not dialog
+    assert reopened.isVisible()
+    assert reopened.title.text() == title
+    assert reopened.notes.toPlainText() == "New notes while Library closed"
+    owner = coordinator._c
+    owner.audio.start.assert_not_called()
+    owner.recording.start.assert_not_called()
+
+
+@pytest.mark.parametrize("action", ["window", "escape", "button"])
+def test_failed_close_keeps_visible_draft_until_retry(library_coordinator, action):
+    coordinator, _window = library_coordinator
+    coordinator.show()
+    dialog = coordinator.dialog
+    record_id = dialog.record.id
+    finished = []
+    dialog.finished.connect(finished.append)
+    dialog.notes.setPlainText("Keep this unsaved draft")
+    with patch.object(coordinator.library, "save", side_effect=OSError("disk unavailable")):
+        _close_library(dialog, action)
+        assert dialog.isVisible()
+        assert coordinator.dialog is dialog
+        assert finished == []
+        assert dialog._dirty
+        assert dialog.notes.toPlainText() == "Keep this unsaved draft"
+        assert "not saved" in dialog.status.text()
+        assert coordinator.library.load(record_id).notes != "Keep this unsaved draft"
+        coordinator.show()
+        assert coordinator.dialog is dialog
+        assert dialog.notes.toPlainText() == "Keep this unsaved draft"
+
+    _close_library(dialog, action)
+    assert finished == [QDialog.DialogCode.Rejected]
+    assert coordinator.dialog is None
+    assert not dialog.isVisible()
+    assert coordinator.library.load(record_id).notes == "Keep this unsaved draft"
 
 
 class Owner(QObject):
@@ -273,6 +385,52 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertIn("not saved", editor.status.text())
         self.assertEqual(self.coordinator._pending[editor.record.id].notes, "Decision: retained live draft")
 
+    def test_second_unrelated_save_cannot_revert_notes_merged_from_live_canvas(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.ensure_current()
+        editor = self._editor()
+        self.assertEqual(editor.notes.toPlainText(), "Original notes")
+        # Live Notes move on while the editor stays open with its own stale copy.
+        self.window.session_canvas.set_notes("Newer live notes")
+        editor.title.setText("Renamed workspace")
+        self.assertTrue(editor.save_current())
+        saved = self.library.load(editor.record.id)
+        self.assertEqual(saved.notes, "Newer live notes")
+        self.assertEqual(saved.title, "Renamed workspace")
+        # The editor's own Notes widget must now show the accepted merge,
+        # not the pre-merge draft it still held.
+        self.assertEqual(editor.notes.toPlainText(), "Newer live notes")
+        # A second, unrelated save (title only) must not resubmit the stale
+        # pre-merge draft and revert the merged Notes back on disk.
+        editor.title.setText("Renamed workspace again")
+        self.assertTrue(editor.save_current())
+        saved_again = self.library.load(editor.record.id)
+        self.assertEqual(saved_again.notes, "Newer live notes")
+        self.assertEqual(saved_again.title, "Renamed workspace again")
+
+    def test_merge_save_resyncs_notes_control_so_a_later_save_does_not_revert_it(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.ensure_current()
+        original_id = self.coordinator.current.id
+        editor = self._editor()
+        self.assertEqual(editor.notes.toPlainText(), "Original notes")
+        # Disjoint edit: the main window's live Notes move on while the editor
+        # itself makes no notes edit, so the merge keeps the newer live value.
+        self.window.session_canvas.set_notes("Newer live notes")
+        self.assertTrue(editor.save_current(force=True))
+        self.assertEqual(self.library.load(original_id).notes, "Newer live notes")
+        # The visible Notes control must reflect what was actually saved,
+        # not the stale pre-merge text.
+        self.assertEqual(editor.notes.toPlainText(), "Newer live notes")
+        self.assertFalse(editor._dirty)
+        # A later save that only touches the title must not bounce Notes
+        # back to the stale text the control held before the resync.
+        editor.title.setText("Renamed workspace")
+        self.assertTrue(editor.save_current())
+        saved = self.library.load(original_id)
+        self.assertEqual(saved.notes, "Newer live notes")
+        self.assertEqual(saved.title, "Renamed workspace")
+
     def test_copy_of_older_pending_snapshot_keeps_newer_take_and_recap_owned(self):
         self.coordinator.start_session()
         self.coordinator.recording_started("late-take", "recording-session")
@@ -298,6 +456,54 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertEqual(saved_original.take_links[0]["status"], "complete")
         self.assertEqual(saved_original.recaps[0]["take_ids"], ["late-take"])
         self.assertEqual(saved_original.notes, "Retained original draft")
+
+    def test_copy_cannot_shadow_original_as_post_restart_completion_owner(self):
+        self.coordinator.start_session()
+        self.coordinator.recording_started("audit-take", "audit-session")
+        base = self.coordinator.current
+        self.assertTrue(self.coordinator.flush())
+        editor = self._editor()
+        with patch.object(QInputDialog, "getText", return_value=("Separate copy", True)):
+            editor._copy()
+        copied = self.library.load(editor.record.id)
+        self.assertNotEqual(copied.id, base.id)
+        # The pending reservation's live ownership must not have been copied
+        # verbatim, or a post-restart lookup across the library would see two
+        # records claiming the same take and refuse to pick either (fail-closed).
+        self.assertNotIn("recording_session_id", copied.take_links[0])
+        self.assertEqual(copied.take_links[0]["historical_origins"][0]["recording_session_id"], "audit-session")
+        self.assertEqual(copied.take_links[0]["historical_origins"][0]["source_workspace_id"], base.id)
+        # Model a restart: the in-memory start-to-owner binding is gone, so
+        # completion must resolve the owner by scanning on-disk records.
+        self.coordinator._recording_owners.clear()
+        take = SimpleNamespace(take_id="audit-take", session_id="audit-session",
+                               path=self.root / "take", display_name="Audit take")
+        with patch("core.take_review.take_source_identity", return_value="a" * 64):
+            self.coordinator.recording_completed(take, validated=True)
+        self.assertEqual(self.library.load(base.id).take_links[0]["status"], "complete")
+        self.assertIsNone(self.library.load(copied.id).take_links[0].get("status"))
+
+    def test_copy_refuses_to_corrupt_opaque_legacy_historical_origins(self):
+        # Version-1 records permit arbitrary bounded link metadata under
+        # `historical_origins` (core.session_library only assigns it meaning
+        # once import_provenance is non-empty, which a plain copy never has).
+        # A pending reservation's live ownership fields still need detaching
+        # on copy; that must never reinterpret this legacy value as a list
+        # it can merge into.
+        self.coordinator.start_session()
+        self.coordinator.recording_started("legacy-take", "legacy-session")
+        base = self.coordinator.current
+        legacy_link = dict(base.take_links[0], historical_origins={"note": "keep"})
+        base = self.library.save(replace(base, take_links=(legacy_link,)))
+        self.coordinator.current = base
+        editor = self._editor()
+        with patch.object(QInputDialog, "getText", return_value=("Separate copy", True)):
+            editor._copy()
+        self.assertIn("could not be saved", editor.status.text())
+        unchanged = self.library.load(base.id)
+        self.assertEqual(unchanged.take_links[0]["historical_origins"], {"note": "keep"})
+        self.assertEqual(unchanged.take_links[0]["recording_session_id"], "legacy-session")
+        self.assertEqual([record.id for record in self.library.list()], [base.id])
 
     def test_competing_notes_stay_in_editor_and_pending_without_a_disk_overwrite(self):
         self.window.session_canvas.set_notes("Base Notes")
@@ -336,6 +542,24 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertEqual(self.coordinator._pending[editor.record.id].notes, "Live draft before autosave")
         self.assertEqual(editor.notes.toPlainText(), "Editor draft")
 
+    def test_second_save_does_not_revert_live_notes_after_a_reconciled_save(self):
+        self.window.session_canvas.set_notes("original notes")
+        self.coordinator.ensure_current()
+        editor = self._editor()
+        editor.title.setText("Renamed once")
+        self.window.session_canvas.set_notes("new live notes")
+        self.assertTrue(editor.save_current())
+        # The save reconciled newer live Notes into the saved record; the
+        # editor's own Notes/title controls must reflect that, not the
+        # stale text the user had typed before saving.
+        self.assertEqual(editor.notes.toPlainText(), "new live notes")
+        self.assertEqual(editor.title.text(), "Renamed once")
+        self.assertEqual(self.library.load(editor.record.id).notes, "new live notes")
+        editor.title.setText("Renamed twice")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self.library.load(editor.record.id).notes, "new live notes")
+        self.assertEqual(self.window.session_canvas.current_notes(), "new live notes")
+
     def test_separate_copy_keeps_live_notes_typed_before_canvas_timer(self):
         self.window.session_canvas.set_notes("Base Notes")
         self.coordinator.ensure_current()
@@ -373,6 +597,45 @@ class TestSessionLibraryCoordinator(TestCase):
         self.owner.audio.start.assert_not_called()
         self.owner.recording.start.assert_not_called()
 
+    def test_borrowed_strip_title_does_not_rename_existing_workspace_on_flush(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        workspace_id = self.coordinator.current.id
+        self.owner._persistence = SimpleNamespace(_borrowed_title="Guest room")
+        self.window.session_strip.set_session_title("Guest room")
+        self.window.session_canvas.set_notes("Decision: keep the bridge")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(workspace_id)
+        self.assertEqual(saved.title, "Wednesday")
+        self.assertEqual(saved.notes, "Decision: keep the bridge")
+
+    def test_reverted_notes_after_failed_autosave_keep_workspace_title_while_borrowed(self):
+        self.window.session_canvas.set_notes("Decision: keep the bridge")
+        self.assertTrue(self.coordinator.ensure_current())
+        workspace_id = self.coordinator.current.id
+        self.owner._persistence = SimpleNamespace(_borrowed_title="Guest room")
+        self.window.session_strip.set_session_title("Guest room")
+        self.window.session_canvas.set_notes("Decision: discard this draft")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        pending = self.coordinator._pending[workspace_id]
+        self.assertEqual(pending.title, "Wednesday")
+        self.assertEqual(pending.decisions, ("discard this draft",))
+        self.window.session_canvas.set_notes("Decision: keep the bridge")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(workspace_id)
+        self.assertEqual(saved.title, "Wednesday")
+        self.assertEqual(saved.notes, "Decision: keep the bridge")
+        self.assertEqual(saved.decisions, ("keep the bridge",))
+
+    def test_explicit_title_change_still_renames_workspace_on_flush(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        workspace_id = self.coordinator.current.id
+        self.owner._persistence = SimpleNamespace(_borrowed_title=None)
+        self.window.session_strip.set_session_title("Thursday")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(workspace_id)
+        self.assertEqual(saved.title, "Thursday")
+
     def test_failed_save_blocks_switch_and_keeps_draft(self):
         self.coordinator.ensure_current()
         other = self.library.create("music", "Other")
@@ -383,6 +646,169 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertNotEqual(self.coordinator.current.id, other.id)
         self.assertTrue(self.coordinator.flush())
         self.assertEqual(self.library.load(self.coordinator.current.id).notes, "must survive")
+
+    def test_reverted_notes_edit_overrides_failed_autosave_draft(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.ensure_current()
+        record_id = self.coordinator.current.id
+        self.assertEqual(self.library.load(record_id).notes, "Original notes")
+        self.window.session_canvas.set_notes("Discard this draft")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        self.assertEqual(self.coordinator._pending[record_id].notes, "Discard this draft")
+        # Revert the live control back to the value already on disk: this
+        # must override the stale failed draft, not be swallowed by it.
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.window.session_canvas.current_notes(), "Original notes")
+        self.assertEqual(self.library.load(record_id).notes, "Original notes")
+
+    def test_retry_save_after_notes_undo_to_saved_baseline_persists_visible_notes(self):
+        # W18: flush fail on Changed notes, undo to Original notes, retry must
+        # persist the visible baseline rather than the abandoned failed draft.
+        canvas = self.window.session_canvas
+        canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.ensure_current())
+        record_id = self.coordinator.current.id
+        self.assertEqual(self.library.load(record_id).notes, "Original notes")
+        canvas._notes.selectAll()
+        canvas._notes.insertPlainText("Changed notes")
+        self.assertEqual(canvas.current_notes(), "Changed notes")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        self.assertEqual(self.coordinator._pending[record_id].notes, "Changed notes")
+        self.assertTrue(canvas._notes.document().isUndoAvailable())
+        canvas._notes.undo()
+        self.assertEqual(canvas.current_notes(), "Original notes")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(canvas.current_notes(), "Original notes")
+        self.assertEqual(self.library.load(record_id).notes, "Original notes")
+        self.assertNotIn(record_id, self.coordinator._pending)
+        other = self.library.create("music", "Other", notes="other notes")
+        self.assertTrue(self.coordinator.continue_record(other))
+        original = self.library.load(record_id)
+        self.assertTrue(self.coordinator.continue_record(original))
+        self.assertEqual(canvas.current_notes(), "Original notes")
+
+    def test_notes_undo_to_saved_baseline_preserves_pending_take_and_recap(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.ensure_current())
+        record_id = self.coordinator.current.id
+        self.window.session_canvas.set_notes("Changed notes")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        pending = self.coordinator._pending[record_id]
+        self.assertEqual(pending.notes, "Changed notes")
+        self.assertEqual(self.coordinator.current.notes, "Original notes")
+        take_ref = {"take_id": "late-take", "take_path": str(self.root / "take"),
+                    "title": "Late completed take", "status": "complete"}
+        recap = {"run_id": "run-one", "summary": "Keep this recap", "take_ids": ["late-take"]}
+        self.coordinator._pending[record_id] = replace(
+            pending, take_links=(take_ref,), recaps=(recap,))
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(record_id)
+        self.assertEqual(saved.notes, "Original notes")
+        self.assertEqual(saved.take_links[0]["take_id"], "late-take")
+        self.assertEqual(saved.take_links[0]["status"], "complete")
+        self.assertEqual(saved.recaps[0]["take_ids"], ["late-take"])
+        self.assertEqual(self.window.session_canvas.current_notes(), "Original notes")
+
+    def test_notes_undo_to_saved_baseline_keeps_competing_editor_draft(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.ensure_current())
+        record_id = self.coordinator.current.id
+        editor = self._editor()
+        editor.notes.setPlainText("Editor draft")
+        editor.timer.stop()
+        self.window.session_canvas.set_notes("Changed notes")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush(include_editor=False))
+        self.assertEqual(self.coordinator._pending[record_id].notes, "Changed notes")
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertFalse(self.coordinator.flush(include_editor=False))
+        self.assertEqual(editor.notes.toPlainText(), "Editor draft")
+        self.assertTrue(editor._dirty)
+        self.assertEqual(self.window.session_canvas.current_notes(), "Original notes")
+        self.assertEqual(self.library.load(record_id).notes, "Original notes")
+        self.assertEqual(self.coordinator._pending[record_id].notes, "Original notes")
+
+    def test_reverted_title_edit_overrides_failed_autosave_draft(self):
+        self.coordinator.ensure_current()
+        record_id = self.coordinator.current.id
+        self.assertEqual(self.coordinator.current.title, "Wednesday")
+        self.window.session_strip._title_input.setText("Discard this title")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        self.assertEqual(self.coordinator._pending[record_id].title, "Discard this title")
+        self.window.session_strip._title_input.setText("Wednesday")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(record_id).title, "Wednesday")
+
+    def test_reverted_mode_edit_overrides_failed_autosave_draft(self):
+        window = ConductorWindow(mode_entries=[("music_jam", "Music"), ("music_cover", "Covers")],
+                                  initial_mode_key="music_jam", initial_title="Wednesday")
+        window.flash_message = Mock()
+        owner = Owner(window)
+        library = SessionLibrary(self.root / "mode_library")
+        coordinator = SessionLibraryCoordinator(owner, library=library)
+        coordinator._imported = True
+        try:
+            coordinator.ensure_current()
+            record_id = coordinator.current.id
+            self.assertEqual(coordinator.current.mode_key, "music_jam")
+            picker = window.session_strip._mode_picker
+            picker.setCurrentIndex(picker.findData("music_cover"))
+            with patch.object(library, "save", side_effect=OSError("temporary write failure")):
+                self.assertFalse(coordinator.flush())
+            self.assertEqual(coordinator._pending[record_id].mode_key, "music_cover")
+            picker.setCurrentIndex(picker.findData("music_jam"))
+            self.assertTrue(coordinator.flush())
+            self.assertEqual(library.load(record_id).mode_key, "music_jam")
+        finally:
+            coordinator.timer.stop()
+            window.close()
+            window.deleteLater()
+            owner.deleteLater()
+            _app.processEvents()
+
+    def test_reverted_notes_edit_overrides_editor_save(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.coordinator.ensure_current()
+        record_id = self.coordinator.current.id
+        self.assertTrue(self.coordinator.flush())
+        editor = self._editor()
+        editor.notes.setPlainText("Editor notes")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self.library.load(record_id).notes, "Editor notes")
+        self.assertEqual(self.window.session_canvas.current_notes(), "Editor notes")
+        # Revert the live control back to the value captured before the
+        # editor's save: this must override the editor's save, not be
+        # swallowed by a stale capture baseline.
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(record_id).notes, "Original notes")
+
+    def test_reverted_title_edit_overrides_editor_save(self):
+        self.coordinator.ensure_current()
+        record_id = self.coordinator.current.id
+        self.assertEqual(self.coordinator.current.title, "Wednesday")
+        self.assertTrue(self.coordinator.flush())
+        editor = self._editor()
+        editor.title.setText("Editor title")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self.library.load(record_id).title, "Editor title")
+        self.assertEqual(self.window.session_strip.current_title(), "Editor title")
+        self.window.session_strip._title_input.setText("Wednesday")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(record_id).title, "Wednesday")
+
+    def test_preloaded_notes_derive_decisions_on_first_capture(self):
+        self.window.session_canvas.set_notes("Decision: keep the chorus")
+        self.assertTrue(self.coordinator.ensure_current())
+        record_id = self.coordinator.current.id
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(self.library.load(record_id).decisions, ("keep the chorus",))
 
     def test_active_room_blocks_switch_but_keeps_saved_workspace(self):
         self.coordinator.ensure_current()

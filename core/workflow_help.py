@@ -105,8 +105,14 @@ def workflow_topics(profile: str, *, offline_studio: bool = False) -> tuple[Help
             "Disconnect meeting audio while playing; its video arrives later. WebJam mix mute "
             "changes only your listening, not your outgoing instrument.</p>"
             "<p>In Art, <b>Remember lesson</b> saves the displayed reference link in the Art "
-            "project. Browser playback time is not tracked. Embedded Paint along stays silent.</p>",
-            "YouTube Bob Ross painting music song lesson Webex sound pause play along latency"))
+            "project. Browser playback time is not tracked. Embedded Paint along stays silent. "
+            "The optional silent reference uses <b>Choose process video…</b> or "
+            "<b>YouTube link…</b>. Guests use <b>Open my copy…</b> or <b>Open lesson</b>. "
+            "Local files are not transferred. <b>Back to room</b> keeps the room open. "
+            "F11 toggles full screen. Esc returns to the room from Paint along, or leaves "
+            "full screen.</p>",
+            "YouTube Bob Ross painting music song lesson Webex sound pause play along "
+            "latency process video F11 keyboard"))
     if profile == "music" and not offline_studio:
         topics.append(HelpTopic("rehearsal_moments", "Rehearsal songs and moment notes",
             "<p>In <b>Rehearsal plan</b>, add songs, key, tempo and goals. Previous / Next changes "
@@ -131,8 +137,11 @@ def workflow_topics(profile: str, *, offline_studio: bool = False) -> tuple[Help
             "choose <b>Use saved lesson</b> for a YouTube reference to carry that whole-second "
             "position into lesson setup, or open other references and seek in your player. "
             "Export summary includes progress and next steps without local file paths.</p>"
-            "<p>Keep making in your own tools or on paper. Art workspaces do not create audio takes.</p>",
-            "art moved missing file relink lesson position bookmark reference progress summary",
+            "<p>Keep making in your own tools or on paper. The host may open an optional "
+            "<b>Shared Canvas…</b> handoff. Art workspaces do not create audio takes. "
+            "The host chooses <b>End Room</b>; guests choose <b>Leave Room</b>.</p>",
+            "art moved missing file relink lesson position bookmark reference progress "
+            "summary shared canvas",
             "" if offline_studio else "art", "Open Art project"))
     elif offline_studio:
         topics.append(HelpTopic("project_recovery", "Recover a local project or blocked bounce",
