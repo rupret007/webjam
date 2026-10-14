@@ -6,9 +6,6 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-- Art Settings now says “Your name and optional meeting link.”, uses the plain
-  name hint and accessible name “Your name”, and omits Verify Sound. The name
-  display says “Others see”; optional keys use the visible label for accessibility.
 - Art companion's iPhone/iPad Join UI test waits for the name and invitation
   fields to exist, be hittable, and hold keyboard focus before typing, and
   scrolls the form from each field's real position above the keyboard. Large
