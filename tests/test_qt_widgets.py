@@ -822,7 +822,7 @@ class TestParticipantGrid(unittest.TestCase):
         g = ParticipantGrid()
         self.assertEqual(len(g._cards), 0)
         self.assertFalse(g._empty_state.isHidden())
-        self.assertEqual(g._empty_title.text(), "Ready when you are")
+        self.assertEqual(g._empty_title.text(), "Start when you are")
 
     def test_empty_state_actions_emit_semantic_signals(self):
         from webjam_qt.widgets.participant_grid import ParticipantGrid
