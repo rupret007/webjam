@@ -11,6 +11,12 @@ All notable improvements and features for the WebJam creator collaboration platf
   and at 1280×800. The side panel scrolls instead of squashing mute/solo
   chips or stacking the buttons on the helper line.
 
+- Send to jam loads a finished stem mix only for the room and source that
+  asked for it. An old mix after End/Leave, a host-to-guest change, a
+  workspace switch, or a newer song choice stays in Song tools and does not
+  claim Sending. Switching a workspace or audible mix away and back still
+  rejects the old mix. Playback stays under host control.
+
 - Same-network joins wait for pending Library media work before adopting the
   host's Art or Music profile. Art no longer reports connected early, and
   Music waits to start audio. Deferred receipts retry briefly and cannot
