@@ -2409,13 +2409,19 @@ def test_export_failure_copy_never_echoes_raw_worker_text():
             assert fragment not in message
         assert "take is safe" in message.lower() or "are safe" in message.lower()
 
-    # The two recognised, actionable export reasons still keep their guidance.
+    # Recognised, actionable export reasons still keep their guidance.
     silent = _studio_export_failure_message(
         "WebJam found explicitly silent segments in selected performance tracks: "
         "/Users/musician/Music/WebJam Takes/take-01/media/server.wav"
     )
     assert "explicitly silent segment" in silent
     assert "/Users/musician" not in silent
+    changed = _track_export_failure_message(
+        "A source recording changed after validation. Reopen the take and export again."
+    )
+    assert "source recording changed" in changed
+    assert "no export was published" in changed.lower()
+    assert "/Users/musician" not in changed
 
 
 def test_arrange_edit_rejection_leaves_document_and_history_untouched(tmp_path):
@@ -3456,6 +3462,10 @@ def test_track_export_failure_keeps_take_available_and_actionable():
             "original before export.",
             "no verified timeline alignment",
         ),
+        (
+            "A source recording changed after validation. Reopen the take and export again.",
+            "source recording changed",
+        ),
     ),
 )
 def test_track_export_safety_blocks_are_actionable_without_raw_details(error, expected):
@@ -3481,6 +3491,39 @@ def test_track_export_safety_blocks_are_actionable_without_raw_details(error, ex
             assert studio._export_btn.isEnabled()
         finally:
             studio.shutdown()
+
+
+def test_changed_source_export_failure_has_no_success_or_receipt(tmp_path):
+    take = tmp_path / "Take 01"
+    take.mkdir()
+    _wav(take / "guitar.wav")
+    _mark_verified(take, "guitar.wav")
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        finished: list[bool] = []
+        studio.export_finished.connect(finished.append)
+        studio._exporting = True
+        studio._finish_export(
+            None,
+            "A source recording changed after validation. Reopen the take and export again.",
+        )
+
+        hint = studio._hint.text().lower()
+        assert "source recording changed" in hint
+        assert "no export was published" in hint
+        assert "original take is safe" in hint
+        assert studio._review_dialog.receipt_button.isEnabled() is False
+        assert "no verified receipt" in studio._review_dialog.status.text().lower()
+        assert studio._reveal_btn.text() == "Show Take"
+        assert finished == [False]
+        assert "aligned originals ready" not in hint
+        assert "track export ready" not in hint
+    finally:
+        studio.shutdown()
 
 
 def test_published_but_unsynced_export_remains_revealable(tmp_path):
