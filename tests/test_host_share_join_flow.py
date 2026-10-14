@@ -680,7 +680,7 @@ def test_session_hud_primary_action_is_generic_and_accessible(qapp):
     hud.action_requested.connect(requested.append)
 
     hud.set_state(
-        "Ready when you are",
+        "Start when you are",
         "Start when the band is ready.",
         action_text="Start & Invite",
         action_kind="primary",

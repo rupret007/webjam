@@ -270,7 +270,7 @@ class TestSessionStrip(unittest.TestCase):
         self.assertEqual(s._video_button.text(), "Conversation")
         self.assertEqual(
             s._video_button.accessibleName(),
-            "Show conversation controls",
+            "Conversation",
         )
         self.assertNotIn("Webex", s._video_button.toolTip())
 
@@ -822,7 +822,7 @@ class TestParticipantGrid(unittest.TestCase):
         g = ParticipantGrid()
         self.assertEqual(len(g._cards), 0)
         self.assertFalse(g._empty_state.isHidden())
-        self.assertEqual(g._empty_title.text(), "Ready when you are")
+        self.assertEqual(g._empty_title.text(), "Start when you are")
 
     def test_empty_state_actions_emit_semantic_signals(self):
         from webjam_qt.widgets.participant_grid import ParticipantGrid
@@ -1550,7 +1550,7 @@ class TestConductorWindow(unittest.TestCase):
                 self.assertLess(first.geometry().right(), second.geometry().left())
             self.assertEqual(strip._invite_button.text(), "Invite")
             self.assertEqual(strip._record_button.text(), "■ Finish")
-            self.assertEqual(strip._video_button.text(), "Talk")
+            self.assertEqual(strip._video_button.text(), "Conversation")
             self.assertEqual(strip._audio_button.text(), "Try End")
             self.assertEqual(
                 strip._record_button.accessibleName(),
