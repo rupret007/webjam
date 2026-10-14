@@ -669,6 +669,54 @@ def test_a_song_with_no_tempo_is_told_what_the_clock_needs(app):
     assert any("Write a tempo" in message for message in _flashes(coordinator))
 
 
+_CLOCK_NEEDS_TEMPO = "Write a tempo and one section header, then start the clock."
+
+
+def test_removing_notes_tempo_cannot_restart_the_clock_until_one_is_written(app):
+    coordinator = _coordinator(app, notes="Tempo: 120\n[Verse x8]\nG D\n")
+    coordinator.toggle_clock()
+    assert coordinator.workbench.clock_snapshot().running
+    coordinator.toggle_clock()
+    coordinator._c.window.flash_message.reset_mock()
+
+    coordinator._c.window.session_canvas.current_notes = (
+        lambda: "[Chorus x8]\nC G\n"
+    )
+    coordinator.toggle_clock()
+    snapshot = coordinator.workbench.clock_snapshot()
+
+    assert coordinator.workbench.form.tempo is None
+    assert snapshot.tempo_bpm == 0
+    assert snapshot.tempo_source == ""
+    assert snapshot.running is False
+    assert _CLOCK_NEEDS_TEMPO in _flashes(coordinator)
+
+
+def test_switching_to_a_saved_song_without_tempo_cannot_start_the_clock(app):
+    controller = _controller(app, notes="Tempo: 120\n[Verse x8]\nG D\n")
+    songs = {"current": ("Fast one", "Tempo: 120\n[Verse x8]\nG D\n")}
+    controller.session_library = SimpleNamespace(
+        song_context=lambda: songs["current"]
+    )
+    coordinator = SongToolsCoordinator(controller)
+    coordinator.connect()
+    coordinator._sync_workbench()
+    assert coordinator.workbench.clock_snapshot().tempo_bpm == 120
+    assert coordinator.workbench.clock.start() is True
+    coordinator.workbench.clock.stop()
+    coordinator._c.window.flash_message.reset_mock()
+
+    songs["current"] = ("Outline only", "[Chorus x8]\nC G\n")
+    coordinator.toggle_clock()
+    snapshot = coordinator.workbench.clock_snapshot()
+
+    assert coordinator.workbench.form.tempo is None
+    assert snapshot.tempo_bpm == 0
+    assert snapshot.tempo_source == ""
+    assert snapshot.running is False
+    assert _CLOCK_NEEDS_TEMPO in _flashes(coordinator)
+
+
 def test_the_clock_can_be_moved_to_the_chosen_part(app):
     coordinator, _now = _clock_coordinator(app)
     coordinator.overlay.setVisible(True)
