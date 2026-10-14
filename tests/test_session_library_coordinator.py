@@ -181,6 +181,63 @@ class TestSessionLibraryCoordinator(TestCase):
         _app.processEvents()
         self.temp.cleanup()
 
+    def test_post_primary_sync_failure_retries_latest_live_draft(self):
+        from tests.support.workspace_save_faults import fail_primary_sync
+
+        self.assertTrue(self.coordinator.ensure_current())
+        base = self.coordinator.current
+        self.window.session_canvas.set_notes("Attempted live notes")
+        with fail_primary_sync():
+            self.assertFalse(self.coordinator.flush())
+        self.assertEqual(self.coordinator.current.revision, base.revision)
+        self.assertEqual(self.library.load(base.id).notes, "Attempted live notes")
+        self.window.session_canvas.set_notes("Newer live notes")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(base.id)
+        self.assertEqual(saved.notes, "Newer live notes")
+        self.assertEqual(self.coordinator.current._store_token, saved._store_token)
+        self.assertNotIn(base.id, self.coordinator._pending)
+        self.assertEqual(len(self.library.list()), 1)
+
+    def test_post_primary_sync_failure_editor_retry_keeps_late_facts(self):
+        from tests.support.workspace_save_faults import fail_primary_sync
+
+        self.coordinator.start_session()
+        self.coordinator.recording_started("late-take", "recording-session")
+        base = self.coordinator.current
+        editor = self._editor()
+        editor.notes.setPlainText("Attempted editor notes")
+        with fail_primary_sync():
+            self.assertFalse(editor.save_current())
+        editor.notes.setPlainText("Newer editor notes")
+        self._late_take_and_recap()
+        self.assertTrue(editor.save_current())
+        saved = self.library.load(base.id)
+        self.assertEqual(saved.notes, "Newer editor notes")
+        self.assertEqual(saved.take_links[0]["status"], "complete")
+        self.assertEqual(saved.recaps[0]["take_ids"], ["late-take"])
+        self.assertEqual(self.coordinator.current._store_token, saved._store_token)
+        self.assertNotIn(base.id, self.coordinator._pending)
+        self.assertEqual(len(self.library.list()), 1)
+
+    def test_post_primary_sync_failure_external_change_keeps_editor_conflict(self):
+        from tests.support.workspace_save_faults import fail_primary_sync
+
+        self.assertTrue(self.coordinator.ensure_current())
+        base = self.coordinator.current
+        editor = self._editor()
+        editor.notes.setPlainText("My editor draft")
+        with fail_primary_sync():
+            self.assertFalse(editor.save_current())
+        other = SessionLibrary(self.library.root)
+        other.save(replace(other.load(base.id), title="Other owner's title"))
+        self.assertFalse(editor.save_current())
+        self.assertEqual(editor.notes.toPlainText(), "My editor draft")
+        self.assertTrue(editor._dirty)
+        self.assertIn("Save as copy", editor.status.text())
+        self.assertEqual(self.library.load(base.id).title, "Other owner's title")
+        self.assertEqual(self.coordinator.current.revision, base.revision)
+
     def _editor(self):
         editor = SessionLibraryDialog(self.library, self.window,
             current_id=self.coordinator.current.id, pending_records=self.coordinator._pending,
@@ -765,6 +822,86 @@ class TestSessionLibraryCoordinator(TestCase):
             picker.setCurrentIndex(picker.findData("music_jam"))
             self.assertTrue(coordinator.flush())
             self.assertEqual(library.load(record_id).mode_key, "music_jam")
+        finally:
+            coordinator.timer.stop()
+            window.close()
+            window.deleteLater()
+            owner.deleteLater()
+            _app.processEvents()
+
+    def test_first_flush_derives_facts_from_live_notes(self):
+        self.window.session_canvas.set_notes(
+            "Decision: Keep the chorus\nAction: Send chart"
+        )
+        self.assertTrue(self.coordinator.ensure_current())
+        self.assertEqual(self.coordinator.current.decisions, ())
+        self.assertEqual(self.coordinator.current.actions, ())
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(self.coordinator.current.id)
+        self.assertEqual(saved.notes, "Decision: Keep the chorus\nAction: Send chart")
+        self.assertEqual(saved.decisions, ("Keep the chorus",))
+        self.assertEqual(saved.actions, ("Send chart",))
+
+    def test_mode_only_edit_preserves_imported_workspace_facts(self):
+        window = ConductorWindow(mode_entries=[("music_jam", "Music"), ("music_cover", "Covers")],
+                                  initial_mode_key="music_jam", initial_title="Wednesday")
+        window.flash_message = Mock()
+        owner = Owner(window)
+        library = SessionLibrary(self.root / "imported_facts")
+        coordinator = SessionLibraryCoordinator(owner, library=library)
+        coordinator._imported = True
+        facts = (("Play in D",), ("Send chart",), ("Missing player",))
+        try:
+            record = library.create(
+                "music", "Wednesday rehearsal", notes="Practice Wednesday",
+                mode_key="music_jam", decisions=facts[0], actions=facts[1],
+                blockers=facts[2],
+            )
+            self.assertTrue(coordinator.continue_record(record))
+            picker = window.session_strip._mode_picker
+            picker.setCurrentIndex(picker.findData("music_cover"))
+            self.assertTrue(coordinator.flush())
+            saved = library.load(record.id)
+            self.assertEqual(saved.mode_key, "music_cover")
+            self.assertEqual(saved.notes, "Practice Wednesday")
+            self.assertEqual(saved.decisions, facts[0])
+            self.assertEqual(saved.actions, facts[1])
+            self.assertEqual(saved.blockers, facts[2])
+        finally:
+            coordinator.timer.stop()
+            window.close()
+            window.deleteLater()
+            owner.deleteLater()
+            _app.processEvents()
+
+    def test_mode_only_edit_preserves_imported_crlf_and_nbsp_workspace_facts(self):
+        window = ConductorWindow(mode_entries=[("music_jam", "Music"), ("music_cover", "Covers")],
+                                  initial_mode_key="music_jam", initial_title="Wednesday")
+        window.flash_message = Mock()
+        owner = Owner(window)
+        library = SessionLibrary(self.root / "imported_crlf_facts")
+        coordinator = SessionLibraryCoordinator(owner, library=library)
+        coordinator._imported = True
+        facts = (("Play in D",), ("Send chart",), ("Missing player",))
+        notes = "Practice\u00a0Wednesday\r\nBring charts"
+        try:
+            record = library.create(
+                "music", "Wednesday rehearsal", notes=notes,
+                mode_key="music_jam", decisions=facts[0], actions=facts[1],
+                blockers=facts[2],
+            )
+            self.assertTrue(coordinator.continue_record(record))
+            live_notes = window.session_canvas.current_notes()
+            self.assertEqual(coordinator._captured[3], live_notes)
+            picker = window.session_strip._mode_picker
+            picker.setCurrentIndex(picker.findData("music_cover"))
+            self.assertTrue(coordinator.flush())
+            saved = library.load(record.id)
+            self.assertEqual(saved.mode_key, "music_cover")
+            self.assertEqual(saved.notes, notes)
+            self.assertEqual(saved.decisions, facts[0])
+            self.assertEqual(saved.actions, facts[1])
+            self.assertEqual(saved.blockers, facts[2])
         finally:
             coordinator.timer.stop()
             window.close()
