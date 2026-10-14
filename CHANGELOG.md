@@ -6,9 +6,6 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-- Paint along shows a short retry message when sharing, pausing, or stopping
-  the shared video is not confirmed. Local controls remain usable; a successful
-  room update clears the message without claiming what guests are watching.
 - Art companion's iPhone/iPad Join UI test waits for the name and invitation
   fields to exist, be hittable, and hold keyboard focus before typing, and
   scrolls the form from each field's real position above the keyboard. Large
