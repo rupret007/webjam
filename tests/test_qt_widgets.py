@@ -270,7 +270,7 @@ class TestSessionStrip(unittest.TestCase):
         self.assertEqual(s._video_button.text(), "Conversation")
         self.assertEqual(
             s._video_button.accessibleName(),
-            "Show conversation controls",
+            "Conversation",
         )
         self.assertNotIn("Webex", s._video_button.toolTip())
 
@@ -822,7 +822,7 @@ class TestParticipantGrid(unittest.TestCase):
         g = ParticipantGrid()
         self.assertEqual(len(g._cards), 0)
         self.assertFalse(g._empty_state.isHidden())
-        self.assertEqual(g._empty_title.text(), "Ready when you are")
+        self.assertEqual(g._empty_title.text(), "Start when you are")
 
     def test_empty_state_actions_emit_semantic_signals(self):
         from webjam_qt.widgets.participant_grid import ParticipantGrid
@@ -1550,7 +1550,7 @@ class TestConductorWindow(unittest.TestCase):
                 self.assertLess(first.geometry().right(), second.geometry().left())
             self.assertEqual(strip._invite_button.text(), "Invite")
             self.assertEqual(strip._record_button.text(), "■ Finish")
-            self.assertEqual(strip._video_button.text(), "Talk")
+            self.assertEqual(strip._video_button.text(), "Conversation")
             self.assertEqual(strip._audio_button.text(), "Try End")
             self.assertEqual(
                 strip._record_button.accessibleName(),
@@ -1683,16 +1683,20 @@ class TestConductorWindow(unittest.TestCase):
                     self.assertIs(window.workspace_stack.currentWidget(), workspace)
                     if profile_key == "art":
                         for token in (
-                            "— Art", "Make together", "Paint along", "<b>More</b>",
-                            "Shared Canvas…", "Choose process video…",
-                            "YouTube link…", "Open my copy…", "Open lesson",
-                            "silent", "Local files are not transferred", "Conversation",
-                            "Back to room", "Notes", "End Room", "Leave Room",
+                            "— Art", "Make together", "Paint along",
+                            "<b>Host</b> or <b>Join</b>", "invite", "silent",
+                            "keep making", "open the lesson",
                         ):
                             self.assertIn(token, body)
+                        self.assertNotIn("one next action is enough", body)
+                        self.assertIn("<b>1.</b>", body)
+                        self.assertIn("<b>3.</b>", body)
+                        self.assertNotIn("<b>4.</b>", body)
                         for token in (
                             "musician", "Record Session", "Studio", "Shared Track",
                             "Band Check", "monitor mix", "fader", "F2", "Song", "AI Image",
+                            "Shared Canvas", "Choose process video", "YouTube",
+                            "F11", "Continue your work",
                         ):
                             self.assertNotIn(token, body)
                     else:
