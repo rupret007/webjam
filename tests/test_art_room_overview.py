@@ -373,14 +373,14 @@ def test_both_offered_panels_keep_their_status_and_action(primary, secondary):
 
 
 @pytest.mark.parametrize("hosting", [False, True])
-@pytest.mark.parametrize("canvas_state,video_state,expect_making_detail", [
-    (CanvasCompanionState.READY, VideoCompanionState.NONE, True),
-    (CanvasCompanionState.MISSING_APP, VideoCompanionState.NONE, True),
-    (CanvasCompanionState.NONE, VideoCompanionState.NEEDS_FILE, False),
-    (CanvasCompanionState.NONE, VideoCompanionState.PLAYING, True),
+@pytest.mark.parametrize("canvas_state,video_state", [
+    (CanvasCompanionState.READY, VideoCompanionState.NONE),
+    (CanvasCompanionState.MISSING_APP, VideoCompanionState.NONE),
+    (CanvasCompanionState.NONE, VideoCompanionState.NEEDS_FILE),
+    (CanvasCompanionState.NONE, VideoCompanionState.PLAYING),
 ])
 def test_optional_activity_keeps_an_any_artist_next_step(
-    hosting, canvas_state, video_state, expect_making_detail,  # noqa: ARG001
+    hosting, canvas_state, video_state,
 ):
     presence = art_room_presence(ArtCompanionProjection(
         in_room=True, transport_allowed=hosting, canvas=canvas_state, video=video_state,
