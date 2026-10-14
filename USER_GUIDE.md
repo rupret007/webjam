@@ -848,7 +848,7 @@ route to each.
 | Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
 | Conversation | Routes to the same panel as the direct action; it has no launch side effect |
 | Jamulus Updates… | Checks WebJam's signed compatibility catalog, downloads an approved update, waits until the session is idle, and offers explicit OS approval; managed previous-version rollback is macOS-only |
-| Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
+| Recording Setup | Sets Local Originals and takes storage; host takes stay in WebJam's host folder. It does not alter Jamulus music routing |
 | Shared Track… | Routes to the same host-only transport; source loading is independent, and current-source Play becomes eligible only after the Mac proves the required local BlackHole route |
 | Use iPhone as Pocket Stage… | Starts an explicit, private-Wi-Fi developer-preview pairing window; it does not put phone audio in the live session |
 | Notes | Opens session notes |
