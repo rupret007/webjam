@@ -62,6 +62,7 @@ from core.host_startup_checklist import (
     host_startup_checklist_current_step,
 )
 from core.meeting_companion import (
+    art_room_hud_active_start_detail,
     ART_NO_SKILL_NEEDED,
     ART_OWN_TOOLS_LINE,
     build_invite_message,
@@ -2145,6 +2146,10 @@ class ApplicationController(QObject):
         return self.creator_profile.start_or_default(
             borrowed or getattr(getattr(self, "settings", None), "last_creator_start_key", "")
         )
+
+    def _art_room_active_start_key(self) -> str:
+        start = self.creator_start
+        return start.key if start is not None else ""
 
     def _art_room_runs_paint_along(self) -> bool:
         """True when this computer's authenticated room state says the room
@@ -10557,7 +10562,14 @@ class ApplicationController(QObject):
         )
         detail = presentation.message
         if presentation.preservation:
-            detail = f"{detail} {presentation.preservation}"
+            detail = f"{detail} {presentation.preservation}".strip()
+        if (
+            not detail
+            and display_override is None
+            and self.creator_profile.key == "art"
+            and facts.art_room is ArtRoomState.CONNECTED
+        ):
+            detail = art_room_hud_active_start_detail(self._art_room_active_start_key())
         # Explain what this profile allows without claiming a recorder or
         # a completed setup. The HUD remains the only startup action.
         stage_hint = ""
