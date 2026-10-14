@@ -224,6 +224,12 @@ def test_map_names_real_required_ci_jobs_and_fails_closed() -> None:
         assert f"target: {target}" in WORKFLOW_TEXT, target
     assert "\n  test:\n" in WORKFLOW_TEXT and "- `test`" in required_section
     assert "all 13 required hosted jobs" in required_section
+    assert "do not run on `pull_request`" in required_section
+    assert "do not run on push to `master`" in required_section
+    assert "`final_build`" in required_section
+    assert "ios/" in required_section
+    assert "workflow_dispatch" in required_section
+    assert "do not create a GitHub Release draft" in required_section
     assert "Red means stop" in required_section
     assert "Do not re-run a job to change its result" in required_section
 
@@ -242,6 +248,7 @@ def test_map_lists_unproven_gates_as_not_run_only() -> None:
         assert gate in not_run_section, gate
     for boundary in ("signing", "notarization", "physical machines"):
         assert boundary in not_run_section, boundary
+    assert "signing-rehearsal-only dispatch does not draft" in not_run_section
 
 
 def test_map_docs_pass_targets_exist_and_stay_kiss() -> None:
