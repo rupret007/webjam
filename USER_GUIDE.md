@@ -257,6 +257,8 @@ WebJam's operational status. For example, typing “recording finished” cannot
 create a take or unlock export.
 
 At launch, choose **Art** or **Music**. Those are the equal first clicks.
+The selected profile has an orange fill. A white outline shows keyboard focus;
+arrow keys move the selection between profiles.
 Art is **Make together** or **Paint along**, then **Host** or **Join**. Music
 is **Host** or **Join** only. On these live doors, **File → Session library…**
 opens saved work; File does not offer Music projects, Podcast, or Review as

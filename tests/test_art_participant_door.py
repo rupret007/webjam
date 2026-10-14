@@ -166,7 +166,21 @@ def test_keyboard_focus_does_not_paint_an_unselected_card_orange(door, qapp, gro
     assert Color.ACCENT_PRIMARY not in _top_border_colors(focused)
     selected.setFocus(Qt.FocusReason.TabFocusReason)
     qapp.processEvents()
-    assert Color.ACCENT_PRIMARY in _top_border_colors(selected)
+    assert selected.hasFocus()
+    assert selected.isChecked() and not focused.isChecked()
+    if group == "profile":
+        assert _top_border_colors(selected) == {Color.TEXT_PRIMARY}
+        assert Color.TEXT_PRIMARY not in _top_border_colors(focused)
+        # Selection stays orange beneath the independent white focus outline.
+        image = selected.grab().toImage()
+        scale = image.devicePixelRatio()
+        fill = image.pixelColor(
+            int((selected.width() - 20) * scale),
+            int(selected.height() / 2 * scale),
+        )
+        assert fill.name().upper() == Color.ACCENT_PRIMARY
+    else:
+        assert Color.ACCENT_PRIMARY in _top_border_colors(selected)
 
 
 @pytest.mark.parametrize("reset", ["replace", "back"])
