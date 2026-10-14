@@ -87,7 +87,7 @@ class TestDemoToRealTransition(unittest.TestCase):
         self.assertEqual(
             self.window.participant_grid._empty_title.text(), "Start when you are"
         )
-        self.assertEqual(self.window.session_hud._status.text(), "Ready when you are")
+        self.assertEqual(self.window.session_hud._status.text(), "Start when you are")
         self.assertEqual(self.window.session_hud._action.text(), "Start Session")
         self.assertFalse(self.window.session_hud._action.isHidden())
 
@@ -139,7 +139,7 @@ class TestDemoToRealTransition(unittest.TestCase):
             self.window.participant_grid._empty_title.text(), "Start when you are"
         )
         self.assertTrue(self.window.participant_grid._empty_state.isHidden())
-        self.assertEqual(self.window.session_hud._status.text(), "Ready when you are")
+        self.assertEqual(self.window.session_hud._status.text(), "Start when you are")
 
     def test_stop_audio_cancelled_keeps_real_state(self):
         # Connect to real participants
