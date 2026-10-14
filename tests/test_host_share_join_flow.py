@@ -521,7 +521,9 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     assert dialog._join_button_primary.text() == "Join"
     assert dialog._join_button_primary.isEnabled() is False
     assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
-    assert "never saved" in dialog._join_privacy.text()
+    assert dialog._join_privacy.text() == (
+        "The invite stays on this screen. WebJam does not save it."
+    )
     assert dialog._invite_input.echoMode() is QLineEdit.EchoMode.Password
     dialog._name_input.setText("Drummer")
     dialog._invite_input.setText(
@@ -678,7 +680,7 @@ def test_session_hud_primary_action_is_generic_and_accessible(qapp):
     hud.action_requested.connect(requested.append)
 
     hud.set_state(
-        "Ready when you are",
+        "Start when you are",
         "Start when the band is ready.",
         action_text="Start & Invite",
         action_kind="primary",
@@ -718,10 +720,13 @@ def test_session_hud_inline_meeting_link_uses_available_width(qapp):
     assert hud._secondary_action.isVisibleTo(hud)
 
 
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
 def test_host_invite_uses_hud_copy_action_only_after_real_server_readiness(
-    qapp, tmp_path
+    qapp, tmp_path, size
 ):
+    from core.session_conductor import SessionConductorPhase, SessionPrimaryAction
     from webjam_qt.controllers.application_controller import ApplicationController
+    from webjam_qt.session_state import SessionUiState
     from webjam_qt.windows.conductor_window import ConductorWindow
 
     settings = AppSettings(
@@ -736,32 +741,61 @@ def test_host_invite_uses_hud_copy_action_only_after_real_server_readiness(
         initial_title="Readiness Test",
     )
     controller = ApplicationController(window, settings=settings)
-    controller.bridge.jamulus_launch_intended = True
-    controller.bridge.jamulus_state = "Running"
     controller.bridge.hosted_server_alive = MagicMock(return_value=False)
-    controller._update_session_hud()
-    assert controller.window.session_hud._invite_available is False
-    assert controller.window.session_hud._action.isHidden()
-    controller.bridge.hosted_server_alive.return_value = True
-    with patch.object(
-        controller,
-        "_current_invite_url",
-        return_value=create_invite_link("192.168.1.42"),
-    ):
+    try:
+        window.resize(*size)
+        window.show()
+        grid = window.participant_grid
+        # Begin with the standalone widget's Start Session action. The real
+        # conductor render must retire it when the HUD takes ownership.
+        grid.set_session_state(SessionUiState.idle(hosting=True))
+        assert grid._empty_primary.text() == "Start Session"
+        assert grid._last_session_state.show_primary is True
+        assert grid._empty_primary.isVisibleTo(window)
+        controller.bridge.jamulus_launch_intended = True
+        controller.bridge.jamulus_state = "Running"
         controller._update_session_hud()
-    assert controller.window.session_hud._invite_available is True
-    assert controller.window.session_hud._status.text() == "Invite ready"
-    assert not controller.window.session_hud._action.isHidden()
-    assert controller.window.session_hud._action.text() == "Copy Invite"
-    # The conductor owns the one clear next step.  The older strip and stage
-    # controls must not repeat the same Copy Invite action.
-    assert controller.window.session_strip._invite_button.isHidden()
-    assert controller.window.participant_grid._empty_primary.isHidden()
-    assert controller.window.participant_grid._empty_ready.isHidden()
-    assert controller.window.participant_grid._empty_title.text() == "Waiting for your band."
-    assert controller.window.participant_grid._empty_message.isHidden()
-    controller.bridge.hosted_server_alive.return_value = False
-    controller.shutdown()
+        assert controller.window.session_hud._invite_available is False
+        assert controller.window.session_hud._action.isHidden()
+        controller.bridge.hosted_server_alive.return_value = True
+        with patch.object(
+            controller,
+            "_current_invite_url",
+            return_value=create_invite_link("192.168.1.42"),
+        ):
+            controller._update_session_hud()
+        assert controller.window.session_hud._invite_available is True
+        assert controller.window.session_hud._status.text() == "Copy the invite"
+        assert not controller.window.session_hud._action.isHidden()
+        assert controller.window.session_hud._action.text() == "Copy Invite"
+        # The conductor owns the one clear next step.  The older strip and stage
+        # controls must not repeat the same Copy Invite action.
+        assert controller.window.session_strip._invite_button.isHidden()
+        assert controller.window.participant_grid._empty_primary.isHidden()
+        assert controller.window.participant_grid._empty_ready.isHidden()
+        assert controller.window.participant_grid._empty_title.text() == "Waiting for your band."
+        assert controller.window.participant_grid._empty_message.isHidden()
+        presentation = controller._last_session_conductor
+        assert presentation.phase is SessionConductorPhase.INVITE_READY
+        assert presentation.primary_action is SessionPrimaryAction.COPY_INVITE
+        # The HUD carries the conductor's next step; the stage explains the wait.
+        assert grid._last_session_state.title == "Waiting for your band."
+        assert grid._last_session_state.message == ""
+        assert grid._last_session_state.show_primary is False
+        qapp.processEvents()
+        assert grid._empty_state.isVisibleTo(window)
+        assert not grid._empty_primary.isVisibleTo(window)
+        assert not grid._empty_ready.isVisibleTo(window)
+        assert not grid._empty_practice.isVisibleTo(window)
+        action = window.session_hud._action
+        assert action.isVisibleTo(window)
+        assert action.isEnabled()
+        assert action.accessibleName() == "Copy Invite"
+        assert window.rect().contains(action.mapTo(window, action.rect().topLeft()))
+        assert window.rect().contains(action.mapTo(window, action.rect().bottomRight()))
+    finally:
+        controller.bridge.hosted_server_alive.return_value = False
+        controller.shutdown()
 
 
 def test_remote_host_copy_and_reset_stay_under_owned_progressive_disclosure(
@@ -1223,7 +1257,7 @@ def test_host_invite_is_ready_without_its_own_roster_entry(qapp, tmp_path):
         return_value=create_invite_link("192.168.1.42"),
     ):
         controller._update_session_hud()
-    assert controller.window.session_hud._status.text() == "Invite ready"
+    assert controller.window.session_hud._status.text() == "Copy the invite"
     assert controller.window.session_hud._action.text() == "Copy Invite"
     assert not controller.window.session_hud._action.isHidden()
     assert controller.window.session_strip._invite_button.isHidden()

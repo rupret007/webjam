@@ -43,6 +43,7 @@ def _invite_screen(size, larger_text=False):
     # Exercise the production renderer and widgets without starting services.
     controller = ApplicationController.__new__(ApplicationController)
     controller.window = window
+    controller.audio = SimpleNamespace(connected=False)
     facts = SessionConductorFacts(
         role=SessionRole.HOST,
         setup_requested=True,
@@ -78,7 +79,7 @@ def test_invite_ready_has_one_headline_and_an_explanatory_stage(qapp, size, larg
         hud = window.session_hud
         grid = window.participant_grid
         assert controller._last_session_conductor.phase is SessionConductorPhase.INVITE_READY
-        assert hud._status.text() == "Invite ready"
+        assert hud._status.text() == "Copy the invite"
         assert hud._action.text() == "Copy Invite"
         assert hud._action.isVisibleTo(window) and hud._action.isEnabled()
         assert grid._empty_eyebrow.text() == "NOT CONNECTED"
@@ -88,7 +89,7 @@ def test_invite_ready_has_one_headline_and_an_explanatory_stage(qapp, size, larg
         assert grid._empty_state.accessibleDescription() == "Waiting for your band."
         assert [
             label for label in window.findChildren(QLabel)
-            if label.isVisibleTo(window) and label.text() == "Invite ready"
+            if label.isVisibleTo(window) and label.text() == "Copy the invite"
         ] == [hud._status]
         assert not any(
             button.isVisibleTo(window)
