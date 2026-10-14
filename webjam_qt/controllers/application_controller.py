@@ -61,7 +61,11 @@ from core.host_startup_checklist import (
     format_host_startup_checklist,
     host_startup_checklist_current_step,
 )
-from core.meeting_companion import art_watch_share_sentence, build_invite_message
+from core.meeting_companion import (
+    ART_NO_SKILL_NEEDED,
+    ART_OWN_TOOLS_LINE,
+    build_invite_message,
+)
 from core.musician_guidance import (
     GuidanceDisplayOverride,
     StudioGuidanceFacts,
@@ -1615,15 +1619,20 @@ class ApplicationController(QObject):
         room = getattr(self, "_room_participant", None)
         return room.host_publisher() if room is not None else getattr(self, "host_peer", None)
 
-    def _configure_guest_peer(self, invite) -> bool:
+    def _configure_guest_peer(self, invite, *, preserve_room_profile: bool = False) -> bool:
         """Install a replacement v2 transfer peer without orphaning its owner.
 
         Construction failure remains an optional Local Originals limitation,
         but an unconfirmed stop is an ownership failure: retain the old peer
         and invitation so End/Leave can retry it.
+
+        Only an admitted LAN discovery handoff preserves the host profile;
+        ordinary peer replacement still restores the personal room context.
         """
 
-        if not self._stop_session_peer(clear_invite=True):
+        if not self._stop_session_peer(
+            clear_invite=True, preserve_room_profile=preserve_room_profile,
+        ):
             return False
         self._guest_invite = invite
         self._guest_peer_configuration_failed = False
@@ -1787,7 +1796,9 @@ class ApplicationController(QObject):
 
         QTimer.singleShot(0, reopen_for_current_settings)
 
-    def _stop_session_peer(self, *, clear_invite: bool = False) -> bool:
+    def _stop_session_peer(
+        self, *, clear_invite: bool = False, preserve_room_profile: bool = False,
+    ) -> bool:
         cleanup_ok = True
         room = getattr(self, "_room_participant", None)
         guest = getattr(self, "guest_peer", None)
@@ -1858,6 +1869,11 @@ class ApplicationController(QObject):
                         invoke(clear_projection)
                     else:
                         clear_projection()
+                # LAN discovery already adopted the host profile. Its handoff
+                # to the recording peer continues that room, so do not restore
+                # the personal profile between admission and audio startup.
+                if preserve_room_profile:
+                    return
                 # Entry can borrow a title before the first authenticated
                 # profile arrives. Leaving that pending join must restore the
                 # personal title too, even though no profile was adopted.
@@ -6361,7 +6377,10 @@ class ApplicationController(QObject):
         self._publish_musician_guidance(snapshot, display_override=override)
         self.window.participant_grid.set_session_state(
             SessionUiState(
-                self._conductor_stage_phase(snapshot.presentation.phase),
+                self._conductor_stage_phase(
+                    snapshot.presentation.phase,
+                    snapshot.facts,
+                ),
                 override.title,
                 override.message,
                 primary_text=override.action_label
@@ -9558,7 +9577,7 @@ class ApplicationController(QObject):
             and self.bridge.jamulus_state in {"Not launched", "Not running"}
         ):
             self.window.session_hud.set_state(
-                "Ready when you are",
+                "Start when you are",
                 "WebJam will handle the connection automatically.",
             )
             return
@@ -10195,8 +10214,33 @@ class ApplicationController(QObject):
                       else ArtRoomState.NONE),
         )
 
+    _CONDUCTOR_LIVE_CONNECTION_PHASES = frozenset(
+        {
+            SessionConductorPhase.CONNECTED,
+            SessionConductorPhase.LIVE,
+        }
+    )
+
+    _CONDUCTOR_IN_SESSION_WORK_PHASES = frozenset(
+        {
+            SessionConductorPhase.RECORDING,
+            SessionConductorPhase.TAKE_READY,
+            SessionConductorPhase.REVIEWING,
+        }
+    )
+
     @staticmethod
-    def _conductor_stage_phase(phase: SessionConductorPhase) -> SessionPhase:
+    def _conductor_has_music_connection(facts: SessionConductorFacts) -> bool:
+        return (
+            facts.music_path is MusicPathState.AUTHENTICATED
+            and facts.local_participant is EvidenceState.VERIFIED
+        )
+
+    @staticmethod
+    def _conductor_stage_phase(
+        phase: SessionConductorPhase,
+        facts: SessionConductorFacts | None = None,
+    ) -> SessionPhase:
         if phase in {
             SessionConductorPhase.RECONNECTING,
             SessionConductorPhase.FAILED,
@@ -10207,6 +10251,15 @@ class ApplicationController(QObject):
             return SessionPhase.ERROR
         if phase is SessionConductorPhase.ENDING:
             return SessionPhase.ENDING
+        if phase in ApplicationController._CONDUCTOR_LIVE_CONNECTION_PHASES:
+            return SessionPhase.CONNECTED
+        if phase in ApplicationController._CONDUCTOR_IN_SESSION_WORK_PHASES:
+            if (
+                facts is not None
+                and ApplicationController._conductor_has_music_connection(facts)
+            ):
+                return SessionPhase.CONNECTED
+            return SessionPhase.NOT_CONNECTED
         if phase in {
             SessionConductorPhase.STARTING_HOST,
             SessionConductorPhase.WAITING_FOR_HOST_READINESS,
@@ -10220,6 +10273,30 @@ class ApplicationController(QObject):
         }:
             return SessionPhase.CONNECTING
         return SessionPhase.NOT_CONNECTED
+
+    def _sync_session_status_chip_from_conductor(
+        self,
+        presentation,
+        *,
+        headline: str | None = None,
+    ) -> None:
+        """Keep legacy Session chip aligned with SessionHud when Jamulus is idle."""
+
+        room = getattr(self, "_room_participant", None)
+        if room is not None and (
+            self.creator_profile.key == "art" or self._art_room_active()
+        ):
+            return
+        if self._jamulus_connected or getattr(self.audio, "connected", False):
+            return
+        setter = getattr(self.window, "set_status_latency", None)
+        if not callable(setter):
+            return
+        label = headline or presentation.title
+        if presentation.phase is SessionConductorPhase.IDLE:
+            setter("Not connected")
+        else:
+            setter(label)
 
     @staticmethod
     def _conductor_action_kind(action: SessionPrimaryAction) -> str:
@@ -10368,7 +10445,7 @@ class ApplicationController(QObject):
                 self.window.session_strip.set_invite_available(False)
             self.window.participant_grid.set_session_state(
                 SessionUiState(
-                    self._conductor_stage_phase(presentation.phase),
+                    self._conductor_stage_phase(presentation.phase, facts),
                     display_override.title,
                     display_override.message,
                     primary_text=(
@@ -10388,6 +10465,10 @@ class ApplicationController(QObject):
                     show_practice=False,
                     primary_action="start",
                 )
+            )
+            self._sync_session_status_chip_from_conductor(
+                presentation,
+                headline=display_override.title,
             )
             return
 
@@ -10423,11 +10504,7 @@ class ApplicationController(QObject):
         stage_hint = ""
         if presentation.phase is SessionConductorPhase.IDLE and not facts.art_room_closed:
             if self.creator_profile.key == "art":
-                stage_hint = (
-                    "Make from your own space: use paper, clay, a model, "
-                    "printer, or your usual app. "
-                    f"{art_watch_share_sentence()}"
-                )
+                stage_hint = f"{ART_NO_SKILL_NEEDED} {ART_OWN_TOOLS_LINE}"
             else:
                 stage_hint = (
                     "Recording is optional. Set it up when you choose Record Session."
@@ -10448,12 +10525,11 @@ class ApplicationController(QObject):
             ),
         )
         self._focus_initial_hud_action()
-        # The HUD owns the focused action.  The empty stage stays explanatory
-        # so an initial 760x600 window never presents a Start/Check/Practice
-        # pile alongside the same action in the HUD.
+        # The HUD owns the focused action and Music's idle guidance. Hide the
+        # redundant idle card; other phases retain their stage explanation.
         self.window.participant_grid.set_session_state(
             SessionUiState(
-                self._conductor_stage_phase(presentation.phase),
+                self._conductor_stage_phase(presentation.phase, facts),
                 presentation.title,
                 presentation.message,
                 primary_text=presentation.action_label or "Continue",
@@ -10463,8 +10539,13 @@ class ApplicationController(QObject):
                 show_practice=False,
                 hint=stage_hint,
                 primary_action="start",
+                show_empty_state=not (
+                    self.creator_profile.key == "music"
+                    and presentation.phase is SessionConductorPhase.IDLE
+                ),
             )
         )
+        self._sync_session_status_chip_from_conductor(presentation)
         # The strip copy button is an older duplicate of the HUD action.  Its
         # reset command remains under More when a v3 host owns that invite.
         if action is SessionPrimaryAction.COPY_INVITE:

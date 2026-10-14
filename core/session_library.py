@@ -62,6 +62,44 @@ class SessionLibraryConflict(SessionLibraryError):
     """A newer or externally changed workspace must be reloaded first."""
 
 
+@dataclass(frozen=True)
+class SessionSaveAttempt:
+    """Owner-held proof of an attempted regular save; never persisted as content."""
+
+    workspace_id: str
+    base_token: str
+    base_revision: int
+    data: bytes = field(repr=False)
+    # A newer edit may fail before rename after the earlier attempt was synced.
+    # Retain that exact confirmed base too, still bound to the caller's token.
+    reconciled_data: bytes | None = field(default=None, repr=False)
+
+
+class SessionLibrarySaveUnconfirmed(OSError):
+    """Retain this attempt with the draft so its owner can retry safely."""
+
+    def __init__(self, attempt: SessionSaveAttempt, error: OSError) -> None:
+        super().__init__(str(error))
+        self.attempt = attempt
+
+
+@dataclass(frozen=True)
+class SessionCreateAttempt:
+    """Owner-held proof of an attempted regular create; never persisted as content."""
+
+    workspace_id: str
+    profile: str
+    data: bytes = field(repr=False)
+
+
+class SessionLibraryCreateUnconfirmed(OSError):
+    """Retain this attempt so its owner can retry the same identity."""
+
+    def __init__(self, attempt: SessionCreateAttempt, error: OSError) -> None:
+        super().__init__(str(error))
+        self.attempt = attempt
+
+
 class SessionLibraryMediaImportRequired(SessionLibraryError):
     """A media import requires cancellable package reconciliation, not metadata retry."""
 
@@ -424,6 +462,7 @@ class SessionLibrary:
         self.warnings: tuple[str, ...] = ()
         self._unconfirmed_import: SessionRecord | None = None
         self._unconfirmed_media_import: bytes | None = None
+        self._unconfirmed_create: SessionCreateAttempt | None = None
 
     def _root_exists(self, *, create: bool = False) -> bool:
         try:
@@ -487,12 +526,62 @@ class SessionLibrary:
         path = self._path(session_id)
         if _read(path) is not None or _read(path.with_suffix(".json.bak")) is not None:
             raise SessionLibraryConflict("Workspace already exists.")
-        atomic_write_bytes(path, data, mode=0o600)
+        try:
+            atomic_write_bytes(path, data, mode=0o600)
+        except OSError as exc:
+            attempt = SessionCreateAttempt(session_id, profile, data)
+            self._unconfirmed_create = attempt
+            raise SessionLibraryCreateUnconfirmed(attempt, exc) from exc
         return replace(_decode(data, session_id), _store_token=_token(data))
 
-    def create(self, profile: str, title: str, **payload: object) -> SessionRecord:
-        """Create a named session; notes and payloads are never truncated."""
+    def _reconcile_create(self, attempt: SessionCreateAttempt) -> SessionRecord:
+        """Confirm one prepared identity by exact bytes; never adopt replacements."""
+        path = self._path(attempt.workspace_id)
+        published = _read(path)
+        backup = _read(path.with_suffix(".json.bak"))
+        if published is not None and published != attempt.data:
+            self._unconfirmed_create = None
+            raise SessionLibraryConflict(
+                "The intended workspace changed; it cannot be replaced or retried."
+            )
+        if published is None and backup is not None:
+            self._unconfirmed_create = None
+            raise SessionLibraryConflict(
+                "The intended workspace has recovery or newer evidence; preserve it before retrying."
+            )
+        try:
+            atomic_write_bytes(path, attempt.data, mode=0o600)
+        except OSError as exc:
+            self._unconfirmed_create = attempt
+            raise SessionLibraryCreateUnconfirmed(attempt, exc) from exc
+        self._unconfirmed_create = None
+        return replace(_decode(attempt.data, attempt.workspace_id), _store_token=_token(attempt.data))
+
+    def create(
+        self,
+        profile: str,
+        title: str,
+        *,
+        retry: SessionCreateAttempt | None = None,
+        **payload: object,
+    ) -> SessionRecord:
+        """Create a named session; notes and payloads are never truncated.
+
+        After an uncertain publication, retry the exact prepared identity
+        before allocating another workspace ID. Matching bytes alone do not
+        prove durability; retry re-publishes through file and directory sync.
+        Replaced or conflicting bytes are preserved and never adopted.
+        """
         with self._locked():
+            pending = self._unconfirmed_create
+            if retry is not None:
+                if pending is not None and retry != pending:
+                    raise SessionLibraryConflict("Create retry no longer belongs to this workspace.")
+                pending = retry
+            if pending is not None:
+                if profile != pending.profile:
+                    raise SessionLibraryConflict("A previous workspace creation is still unconfirmed.")
+                return self._reconcile_create(pending)
             return self._create(profile, title, uuid4().hex, payload)
 
     @staticmethod
@@ -668,15 +757,40 @@ class SessionLibrary:
         self.acknowledge_import(record)
         return saved
 
-    def save(self, record: SessionRecord) -> SessionRecord:
+    def save(self, record: SessionRecord, *, retry: SessionSaveAttempt | None = None) -> SessionRecord:
         """Publish only if both the revision and exact previously read bytes match.
 
         An I/O exception can occur after atomic publication (directory fsync).
-        Reload to determine the current state; never retry a stale record blind.
+        Only the owner retaining that attempt may reconcile its exact bytes.
+        Reading matching bytes alone does not establish crash durability.
         """
         _encode(record)
         with self._locked():
             current = self._load(record.id, record.profile)
+            owner = record
+            reconciled_data = None
+            if retry is not None:
+                if (retry.workspace_id != record.id or retry.base_token != record._store_token
+                        or retry.base_revision != record.revision):
+                    raise SessionLibraryConflict("Save retry no longer belongs to this workspace draft.")
+                path = self._path(record.id)
+                published = _read(path)
+                if published is not None and (published == retry.data or published == retry.reconciled_data):
+                    if current._store_token != _token(published):
+                        raise SessionLibraryConflict("Workspace changed during save retry.")
+                    # Republish the exact attempt through file + directory fsync,
+                    # preserving the original backup. Keep the old owner token
+                    # until this succeeds, including across repeated failures.
+                    try:
+                        atomic_write_bytes(path, published, mode=0o600)
+                    except OSError as exc:
+                        raise SessionLibrarySaveUnconfirmed(retry, exc) from exc
+                    record = replace(record, revision=current.revision,
+                                     updated_at=current.updated_at, recovered=False,
+                                     _store_token=current._store_token)
+                    reconciled_data = published
+                    if _encode(record) == published:
+                        return current
             if record._store_token is None or record._store_token != current._store_token or record.revision != current.revision:
                 raise SessionLibraryConflict("Workspace changed since it was opened. Reload before saving.")
             if (record.created_at != current.created_at or record.source_key != current.source_key
@@ -700,7 +814,14 @@ class SessionLibrary:
                 backup = path.with_suffix(".json.bak")
                 _read(backup)  # Never replace an unsafe link or special file.
                 atomic_write_bytes(backup, previous, mode=0o600)
-            atomic_write_bytes(path, data, mode=0o600)
+            try:
+                atomic_write_bytes(path, data, mode=0o600)
+            except OSError as exc:
+                # Bind even a subsequent edit's failed publication to the token
+                # still held by this caller, which has not received a success.
+                raise SessionLibrarySaveUnconfirmed(SessionSaveAttempt(
+                    owner.id, owner._store_token, owner.revision, data, reconciled_data,
+                ), exc) from exc
             return replace(_decode(data, record.id), _store_token=_token(data))
 
     def import_snapshot(

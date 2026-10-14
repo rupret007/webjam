@@ -204,18 +204,26 @@ class ReferenceService:
         )
         return self
 
+    def _shutdown_budget(self) -> float:
+        budget = self.config.connection_shutdown_timeout_seconds
+        if self.config.tls_cert_path is not None:
+            budget += self.config.tls_handshake_timeout_seconds
+        return budget
+
+    def _arm_close_deadline(self) -> None:
+        if self._close_deadline is None:
+            self._close_deadline = asyncio.get_running_loop().time() + self._shutdown_budget()
+
     async def close(self) -> None:
         if self._close_task is None:
             self._closed = True
-            budget = self.config.connection_shutdown_timeout_seconds
-            if self.config.tls_cert_path is not None:
-                budget += self.config.tls_handshake_timeout_seconds
-            self._close_deadline = asyncio.get_running_loop().time() + budget
             self._stop_resources()
             self.registry.close()
             if self._startup_task is not None and not self._startup_task.done():
                 self._startup_task.cancel()
-            self._cancel_handlers()
+            # Abort peers now, but do not cancel handler tasks here. A cancelled
+            # cleanup callback can occupy a loaded loop for longer than the
+            # shutdown budget before the owned closer is even scheduled.
             self._close_task = asyncio.create_task(self._close_connections(), name="webjam-reference-close")
             self._close_task.add_done_callback(self._observe_close)
         # Caller cancellation cannot abandon owned handlers or registry erasure.
@@ -255,11 +263,21 @@ class ReferenceService:
         return task
 
     async def _join_before_deadline(self, tasks: set[asyncio.Task[Any]], *, startup=False) -> None:
-        if not tasks:
+        unfinished = {task for task in tasks if not task.done()}
+        already = tasks - unfinished
+        if not unfinished:
+            if not startup:
+                for task in already:
+                    if not task.cancelled() and task.exception() is not None:
+                        raise RuntimeError("service connection shutdown failed") from None
             return
+        # One shared budget, armed when Close first waits for unfinished work.
+        # Pre-join scheduling delay is not teardown work and must not consume it.
+        # The budget still does not reset per peer or later cleanup stage.
+        self._arm_close_deadline()
         assert self._close_deadline is not None
         done, pending = await asyncio.wait(
-            tasks, timeout=max(0, self._close_deadline - asyncio.get_running_loop().time())
+            unfinished, timeout=max(0, self._close_deadline - asyncio.get_running_loop().time())
         )
         if pending:
             # Keep owners reachable. Cancellation-resistant cleanup is failure,
@@ -268,7 +286,7 @@ class ReferenceService:
                 task.cancel()
             raise RuntimeError("service connection shutdown timed out")
         if not startup:
-            for task in done:
+            for task in done | already:
                 if not task.cancelled() and task.exception() is not None:
                     raise RuntimeError("service connection shutdown failed") from None
 
@@ -279,15 +297,18 @@ class ReferenceService:
             # A cancellation-resistant creation may have returned a late resource.
             # Join startup first, then take the final resource snapshot.
             self._stop_resources()
-            self._cancel_handlers()
-            waits: set[asyncio.Task[Any]] = set(self._connection_tasks)
-            if self._cleanup_task is not None:
-                waits.add(self._cleanup_task)
+            waits: set[asyncio.Task[Any]] = set()
             for server in (self._control_server, self._http_server):
                 if server is not None:
                     waits.add(self._retain_waiter(server.wait_closed()))
             if self._relay_protocol is not None and self._relay_protocol.transport is not None:
                 waits.add(self._retain_waiter(self._relay_protocol.wait_closed()))
+            # Register listener joiners before cancelling siblings so a slow
+            # cancelled cleanup callback cannot starve wait_closed entry.
+            self._cancel_handlers()
+            waits.update(self._connection_tasks)
+            if self._cleanup_task is not None:
+                waits.add(self._cleanup_task)
             await self._join_before_deadline(waits)
             if self._retirement_failed or self._adopted_connections:
                 raise RuntimeError("service connection shutdown failed")
