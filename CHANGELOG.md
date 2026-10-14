@@ -288,9 +288,6 @@ All notable improvements and features for the WebJam creator collaboration platf
   physical observations at **NOT RUN**, with exact package/hash fields and a
   ten-minute Music/Art try list. Jeff retains feel and Final Build judgment.
 
-- After a brief Art guest poll failure, pause-request guidance names the
-  available **Restart pause requests** action and keeps the ask-aloud fallback.
-  Restart still requires an explicit click and never resends abandoned requests.
 - Music Help opens with “Host. Share. Join. Play.” and three short steps.
   Engine, meeting, room-control and keyboard details stay in searchable topics.
 - Idle host Recording Setup no longer offers a Takes folder that reload
