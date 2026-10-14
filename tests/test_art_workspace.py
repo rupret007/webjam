@@ -65,6 +65,15 @@ def test_restart_keeps_art_context_and_manual_bookmarks_without_opening_tools(tm
         reopened.deleteLater()
 
 
+def test_http_youtube_saved_reference_enables_use_saved_lesson(panel):
+    panel.add_reference("http://www.youtube.com/watch?v=M7lc1UVf-VE", kind="url", title="Legacy link")
+    panel.references.setCurrentRow(0)
+    selected = panel.selected_lesson()
+    assert selected is not None
+    assert panel.use_lesson_button.isEnabled()
+    assert selected[1] == "https://www.youtube.com/watch?v=M7lc1UVf-VE"
+
+
 def test_moved_file_relink_keeps_bookmark_identity_and_requires_explicit_open(tmp_path, panel, monkeypatch):
     old_path = tmp_path / "painting.kra"
     old_path.write_bytes(b"local project placeholder")
