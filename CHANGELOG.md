@@ -30,6 +30,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   and at 1280×800. The side panel scrolls instead of squashing mute/solo
   chips or stacking the buttons on the helper line.
 
+- A waiting Paint along host has one orange room action: **Copy Invite**.
+  **Open Paint along** stays available as a quiet body action; guest
+  **Open my copy…** recovery keeps its emphasis.
+
 - Aligned-originals export hashes and renders each source through one open
   file descriptor. A same-format rewrite or path replacement after that
   handle is bound cannot publish. No package is published, the take files
@@ -102,6 +106,7 @@ All notable improvements and features for the WebJam creator collaboration platf
   the dialog lifecycle, like Escape. Reopening shows current saved or pending
   work; failed saves keep the draft visible and media cancellation retains
   its existing recovery guard.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
@@ -263,6 +268,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   The [workflow continuity pilot](docs/WORKFLOW_CONTINUITY_PILOT.md) starts all
   physical observations at **NOT RUN**, with exact package/hash fields and a
   ten-minute Music/Art try list. Jeff retains feel and Final Build judgment.
+
+- Idle host Recording Setup no longer offers a Takes folder that reload
+  discards. **Show Folder** opens WebJam's managed host location, with a short
+  explanation. Guest folder choice is unchanged.
 
 ### Follow-along pilot readiness — draft test-build scope
 ### Follow-along clarity and saved lessons — draft test-build scope
