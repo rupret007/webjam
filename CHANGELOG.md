@@ -11,6 +11,11 @@ All notable improvements and features for the WebJam creator collaboration platf
   Conversation stays in the footer, and the missing-file line is not buried
   by the optional making-detail sentence.
 
+- Same-network joins wait for pending Library media work before adopting the
+  host's Art or Music profile. Art no longer reports connected early, and
+  Music waits to start audio. Deferred receipts retry briefly and cannot
+  reopen a room after connection loss, Leave, or a replacement invitation.
+
 - Keep saved profile titles and modes intact when reading their file hits an I/O error.
   A later successful save merges the current edit with the other profiles.
 
