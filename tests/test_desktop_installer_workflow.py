@@ -520,6 +520,81 @@ def test_source_job_is_bounded_and_runs_required_environment_gates() -> None:
     assert "python -m pip check" in test_job
     assert "python -m compileall -q core webjam_qt ui services api tests" in test_job
     assert "git diff --check HEAD" in test_job
+    assert "if:" not in test_job.split("    steps:\n", 1)[0]
+
+
+def test_desktop_packaging_runs_only_on_final_build_dispatch() -> None:
+    build = _workflow_job("build-desktop")
+    header = build.split("    steps:\n", 1)[0]
+    condition = " ".join(
+        header.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0].split()
+    )
+    assert condition == (
+        "github.event_name == 'workflow_dispatch' && "
+        "(inputs.final_build || "
+        "inputs.macos_signing_rehearsal || "
+        "inputs.windows_signing_rehearsal)"
+    )
+    assert "github.event_name == 'push'" not in condition
+    assert "pull_request" not in condition
+    dispatch = WORKFLOW.split("  workflow_dispatch:\n", 1)[1].split(
+        "\n\n# Default:", 1
+    )[0]
+    assert "final_build:" in dispatch
+    assert "Final build — produce desktop packaging artifacts" in dispatch
+    assert "default: true" in dispatch
+    assert "Upload Windows candidate artifact" in build
+    assert "Upload non-Windows build artifact" in build
+
+
+def test_pr_and_master_test_jobs_are_not_event_gated() -> None:
+    for name in (
+        "windows-diagnostic-control",
+        "test",
+        "integration-jamulus",
+        "jamulus-platform-update-inputs",
+        "transport",
+        "reference-service",
+    ):
+        header = _workflow_job(name).split("    steps:\n", 1)[0]
+        assert "pull_request" not in header, name
+        assert "workflow_dispatch" not in header, name
+        assert "ios-change-gate" not in header, name
+
+
+def test_ios_jobs_stay_on_pull_request_with_shared_source_paths() -> None:
+    gate = _workflow_job("ios-change-gate")
+    art = _workflow_job("art-companion-ios")
+    pocket = _workflow_job("pocket-stage-ios")
+    assert "needs: [ios-change-gate]" in art
+    assert "needs: [ios-change-gate]" in pocket
+    for job in (art, pocket):
+        condition = " ".join(
+            job.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0].split()
+        )
+        assert "always()" in condition
+        assert "!cancelled()" in condition
+        assert "needs.ios-change-gate.result != 'success'" in condition
+        assert "needs.ios-change-gate.outputs.ios == 'true'" in condition
+    assert "swift test --package-path ios --filter ArtCompanionCoreTests" in art
+    assert "tools/art_companion_simulator_check.py" in art
+    assert "swift test" in pocket
+    assert "Build full Pocket Stage app for iOS Simulator" in pocket
+    for marker in (
+        "ios/",
+        "packaging/ios/",
+        "tools/art_companion_simulator",
+        "tests/test_art_companion",
+        "tests/test_pocket_stage",
+        "requirements-lock/pocket-stage-integration-macos-arm64",
+        "core/pocket_stage.py",
+        "core/session_transfer.py",
+        "services/pocket_stage_gateway.py",
+        ".github/workflows/ci.yml",
+    ):
+        assert marker in gate, marker
+    assert 'write("ios=true\\n")' in gate or "ios=true" in gate
+    assert "Fail open" in gate or "fail open" in gate.lower()
 
 
 def test_protected_windows_release_is_verified_after_key_cleanup() -> None:
@@ -633,6 +708,30 @@ def test_signing_rehearsals_do_not_implicitly_start_the_one_hour_soak() -> None:
     assert "inputs.run_one_hour_certification" in certification
     assert "inputs.macos_signing_rehearsal" not in certification
     assert "inputs.windows_signing_rehearsal" not in certification
+
+
+def test_signing_rehearsals_do_not_draft_a_github_release() -> None:
+    release = _workflow_job("release")
+    condition = " ".join(
+        release.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0].split()
+    )
+    assert condition == (
+        "github.event_name == 'workflow_dispatch' && "
+        "startsWith(github.ref, 'refs/tags/v') && "
+        "inputs.final_build"
+    )
+    assert "macos_signing_rehearsal" not in condition
+    assert "windows_signing_rehearsal" not in condition
+    build = _workflow_job("build-desktop")
+    build_condition = " ".join(
+        build.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0].split()
+    )
+    assert "inputs.macos_signing_rehearsal" in build_condition
+    assert "inputs.windows_signing_rehearsal" in build_condition
+    assert "do not create a GitHub Release draft" in CHANGELOG
+    assert "signing-rehearsal-only dispatch does not draft" in DESKTOP_RELEASE_RUNBOOK or (
+        "they do not create a GitHub Release" in DESKTOP_RELEASE_RUNBOOK
+    )
 
 
 def test_every_external_action_is_pinned_to_an_immutable_commit() -> None:
