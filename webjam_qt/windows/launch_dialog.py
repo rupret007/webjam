@@ -838,9 +838,6 @@ class LaunchDialog(QDialog):
         self._creator_profile_selector = QComboBox()
         self._creator_profile_selector.setObjectName("LaunchCreatorProfileSelector")
         self._creator_profile_selector.setAccessibleName("What are you creating?")
-        self._creator_profile_selector.setAccessibleDescription(
-            "Choose Music, Podcast and Voice, Review and Rehearsal, or Art."
-        )
         self._creator_profile_label.setBuddy(self._creator_profile_selector)
         for profile in CREATOR_PROFILES:
             self._creator_profile_selector.addItem(profile.label, profile.key)
@@ -1293,6 +1290,11 @@ class LaunchDialog(QDialog):
         )
         self._creator_profile_label.setVisible(show_picker)
         self._creator_profile_selector.setVisible(show_picker)
+        # Hidden metadata must not advertise extra doors on Art or Music.
+        self._creator_profile_selector.setAccessibleDescription(
+            "Choose Music, Podcast and Voice, Review and Rehearsal, or Art."
+            if show_picker else "Art or Music"
+        )
         if hasattr(self, "_profile_cards"):
             for key, card in self._profile_cards.items():
                 blocked = card.blockSignals(True)

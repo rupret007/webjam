@@ -1201,6 +1201,53 @@ def test_make_together_summary_does_not_promise_a_canvas_at_start():
 
 
 @pytest.mark.parametrize("profile_key", ["music", "art"])
+def test_hidden_profile_picker_a11y_keeps_other_workspaces_off_door(
+    qapp, tmp_path, profile_key
+):
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        selector = dialog._creator_profile_selector
+        assert selector.isHidden()
+        # Include the hidden combo's metadata: the visible-only harvest would
+        # miss stale descriptions advertising extra doors to accessibility tools.
+        spoken = " ".join((
+            harvest_first_screen(dialog),
+            selector.accessibleName(),
+            selector.accessibleDescription(),
+        )).casefold()
+        for hidden_door in ("podcast", "review"):
+            assert hidden_door not in spoken
+        assert_no_banned_first_screen_words(spoken)
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize("profile_key", ["music", "art"])
+@pytest.mark.parametrize("legacy_key", ["podcast_voice", "review_rehearsal"])
+def test_profile_picker_a11y_tracks_visibility_after_switching(
+    qapp, tmp_path, profile_key, legacy_key
+):
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        selector = dialog._creator_profile_selector
+        # Repeat to catch a description that is narrowed once but never restored.
+        for _ in range(2):
+            selector.setCurrentIndex(selector.findData(legacy_key))
+            assert not selector.isHidden()
+            assert selector.accessibleDescription() == (
+                "Choose Music, Podcast and Voice, Review and Rehearsal, or Art."
+            )
+            assert [selector.itemData(i) for i in range(selector.count())] == [
+                profile.key for profile in CREATOR_PROFILES
+            ]
+            dialog._profile_cards[profile_key].click()
+            assert selector.isHidden()
+            assert selector.accessibleDescription() == "Art or Music"
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize("profile_key", ["music", "art"])
 def test_live_door_harvest_keeps_other_workspaces_off_screen(qapp, tmp_path, profile_key):
     dialog = _dialog(tmp_path, profile_key)
     try:
