@@ -61,7 +61,11 @@ from core.host_startup_checklist import (
     format_host_startup_checklist,
     host_startup_checklist_current_step,
 )
-from core.meeting_companion import art_watch_share_sentence, build_invite_message
+from core.meeting_companion import (
+    ART_NO_SKILL_NEEDED,
+    ART_OWN_TOOLS_LINE,
+    build_invite_message,
+)
 from core.musician_guidance import (
     GuidanceDisplayOverride,
     StudioGuidanceFacts,
@@ -10488,11 +10492,7 @@ class ApplicationController(QObject):
         stage_hint = ""
         if presentation.phase is SessionConductorPhase.IDLE and not facts.art_room_closed:
             if self.creator_profile.key == "art":
-                stage_hint = (
-                    "Make from your own space: use paper, clay, a model, "
-                    "printer, or your usual app. "
-                    f"{art_watch_share_sentence()}"
-                )
+                stage_hint = f"{ART_NO_SKILL_NEEDED} {ART_OWN_TOOLS_LINE}"
             else:
                 stage_hint = (
                     "Recording is optional. Set it up when you choose Record Session."
@@ -10513,9 +10513,8 @@ class ApplicationController(QObject):
             ),
         )
         self._focus_initial_hud_action()
-        # The HUD owns the focused action.  The empty stage stays explanatory
-        # so an initial 760x600 window never presents a Start/Check/Practice
-        # pile alongside the same action in the HUD.
+        # The HUD owns the focused action and Music's idle guidance. Hide the
+        # redundant idle card; other phases retain their stage explanation.
         self.window.participant_grid.set_session_state(
             SessionUiState(
                 self._conductor_stage_phase(presentation.phase, facts),
@@ -10528,6 +10527,10 @@ class ApplicationController(QObject):
                 show_practice=False,
                 hint=stage_hint,
                 primary_action="start",
+                show_empty_state=not (
+                    self.creator_profile.key == "music"
+                    and presentation.phase is SessionConductorPhase.IDLE
+                ),
             )
         )
         self._sync_session_status_chip_from_conductor(presentation)

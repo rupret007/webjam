@@ -1,6 +1,6 @@
 """
 ApplicationController idle<->real participant transition: only confirmed
-Jamulus participants become cards; stopping returns to an actionable empty state.
+Jamulus participants become cards; stopping returns to HUD-owned idle guidance.
 """
 from __future__ import annotations
 
@@ -81,10 +81,15 @@ class TestDemoToRealTransition(unittest.TestCase):
 
     def test_idle_replaced_then_restored_after_stop_audio(self):
         self.assertEqual(self.controller.participants, {})
-        self.assertFalse(self.window.participant_grid._empty_state.isHidden())
+        # Music idle keeps the snapshot but hides the duplicate stage card;
+        # the HUD owns the one visible guidance block and Start action.
+        self.assertTrue(self.window.participant_grid._empty_state.isHidden())
         self.assertEqual(
             self.window.participant_grid._empty_title.text(), "Start when you are"
         )
+        self.assertEqual(self.window.session_hud._status.text(), "Ready when you are")
+        self.assertEqual(self.window.session_hud._action.text(), "Start Session")
+        self.assertFalse(self.window.session_hud._action.isHidden())
 
         # Real participants arrive via Jamulus callback.
         real = [
@@ -133,6 +138,8 @@ class TestDemoToRealTransition(unittest.TestCase):
         self.assertEqual(
             self.window.participant_grid._empty_title.text(), "Start when you are"
         )
+        self.assertTrue(self.window.participant_grid._empty_state.isHidden())
+        self.assertEqual(self.window.session_hud._status.text(), "Ready when you are")
 
     def test_stop_audio_cancelled_keeps_real_state(self):
         # Connect to real participants
