@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Song tools Stems keeps each Vocals/Drums/Bass row and the Sing this one /
+  Send to jam actions at their natural height at the 800×600 window floor
+  and at 1280×800. The side panel scrolls instead of squashing mute/solo
+  chips or stacking the buttons on the helper line.
+
 - Art/Music launch File menus keep Session library and hide New Music Project,
   Podcast, and Review starts, including the New shortcut. Help's Music setup
   appears only for Music with an available verified Windows installer and

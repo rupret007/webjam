@@ -11,7 +11,8 @@ from __future__ import annotations
 import inspect
 
 import pytest
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtCore import QPoint, QRect
+from PySide6.QtWidgets import QApplication, QPushButton, QScrollArea
 
 from core.creative_modes import get_creator_profile_by_key_or_default
 from core.meeting_companion import (
@@ -922,6 +923,164 @@ def test_the_stems_page_keeps_to_two_worded_actions(overlay):
         "Send to jam",
         "Sing this one",
     ]
+
+
+def _mapped_rect(widget, target):
+    return QRect(widget.mapTo(target, QPoint()), widget.size())
+
+
+def _assert_inside_scrollable(container, widget, scroll: QScrollArea | None) -> None:
+    host = scroll.widget() if scroll is not None and scroll.widget() is not None else container
+    assert host.isAncestorOf(widget)
+    mapped = _mapped_rect(widget, host)
+    assert host.rect().contains(mapped), (
+        f"{widget.objectName() or widget.text()!r} {mapped.getRect()} "
+        f"escapes content {host.rect().getRect()}"
+    )
+    if scroll is None:
+        return
+    scroll.ensureWidgetVisible(widget, 0, 0)
+    viewport = scroll.viewport()
+    visible = _mapped_rect(widget, viewport)
+    assert viewport.rect().contains(visible), (
+        f"{widget.objectName() or widget.text()!r} {visible.getRect()} "
+        f"not fully in viewport {viewport.rect().getRect()}"
+    )
+
+
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_stems_page_keeps_row_and_action_height_without_overlap(app, size):
+    """Stem rows and Sing/Send stay at sizeHint; the short overlay scrolls.
+
+    800×600 is the supported window floor. Master compressed Vocals/Drums/Bass
+    below their hint, stacked Sing this one on Send to jam, and let the helper
+    overlap the lower button. 1280×800 still clipped the mute/solo chips and
+    the helper. Neither size may hide a control to make the column fit.
+    """
+
+    from core.creative_modes import get_creator_profile_by_key
+    from webjam_qt.session_state import SessionUiState
+    from webjam_qt.theme import load_stylesheet
+
+    helper = "Mute the record's vocal so the room sings it."
+    window = ConductorWindow(
+        mode_entries=[("music", "Music")],
+        initial_mode_key="music",
+        initial_title="Tuesday Jam",
+    )
+    try:
+        window.setStyleSheet(load_stylesheet())
+        window.set_creator_profile(get_creator_profile_by_key("music"))
+        window.resize(*size)
+        window.show()
+        window.participant_grid.set_session_state(SessionUiState.idle())
+        overlay = window.song_overlay
+        overlay.setVisible(True)
+        overlay.show_page(PAGE_STEMS)
+        workbench = _bench_workbench()
+        workbench.stem_bench.sing_this_one()
+        overlay.set_stems(
+            stems=workbench.stem_bench.stems,
+            mix=workbench.stem_bench.mix(),
+            note=helper,
+            can_send=True,
+        )
+        for _ in range(16):
+            app.processEvents()
+
+        assert window.size().toTuple() == size
+        assert overlay.isVisible()
+        assert overlay.current_page() == PAGE_STEMS
+        assert overlay._stem_note.text() == helper
+        assert not overlay._stem_note.isHidden()
+
+        scroll = overlay.findChild(QScrollArea, "SongOverlayStemsScroll")
+        page = overlay._stack.currentWidget()
+        if scroll is not None:
+            assert scroll.isVisibleTo(window)
+            host = scroll.widget()
+        else:
+            host = page
+
+        for row in overlay._stem_rows:
+            assert row.height() >= row.sizeHint().height(), (
+                f"{row.height()} < hint {row.sizeHint().height()}"
+            )
+            _assert_inside_scrollable(page, row, scroll)
+            for chip in row.findChildren(QPushButton):
+                assert chip.width() >= chip.sizeHint().width(), chip.text()
+                assert chip.height() >= chip.sizeHint().height(), chip.text()
+                assert row.rect().contains(
+                    QRect(chip.mapTo(row, QPoint()), chip.size())
+                ), chip.text()
+
+        for button in (overlay._sing_button, overlay._send_stems_button):
+            assert button.height() >= button.sizeHint().height(), button.text()
+            _assert_inside_scrollable(page, button, scroll)
+
+        note_needed = overlay._stem_note.heightForWidth(
+            max(1, overlay._stem_note.width())
+        )
+        assert overlay._stem_note.height() >= max(
+            overlay._stem_note.minimumSizeHint().height(), note_needed
+        )
+        _assert_inside_scrollable(page, overlay._stem_note, scroll)
+
+        sing = _mapped_rect(overlay._sing_button, host)
+        send = _mapped_rect(overlay._send_stems_button, host)
+        note = _mapped_rect(overlay._stem_note, host)
+        assert not sing.intersects(send)
+        assert not sing.intersects(note)
+        assert not send.intersects(note)
+    finally:
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_stem_chips_grow_when_polished_hint_grows(app, overlay):
+    """Mute/solo chips must track sizeHint after style/font polish.
+
+    CI failed at 26px against a 27px hint when the first unpolished measure
+    was locked with setFixedSize. A later stylesheet must be allowed to
+    widen the chip; the test does not lower that floor.
+    """
+
+    workbench = _bench_workbench()
+    overlay.show()
+    overlay.show_page(PAGE_STEMS)
+    overlay.set_stems(
+        stems=workbench.stem_bench.stems,
+        mix=workbench.stem_bench.mix(),
+        note="",
+        can_send=False,
+    )
+    for _ in range(8):
+        app.processEvents()
+
+    chips = [
+        chip
+        for row in overlay._stem_rows
+        for chip in row.findChildren(QPushButton)
+    ]
+    assert chips
+    for chip in chips:
+        chip.setStyleSheet("min-height: 0px; min-width: 0px; padding: 6px 12px;")
+    for _ in range(8):
+        app.processEvents()
+    overlay._fit_stems_page()
+
+    for chip in chips:
+        assert chip.width() >= chip.sizeHint().width(), (
+            chip.text(),
+            chip.width(),
+            chip.sizeHint(),
+        )
+        assert chip.height() >= chip.sizeHint().height(), (
+            chip.text(),
+            chip.height(),
+            chip.sizeHint(),
+        )
 
 
 # ----------------------------------------------------------------------
