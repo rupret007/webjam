@@ -672,9 +672,10 @@ class ApplicationController(QObject):
         self._pocket_stage_session_end_stop_confirmed = True
         self._invite_switch_generation = 0
         self._invite_switch_in_flight = False
-        # Deep links can arrive while the one authorized switch worker is
-        # still retiring the old jam. Keep only the newest typed invitation:
-        # cleanup remains single-flight and no serialized link is retained.
+        self._invite_confirmation_generation: int | None = None
+        # Deep links can arrive during confirmation or while the authorized
+        # switch worker is retiring the old jam. Keep only the newest typed
+        # invitation: cleanup remains single-flight; no serialized link is retained.
         self._pending_invitation: BandInvite | RemoteInvitation | None = None
         self._pending_invitation_meeting_url = ""
         # A busy BandInvite switch may be replaced by a v3 RemoteInvitation.
@@ -1214,6 +1215,9 @@ class ApplicationController(QObject):
         return False
 
     def _shutdown_once(self) -> bool:
+        # A question has not begun teardown. Retire it before shutdown takes
+        # ownership, so a late Yes cannot resume against a closed session.
+        ApplicationController._cancel_invitation_confirmation(self)
         if self._shutdown:
             return True  # closeEvent + app.py both call this; run teardown once
         if not ApplicationController._prepare_workspace_close(self):
@@ -8021,15 +8025,19 @@ class ApplicationController(QObject):
         if bool(getattr(self, "_invite_switch_in_flight", False)):
             if not isinstance(invitation, (BandInvite, RemoteInvitation)):
                 raise TypeError("invitation must be a BandInvite or RemoteInvitation")
-            # The current worker remains the only teardown owner. Replacing
-            # this one-item memory slot gives OS deep-link delivery
+            # The current confirmation/worker remains the only switch owner.
+            # Replacing this one-item memory slot gives OS deep-link delivery
             # deterministic latest-wins behavior without spawning a second
             # worker or persisting private invitation material.
             self._pending_invitation = invitation
             self._pending_invitation_meeting_url = meeting_url
             self.window.flash_message(
-                "WebJam received a newer invitation. It will use that one "
-                "after the current jam finishes closing.",
+                (
+                    "WebJam received a newer invitation. Choose Yes to join that one."
+                    if getattr(self, "_invite_confirmation_generation", None) is not None
+                    else "WebJam received a newer invitation. It will use that one "
+                    "after the current jam finishes closing."
+                ),
                 ms=7000,
             )
             return True
@@ -8120,6 +8128,42 @@ class ApplicationController(QObject):
         self._begin_remote_join()
         return True
 
+    def _cancel_invitation_confirmation(self) -> None:
+        """Retire only a question's ownership; a teardown worker owns itself."""
+        generation = getattr(self, "_invite_confirmation_generation", None)
+        if generation is None:
+            return
+        self._invite_confirmation_generation = None
+        if generation == self._invite_switch_generation:
+            self._invite_switch_generation += 1
+            self._invite_switch_in_flight = False
+            self._pending_invitation = None
+            self._pending_invitation_meeting_url = ""
+
+    def _invitation_confirmation_context(self) -> tuple:
+        """Facts authorizing teardown must survive the modal event loop."""
+        room = getattr(self, "_room_participant", None)
+        startup = getattr(self, "_startup_attempt", None) or {}
+        return (
+            id(self.settings), bool(self.settings.host_server_enabled),
+            self.creator_profile.key,
+            id(self.recording), getattr(self.recording, "_session_id", None),
+            getattr(self.recording, "_take_id", None),
+            bool(getattr(
+                self.recording, "take_in_progress", self.recording.is_recording_active,
+            )),
+            id(self.bridge), id(getattr(self.bridge, "jamulus_process", None)),
+            id(getattr(self.bridge, "hosted_server_process", None)),
+            self._is_jamulus_running(), self.bridge.hosted_server_alive(),
+            self.bridge.hosted_server_owned(),
+            getattr(self, "_startup_generation", None), startup.get("phase"),
+            getattr(self, "_reference_track_session_generation", None),
+            id(getattr(self, "_remote_invite_owner", None)),
+            id(getattr(self, "_guest_invite", None)),
+            id(room), getattr(room, "generation", None),
+            getattr(room, "native_generation", None), self._art_room_role,
+        )
+
     def _accept_band_invitation(self, invite: BandInvite, *, meeting_url: str = "") -> bool:
         """Preserve the existing v1/v2 same-LAN join flow."""
 
@@ -8147,30 +8191,59 @@ class ApplicationController(QObject):
             )
             return False
         if busy:
-            reply = QMessageBox.question(
-                self.window,
-                "Join this room?" if switch_was_art else "Join this jam?",
-                (
-                    "WebJam will safely end your current room, then join the new one."
-                    if switch_was_art
-                    else "WebJam will safely end your current jam, then join the new one."
-                ),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return False
-            # Freeze the outgoing jam's Library recap before any teardown
-            # starts, exactly as normal End/Leave does, so the replacement
-            # jam below does not inherit this run's ID or live take set.
-            switch_library = getattr(self, "session_library", None)
-            if switch_library is not None:
-                switch_library.capture_summary()
+            # QMessageBox runs a nested Qt event loop. Claim the switch before
+            # opening it so reentrant OS invitations replace the pending slot
+            # instead of creating another question and teardown worker.
+            confirmation_context = self._invitation_confirmation_context()
             self._invite_switch_generation += 1
             switch_generation = self._invite_switch_generation
             self._invite_switch_in_flight = True
+            self._invite_confirmation_generation = switch_generation
             self._pending_invitation = None
             self._pending_invitation_meeting_url = ""
+            confirmed = False
+            try:
+                reply = QMessageBox.question(
+                    self.window,
+                    "Join this room?" if switch_was_art else "Join this jam?",
+                    (
+                        "WebJam will safely end your current room, then join the new one."
+                        if switch_was_art
+                        else "WebJam will safely end your current jam, then join the new one."
+                    ),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return False
+                if (
+                    switch_generation != self._invite_switch_generation
+                    or not self._invite_switch_in_flight
+                    or self._shutdown
+                    or getattr(self, "_shutdown_in_progress", False)
+                    or getattr(self, "_shutdown_cleanup_pending", False)
+                    or getattr(self, "_workspace_transition_pending", False)
+                    or getattr(self, "_primary_recovery_retire_inflight", False)
+                    or self.audio.stopping or self.audio.cleanup_retry_required
+                    or confirmation_context != self._invitation_confirmation_context()
+                ):
+                    self.window.flash_message(
+                        "The current room changed. Open the invitation again when you’re ready.",
+                        ms=7000,
+                    )
+                    return False
+                # Freeze the outgoing Library recap only after the question
+                # and its ownership checks, before any teardown starts.
+                switch_library = getattr(self, "session_library", None)
+                if switch_library is not None:
+                    switch_library.capture_summary()
+                confirmed = True
+            finally:
+                if self._invite_confirmation_generation == switch_generation:
+                    if confirmed:
+                        self._invite_confirmation_generation = None
+                    else:
+                        self._cancel_invitation_confirmation()
             # A failed switch is retried through AudioCoordinator after the
             # invitation closure has returned. Preserve the role that owns the
             # unresolved services; the replacement invite must never turn a
@@ -13291,8 +13364,11 @@ class ApplicationController(QObject):
             return
         local_originals_available = self._local_originals_available()
         session_running = self._is_jamulus_running()
-        takes_folder_editable = not session_running and not bool(
-            getattr(self.host_peer, "active", False)
+        hosting = bool(getattr(self.settings, "host_server_enabled", False))
+        takes_folder_editable = (
+            not session_running
+            and not bool(getattr(self.host_peer, "active", False))
+            and not hosting
         )
         old_settings = self.settings
         settings_path = self.settings.config_file
