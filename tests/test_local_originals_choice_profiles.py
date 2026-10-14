@@ -429,7 +429,7 @@ def test_recording_setup_receives_the_active_creator_profile() -> None:
     dialog_type.assert_called_once()
     assert dialog_type.call_args.kwargs["parent"] is controller.window
     assert dialog_type.call_args.kwargs["local_originals_available"] is True
-    assert dialog_type.call_args.kwargs["takes_folder_editable"] is True
+    assert dialog_type.call_args.kwargs["takes_folder_editable"] is False
     passed_profile = dialog_type.call_args.kwargs["creator_profile"]
     assert passed_profile.key == "podcast_voice"
 
