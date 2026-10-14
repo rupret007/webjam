@@ -9,6 +9,15 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Art Settings now says “Your name and optional meeting link.”, uses the plain
   name hint and accessible name “Your name”, and omits Verify Sound. The name
   display says “Others see”; optional keys use the visible label for accessibility.
+- Art companion's iPhone/iPad Join UI test waits for the name and invitation
+  fields to exist, be hittable, and hold keyboard focus before typing, and
+  scrolls the form from each field's real position above the keyboard. Large
+  Dynamic Type room actions keep scrolling until the hittable point sits
+  inside the visible form. A page swipe is used only when the control is
+  still a page away and the software keyboard is down; a near miss uses a
+  short correction instead of a reverse page swipe. The keyboard toolbar's
+  Done control is not treated as the keyboard. The same keyboard and
+  recovery checks remain.
 - New `Test integrity guards` CI job (add-only). It fails when global test
   config fakes the clock (`faketime`, `LD_PRELOAD` / `DYLD_INSERT_LIBRARIES`
   injection, a `TZ` override, or global freezegun / time-machine / fake
@@ -282,6 +291,8 @@ All notable improvements and features for the WebJam creator collaboration platf
   physical observations at **NOT RUN**, with exact package/hash fields and a
   ten-minute Music/Art try list. Jeff retains feel and Final Build judgment.
 
+- Music Help opens with “Host. Share. Join. Play.” and three short steps.
+  Engine, meeting, room-control and keyboard details stay in searchable topics.
 - Idle host Recording Setup no longer offers a Takes folder that reload
   discards. **Show Folder** opens WebJam's managed host location, with a short
   explanation. Guest folder choice is unchanged.
