@@ -10,8 +10,11 @@ from uuid import uuid4
 from PySide6.QtCore import QObject, QTimer
 
 from core.art_workspace import art_summary
-from core.session_intelligence import build_session_pulse
-from core.session_library import SessionLibrary, SessionLibraryConflict
+from core.session_intelligence import notes_display_equivalent, session_notes_facts
+from core.session_library import (
+    SessionLibrary, SessionLibraryConflict, SessionLibraryCreateUnconfirmed,
+    SessionLibrarySaveUnconfirmed,
+)
 
 
 _EDITABLE_FIELDS = ("title", "mode_key", "notes", "decisions", "actions", "blockers",
@@ -84,7 +87,11 @@ class SessionLibraryCoordinator(QObject):
         self.library = library or default_session_library()
         self.current = None
         self.dialog = None
+        self._saved_editor_record = None
         self._pending = {}
+        self._save_attempts = {}
+        self._create_attempt = None
+        self._captured = None
         self._applying = False
         self._run_id = ""
         self._live_take_ids = set()
@@ -127,12 +134,20 @@ class SessionLibraryCoordinator(QObject):
                     self._flash(" ".join(warnings))
             title, mode, notes = self._context()
             first_workspace = self.current is None
-            self.current = self.library.create(self._profile(), title or "Untitled workspace",
-                                               notes=notes, mode_key=mode)
+            created = self.library.create(
+                self._profile(), title or "Untitled workspace",
+                notes=notes, mode_key=mode, retry=self._create_attempt,
+            )
+            self._create_attempt = None
+            self.current = created
             follow_along = getattr(self._c, "follow_along", None)
             if first_workspace and follow_along is not None:
                 follow_along.workspace_created()
             return True
+        except SessionLibraryCreateUnconfirmed as error:
+            self._create_attempt = error.attempt
+            self._flash("This workspace was not confirmed saved. Your current Notes remain available; retry Session library.")
+            return False
         except (OSError, ValueError):
             self._flash("Workspace history could not be saved. Your current Notes remain available; retry Session library.")
             return False
@@ -141,6 +156,11 @@ class SessionLibraryCoordinator(QObject):
         if not self._applying and self.current is not None:
             self.timer.start()
 
+    def _borrowed_title(self):
+        """Return the invitation's name if the strip title is still just that."""
+        persistence = getattr(self._c, "_persistence", None)
+        return getattr(persistence, "_borrowed_title", None)
+
     def _capture_current_notes(self):
         """Keep live Notes ahead of editor saves without dropping pending facts."""
         if self._applying:
@@ -148,16 +168,54 @@ class SessionLibraryCoordinator(QObject):
         if self.current is not None and self.current.profile == self._profile():
             latest = self._pending.get(self.current.id, self.current)
             title, mode, notes = self._context()
+            context = (self.current.id, title, mode, notes)
+            first_capture = self._captured is None or self._captured[0] != self.current.id
+            if not first_capture and context == self._captured:
+                return
+            own_fields = (self.current.id, self.current.title, self.current.mode_key, self.current.notes)
+            if first_capture and latest is not self.current and context == own_fields:
+                # Nothing moved in the live controls since this workspace's
+                # last disk save; preserve a draft owned by someone else
+                # (e.g. an open editor) instead of clobbering it with a
+                # recompute seeded from the unrelated live value.
+                self._captured = context
+                return
+            # The live control, not the pending draft, is the source of truth
+            # for a real change: this also lets a reverted edit (back to the
+            # last captured value) override a stale draft a failed autosave
+            # left behind, instead of silently keeping the failed draft.
+            loaded_notes = (
+                self._captured[3]
+                if self._captured and self._captured[0] == self.current.id
+                else latest.notes
+            )
+            # First capture after create still derives from live Notes so
+            # Decision/Action lines typed before the first save land on disk.
+            # Later captures treat Qt display normalization as unchanged Notes.
+            untouched = (
+                not first_capture
+                and (
+                    notes == loaded_notes
+                    or notes_display_equivalent(notes, latest.notes)
+                )
+            )
+            stored_notes = latest.notes if untouched else notes
+            self._captured = context
             changes = {}
-            if title != self.current.title:
-                changes["title"] = title or latest.title
-            if mode != self.current.mode_key:
-                changes["mode_key"] = mode
-            if notes != self.current.notes or notes == latest.notes:
-                pulse = build_session_pulse(creator_profile_key=self._profile(), title=title, notes=notes)
-                changes.update(notes=notes, decisions=pulse.decisions,
-                    actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
-                    blockers=pulse.blockers)
+            borrowed = self._borrowed_title()
+            if title and (
+                borrowed is None or " ".join(title.split()) != borrowed
+            ):
+                changes["title"] = title
+            changes["mode_key"] = mode
+            decisions, actions, blockers = session_notes_facts(
+                creator_profile_key=self._profile(), title=title, notes=stored_notes,
+                previous_notes=latest.notes if untouched else None,
+                previous_decisions=latest.decisions,
+                previous_actions=latest.actions, previous_blockers=latest.blockers,
+            )
+            changes.update(notes=stored_notes, decisions=decisions, actions=actions,
+                           blockers=blockers)
             candidate = replace(latest, **changes)
             if candidate != self.current or self.current.id in self._pending:
                 self._pending[candidate.id] = candidate
@@ -176,7 +234,7 @@ class SessionLibraryCoordinator(QObject):
                 return False
         for key, record in tuple(self._pending.items()):
             try:
-                saved = self.library.save(record)
+                saved = self._save_owned_record(record)
             except (OSError, ValueError):
                 self._flash("Workspace changes are still here but not saved. Open Session library to retry or save a separate copy.")
                 return False
@@ -388,12 +446,35 @@ class SessionLibraryCoordinator(QObject):
         latest = self._pending.get(base.id)
         if latest is None and self.current is not None and self.current.id == base.id:
             latest = self.current
+        if (latest is None and self._saved_editor_record is not None
+                and self._saved_editor_record.id == base.id
+                and self._saved_editor_record.revision > base.revision):
+            # Summary export retains the editor's original baseline. Keep the
+            # revision we saved even when it belongs to a browsed workspace.
+            latest = self._saved_editor_record
         latest = deepcopy(latest or base)
         merged = _merge_editor_changes(base, edited, latest)
-        saved = self.library.save(merged)
+        saved = self._save_owned_record(merged)
+        self._saved_editor_record = deepcopy(saved)
         if _same_snapshot(self._pending.get(saved.id), latest):
             self._pending.pop(saved.id, None)
         self._record_saved(saved)
+        return saved
+
+    def _save_owned_record(self, record):
+        attempt = self._save_attempts.get(record.id)
+        if attempt is not None and (attempt.base_token != record._store_token
+                                    or attempt.base_revision != record.revision):
+            # A deliberate reload/selection has established a new base.
+            self._save_attempts.pop(record.id, None)
+            attempt = None
+        try:
+            saved = (self.library.save(record, retry=attempt) if attempt is not None
+                     else self.library.save(record))
+        except SessionLibrarySaveUnconfirmed as error:
+            self._save_attempts[record.id] = error.attempt
+            raise
+        self._save_attempts.pop(record.id, None)
         return saved
 
     def _record_saved(self, record):
@@ -405,10 +486,15 @@ class SessionLibraryCoordinator(QObject):
             self._pending.pop(record.id, None)
         if self.current is not None and self.current.id == record.id:
             self.current = record
+            # Snapshot the Qt-rendered controls, not the raw stored notes, so
+            # display normalization is not a later Notes edit. Advancing the
+            # baseline to the applied controls also lets a revert of the live
+            # control back to its pre-edit value read as a real change.
             self._applying = True
             try:
                 self._c.window.session_strip.set_session_title(record.title)
                 self._c.window.session_canvas.set_notes(record.notes)
+                self._captured = (record.id,) + self._context()
             finally:
                 self._applying = False
             self._refresh_song_tools()
@@ -470,6 +556,7 @@ class SessionLibraryCoordinator(QObject):
                 if index >= 0:
                     picker.setCurrentIndex(index)
             self._c.window.session_canvas.set_notes(record.notes)
+            self._captured = (record.id,) + self._context()
         finally:
             self._applying = False
         self._refresh_song_tools()
@@ -502,7 +589,7 @@ class SessionLibraryCoordinator(QObject):
             return
         owner = self._recap_owner
         if self.current is not None and self.current.id == owner.id:
-            owner = self.current
+            owner = self._pending.get(owner.id, self.current)
             recap = dict(self._pending_recap, take_ids=sorted(self._live_take_ids))
         else:
             recap = self._pending_recap
@@ -532,7 +619,8 @@ class SessionLibraryCoordinator(QObject):
         entry = {"take_id": take_id, "take_path": "", "run_id": self._run_id,
                  "recording_session_id": session_id, "validated": False,
                  "status": "pending", "title": "Recording requested"}
-        self.current = replace(self.current, take_links=(*self.current.take_links, entry))
+        latest = self._pending.get(self.current.id, self.current)
+        self.current = replace(latest, take_links=(*latest.take_links, entry))
         self._pending[self.current.id] = self.current
         self.flush()
 
@@ -546,7 +634,7 @@ class SessionLibraryCoordinator(QObject):
         if binding is not None:
             owner_id, run_id = binding
             if self.current is not None and self.current.id == owner_id:
-                owner = self.current
+                owner = self._pending.get(owner_id, self.current)
             else:
                 try:
                     owner = self._pending.get(owner_id) or self.library.load(owner_id)

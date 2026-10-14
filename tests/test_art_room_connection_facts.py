@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from core.art_room_overview import art_room_overview
 from core.network_invite import BandInvite
 from core.session_conductor import (
     ArtRoomState,
@@ -47,7 +48,17 @@ def test_art_room_can_connect_with_no_audio_evidence(role):
     assert facts.local_participant is EvidenceState.NOT_STARTED
     assert facts.human_two_way_audibility is EvidenceState.NOT_STARTED
     assert "Jamulus" not in view.message
-    assert view.message.startswith("Make from your own space")
+    assert view.message == ""
+    overview = art_room_overview(
+        state=facts.art_room, hosting=role is SessionRole.HOST,
+    )
+    assert overview.activity_label == "Make from your own space"
+    assert overview.activity_detail == (
+        "You do not need an art app. Use paper, your usual tools, or just talk. "
+        "Choose Set Up Conversation to add your meeting link."
+    )
+    assert overview.conversation_action_label == "Set Up Conversation"
+    assert overview.conversation_enabled
     assert "paint along" not in view.message.casefold()
 
 
@@ -296,6 +307,29 @@ def test_late_room_connection_cannot_replace_cleanup_or_local_work(changes, phas
     assert view.title != "You’re in"
     if changes.get("startup_cleanup_pending"):
         assert view.primary_action is SessionPrimaryAction.CLOSE_SETUP
+
+
+def test_waiting_art_host_without_meeting_has_copy_invite_as_the_one_primary():
+    facts = SessionFacts(
+        creator_profile_key="art",
+        setup_requested=True,
+        role=SessionRole.HOST,
+        art_room=ArtRoomState.WAITING,
+    )
+    view = derive_session_presentation(facts)
+    overview = art_room_overview(
+        state=facts.art_room, hosting=True, conversation_configured=False,
+    )
+    assert view.primary_action is SessionPrimaryAction.COPY_INVITE
+    assert view.action_label == "Copy Invite"
+    assert view.title == "Your room is open"
+    assert overview.activity_detail == (
+        "You do not need an art app. Use paper, your usual tools, or just talk."
+    )
+    assert "Conversation" not in overview.activity_detail
+    assert overview.conversation_action_label == "Set Up Conversation"
+    assert overview.conversation_enabled
+    assert not overview.activity_action
 
 
 def test_host_waiting_can_share_while_guest_waiting_cannot():

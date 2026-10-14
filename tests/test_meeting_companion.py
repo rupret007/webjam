@@ -453,6 +453,50 @@ def test_v3_message_names_manual_paste_and_preserves_the_complete_invitation(pro
         assert "carries the music" not in message.text
 
 
+@pytest.mark.parametrize("meeting_url", ["", MEETING_URL, "https://zoom.us/j/123", "https://evil.example.com/meet"])
+def test_paint_along_invite_explains_silent_video_and_separate_talk(meeting_url):
+    message = build_invite_message(
+        join_link=JOIN_LINK,
+        creator_profile_key="art",
+        art_start_key="paint_along",
+        meeting_url=meeting_url,
+    )
+    activity = next(line for line in message.text.splitlines() if "Paint along:" in line)
+    assert "Paint along: follow a process video silently in WebJam; talk stays in the meeting." in activity
+    assert "Make from your own space" not in message.text
+    assert message.text.splitlines().count(JOIN_LINK) == 1
+    for engine in ("Drawpile", "Jamulus", "Webex", "Krita"):
+        assert engine not in activity
+    if meeting_url in (MEETING_URL, "https://zoom.us/j/123"):
+        assert message.includes_meeting
+        assert meeting_url in message.text.splitlines()
+        assert "conversation and work sharing" in message.text
+        assert "separate and optional; WebJam does not run it." in message.text
+    else:
+        assert not message.includes_meeting
+        assert "evil.example.com" not in message.text
+
+
+@pytest.mark.parametrize("art_start_key", ["talk_and_make", "", "unknown"])
+@pytest.mark.parametrize("meeting_url", ["", MEETING_URL])
+def test_make_together_invite_keeps_existing_own_space_copy(art_start_key, meeting_url):
+    message = build_invite_message(
+        join_link=JOIN_LINK, creator_profile_key="art",
+        art_start_key=art_start_key, meeting_url=meeting_url,
+    )
+    activity = next(line for line in message.text.splitlines() if "own space" in line)
+    assert "WebJam opens the art room. Make from your own space with paper, clay, a model, a printer, or your usual app." in activity
+    assert "Paint along" not in message.text
+    for engine in ("Drawpile", "Jamulus", "Webex", "Krita"):
+        assert engine not in activity
+
+
+@pytest.mark.parametrize("profile", ["music", "podcast_voice", "review_rehearsal"])
+def test_art_start_does_not_change_other_profiles_invite(profile):
+    kwargs = dict(join_link=JOIN_LINK, creator_profile_key=profile, song_line="Our song", meeting_url=MEETING_URL)
+    assert build_invite_message(**kwargs, art_start_key="paint_along") == build_invite_message(**kwargs)
+
+
 # ----------------------------------------------------------------------
 # Watch-together via Conversation / Webex share (Jeff lock 2026-09-20)
 # ----------------------------------------------------------------------
@@ -484,9 +528,16 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
     assert "WebJam window" in next_click
 
     # Overview Make-together detail stays brief (fits with Conversation closed).
+    # Default / non-waiting rooms still name the Conversation setup step.
+    # Waiting hosts omit that ask so HUD Copy Invite stays the one primary.
     detail = art_make_together_activity_detail()
-    assert "paper, clay, a model, printer, or your usual app" in detail
+    assert "You do not need an art app" in detail
+    assert "your usual tools, or just talk" in detail
     assert "Choose Set Up Conversation" in detail
+    waiting = art_make_together_activity_detail(waiting_host=True)
+    assert "You do not need an art app" in waiting
+    assert "your usual tools, or just talk" in waiting
+    assert "Conversation" not in waiting
     assert WATCH_TOGETHER_ACTIONS not in detail
     assert WEBJAM_DOES_NOT_PLAY_MOVIE not in detail
     assert paint_along_local_note() not in detail
@@ -529,7 +580,16 @@ def test_one_next_click_language_shared_by_art_and_music_surfaces():
     # Honesty: guidance never invents Webex opaque schemes (meeting-reminder).
     assert "https meeting link" in WEBEX_HANDOFF_IS_HTTPS
     blob = " ".join(
-        (detail, watch, card, lesson, music, WEBEX_HANDOFF_IS_HTTPS, meeting_share_how())
+        (
+            detail,
+            waiting,
+            watch,
+            card,
+            lesson,
+            music,
+            WEBEX_HANDOFF_IS_HTTPS,
+            meeting_share_how(),
+        )
     )
     for forbidden in (
         "Plex", "watch party", "Embedded App", "joined the meeting",
@@ -546,17 +606,33 @@ def test_music_invite_names_meeting_share_for_watching_a_demo():
     assert "you do not need it to play" in message.text
 
 
+OWN_SPACE = (
+    "You do not need an art app. Use paper, your usual tools, or just talk."
+)
+SETUP_ASK = "Choose Set Up Conversation to add your meeting link."
+CONVERSATION_NEXT = "Choose Conversation to talk or share your screen."
+
+
 @pytest.mark.parametrize(
-    "configured,next_action",
+    "configured,waiting_host,detail",
     [
-        (False, "Choose Set Up Conversation to add your meeting link."),
-        (True, "Choose Conversation to talk or share your screen."),
+        (False, False, f"{OWN_SPACE} {SETUP_ASK}"),
+        (False, True, OWN_SPACE),
+        (True, False, f"{OWN_SPACE} {CONVERSATION_NEXT}"),
+        (True, True, f"{OWN_SPACE} {CONVERSATION_NEXT}"),
     ],
 )
-def test_make_together_room_names_the_next_action(configured, next_action):
+def test_make_together_activity_omits_setup_ask_only_for_waiting_hosts(
+    configured, waiting_host, detail
+):
     from core.meeting_companion import art_make_together_activity_detail
 
-    assert art_make_together_activity_detail(conversation_configured=configured) == (
-        "Use paper, clay, a model, printer, or your usual app, or just talk. "
-        + next_action
-    )
+    assert art_make_together_activity_detail(
+        conversation_configured=configured,
+        waiting_host=waiting_host,
+    ) == detail
+    if waiting_host and not configured:
+        assert "Conversation" not in detail
+        assert "meeting link" not in detail
+    elif not configured:
+        assert SETUP_ASK in detail

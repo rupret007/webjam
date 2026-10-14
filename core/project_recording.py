@@ -1342,6 +1342,8 @@ class SoundDeviceProjectInputBackend:
         stream = None
         try:
             stream = module.InputStream(**kwargs)
+            # Own the device until close confirms release, even if start fails.
+            self._stream = stream
             stream.start()
         except Exception:
             if stream is not None:
@@ -1349,14 +1351,14 @@ class SoundDeviceProjectInputBackend:
                     stream.close()
                 except Exception:
                     pass
+                else:
+                    self._stream = None
             raise ProjectRecordingError(
                 "WebJam couldn't open the selected Studio input device."
             ) from None
-        self._stream = stream
 
     def stop(self) -> None:
         stream = self._stream
-        self._stream = None
         if stream is None:
             return
         failure = False
@@ -1368,6 +1370,8 @@ class SoundDeviceProjectInputBackend:
             stream.close()
         except Exception:
             failure = True
+        else:
+            self._stream = None
         if failure:
             raise ProjectRecordingError(
                 "WebJam couldn't stop the Studio input device cleanly."
@@ -1375,7 +1379,6 @@ class SoundDeviceProjectInputBackend:
 
     def abort(self) -> None:
         stream = self._stream
-        self._stream = None
         if stream is None:
             return
         failure = False
@@ -1387,6 +1390,8 @@ class SoundDeviceProjectInputBackend:
             stream.close()
         except Exception:
             failure = True
+        else:
+            self._stream = None
         if failure:
             raise ProjectRecordingError(
                 "WebJam couldn't abort the Studio input device cleanly."

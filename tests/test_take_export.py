@@ -6,6 +6,7 @@ import os
 import stat
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -365,6 +366,152 @@ def _reordered_project_take(tmp_path):
     return take, (bass, drums, guitar), (bass_audio, drums_audio, guitar_audio)
 
 
+@pytest.mark.parametrize("phase", [
+    "open", "render", "restore", "evidence", "publication",
+    "publication_identical", "publication_remove",
+])
+def test_project_export_blocks_source_changes_mid_render(tmp_path, monkeypatch, phase):
+    from core import take_export
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    source = sources[0]
+    original_bytes = source.read_bytes()
+    replacement = tmp_path / "replacement.wav"
+    _write(replacement, np.full(2048, 0.7), rate=48_000)
+    replacement_bytes = replacement.read_bytes()
+    assert len(original_bytes) == len(replacement_bytes)
+    original_stat = source.stat()
+    before = {path: path.read_bytes() for path in sources[1:]}
+    manifest_before = (take.path / "webjam-take.json").read_bytes()
+    changed = False
+
+    def change_source():
+        nonlocal changed
+        changed = True
+        if phase == "publication_remove":
+            source.unlink()
+            return
+        if phase == "publication_identical":
+            replacement.write_bytes(original_bytes)
+        if phase in {"render", "restore"}:
+            source.write_bytes(replacement_bytes)
+        else:
+            replacement.replace(source)
+        # Same format, length and mtime must not hide a content/identity change.
+        os.utime(source, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+    if phase == "open":
+        original_open = sf.SoundFile
+
+        def open_after_replacement(file, *args, **kwargs):
+            is_source = (
+                os.fstat(file).st_ino == original_stat.st_ino
+                if isinstance(file, int) else
+                os.fstat(file.fileno()).st_ino == original_stat.st_ino
+                if hasattr(file, "fileno") else str(file) == str(source)
+            )
+            if is_source and not changed:
+                change_source()
+            return original_open(file, *args, **kwargs)
+
+        monkeypatch.setattr(sf, "SoundFile", open_after_replacement)
+    else:
+        method = {
+            "render": "_render_segment_block",
+            "restore": "_render_segment_block",
+            "evidence": "_write_project_track",
+            "publication": "_write_checksum_manifest",
+            "publication_identical": "_write_checksum_manifest",
+            "publication_remove": "_write_checksum_manifest",
+        }[phase]
+        original_method = getattr(take_export, method)
+
+        def change_during_call(*args, **kwargs):
+            if phase in {"render", "restore"} and not changed:
+                change_source()
+                result = original_method(*args, **kwargs)
+                if phase == "restore":
+                    source.write_bytes(original_bytes)
+                    os.utime(source, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+                return result
+            result = original_method(*args, **kwargs)
+            if not changed:
+                change_source()
+            return result
+
+        monkeypatch.setattr(take_export, method, change_during_call)
+
+    destination = tmp_path / "exports"
+    destination.mkdir()
+    existing = destination / "Track Export"
+    existing.mkdir()
+    sentinel = existing / "keep.txt"
+    sentinel.write_text("Earlier export", encoding="utf-8")
+    with pytest.raises(TakeExportError, match="changed"):
+        export_track_package(take, destination_root=destination, chunk_frames=1024)
+
+    assert changed
+    assert list(destination.iterdir()) == [existing]
+    assert sentinel.read_text(encoding="utf-8") == "Earlier export"
+    if phase == "publication_remove":
+        assert not source.exists()
+    else:
+        expected = original_bytes if phase in {"restore", "publication_identical"} else replacement_bytes
+        assert source.read_bytes() == expected
+    assert {path: path.read_bytes() for path in sources[1:]} == before
+    assert (take.path / "webjam-take.json").read_bytes() == manifest_before
+
+
+def test_project_export_unchanged_sources_have_verified_receipt(tmp_path):
+    from core.export_receipt import verify_export_receipt
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    before = {path: path.read_bytes() for path in sources}
+    result = export_track_package(take, destination_root=tmp_path / "exports", chunk_frames=1024)
+    assert verify_export_receipt(result.folder).folder == result.folder
+    manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
+    for track in manifest["tracks"]:
+        for segment in track["segments"]:
+            assert segment["observed_sha256"] == segment["declared_sha256"]
+    assert {path: path.read_bytes() for path in sources} == before
+
+
+@pytest.mark.parametrize("render_fails", [False, True])
+def test_project_export_closes_pinned_sources(tmp_path, monkeypatch, render_fails):
+    from core import take_export
+
+    take, _tracks, _sources = _reordered_project_take(tmp_path)
+    original_open = sf.SoundFile
+    handles = []
+    readers = []
+
+    def remember_reader(file, *args, **kwargs):
+        reader = original_open(file, *args, **kwargs)
+        if hasattr(file, "fileno"):
+            handles.append(file)
+            readers.append(reader)
+        return reader
+
+    monkeypatch.setattr(sf, "SoundFile", remember_reader)
+    if render_fails:
+        def fail_render(*args, **kwargs):
+            raise OSError("output disk full")
+
+        monkeypatch.setattr(take_export, "_render_segment_block", fail_render)
+
+    destination = tmp_path / "exports"
+    if render_fails:
+        # A writer failure must not be relabeled as a changed source.
+        with pytest.raises(OSError, match="output disk full"):
+            export_track_package(take, destination_root=destination)
+        assert not list(destination.iterdir())
+    else:
+        export_track_package(take, destination_root=destination)
+    assert handles
+    assert all(handle.closed for handle in handles)
+    assert all(reader.closed for reader in readers)
+
+
 @pytest.mark.parametrize(
     "damage", ["missing", "directory", "dangling_symlink", "symlink", "oversized"]
 )
@@ -582,6 +729,11 @@ def test_schema2_raw_export_preserves_one_stereo_logical_source(tmp_path):
     assert len(evidence["tracks"]) == 1
     assert evidence["tracks"][0]["output_channels"] == 2
     assert evidence["tracks"][0]["segments"][0]["channels"] == 2
+    assert (
+        evidence["tracks"][0]["segments"][0]["declared_sha256"]
+        == evidence["tracks"][0]["segments"][0]["observed_sha256"]
+        == _digest(source)
+    )
 
 
 def test_schema2_export_fails_closed_when_reconnect_changes_channel_layout(tmp_path):
@@ -1192,3 +1344,170 @@ def test_schema2_track_export_blocks_missing_or_changed_media_atomically(tmp_pat
         export_track_package(take, destination_root=root)
     assert root.is_dir()
     assert list(root.iterdir()) == []
+
+
+def _pcm16_constant(path: Path, amplitude: int, *, frames: int = 4800, rate: int = 48_000) -> None:
+    """Write the tiny real WAV used by the same-format rewrite probe."""
+    import struct
+    import wave
+
+    with wave.open(str(path), "wb") as writer:
+        writer.setnchannels(1)
+        writer.setsampwidth(2)
+        writer.setframerate(rate)
+        writer.writeframes(struct.pack("<h", amplitude) * frames)
+
+
+def _pcm16_take(tmp_path: Path, *, amplitude: int = 100):
+    """Schema-v2 take whose source is the `_take` WAV from media-backup tests."""
+    take_dir = tmp_path / "first"
+    take_dir.mkdir()
+    audio = take_dir / "audio.wav"
+    _pcm16_constant(audio, amplitude)
+    project = TakeProject(
+        session_id=new_project_id(),
+        take_id=new_project_id(),
+        session_title="Session",
+        take_name="first",
+        status=ProjectStatus.COMPLETE,
+        project_sample_rate=48_000,
+        participants=(),
+        tracks=(
+            _project_track(
+                "Guitar",
+                None,
+                [_project_segment(audio, take_dir)],
+                order=0,
+                source_type=SourceType.JAMULUS_SERVER,
+                quality=SourceQuality.NETWORK_TRACK,
+            ),
+        ),
+    )
+    write_take_project(take_dir, project)
+    take = load_take(take_dir)
+    assert take is not None
+    assert take.manifest_schema_version >= 2
+    return take, audio
+
+
+def test_schema2_track_export_rejects_same_format_rewrite_after_source_hash(
+    tmp_path, monkeypatch
+):
+    """Same-format rewrite after the bound reader handle is hashed must not publish."""
+    from core import take_export
+
+    take, audio = _pcm16_take(tmp_path)
+    original = audio.read_bytes()
+    destination = tmp_path / "exports"
+    original_stat = audio.stat()
+    real_sha256_handle = take_export._sha256_handle
+    rewritten = False
+
+    def hash_then_rewrite(handle):
+        nonlocal rewritten
+        digest = real_sha256_handle(handle)
+        try:
+            handle_ino = os.fstat(handle.fileno()).st_ino
+        except (OSError, AttributeError):
+            handle_ino = None
+        if not rewritten and handle_ino == original_stat.st_ino:
+            rewritten = True
+            _pcm16_constant(audio, 2000)
+        return digest
+
+    monkeypatch.setattr(take_export, "_sha256_handle", hash_then_rewrite)
+
+    with pytest.raises(TakeExportError, match="source recording changed after validation"):
+        export_track_package(take, destination_root=destination)
+
+    assert rewritten
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == []
+    expected_rewrite = tmp_path / "rewritten.wav"
+    _pcm16_constant(expected_rewrite, 2000)
+    assert audio.read_bytes() == expected_rewrite.read_bytes()
+    assert audio.read_bytes() != original
+    # WebJam must not restore or further rewrite the take source.
+    samples, rate = sf.read(audio, dtype="float32")
+    assert rate == 48_000
+    assert float(samples[0]) == pytest.approx(2000 / 32768)
+    assert float(samples[0]) == pytest.approx(0.06103515625)
+
+
+def test_schema2_track_export_rejects_source_rewrite_before_publication(
+    tmp_path, monkeypatch
+):
+    from core import take_export
+
+    take, audio = _pcm16_take(tmp_path)
+    original = audio.read_bytes()
+    destination = tmp_path / "exports"
+    real_checksums = take_export._write_checksum_manifest
+
+    def rewrite_then_checksums(*args, **kwargs):
+        _pcm16_constant(audio, 2000)
+        return real_checksums(*args, **kwargs)
+
+    monkeypatch.setattr(take_export, "_write_checksum_manifest", rewrite_then_checksums)
+
+    with pytest.raises(TakeExportError, match="source recording changed after validation"):
+        export_track_package(take, destination_root=destination)
+
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == []
+    expected_rewrite = tmp_path / "rewritten.wav"
+    _pcm16_constant(expected_rewrite, 2000)
+    assert audio.read_bytes() == expected_rewrite.read_bytes() != original
+
+
+@pytest.mark.parametrize("platform", ["posix", "nt"])
+@pytest.mark.parametrize("changed", [None, "path_ctime", "handle_ctime"])
+def test_track_export_manifest_checks_ctime_within_each_api_on_windows(
+    tmp_path, monkeypatch, platform, changed
+):
+    """Simulated Windows path/handle ctime split; native Windows: NOT RUN."""
+    from core import take_export
+
+    take, _tracks, sources = _reordered_project_take(tmp_path)
+    real_lstat = Path.lstat
+    real_fstat = os.fstat
+    inspections = {"path": 0, "handle": 0}
+
+    def inspect(info, source):
+        inspections[source] += 1
+        values = {
+            key: getattr(info, key)
+            for key in (
+                "st_mode",
+                "st_dev",
+                "st_ino",
+                "st_size",
+                "st_mtime_ns",
+                "st_ctime_ns",
+            )
+        }
+        values["st_ctime_ns"] = 1_000_000_000 if source == "path" else 2_000_000_000
+        if changed == source + "_ctime" and inspections[source] == 2:
+            values["st_ctime_ns"] += 1
+        return SimpleNamespace(**values)
+
+    monkeypatch.setattr(Path, "lstat", lambda path: inspect(real_lstat(path), "path"))
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.name = platform
+    simulated_os.fstat = lambda fd: inspect(real_fstat(fd), "handle")
+    monkeypatch.setattr(take_export, "os", simulated_os)
+    destination = tmp_path / "exports"
+    before = {path: path.read_bytes() for path in sources}
+
+    if platform == "nt" and changed is None:
+        result = export_track_package(take, destination_root=destination)
+        assert result.folder.is_dir()
+        assert result.manifest.is_file()
+    else:
+        with pytest.raises(TakeExportError, match="manifest"):
+            export_track_package(take, destination_root=destination)
+        assert not destination.exists() or not list(destination.iterdir())
+    assert {path: path.read_bytes() for path in sources} == before
+    if platform == "nt" and changed is None:
+        assert inspections["path"] >= 2
+        assert inspections["handle"] >= 2
