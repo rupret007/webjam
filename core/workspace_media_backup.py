@@ -34,7 +34,8 @@ from core.workspace_backup import (
 )
 from core.workspace_media_schema import (
     MAX_PACKAGE_BYTES, MAX_PACKAGE_FILES, MAX_PACKAGE_METADATA_BYTES,
-    digest, file_inventory, relative_path,
+    digest, file_inventory, local_source_basename, relative_path,
+    windows_unusable_regular_file,
 )
 
 _FORMAT = "webjam.workspace-media"
@@ -191,10 +192,22 @@ def _pin_windows_directory(path):
         close(handle)
 
 
+_LOCAL_SOURCE_UNUSABLE_ON_HOST = (
+    "This computer cannot open that artwork filename as a regular file."
+)
+
+
+def _access_name(name, *, local_source=False):
+    checked = local_source_basename(name) if local_source else relative_path(name)
+    if local_source and os.name == "nt" and windows_unusable_regular_file(checked):
+        raise WorkspaceBackupError(_LOCAL_SOURCE_UNUSABLE_ON_HOST)
+    return checked
+
+
 @contextmanager
-def _bound_parent(root, name, *, create=False, created_paths=None):
+def _bound_parent(root, name, *, create=False, created_paths=None, local_source=False):
     """Bind every destination component; links never redirect a file operation."""
-    relative_path(name)
+    _access_name(name, local_source=local_source)
     root = Path(root).absolute()
     parts = name.split("/")
     with ExitStack() as stack:
@@ -331,8 +344,8 @@ def _publish_new_import_primary_unchecked(path, data):
                 os.close(descriptor)
 
 
-def _member(root: Path, name: str) -> Path:
-    relative_path(name)
+def _member(root: Path, name: str, *, local_source=False) -> Path:
+    _access_name(name, local_source=local_source)
     _directory(root)
     path = root
     for component in name.split("/")[:-1]:
@@ -342,8 +355,8 @@ def _member(root: Path, name: str) -> Path:
 
 
 @contextmanager
-def _source(path: Path, expected=None, *, root=None, relative=None):
-    with _bound_parent(root or path.parent, relative or path.name) as (parent, directory, name):
+def _source(path: Path, expected=None, *, root=None, relative=None, local_source=False):
+    with _bound_parent(root or path.parent, relative or path.name, local_source=local_source) as (parent, directory, name):
         with _source_bound(parent, directory, name, expected) as source:
             yield source
 
@@ -399,16 +412,17 @@ class _SourceFile:
     size_bytes: int
     sha256: str
     role: str
+    local_source: bool = False
 
     def proof(self):
         return {"path": self.relative, "size_bytes": self.size_bytes, "sha256": self.sha256, "role": self.role}
 
 
-def _inspect(root, name, member, role, work, expected_hash=None, expected_size=None):
+def _inspect(root, name, member, role, work, expected_hash=None, expected_size=None, *, local_source=False):
     root_id = _directory(root)
-    path = _member(root, name)
+    path = _member(root, name, local_source=local_source)
     digestor, size = hashlib.sha256(), 0
-    with _source(path, root=root, relative=name) as (stream, before):
+    with _source(path, root=root, relative=name, local_source=local_source) as (stream, before):
         while chunk := stream.read(_CHUNK):
             size += len(chunk)
             if size > MAX_PACKAGE_BYTES:
@@ -419,7 +433,8 @@ def _inspect(root, name, member, role, work, expected_hash=None, expected_size=N
     if (_directory(root) != root_id or expected_hash is not None and actual != expected_hash
             or expected_size is not None and size != expected_size):
         raise WorkspaceBackupError("Selected media does not match its recorded content identity.")
-    return _SourceFile(str(root), name, member, (_identity(before), before.st_ctime_ns), root_id, size, actual, role)
+    return _SourceFile(str(root), name, member, (_identity(before), before.st_ctime_ns), root_id, size, actual, role,
+                       local_source=local_source)
 
 
 def _take_manifest(root, work):
@@ -520,7 +535,8 @@ def plan_workspace_package(record, selection, *, progress=None, cancel_check=Non
                 prefix = "art/" + hashlib.sha256(candidate.reference_id.encode()).hexdigest()[:32]
                 expected = next((p["files"][0] for p in record.media_provenance if p["kind"] == "art" and p["reference_id"] == candidate.reference_id), None)
                 copied = _inspect(source.parent, source.name, prefix + "/content" + suffix, "art", work,
-                                  expected["sha256"] if expected else None, expected["size_bytes"] if expected else None)
+                                  expected["sha256"] if expected else None, expected["size_bytes"] if expected else None,
+                                  local_source=True)
                 # The proof path names the restored member, not its old filename.
                 copied = replace(copied, member=prefix + "/content" + suffix)
                 proof = copied.proof()
@@ -777,9 +793,9 @@ def _export_bound_package(plan, destination, parent, progress, cancel_check):
                     root = Path(source.root)
                     if _directory(root) != source.root_identity:
                         raise WorkspaceBackupError("Selected source folder changed after preview.")
-                    path = _member(root, source.relative)
+                    path = _member(root, source.relative, local_source=source.local_source)
                     hasher, size = hashlib.sha256(), 0
-                    with _source(path, source.receipt, root=root, relative=source.relative) as (reader, _), archive.open(_zip_info(source.member), "w", force_zip64=True) as writer:
+                    with _source(path, source.receipt, root=root, relative=source.relative, local_source=source.local_source) as (reader, _), archive.open(_zip_info(source.member), "w", force_zip64=True) as writer:
                         while chunk := reader.read(_CHUNK):
                             size += len(chunk)
                             if size > source.size_bytes:
@@ -1105,7 +1121,7 @@ class WorkspaceMediaVerification:
         """Cheap activation gate; actual Studio renderers retain content checks."""
         for source in self._receipts:
             root = Path(source.root)
-            path = _member(root, source.relative)
+            path = _member(root, source.relative, local_source=source.local_source)
             info = path.lstat()
             if (_directory(root) != source.root_identity or not stat.S_ISREG(info.st_mode)
                     or (_identity(info), info.st_ctime_ns) != source.receipt):
@@ -1160,7 +1176,8 @@ def verify_workspace_media(record, kind, reference_id, *, locator=None, progress
         if locator is not None and expected is None:
             raise WorkspaceBackupError("This historical reference has no content checksum; a replacement cannot prove the same artwork.")
         receipt = _inspect(path.parent, path.name, path.name, "art", work,
-                           expected["sha256"] if expected else None, expected["size_bytes"] if expected else None)
+                           expected["sha256"] if expected else None, expected["size_bytes"] if expected else None,
+                           local_source=True)
         return WorkspaceMediaVerification(kind, reference_id, str(path), receipt.sha256, receipt.size_bytes,
                                           _receipts=(receipt,), matches_expected_content=expected is not None)
     if kind != "take":

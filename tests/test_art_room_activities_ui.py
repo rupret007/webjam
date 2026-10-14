@@ -220,7 +220,8 @@ def test_second_activity_renders_plain_text_with_full_accessible_status(window):
 @pytest.mark.parametrize(("canvas", "video"), [
     ("ready", "hidden"), ("missing_app", "hidden"),
     ("ready", "ready"),
-    ("ready", "needs_file"), ("missing_app", "local_attention"),
+    ("ready", "needs_file"), ("missing_app", "needs_file"),
+    ("unreadable", "needs_file"), ("missing_app", "local_attention"),
     ("share_pending", "hidden"), ("withdraw_pending", "hidden"),
 ])
 def test_both_production_activities_fit_and_keep_keyboard_actions_reachable(
@@ -232,8 +233,25 @@ def test_both_production_activities_fit_and_keep_keyboard_actions_reachable(
     window.session_strip.set_audio_state("End Room" if hosting else "Leave Room")
     panel = window.art_room_overview
     assert current.role_label == ("Host" if hosting else "Guest")
+    copy_recovery = video == "needs_file"
+    if copy_recovery:
+        # NEEDS_FILE recovery is the one next click even when canvas also
+        # needs attention. Conversation stays in the footer. Making-detail
+        # remains when a canvas is also offered.
+        assert current.open_my_copy_recovery
+        assert current.activity_action == "video"
+        assert current.activity_action_label == "Open my copy…"
+        assert panel.activity_button().text() == "Open my copy…"
+        assert panel.activity_button().objectName() == "PrimaryButton"
+        assert panel.secondary_activity_button().objectName() == "GhostButton"
+        assert panel.secondary_activity_button().text() == "Open workspace"
+        assert not panel.conversation_button().isVisibleTo(window)
+    else:
+        assert panel.conversation_button().isVisibleTo(window)
+        assert panel.conversation_button().isEnabled()
     assert panel._making_detail.isVisibleTo(window)
-    assert "paper, clay, a model, printer, or your usual app" in panel._making_detail.text()
+    assert "You do not need an art app" in panel._making_detail.text()
+    assert "your usual tools, or just talk" in panel._making_detail.text()
     # Deterministically exercise wider glyph metrics without changing a
     # machine's font/DPI settings or replacing production stylesheet sizes.
     for widget in panel._content.findChildren(QLabel) + panel._content.findChildren(QPushButton):
@@ -273,13 +291,34 @@ def test_both_production_activities_fit_and_keep_keyboard_actions_reachable(
         meeting_rect = QRect(window.webex_embed.mapTo(window, QPoint()), window.webex_embed.size())
         assert room_rect.bottom() < meeting_rect.top()
         assert window.rect().contains(meeting_rect)
-    for button in (
+    focused = [
         panel.activity_button(), panel.secondary_activity_button(),
-        panel.conversation_button(),
-    ):
+    ]
+    if not copy_recovery:
+        focused.append(panel.conversation_button())
+    for button in focused:
         assert button.isVisibleTo(window) and button.isEnabled()
         button.setFocus(Qt.FocusReason.TabFocusReason)
         _settle(qapp)
         assert button.hasFocus()
         rect = QRect(button.mapTo(panel.viewport(), QPoint()), button.size())
         assert panel.viewport().rect().contains(rect), (button.text(), rect)
+
+
+@pytest.mark.parametrize("canvas", ["missing_app", "unreadable"])
+def test_needs_file_owns_emphasis_when_canvas_also_needs_attention(window, qapp, canvas):
+    current = room_overview(canvas=canvas, video="needs_file")
+    window.set_art_room_overview(current)
+    _settle(qapp)
+    panel = window.art_room_overview
+    assert current.open_my_copy_recovery
+    assert current.activity_actions == ("video", "canvas")
+    assert panel.activity_button().text() == "Open my copy…"
+    assert panel.activity_button().objectName() == "PrimaryButton"
+    assert panel.secondary_activity_button().text() == "Open workspace"
+    assert panel.secondary_activity_button().objectName() == "GhostButton"
+    assert not panel.conversation_button().isVisibleTo(window)
+    assert panel._making_detail.isVisibleTo(window)
+    assert panel._activity_detail.text() == (
+        "Open your own copy of the same video to follow along."
+    )
