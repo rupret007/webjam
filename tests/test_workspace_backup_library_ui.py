@@ -1,5 +1,6 @@
 """Library UI slice for metadata-only workspace backup: back up, preview, import."""
 from dataclasses import replace
+import json
 import os
 from pathlib import Path
 
@@ -11,7 +12,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QLabel, QPushButton
 
-from core.session_library import SessionLibrary, SessionLibraryConflict
+from core.session_intelligence import notes_display_equivalent
+from core.session_library import SessionLibrary, SessionLibraryConflict, encode_session_record
 from core.workspace_backup import (
     export_workspace_backup,
     import_workspace_backup,
@@ -23,6 +25,31 @@ from webjam_qt.windows.workspace_backup import WorkspaceBackupChoicesDialog
 from tests import test_workspace_backup as backup_tests
 
 record = backup_tests.record
+
+_IMPORTED_NOTES = "Practice Wednesday"
+_IMPORTED_FACTS = (("Play in D",), ("Send chart",), ("Missing player",))
+
+
+def _fact_bytes(value):
+    payload = json.loads(encode_session_record(value))
+    return json.dumps(
+        {key: payload[key] for key in ("decisions", "actions", "blockers")},
+        ensure_ascii=False, separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _import_music_with_facts(tmp_path, notes=_IMPORTED_NOTES):
+    source = SessionLibrary(tmp_path / "source").create(
+        "music", "Wednesday rehearsal", notes=notes,
+        decisions=_IMPORTED_FACTS[0], actions=_IMPORTED_FACTS[1],
+        blockers=_IMPORTED_FACTS[2],
+    )
+    destination = tmp_path / "backup.json"
+    export_workspace_backup(source, destination)
+    library = SessionLibrary(tmp_path / "dest")
+    imported = import_workspace_backup(library, preview_workspace_backup(destination))
+    assert _fact_bytes(imported) == _fact_bytes(source)
+    return library, imported
 
 
 @pytest.fixture(autouse=True)
@@ -499,3 +526,134 @@ def test_recovery_action_and_status_fit_compact_enlarged_text_layout(tmp_path, m
             assert dialog.content_scroll.horizontalScrollBar().maximum() == 0
         assert dialog.status.wordWrap()
         assert dialog.rect().contains(QRect(dialog.status.mapTo(dialog, QPoint()), dialog.status.size()))
+
+
+def test_imported_facts_survive_forced_save_canceled_backup_and_title_edit(
+    tmp_path, make_dialog, monkeypatch,
+):
+    library, imported = _import_music_with_facts(tmp_path)
+    expected = _fact_bytes(imported)
+    dialog = make_dialog(library, current_id=imported.id)
+    assert not dialog._dirty
+    assert dialog.notes.toPlainText() == _IMPORTED_NOTES
+    assert dialog.save_current(force=True)
+    assert _fact_bytes(library.load(imported.id)) == expected
+
+    monkeypatch.setattr(WorkspaceBackupChoicesDialog, "exec",
+                        lambda _self: QDialog.DialogCode.Rejected)
+    _click(dialog, "Back up…")
+    after_cancel = library.load(imported.id)
+    assert after_cancel.notes == _IMPORTED_NOTES
+    assert _fact_bytes(after_cancel) == expected
+
+    dialog.title.setText("Renamed rehearsal")
+    assert dialog.save_current()
+    renamed = library.load(imported.id)
+    assert renamed.title == "Renamed rehearsal"
+    assert renamed.notes == _IMPORTED_NOTES
+    assert _fact_bytes(renamed) == expected
+
+    later = tmp_path / "after-rename.json"
+    monkeypatch.setattr(WorkspaceBackupChoicesDialog, "exec",
+                        lambda _self: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_a, **_k: (str(later), ""))
+    _click(dialog, "Back up…")
+    assert _fact_bytes(preview_workspace_backup(later).record) == expected
+
+
+def test_intentional_notes_edit_updates_derived_facts(tmp_path, make_dialog):
+    library, imported = _import_music_with_facts(tmp_path)
+    dialog = make_dialog(library, current_id=imported.id)
+    dialog.notes.setPlainText(
+        "Decision: Keep the chorus\nAction: @Pat send the chart\nBlocker: Missing stand"
+    )
+    assert dialog.save_current()
+    saved = library.load(imported.id)
+    assert saved.decisions == ("Keep the chorus",)
+    assert saved.actions == ("@Pat send the chart",)
+    assert saved.blockers == ("Missing stand",)
+    assert saved.notes.startswith("Decision: Keep the chorus")
+
+
+@pytest.mark.parametrize(
+    "imported_notes",
+    (
+        "Practice Wednesday\r\nBring charts",
+        "Practice\u00a0Wednesday",
+        "Practice Wednesday\u2028Bring charts",
+    ),
+)
+def test_imported_facts_survive_display_normalized_forced_save_canceled_backup_and_title_edit(
+    tmp_path, make_dialog, monkeypatch, imported_notes,
+):
+    library, imported = _import_music_with_facts(tmp_path, notes=imported_notes)
+    expected = _fact_bytes(imported)
+    dialog = make_dialog(library, current_id=imported.id)
+    assert not dialog._dirty
+    displayed = dialog.notes.toPlainText()
+    assert displayed == dialog._loaded_notes
+    assert notes_display_equivalent(displayed, imported_notes)
+    assert dialog.save_current(force=True)
+    after_force = library.load(imported.id)
+    assert after_force.notes == imported_notes
+    assert _fact_bytes(after_force) == expected
+
+    monkeypatch.setattr(WorkspaceBackupChoicesDialog, "exec",
+                        lambda _self: QDialog.DialogCode.Rejected)
+    _click(dialog, "Back up…")
+    after_cancel = library.load(imported.id)
+    assert after_cancel.notes == imported_notes
+    assert _fact_bytes(after_cancel) == expected
+
+    dialog.title.setText("Renamed rehearsal")
+    assert dialog.save_current()
+    renamed = library.load(imported.id)
+    assert renamed.title == "Renamed rehearsal"
+    assert renamed.notes == imported_notes
+    assert _fact_bytes(renamed) == expected
+
+
+def test_intentional_notes_edit_updates_derived_facts_from_crlf_import(tmp_path, make_dialog):
+    library, imported = _import_music_with_facts(
+        tmp_path, notes="Practice Wednesday\r\nBring charts",
+    )
+    dialog = make_dialog(library, current_id=imported.id)
+    dialog.notes.setPlainText(
+        "Decision: Keep the chorus\nAction: @Pat send the chart\nBlocker: Missing stand"
+    )
+    assert dialog.save_current()
+    saved = library.load(imported.id)
+    assert saved.decisions == ("Keep the chorus",)
+    assert saved.actions == ("@Pat send the chart",)
+    assert saved.blockers == ("Missing stand",)
+    assert saved.notes.startswith("Decision: Keep the chorus")
+
+
+def test_reverting_saved_notes_to_imported_display_rederives_facts(tmp_path, make_dialog):
+    library, imported = _import_music_with_facts(
+        tmp_path,
+        notes="Decision: Practice\u00a0Wednesday\r\nAction: Bring charts\r\nBlocker: Missing score",
+    )
+    dialog = make_dialog(library, current_id=imported.id)
+    original_display = dialog.notes.toPlainText()
+    assert original_display == "Decision: Practice Wednesday\nAction: Bring charts\nBlocker: Missing score"
+    assert notes_display_equivalent(original_display, imported.notes)
+    edited_notes = "Decision: Keep the chorus\nAction: @Pat send the chart\nBlocker: Missing stand"
+    dialog.notes.setPlainText(edited_notes)
+    assert dialog.save_current()
+    edited = library.load(imported.id)
+    assert edited.notes == edited_notes
+    assert edited.decisions == ("Keep the chorus",)
+    assert edited.actions == ("@Pat send the chart",)
+    assert edited.blockers == ("Missing stand",)
+
+    # Returning to the initial display is now an intentional edit, so it must
+    # replace the saved edit and derive facts instead of restoring imported facts.
+    dialog.notes.setPlainText(original_display)
+    assert dialog.save_current()
+    reverted = library.load(imported.id)
+    assert reverted.notes == original_display
+    assert reverted.decisions == ("Practice Wednesday",)
+    assert reverted.actions == ("Bring charts",)
+    assert reverted.blockers == ("Missing score",)
+    assert _fact_bytes(reverted) != _fact_bytes(imported)
