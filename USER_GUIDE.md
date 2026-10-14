@@ -351,6 +351,11 @@ and video recovery does not hide **Open canvas**. If you hid the video, return
 through **Open Paint along**, then choose **Show video** when you want it
 visible again. Your existing local copy stays open.
 
+While a Paint along host waits for artists in Room, **Copy Invite** is the
+orange action. **Open Paint along** stays available as a quiet button below
+it to choose a local file or lesson link. Guest **Open my copy…** recovery
+keeps its emphasis.
+
 When the room offers a shared canvas or Paint along, its next step still
 includes paper, your usual tools, or just talk. Shared activities
 are optional. You only need Drawpile to use the shared canvas; artists using
