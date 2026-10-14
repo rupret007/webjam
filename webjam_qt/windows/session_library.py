@@ -15,9 +15,12 @@ from PySide6.QtWidgets import (
 )
 
 from core.art_workspace import art_summary
-from core.session_intelligence import build_session_pulse
+from core.session_intelligence import (
+    build_session_pulse, notes_display_equivalent, session_notes_facts,
+)
 from core.session_library import (
     SessionLibrary, SessionLibraryError, SessionLibraryImportUnconfirmed,
+    SessionLibrarySaveUnconfirmed,
     validate_session_record,
 )
 from core.workspace_backup import detach_take_ownership
@@ -167,6 +170,7 @@ class SessionLibraryDialog(QDialog):
         # success signals may settle that map; this dialog edits a snapshot.
         self.pending_records = deepcopy(dict(pending_records or {}))
         self._save_record = save_record
+        self._save_attempts = {}
         self._prepare_take_open = prepare_take_open
         from webjam_qt.controllers.workspace_media import LibraryMediaActions
         self.media_actions = LibraryMediaActions(self)
@@ -175,6 +179,7 @@ class SessionLibraryDialog(QDialog):
         self.default_profile = profile
         self.record = None
         self.selected_record = None
+        self._loaded_notes = ""
         self._loading = False
         self._dirty = False
         self._import_in_progress = False
@@ -526,6 +531,7 @@ class SessionLibraryDialog(QDialog):
             self.art.load_payload(art, defer_reference_checks=bool(record.import_provenance))
             self.title.setText(record.title)
             self.notes.setPlainText(record.notes)
+            self._loaded_notes = self.notes.toPlainText()
             self.summary.setPlainText(summary)
             self.record = record
             self._base_record = deepcopy(record)
@@ -604,12 +610,23 @@ class SessionLibraryDialog(QDialog):
                 self.timer.start()
 
     def _edited_record(self):
-        pulse = build_session_pulse(creator_profile_key=self.record.profile,
-            title=self.title.text(), notes=self.notes.toPlainText())
+        displayed = self.notes.toPlainText()
+        # Compare against the loaded control, not the raw stored string: Qt
+        # rewrites CRLF and nonbreaking spaces on the way into the editor.
+        untouched = (
+            displayed == self._loaded_notes
+            or notes_display_equivalent(displayed, self.record.notes)
+        )
+        notes = self.record.notes if untouched else displayed
+        decisions, actions, blockers = session_notes_facts(
+            creator_profile_key=self.record.profile, title=self.title.text(), notes=notes,
+            previous_notes=self.record.notes if untouched else None,
+            previous_decisions=self.record.decisions,
+            previous_actions=self.record.actions, previous_blockers=self.record.blockers,
+        )
         return replace(self.record, title=self.title.text().strip() or "Untitled workspace",
-            notes=self.notes.toPlainText(), decisions=pulse.decisions,
-            actions=tuple((f"@{a.owner} " if a.owner else "") + a.text for a in pulse.actions),
-            blockers=pulse.blockers, rehearsal=self.rehearsal.payload(), art=self.art.payload())
+            notes=notes, decisions=decisions, actions=actions, blockers=blockers,
+            rehearsal=self.rehearsal.payload(), art=self.art.payload())
 
     def save_current(self, *, force: bool = False, _operation_token=None) -> bool:
         """Persist editor changes; ``force`` reconciles even a clean editor.
@@ -629,7 +646,7 @@ class SessionLibraryDialog(QDialog):
         try:
             edited = self._edited_record()
             self.record = (self._save_record(deepcopy(self._base_record), edited)
-                           if self._save_record is not None else self.library.save(edited))
+                           if self._save_record is not None else self._save_owned_record(edited))
         except (OSError, ValueError) as error:
             self.status.setText(f"Changes are still here but not saved: {error} Use Save to retry or Save as copy.")
             return False
@@ -643,6 +660,22 @@ class SessionLibraryDialog(QDialog):
         self.record_saved.emit(self.record)
         self.refresh()
         return True
+
+    def _save_owned_record(self, record):
+        attempt = self._save_attempts.get(record.id)
+        if attempt is not None and (attempt.base_token != record._store_token
+                                    or attempt.base_revision != record.revision):
+            # A deliberate reload/selection has established a new base.
+            self._save_attempts.pop(record.id, None)
+            attempt = None
+        try:
+            saved = (self.library.save(record, retry=attempt) if attempt is not None
+                     else self.library.save(record))
+        except SessionLibrarySaveUnconfirmed as error:
+            self._save_attempts[record.id] = error.attempt
+            raise
+        self._save_attempts.pop(record.id, None)
+        return saved
 
     def _sync_accepted_fields(self, edited):
         """Pull back a merged save's accepted content into these widgets.
@@ -659,6 +692,7 @@ class SessionLibraryDialog(QDialog):
                 self.title.setText(self.record.title)
             if self.notes.toPlainText() != self.record.notes:
                 self.notes.setPlainText(self.record.notes)
+            self._loaded_notes = self.notes.toPlainText()
             if self.record.rehearsal != edited.rehearsal:
                 from core.rehearsal_plan import RehearsalPlan
                 self.rehearsal.load_payload(RehearsalPlan.from_payload(self.record.rehearsal).payload())
