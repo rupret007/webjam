@@ -378,10 +378,21 @@ class ApplicationController(QObject):
             or "music"
         )
         self._creator_profile_host_owned = False
+        if (
+            session_invite is not None
+            and not session_invite.peer_enabled
+            and self._active_creator_profile_key == "art"
+        ):
+            # Art's join path reopens paste when there is no peer. A v1
+            # invite has only a Music endpoint, so borrow that journey
+            # without changing the saved Art door choice. Podcast and
+            # other local profiles keep their own route.
+            self._active_creator_profile_key = "music"
+            self._creator_profile_host_owned = True
         self._chat_profile_generation = 0
         creator_setter = getattr(self.window, "set_creator_profile", None)
         if callable(creator_setter):
-            creator_setter(self.creator_profile, locked=False)
+            creator_setter(self.creator_profile, locked=self._creator_profile_host_owned)
         if not isinstance(offline_reference_studio, bool):
             raise TypeError("offline_reference_studio must be true or false")
         self._offline_reference_studio = offline_reference_studio
@@ -529,10 +540,10 @@ class ApplicationController(QObject):
         self.host_peer = HostPeerSession(
             on_take_updated=self._on_peer_take_updated,
         )
-        # A v2 invite credential is intentionally memory-only for the active
-        # join. A successful Leave/End clears it with the peer runtime, so a
-        # stale bearer cannot silently reopen on a later Start.
-        self._guest_invite = None
+        # Keep the accepted Music (v1) or peer (v2) invitation for routing
+        # and retries. Leave/End clears it with the peer runtime; v2 bearer
+        # credentials remain memory-only.
+        self._guest_invite = session_invite
         self._guest_peer_configuration_failed = False
         self.guest_peer: GuestPeerSession | None = None
         self._shared_track_peer_publish_failed = False
@@ -542,7 +553,6 @@ class ApplicationController(QObject):
         if session_invite is not None and bool(
             getattr(session_invite, "peer_enabled", False)
         ):
-            self._guest_invite = session_invite
             self._room_participant.probing = True
             self._room_participant.role = "guest"
 
@@ -2627,14 +2637,22 @@ class ApplicationController(QObject):
             takes_root / "WebJam Local Originals"
         )
 
+    @staticmethod
+    def _band_invite_is_legacy_music(invite) -> bool:
+        """True for a parsed v1 BandInvite with no same-LAN recording peer."""
+
+        return isinstance(invite, BandInvite) and not invite.peer_enabled
+
     def _local_originals_available(self) -> bool:
         """Whether this session has a real host or v2 guest capture path."""
 
+        invite = getattr(self, "_guest_invite", None)
         return bool(
             getattr(self.settings, "host_server_enabled", False)
             or getattr(self, "guest_peer", None) is not None
             or (
-                getattr(self, "_guest_invite", None) is not None
+                invite is not None
+                and not ApplicationController._band_invite_is_legacy_music(invite)
                 and not getattr(self, "_guest_peer_configuration_failed", False)
             )
         )
@@ -5101,9 +5119,28 @@ class ApplicationController(QObject):
                 return True
 
         room = getattr(self, "_room_participant", None)
+        invite = getattr(self, "_guest_invite", None)
+        if (
+            ApplicationController._band_invite_is_legacy_music(invite)
+            and self.creator_profile.key == "art"
+        ):
+            # Art would reopen Join for a non-peer invite. Borrow Music
+            # without replacing the saved Art preference. A media-operation
+            # veto must retain the invite for a later retry.
+            self._apply_creator_profile_key("music", host_owned=True)
+            if self.creator_profile.key != "music":
+                self.window.flash_message(
+                    "This invite is for a music jam. Finish the workspace "
+                    "operation, then join again.",
+                    ms=7000,
+                )
+                return False
         if room is not None:
-            invite = getattr(self, "_guest_invite", None)
-            if invite is not None and invite is not room.music_invite:
+            if (
+                invite is not None
+                and not ApplicationController._band_invite_is_legacy_music(invite)
+                and invite is not room.music_invite
+            ):
                 return room.start_lan_guest(invite)
             if self.creator_profile.key == "art":
                 if getattr(self, "_remote_invite_owner", None) is not None:
@@ -5537,7 +5574,11 @@ class ApplicationController(QObject):
             return
         guest = getattr(self, "guest_peer", None)
         invite = getattr(self, "_guest_invite", None)
-        if guest is None and invite is not None:
+        if (
+            guest is None
+            and invite is not None
+            and not ApplicationController._band_invite_is_legacy_music(invite)
+        ):
             self._configure_guest_peer(invite)
             guest = getattr(self, "guest_peer", None)
         # A broken optional Local Originals path must never retry in a poll
@@ -7359,7 +7400,11 @@ class ApplicationController(QObject):
                 return
             guest = getattr(self, "guest_peer", None)
             invite = getattr(self, "_guest_invite", None)
-            if guest is None and invite is not None:
+            if (
+                guest is None
+                and invite is not None
+                and not ApplicationController._band_invite_is_legacy_music(invite)
+            ):
                 self._configure_guest_peer(invite)
                 guest = getattr(self, "guest_peer", None)
             if guest is not None:
@@ -8332,10 +8377,14 @@ class ApplicationController(QObject):
                 self.recording.on_audio_session_stopped()
                 self.window.session_strip.reset_session_clock()
             self._reconfigure_services_after_settings(old_settings)
+            self._guest_invite = invitation
             if bool(getattr(invitation, "peer_enabled", False)):
-                self._guest_invite = invitation
                 self._room_participant.probing = True
                 self._room_participant.role = "guest"
+            elif self.creator_profile.key == "art":
+                # As on cold entry, a legacy endpoint starts the existing
+                # Music guest journey instead of Art's paste-invite prompt.
+                self._apply_creator_profile_key("music", host_owned=True)
             # The invitation's name labels this session, but it belongs to
             # whoever sent it. Marking it borrowed keeps it out of the
             # musician's persisted default, so a joined session's name cannot
@@ -13424,6 +13473,7 @@ class ApplicationController(QObject):
         if (
             not session_running
             and retained_invite is not None
+            and not ApplicationController._band_invite_is_legacy_music(retained_invite)
             and self.settings.takes_directory != old_settings.takes_directory
         ):
             # GuestPeerSession owns a concrete transfer queue/root. Rebuild it
