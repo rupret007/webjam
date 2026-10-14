@@ -144,6 +144,11 @@ async def turns(count=4):
         await asyncio.sleep(0)
 
 
+async def owned_close_started(service):
+    while service._close_task is None:
+        await asyncio.sleep(0)
+
+
 @pytest.mark.parametrize("stage", ["control", "relay", "http"])
 def test_close_during_creation_joins_startup_and_retires_late_resource(monkeypatch, stage):
     async def scenario():
@@ -153,7 +158,7 @@ def test_close_during_creation_joins_startup_and_retires_late_resource(monkeypat
         await asyncio.wait_for(boundary.entered.wait(), 0.3)
         closing = asyncio.create_task(service.close())
         try:
-            await turns()
+            await asyncio.wait_for(owned_close_started(service), 0.3)
             premature_success = closing.done() and closing.exception() is None
             boundary.release.set()
             start_result, close_result = await asyncio.wait_for(
@@ -259,6 +264,46 @@ def test_concurrent_close_and_canceled_waiter_share_one_owned_teardown(monkeypat
         await asyncio.wait_for(second, 0.3)
         assert all(item.closed for item in boundary.created.values())
         assert service.registry.session_count == 0
+    asyncio.run(scenario())
+
+
+def test_pre_join_scheduling_delay_does_not_consume_shutdown_budget(monkeypatch):
+    async def scenario():
+        boundary = CreationBoundary(monkeypatch, hold="control")
+        service = ReferenceService(config())
+        starting = asyncio.create_task(service.start())
+        await asyncio.wait_for(boundary.entered.wait(), 0.3)
+        join_started = asyncio.Event()
+        original_join = service._join_before_deadline
+        original_close_connections = service._close_connections
+
+        async def observe_join(tasks, *, startup=False):
+            join_started.set()
+            return await original_join(tasks, startup=startup)
+
+        async def delayed_close_connections():
+            # Longer than the 0.06s harness budget. This is scheduling delay
+            # before join work, not stuck teardown.
+            await asyncio.sleep(0.15)
+            return await original_close_connections()
+
+        service._join_before_deadline = observe_join
+        service._close_connections = delayed_close_connections
+        closing = asyncio.create_task(service.close())
+        try:
+            await asyncio.wait_for(join_started.wait(), 0.5)
+            premature_success = closing.done() and closing.exception() is None
+            boundary.release.set()
+            start_result, close_result = await asyncio.wait_for(
+                asyncio.gather(starting, closing, return_exceptions=True), 0.5)
+            assert not premature_success, "Close succeeded while creation still owned a late resource"
+            assert isinstance(start_result, (asyncio.CancelledError, RuntimeError))
+            assert close_result is None
+            assert all(item.closed for item in boundary.created.values())
+            assert service._closed and not service._connection_tasks
+        finally:
+            boundary.dispose()
+            await asyncio.gather(starting, closing, return_exceptions=True)
     asyncio.run(scenario())
 
 
