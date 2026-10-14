@@ -11,6 +11,19 @@ All notable improvements and features for the WebJam creator collaboration platf
   already finished remains available through **Show Unverified Export** instead
   of being silently discarded or reported as canceled.
 
+- Test, lint, and integration jobs still run on pull requests and on push
+  to `master`. `Build Desktop` (linux-x64, macos-arm64, macos-x64,
+  windows-x64) no longer runs on `pull_request` or on push to `master` /
+  tags. Packaging stays `workflow_dispatch` `final_build` only (default
+  on), or when a signing rehearsal needs those artifacts, and still
+  uploads the same files. A tag draft needs `final_build` against the
+  annotated tag. `macos_signing_rehearsal` / `windows_signing_rehearsal`
+  do not create a GitHub Release draft. Art companion and Pocket Stage
+  stay on `master`, on `workflow_dispatch`, and on pull requests that
+  touch `ios/` or their shared sources — they are the only hosted XCTest
+  / simulator suites. Branch protection was not changed; if those Build
+  Desktop names are required checks, skipped PR or master jobs may need a
+  maintainer review.
 
 - Local Art files with ordinary Mac names (`CON.png`, a colon in the name, or
   decomposed accents such as `café.png`) can be verified, opened after that
@@ -21,6 +34,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   Send to jam actions at their natural height at the 800×600 window floor
   and at 1280×800. The side panel scrolls instead of squashing mute/solo
   chips or stacking the buttons on the helper line.
+
+- A waiting Paint along host has one orange room action: **Copy Invite**.
+  **Open Paint along** stays available as a quiet body action; guest
+  **Open my copy…** recovery keeps its emphasis.
 
 - Aligned-originals export hashes and renders each source through one open
   file descriptor. A same-format rewrite or path replacement after that
@@ -94,6 +111,7 @@ All notable improvements and features for the WebJam creator collaboration platf
   the dialog lifecycle, like Escape. Reopening shows current saved or pending
   work; failed saves keep the draft visible and media cancellation retains
   its existing recovery guard.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
@@ -255,6 +273,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   The [workflow continuity pilot](docs/WORKFLOW_CONTINUITY_PILOT.md) starts all
   physical observations at **NOT RUN**, with exact package/hash fields and a
   ten-minute Music/Art try list. Jeff retains feel and Final Build judgment.
+
+- Idle host Recording Setup no longer offers a Takes folder that reload
+  discards. **Show Folder** opens WebJam's managed host location, with a short
+  explanation. Guest folder choice is unchanged.
 
 ### Follow-along pilot readiness — draft test-build scope
 ### Follow-along clarity and saved lessons — draft test-build scope
