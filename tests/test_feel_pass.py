@@ -156,8 +156,8 @@ def test_art_door_is_two_starts_then_host_join(qapp, tmp_path: Path):
         assert set(dialog._workspace_actions) == {"music", "podcast_voice", "review_rehearsal"}
         assert dialog._creator_profile_selector.isHidden() is True
         assert dialog._name_input.isHidden() is True
-        assert dialog._choice_helper.isVisibleTo(dialog._choice_page)
-        assert dialog._choice_helper.text() == "Host starts Make together. Join uses the host's invite."
+        assert dialog._choice_helper.isHidden()
+        assert dialog._choice_helper.text() == ""
         spoken = harvest_first_screen(dialog)
         assert "podcast & voice" not in spoken
         assert "review & rehearsal" not in spoken
@@ -238,14 +238,16 @@ def test_join_is_paste_the_invite(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+@pytest.mark.parametrize("start_key", ["talk_and_make", "paint_along"])
 def test_art_door_keeps_host_and_join_on_the_supported_window(
-    qapp, tmp_path: Path
+    qapp, tmp_path: Path, start_key: str
 ):
     """Two Art starts plus Host and Join stay on a 760×600 screen."""
 
     from PySide6.QtCore import QPoint, QRect
 
     dialog = _dialog(tmp_path, "art")
+    next(card for card in dialog._visible_start_cards() if card.start_key == start_key).click()
     dialog.setStyleSheet(load_stylesheet())
     dialog.show()
     qapp.processEvents()
@@ -256,8 +258,11 @@ def test_art_door_keeps_host_and_join_on_the_supported_window(
             "paint_along",
         ]
         assert dialog.height() + 40 <= 600
-        assert dialog._choice_helper.isVisibleTo(dialog)
-        assert dialog.rect().contains(QRect(dialog._choice_helper.mapTo(dialog, QPoint()), dialog._choice_helper.size()))
+        assert dialog._choice_helper.isVisibleTo(dialog) is (start_key == "paint_along")
+        if start_key == "paint_along":
+            assert dialog.rect().contains(QRect(dialog._choice_helper.mapTo(dialog, QPoint()), dialog._choice_helper.size()))
+        else:
+            assert dialog._choice_helper.text() == ""
         assert {card.height() for card in visible_starts} == {64}
         for widget in (
             dialog._art_profile_card,

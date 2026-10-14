@@ -19,7 +19,9 @@ audio libraries needed to do it honestly are present.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
+import tempfile
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -331,11 +333,35 @@ def bounce_stems(
     mixed /= float(len(frames))
 
     target = Path(destination)
+    temporary: Path | None = None
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        sf.write(str(target), mixed, samplerate, subtype="PCM_24")
+        # Close every handle before replacement, including on Windows. Keep
+        # the previous bounce intact until the new WAV is complete and valid.
+        with tempfile.NamedTemporaryFile(
+            dir=target.parent, prefix=f".{target.name}.", suffix=".wav", delete=False
+        ) as staging:
+            temporary = Path(staging.name)
+        sf.write(str(temporary), mixed, samplerate, subtype="PCM_24")
+        info = sf.info(str(temporary))
+        if (
+            info.frames != length
+            or info.channels != channels
+            or info.samplerate != samplerate
+            or info.format != "WAV"
+            or info.subtype != "PCM_24"
+        ):
+            raise RuntimeError("The encoded stem mix is incomplete.")
+        os.replace(temporary, target)
     except (OSError, RuntimeError) as exc:
         raise StemBenchError("WebJam could not save the mixed stems.") from exc
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                # Preserve the original save error if cleanup is also refused.
+                pass
     return str(target)
 
 
