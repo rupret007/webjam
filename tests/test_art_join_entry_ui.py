@@ -80,8 +80,14 @@ def test_all_entry_profiles_explain_whole_message_and_conditional_network(
     dialog = join_door(profile)
     guidance = dialog._join_subtitle.text()
     assert "whole message" in guidance
-    assert "If your invitation says “same network,”" in guidance
-    assert "your host’s Wi-Fi or local network" in guidance
+    assert guidance == "Paste the invite or the whole message."
+    with patch("webjam_qt.windows.launch_dialog.QMessageBox.information") as help_box:
+        dialog._join_help_action.trigger()
+    help_box.assert_called_once()
+    help_text = help_box.call_args.args[2]
+    assert guidance in help_text
+    assert "If your invitation says “same network,”" in help_text
+    assert "your host’s Wi-Fi or local network" in help_text
     assert dialog._invite_input.accessibleDescription() == guidance
     assert dialog._invite_input.echoMode() == QLineEdit.EchoMode.Password
     assert dialog._invite_input.hasFocus()

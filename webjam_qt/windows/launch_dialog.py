@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenuBar,
+    QMessageBox,
     QPushButton,
     QStackedLayout,
     QVBoxLayout,
@@ -70,8 +71,8 @@ from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 
 LOGGER = logging.getLogger("webjam.qt.launch_dialog")
 
-_JOIN_INVITATION_GUIDANCE = (
-    "Paste the invite or the whole message.\n"
+_JOIN_INVITATION_GUIDANCE = "Paste the invite or the whole message."
+_JOIN_NETWORK_HELP = (
     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
 )
 _JOIN_INVITE_FIELD_NAME = "Paste the invite"
@@ -1201,8 +1202,7 @@ class LaunchDialog(QDialog):
         self._join_button_primary.clicked.connect(self._join)
         layout.addWidget(self._join_button_primary)
         # Back follows Join at the layout's normal fixed spacing (no stretch
-        # here) so it never drifts into a dead gap on tall windows; any extra
-        # window height instead goes below Back, matching _build_setup_page.
+        # here) so it never drifts into a dead gap on tall windows.
         self._join_back_button = QPushButton("Back")
         self._join_back_button.setObjectName("GhostButton")
         self._join_back_button.setAccessibleName("Back")
@@ -1212,7 +1212,9 @@ class LaunchDialog(QDialog):
         self._join_back_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._join_back_button.clicked.connect(self.show_choices)
         layout.addWidget(self._join_back_button, 0, Qt.AlignmentFlag.AlignHCenter)
-        layout.addStretch(1)
+        # Give extra height more room below Back to keep the invitation and
+        # both actions together above the fold at compact heights.
+        layout.addStretch(2)
         self._apply_creator_profile_presentation()
         self._on_invite_text_changed()
         return page
@@ -1414,7 +1416,10 @@ class LaunchDialog(QDialog):
             new = self._workspace_actions["music"]
             new.setShortcut(QKeySequence.StandardKey.New)
             new.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        help_menu = self._menu_bar.addMenu("&Help")
+        self._help_menu = self._menu_bar.addMenu("&Help")
+        help_menu = self._help_menu
+        self._join_help_action = help_menu.addAction("Joining a room…")
+        self._join_help_action.triggered.connect(self._show_join_help)
         self._setup_action = help_menu.addAction("Music setup…")
         self._setup_action.triggered.connect(self._show_music_setup)
         self._setup_action.setEnabled(bool(self._jamulus_installer))
@@ -1440,6 +1445,13 @@ class LaunchDialog(QDialog):
         # The resolver supplies a verified bundled path only on Windows
         # when the music component is missing; revalidation can revoke it.
         self._setup_action.setVisible(profile == "music" and bool(self._jamulus_installer))
+
+    def _show_join_help(self) -> None:
+        QMessageBox.information(
+            self,
+            "Joining a room",
+            f"{_JOIN_INVITATION_GUIDANCE}\n\n{_JOIN_NETWORK_HELP}",
+        )
 
     def _open_session_library(self) -> None:
         if self._submitting or not self._allow_workspace_choices:

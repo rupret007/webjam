@@ -213,7 +213,15 @@ def test_join_title_tracks_visible_profile_and_back_navigation(
                     dialog._join_title.fontMetrics().horizontalAdvance(expected)
                 )
                 assert dialog._join_subtitle.text() == (
-                    "Paste the invite or the whole message.\n"
+                    "Paste the invite or the whole message."
+                )
+                with patch(
+                    "webjam_qt.windows.launch_dialog.QMessageBox.information"
+                ) as help_box:
+                    dialog._join_help_action.trigger()
+                help_box.assert_called_once()
+                assert help_box.call_args.args[2] == (
+                    "Paste the invite or the whole message.\n\n"
                     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
                 )
                 assert dialog._join_button_primary.text() == "Join"
