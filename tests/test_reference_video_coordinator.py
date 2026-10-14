@@ -14,6 +14,7 @@ import pytest
 from core.reference_video import (
     ReferenceVideoError,
     ReferenceVideoFollowState,
+    ReferenceVideoPlayerError,
     ReferenceVideoState,
 )
 from core.session_transfer import (
@@ -218,6 +219,43 @@ def test_a_failed_host_publishes_attention_without_media_facts(tmp_path):
     assert failed["shared"] is False
     assert failed["needs_attention"] is True
     assert failed["identity_digest"] == ""
+
+
+def test_typed_seek_failure_stops_advertising_a_healthy_paused_transport(tmp_path):
+    peer = FakeHostPeer()
+    player = FakePlayer()
+    coordinator, _, host_snapshots, _ = make_coordinator(peer=peer, players=[player])
+    coordinator.begin_host(session_id=SESSION_ID, session_key=SESSION_KEY)
+    coordinator.share(str(write_video(tmp_path / "lesson.mp4")))
+    coordinator.play()
+    coordinator.pause()
+
+    paused = peer.published[-1]
+    assert paused["state"] == "paused"
+    assert paused["shared"] is True
+    assert paused["needs_attention"] is False
+
+    def refuse_seek(_position_s: float) -> None:
+        raise ReferenceVideoPlayerError(
+            "WebJam couldn't play that video on this computer."
+        )
+
+    player.seek = refuse_seek
+    snapshot = coordinator.seek(12.0)
+    coordinator.tick()
+
+    assert snapshot.state is ReferenceVideoState.FAILED
+    assert snapshot.needs_attention is True
+    assert snapshot.shared is False
+    assert host_snapshots[-1] == snapshot
+    failed = peer.published[-1]
+    assert failed["state"] == "failed"
+    assert failed["shared"] is False
+    assert failed["needs_attention"] is True
+    assert failed["identity_digest"] == ""
+    assert failed["source_display_name"] == ""
+    assert failed["position_s"] == 0.0
+    assert failed["duration_s"] == 0.0
 
 
 def test_published_projections_are_accepted_by_the_real_wire_schema(tmp_path):
