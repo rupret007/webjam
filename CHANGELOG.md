@@ -6,9 +6,6 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-- Studio keeps a slow recording finish retryable through **Stop**, retaining
-  the capture and commit ownership until the writer settles. New recordings
-  stay blocked while pending; failed captures retain their recovery evidence.
 - Art companion's iPhone/iPad Join UI test waits for the name and invitation
   fields to exist, be hittable, and hold keyboard focus before typing, and
   scrolls the form from each field's real position above the keyboard. Large
