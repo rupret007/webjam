@@ -30,6 +30,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   and at 1280×800. The side panel scrolls instead of squashing mute/solo
   chips or stacking the buttons on the helper line.
 
+- Art's Make together door hides the repeated Host/Join helper. Paint along
+  keeps only “Then choose a file or lesson link.” Both cards and Host/Join
+  remain visible, including with larger text at 800×600.
+
 - A waiting Paint along host has one orange room action: **Copy Invite**.
   **Open Paint along** stays available as a quiet body action; guest
   **Open my copy…** recovery keeps its emphasis.
