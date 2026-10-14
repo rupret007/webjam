@@ -627,3 +627,33 @@ def test_intentional_notes_edit_updates_derived_facts_from_crlf_import(tmp_path,
     assert saved.actions == ("@Pat send the chart",)
     assert saved.blockers == ("Missing stand",)
     assert saved.notes.startswith("Decision: Keep the chorus")
+
+
+def test_reverting_saved_notes_to_imported_display_rederives_facts(tmp_path, make_dialog):
+    library, imported = _import_music_with_facts(
+        tmp_path,
+        notes="Decision: Practice\u00a0Wednesday\r\nAction: Bring charts\r\nBlocker: Missing score",
+    )
+    dialog = make_dialog(library, current_id=imported.id)
+    original_display = dialog.notes.toPlainText()
+    assert original_display == "Decision: Practice Wednesday\nAction: Bring charts\nBlocker: Missing score"
+    assert notes_display_equivalent(original_display, imported.notes)
+    edited_notes = "Decision: Keep the chorus\nAction: @Pat send the chart\nBlocker: Missing stand"
+    dialog.notes.setPlainText(edited_notes)
+    assert dialog.save_current()
+    edited = library.load(imported.id)
+    assert edited.notes == edited_notes
+    assert edited.decisions == ("Keep the chorus",)
+    assert edited.actions == ("@Pat send the chart",)
+    assert edited.blockers == ("Missing stand",)
+
+    # Returning to the initial display is now an intentional edit, so it must
+    # replace the saved edit and derive facts instead of restoring imported facts.
+    dialog.notes.setPlainText(original_display)
+    assert dialog.save_current()
+    reverted = library.load(imported.id)
+    assert reverted.notes == original_display
+    assert reverted.decisions == ("Practice Wednesday",)
+    assert reverted.actions == ("Bring charts",)
+    assert reverted.blockers == ("Missing score",)
+    assert _fact_bytes(reverted) != _fact_bytes(imported)
