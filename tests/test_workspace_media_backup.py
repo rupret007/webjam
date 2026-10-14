@@ -8,6 +8,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import unicodedata
 from uuid import uuid4
 import wave
 import zipfile
@@ -21,7 +22,9 @@ from core.session_library import (
 )
 from core import workspace_media_backup as media
 from core.workspace_backup import export_workspace_backup, preview_workspace_backup, import_workspace_backup
-from core.workspace_media_schema import relative_path
+from core.workspace_media_schema import (
+    local_source_basename, relative_path, windows_unusable_regular_file,
+)
 
 
 def _digest(data):
@@ -220,10 +223,142 @@ def test_two_real_take_consumers_roundtrip_with_exact_manifests_reviews_and_edit
     assert {name: Path(name).read_bytes() for name in original} == original
 
 
-@pytest.mark.parametrize("name", ["../x", "/x", "a//b", "a/./b", "a\\b", "C:x", "CON", "COM¹.wav", "a?b", "x.", "e\u0301.wav"])
+@pytest.mark.parametrize("name", [
+    "../x", "/x", "a//b", "a/./b", "a\\b", "C:x", "CON", "CON.png", "COM¹.wav",
+    "a?b", "x.", "e\u0301.wav", "Study: blue.png", "cafe\u0301.png",
+])
 def test_cross_platform_member_names_are_rejected(name):
     with pytest.raises(ValueError):
         relative_path(name)
+
+
+@pytest.mark.parametrize("name", ["CON.png", "Study: blue.png", "cafe\u0301.png", "normal.png"])
+def test_local_source_basename_allows_ordinary_mac_art_names(name):
+    assert local_source_basename(name) == name
+    assert windows_unusable_regular_file(name) is (name in {"CON.png", "Study: blue.png"})
+
+
+@pytest.mark.parametrize("name", ["../x", "/x", "a/b", "a\\b", ".", "..", "", "a\x00b"])
+def test_local_source_basename_still_rejects_path_escape(name):
+    with pytest.raises(ValueError):
+        local_source_basename(name)
+
+
+_ORDINARY_MAC_ART_FILENAMES = ("CON.png", "Study: blue.png", "cafe\u0301.png")
+_WINDOWS_UNUSABLE_MAC_ART_FILENAMES = ("CON.png", "Study: blue.png")
+_LOCAL_SOURCE_UNUSABLE_ON_HOST = "cannot open that artwork filename as a regular file"
+
+
+def _host_can_create_ordinary_file(filename):
+    return os.name != "nt" or not windows_unusable_regular_file(filename)
+
+
+def _ordinary_mac_art_file(directory, filename, payload):
+    assert _host_can_create_ordinary_file(filename), (
+        "refusing to write a Windows reserved or illegal filename as a test fixture")
+    path = directory / filename
+    path.write_bytes(payload)
+    assert path.is_file() and path.name == filename
+    return path
+
+
+def _assert_noncreatable_mac_art_filename_is_refused(tmp_path, filename):
+    assert not _host_can_create_ordinary_file(filename)
+    assert local_source_basename(filename) == filename
+    with pytest.raises(ValueError, match="unsafe on a supported platform"):
+        relative_path(filename)
+    assert windows_unusable_regular_file(filename)
+    locator = tmp_path / filename
+    record = SessionLibrary(tmp_path / "refused").create(
+        "art", "Painting",
+        art=normalize_art_workspace({"version": 1, "references": [
+            {"id": "painting", "kind": "file", "locator": str(locator), "title": "Painting"}]}))
+    with pytest.raises(media.WorkspaceBackupError, match=_LOCAL_SOURCE_UNUSABLE_ON_HOST):
+        media.verify_workspace_media(record, "art", "painting")
+    plan = media.plan_workspace_package(
+        record, media.WorkspacePackageSelection(art_reference_ids=("painting",)))
+    assert plan.blockers and not plan.exportable
+    assert any(_LOCAL_SOURCE_UNUSABLE_ON_HOST in blocker for blocker in plan.blockers)
+    work = media._Work("Inspect")
+    with pytest.raises(media.WorkspaceBackupError, match=_LOCAL_SOURCE_UNUSABLE_ON_HOST):
+        media._inspect(tmp_path, filename, "art/example/content.png", "art", work, local_source=True)
+    assert filename not in {path.name for path in tmp_path.iterdir()}
+
+
+def test_default_inspect_still_rejects_nonportable_source_basenames(tmp_path):
+    work = media._Work("Inspect")
+    with pytest.raises(ValueError, match="unsafe on a supported platform"):
+        media._inspect(tmp_path, "CON.png", "art/example/content.png", "art", work)
+    assert "CON.png" not in {path.name for path in tmp_path.iterdir()}
+
+
+@pytest.mark.parametrize("filename", ["CON.png", "Study: blue.png"])
+def test_ordinary_mac_art_filenames_fixtures_refuse_windows_device_writes(filename, tmp_path, monkeypatch):
+    monkeypatch.setattr(os, "name", "nt")
+    with pytest.raises(AssertionError, match="refusing to write"):
+        _ordinary_mac_art_file(tmp_path, filename, b"owned artwork")
+    assert filename not in {path.name for path in tmp_path.iterdir()}
+
+
+@pytest.mark.parametrize("filename", _WINDOWS_UNUSABLE_MAC_ART_FILENAMES)
+def test_ordinary_mac_art_filenames_windows_cannot_store_are_refused(filename, tmp_path, monkeypatch):
+    assert local_source_basename(filename) == filename
+    with pytest.raises(ValueError, match="unsafe on a supported platform"):
+        relative_path(filename)
+    assert windows_unusable_regular_file(filename)
+    with monkeypatch.context() as patched:
+        patched.setattr(os, "name", "nt")
+        with pytest.raises(media.WorkspaceBackupError, match=_LOCAL_SOURCE_UNUSABLE_ON_HOST):
+            media._access_name(filename, local_source=True)
+        assert media._access_name("cafe\u0301.png", local_source=True) == "cafe\u0301.png"
+    if _host_can_create_ordinary_file(filename):
+        assert media._access_name(filename, local_source=True) == filename
+    else:
+        _assert_noncreatable_mac_art_filename_is_refused(tmp_path, filename)
+    assert filename not in {path.name for path in tmp_path.iterdir()}
+
+
+@pytest.mark.parametrize("filename", _ORDINARY_MAC_ART_FILENAMES)
+def test_ordinary_mac_art_filenames_verify_open_and_roundtrip_unchanged(tmp_path, filename):
+    if not _host_can_create_ordinary_file(filename):
+        _assert_noncreatable_mac_art_filename_is_refused(tmp_path, filename)
+        return
+    payload = b"mac artwork\x00\xff" + filename.encode("utf-8")
+    original = _ordinary_mac_art_file(tmp_path, filename, payload)
+    assert original.name == filename
+    if filename == "cafe\u0301.png":
+        assert unicodedata.normalize("NFC", original.name) != original.name
+    record = SessionLibrary(tmp_path / "original").create(
+        "art", "Painting",
+        art=normalize_art_workspace({"version": 1, "references": [
+            {"id": "painting", "kind": "file", "locator": str(original), "title": "Painting"}]}))
+    checked = media.verify_workspace_media(record, "art", "painting")
+    checked.assert_current()
+    assert original.read_bytes() == payload and original.name == filename
+    plan = media.plan_workspace_package(record, media.WorkspacePackageSelection(art_reference_ids=("painting",)))
+    assert not plan.blockers and plan.exportable
+    for source in plan._sources:
+        relative_path(source.member)
+        assert source.local_source and source.relative == filename
+        assert filename not in source.member
+    package = tmp_path / "work.webjambackup"
+    media.export_workspace_package(plan, package)
+    with zipfile.ZipFile(package) as archive:
+        members = [info.filename for info in archive.infolist()]
+        for name in members:
+            relative_path(name)
+            assert filename not in name
+        content = next(name for name in members if name != "workspace.json")
+        assert archive.read(content) == payload
+    imported = media.import_workspace_package(
+        SessionLibrary(tmp_path / "restored"), media.preview_workspace_package(package))
+    restored = Path(imported.art["references"][0]["locator"])
+    assert restored.read_bytes() == payload
+    assert original.read_bytes() == payload and original.name == filename
+    assert media.verify_workspace_media(imported, "art", "painting").matches_expected_content
+    proof_path = imported.media_provenance[0]["files"][0]["path"]
+    relative_path(proof_path)
+    assert proof_path != filename
 
 
 def test_source_replacement_after_plan_refuses_new_backup(tmp_path, art):

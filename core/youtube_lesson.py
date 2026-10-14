@@ -9,7 +9,13 @@ from urllib.parse import parse_qs, urlsplit
 
 _VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}\Z")
 _TIME = re.compile(r"(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?\Z")
-_HOSTS = frozenset({"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"})
+_HOSTS = frozenset({
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+    "youtu.be",
+})
 INVALID_LINK_MESSAGE = "Paste a YouTube video link, such as youtube.com/watch?v=…."
 
 
@@ -67,7 +73,7 @@ def parse_youtube_lesson_url(value: str) -> YouTubeLesson:
             video_id = url.path.removeprefix("/")
         elif url.path == "/watch" and len(query.get("v", [])) == 1:
             video_id = query["v"][0]
-        elif url.path.startswith(("/embed/", "/shorts/")):
+        elif url.path.startswith(("/embed/", "/shorts/", "/live/")):
             video_id = url.path.split("/", 2)[2]
         else:
             raise ValueError(INVALID_LINK_MESSAGE)
