@@ -11,6 +11,11 @@ All notable improvements and features for the WebJam creator collaboration platf
   Music waits to start audio. Deferred receipts retry briefly and cannot
   reopen a room after connection loss, Leave, or a replacement invitation.
 
+- Reference-service Close starts its one shared shutdown budget when it first
+  joins unfinished work, not when the caller enters Close. Scheduling delay
+  and cancelled-cleanup callbacks no longer consume that budget before
+  listener joiners are registered.
+
 - Keep saved profile titles and modes intact when reading their file hits an I/O error.
   A later successful save merges the current edit with the other profiles.
 
@@ -207,6 +212,7 @@ All notable improvements and features for the WebJam creator collaboration platf
 Source remains v0.29.0. These changes are after the published v0.29.0 baseline;
 
 they do not request a new release/tag or claim new published package evidence.
+
 ## [0.29.0] — Unsigned testing candidate
 
 > Source identity is **v0.29.0**. For current download and publication status,
