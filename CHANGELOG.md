@@ -6,10 +6,21 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Local Art files with ordinary Mac names (`CON.png`, a colon in the name, or
+  decomposed accents such as `café.png`) can be verified, opened after that
+  check, and backed up under generated archive names. The original file is not
+  renamed. Portable archive-member and `relative_path` checks stay unchanged.
+
 - Song tools Stems keeps each Vocals/Drums/Bass row and the Sing this one /
   Send to jam actions at their natural height at the 800×600 window floor
   and at 1280×800. The side panel scrolls instead of squashing mute/solo
   chips or stacking the buttons on the helper line.
+
+- Aligned-originals export hashes and renders each source through one open
+  file descriptor. A same-format rewrite or path replacement after that
+  handle is bound cannot publish. No package is published, the take files
+  are left as they are, and Studio does not show a success or an export
+  receipt.
 
 - Art/Music launch File menus keep Session library and hide New Music Project,
   Podcast, and Review starts, including the New shortcut. Help's Music setup
@@ -242,6 +253,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 - Launch Help → Music setup uses “Install the music component” for its button
   and accessible name, with matching setup descriptions and recovery messages.
+
+- Idle host Recording Setup no longer offers a Takes folder that reload
+  discards. **Show Folder** opens WebJam's managed host location, with a short
+  explanation. Guest folder choice is unchanged.
 
 ### Follow-along pilot readiness — draft test-build scope
 ### Follow-along clarity and saved lessons — draft test-build scope
