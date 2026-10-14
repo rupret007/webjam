@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import time
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -87,6 +88,8 @@ def _controller(app, *, is_host=True, api_key="k", webex_url="", notes=SHEET):
         jamulus=SimpleNamespace(send_chat=MagicMock(return_value=True)),
         _reference_track_is_host=lambda: is_host,
         _reference_track_load_pending=None,
+        _reference_track_session_generation=0,
+        _reference_track_room_generation=0,
         _last_shared_track_snapshot=None,
         _snapshot_participants=lambda: [],
         _ui_invoker=None,
@@ -865,6 +868,207 @@ def test_a_failed_mix_reports_the_reason_and_leaves_the_jam_alone(app, tmp_path)
 
     assert loaded == []
     assert any("sample rate" in message for message in _flashes(coordinator))
+
+
+class _DeferredThread:
+    """Keep a bounce worker so a later room or source change can land first."""
+
+    workers: list = []
+
+    def __init__(self, target=None, **_kwargs):
+        self.target = target
+        type(self).workers.append(self)
+
+    def start(self):
+        return None
+
+    def run(self):
+        assert self.target is not None
+        self.target()
+
+
+@contextmanager
+def _deferred_stem_bounce(
+    coordinator,
+    tmp_path,
+    *,
+    bounce_name="old-song-bounce.wav",
+    bounce_paths: list[str] | None = None,
+):
+    """Start Send to jam, but hold the worker until the test releases it."""
+
+    _DeferredThread.workers = []
+    bounce_path = tmp_path / bounce_name
+    bounce_path.write_bytes(b"completed-bounce")
+    paths = bounce_paths if bounce_paths is not None else [str(bounce_path)]
+    bounce_patch = (
+        {"side_effect": paths}
+        if bounce_paths is not None
+        else {"return_value": paths[0]}
+    )
+    coordinator.sing_this_one()
+    with (
+        patch(
+            "webjam_qt.controllers.song_tools_coordinator.bounce_stems",
+            **bounce_patch,
+        ),
+        patch(
+            "webjam_qt.controllers.song_tools_coordinator.threading.Thread",
+            _DeferredThread,
+        ),
+    ):
+        for _ in paths:
+            coordinator.send_stems_to_jam()
+        yield paths, list(_DeferredThread.workers)
+
+
+def _assert_not_sent(coordinator, loaded, queued=None):
+    assert loaded == []
+    assert all("Sending" not in message for message in _flashes(coordinator))
+    if queued is not None:
+        assert coordinator._c._reference_track_load_pending == queued
+
+
+def test_a_current_stem_bounce_loads_exactly_once(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+    with _deferred_stem_bounce(coordinator, tmp_path) as (bounce_paths, workers):
+        assert loaded == []
+        workers[0].run()
+        workers[0].run()
+
+    assert loaded == bounce_paths
+    assert any("Sending 2 stems." in message for message in _flashes(coordinator))
+    assert any("host control" in message for message in _flashes(coordinator))
+    assert (tmp_path / "old-song-bounce.wav").read_bytes() == b"completed-bounce"
+
+
+def test_a_stem_bounce_after_end_does_not_load_for_the_same_host(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    queued = str(tmp_path / "already-queued.wav")
+    coordinator._c._load_reference_track = loaded.append
+    with _deferred_stem_bounce(coordinator, tmp_path) as (_paths_out, workers):
+        coordinator._c._reference_track_session_generation += 1
+        coordinator._c._reference_track_load_pending = queued
+        workers[0].run()
+
+    _assert_not_sent(coordinator, loaded, queued)
+    assert any("were not sent" in message for message in _flashes(coordinator))
+    assert coordinator._is_host()
+
+
+def test_a_stem_bounce_does_not_load_after_becoming_a_guest(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+    with _deferred_stem_bounce(coordinator, tmp_path) as (_paths_out, workers):
+        coordinator._c._reference_track_is_host = lambda: False
+        workers[0].run()
+
+    _assert_not_sent(coordinator, loaded)
+    assert any("were not sent" in message for message in _flashes(coordinator))
+    assert not coordinator._is_host()
+
+
+def test_a_stem_bounce_does_not_load_after_a_workspace_switch(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+    coordinator._c.session_library = SimpleNamespace(
+        current=SimpleNamespace(id="ws-a"),
+        song_context=lambda: None,
+    )
+    with _deferred_stem_bounce(coordinator, tmp_path) as (_paths_out, workers):
+        coordinator._c.session_library.current.id = "ws-b"
+        workers[0].run()
+
+    _assert_not_sent(coordinator, loaded)
+    assert coordinator._is_host()
+
+
+def test_a_stem_bounce_does_not_replace_a_newer_queued_song(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+    queued = str(tmp_path / "newer-pick.wav")
+    with _deferred_stem_bounce(coordinator, tmp_path) as (_paths_out, workers):
+        coordinator._c._reference_track_load_pending = queued
+        workers[0].run()
+
+    _assert_not_sent(coordinator, loaded, queued)
+    assert coordinator._is_host()
+
+
+def test_a_newer_stem_bounce_is_the_only_request_that_loads(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+    first = tmp_path / "old-song-bounce.wav"
+    second = tmp_path / "new-song-bounce.wav"
+    first.write_bytes(b"old")
+    second.write_bytes(b"new")
+    with _deferred_stem_bounce(
+        coordinator,
+        tmp_path,
+        bounce_paths=[str(first), str(second)],
+    ) as (_paths_out, workers):
+        workers[0].run()
+        assert loaded == []
+        assert all("Sending" not in message for message in _flashes(coordinator))
+        workers[1].run()
+
+    assert loaded == [str(second)]
+    assert any("Sending 2 stems." in message for message in _flashes(coordinator))
+    assert any("host control" in message for message in _flashes(coordinator))
+
+
+def test_a_stem_bounce_does_not_load_after_the_source_mix_changes(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+    with _deferred_stem_bounce(coordinator, tmp_path) as (_paths_out, workers):
+        coordinator.toggle_stem_mute("bass")
+        workers[0].run()
+
+    _assert_not_sent(coordinator, loaded)
+    assert coordinator._is_host()
+
+
+def test_a_reversed_workspace_switch_does_not_load_a_stale_stem_bounce(
+    app, tmp_path
+):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+    coordinator._c.session_library = SimpleNamespace(
+        current=SimpleNamespace(id="ws-a"),
+        song_context=lambda: None,
+    )
+    with _deferred_stem_bounce(coordinator, tmp_path) as (_paths_out, workers):
+        coordinator._c.session_library.current.id = "ws-b"
+        coordinator._sync_workbench()
+        coordinator._c.session_library.current.id = "ws-a"
+        workers[0].run()
+
+    _assert_not_sent(coordinator, loaded)
+    assert coordinator._is_host()
+    assert coordinator._c.session_library.current.id == "ws-a"
+
+
+def test_a_reversed_source_mix_does_not_load_a_stale_stem_bounce(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+    with _deferred_stem_bounce(coordinator, tmp_path) as (_paths_out, workers):
+        coordinator.toggle_stem_mute("bass")
+        coordinator.toggle_stem_mute("bass")
+        workers[0].run()
+
+    _assert_not_sent(coordinator, loaded)
+    assert coordinator._is_host()
+    assert not coordinator.workbench.stem_bench.stem("bass").muted
 
 
 # ----------------------------------------------------------------------
