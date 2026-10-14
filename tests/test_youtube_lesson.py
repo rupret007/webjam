@@ -14,6 +14,10 @@ from core.youtube_lesson import YouTubeLesson, parse_youtube_lesson_url
     "https://www.youtube.com/embed/M7lc1UVf-VE",
     "http://www.youtube.com/watch?v=M7lc1UVf-VE",
     "http://youtube.com/watch?v=M7lc1UVf-VE",
+    "https://www.youtube.com/live/M7lc1UVf-VE",
+    "https://youtube.com/live/M7lc1UVf-VE?feature=shared",
+    "https://music.youtube.com/watch?v=M7lc1UVf-VE",
+    "  music.youtube.com/watch?v=M7lc1UVf-VE  ",
     "  youtu.be/M7lc1UVf-VE  ",
 ])
 def test_supported_links_resolve_to_one_bounded_video_identity(url):
