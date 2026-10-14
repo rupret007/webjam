@@ -57,7 +57,7 @@ Use one current release branch and one PR. Do not merge duplicate paths.
 | 2 | Prepare source and docs from current `master` | isolated checkout; intended product scope and version agree |
 | 3 | Verify the exact candidate | source checks and all required hosted jobs pass; failures are fixed on a new tip |
 | 4 | Merge the authorized release PR to `master` | one reviewed tip; no force-push |
-| 5 | Annotate the unused version tag at exact master and build it | tag/version/source match; all tag CI gates pass and create a new draft |
+| 5 | Annotate the unused version tag at exact master and dispatch `final_build` against that tag | tag/version/source match; the dispatch packaging lane passes and creates a new draft |
 | 6 | Verify and promote the unsigned testing draft | exact inventory, warnings, hashes, current master/tag, and user authorization; reverify immutable public Latest |
 
 Jeff's authorization for this named round covers the merge and unsigned test
@@ -95,7 +95,8 @@ dispatch it or claim catalog approval for this candidate. The baked, unchanged
 Jamulus 3.12.2/3.12.3 records extend through v0.29.0; they are a different policy
 from managed-update signatures.
 
-The tag lane in `ci.yml` creates an unsigned draft after source/package gates.
+Dispatching `final_build` against the annotated tag in `ci.yml` creates an
+unsigned draft after source/package gates. A tag push alone does not package.
 For this authorized maintainer round, verify all eight assets and seven
 package checksums, then promote that exact draft and verify public Latest.
 The [desktop runbook](DESKTOP_RELEASE_RUNBOOK.md#current-unsigned-testing-release)
@@ -123,8 +124,21 @@ marked module passes once, in a fresh process, with local-socket permission.
 
 ### Complete hosted suite second
 
+Pull-request and `master` push CI keep the test, lint, and integration
+jobs. The four `Build Desktop` targets do not run on `pull_request` and
+do not run on push to `master` or on a tag push. They run only on
+`workflow_dispatch` when `final_build` is selected (the default) or a
+signing rehearsal needs those artifacts. Signing rehearsals may still
+run `Build Desktop` for the trust jobs; they do not create a GitHub Release draft.
+Art companion and Pocket Stage stay on push to `master`,
+on `workflow_dispatch`, and on pull requests that touch `ios/` or the
+shared Python/protocol sources they exercise, because they are the only
+hosted XCTest / simulator suites.
+
 The exact candidate head must then pass all 13 required hosted jobs in one
-automatic workflow run:
+automatic `final_build` dispatch (against `master`, or against the
+annotated tag when creating the unsigned draft), not on every pull request
+or every master push:
 
 - `test`
 - `Integration (real Jamulus 3.12.2)` and
@@ -142,8 +156,8 @@ automatic workflow run:
 
 `Build Desktop` requires the integrations, update-input checks, Transport,
 Reference, Pocket Stage, and hosted `test` through `needs:`, so all of them gate
-the same round. Art companion runs independently in that workflow and must
-also pass on the same candidate head before review.
+the same packaging round. Art companion runs independently in that workflow and
+must also pass on the same candidate head before a packaging/release review.
 
 Red means stop. Do not re-run a job to change its result, do not tag, and do not
 create or publish a release to hide a failure. Fix the cause and repeat the
@@ -157,7 +171,7 @@ These stay **NOT RUN** unless real evidence exists for the exact candidate:
 | `Certify Jamulus/JACK (one hour, manual)` | manual dispatch only (`run_one_hour_certification`) |
 | `Windows Release Trust (windows-x64)`, `macOS Release Trust` | credentialed signing/notarization rehearsals behind `windows_signing_rehearsal` / `macos_signing_rehearsal` |
 | `Jamulus 3.12.3 HEADLESS evidence` | quarantined dispatch-only evidence build |
-| `Publish GitHub Release` | tag-only draft creation; check the exact tag workflow and GitHub release for its status |
+| `Publish GitHub Release` | `final_build` dispatch against the annotated tag; a tag push or signing-rehearsal-only dispatch does not draft |
 | Two-Mac Art room video and Drawpile | two physical machines, real observation |
 | Live Music AI | needs a real service credential |
 | Physical and hardware checklist rows | real musician observation against an exact package |
