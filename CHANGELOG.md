@@ -6,8 +6,6 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-- LAN Art guests inherit the host's start, showing “Paint along is starting”
-  and “Open Paint along” before a video is shared, just like native guests.
 - Art companion's iPhone/iPad Join UI test waits for the name and invitation
   fields to exist, be hittable, and hold keyboard focus before typing, and
   scrolls the form from each field's real position above the keyboard. Large
