@@ -754,6 +754,10 @@ still match. Otherwise it returns safely to native Jamulus setup.
 
 ## Join a live session
 
+In Unreleased builds, a same-network join waits for pending Library media
+work to finish before switching to the host's Art or Music room. During that
+wait, WebJam keeps “Contacting the host” visible and does not start audio.
+
 Choose **Join**, **Join Recording**, or **Join Review**, then paste one WebJam
 invite—or open it from Finder. WebJam parses it at ingress,
 does not leave the bearer visible in the interface, and starts only the guest
