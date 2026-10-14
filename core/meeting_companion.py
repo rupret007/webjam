@@ -524,10 +524,18 @@ def art_watch_share_sentence(
     )
 
 
+# First-screen / idle Art copy: a person with no art skill should see that
+# talking and their usual tools are enough. Clay / printer / 3D lists belong
+# in later help, not the ten-second read.
+ART_NO_SKILL_NEEDED = "You do not need an art app."
+ART_OWN_TOOLS_LINE = "Use paper, your usual tools, or just talk."
+
+
 def art_make_together_activity_detail(
     *,
     meeting_service: str = DEFAULT_MEETING_SERVICE,
     conversation_configured: bool = False,
+    waiting_host: bool = False,
 ) -> str:
     """Brief Make-together activity detail for the room overview.
 
@@ -535,18 +543,20 @@ def art_make_together_activity_detail(
     Conversation closed (scrollbar maximum 0). Full Talk·Make·share /
     Webex / movie honesty lives on Conversation surfaces
     (art_conversation_guidance / Conversation panel), not here.
+
+    While the host is waiting with no meeting link, HUD Copy Invite is
+    the one primary. That waiting-host line must not ask to set up
+    Conversation. Other unconfigured room states keep the existing
+    setup-Conversation next step.
     """
 
     del meeting_service  # overview stays brief and service-agnostic
-    next_action = (
-        "Choose Conversation to talk or share your screen."
-        if conversation_configured
-        else "Choose Set Up Conversation to add your meeting link."
-    )
-    return (
-        "Use paper, clay, a model, printer, or your usual app, or just talk. "
-        f"{next_action}"
-    )
+    own_space = f"{ART_NO_SKILL_NEEDED} {ART_OWN_TOOLS_LINE}"
+    if conversation_configured:
+        return f"{own_space} Choose Conversation to talk or share your screen."
+    if waiting_host:
+        return own_space
+    return f"{own_space} Choose Set Up Conversation to add your meeting link."
 
 
 def art_conversation_guidance(*, meeting_service: str = "") -> str:
@@ -608,6 +618,8 @@ __all__ = [
     "WATCH_TOGETHER_OPEN",
     "WEBEX_HANDOFF_IS_HTTPS",
     "WEBJAM_DOES_NOT_PLAY_MOVIE",
+    "ART_NO_SKILL_NEEDED",
+    "ART_OWN_TOOLS_LINE",
     "art_conversation_guidance",
     "art_make_together_activity_detail",
     "art_watch_share_sentence",

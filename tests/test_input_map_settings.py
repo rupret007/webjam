@@ -44,6 +44,45 @@ def test_valid_input_maps_round_trip_through_disk(tmp_path):
     assert bindings[1].channel_count == 2
 
 
+def test_falsy_but_present_input_maps_disable_capture_not_legacy_default(
+    tmp_path,
+):
+    from core.session_recording_plan import LEGACY_CAPTURE_TRACKS, resolve_capture_tracks
+
+    falsy_malformed = ({}, False, 0, "")
+    config = tmp_path / "config.json"
+    for hostile in falsy_malformed:
+        config.write_text(
+            json.dumps(
+                {"local_capture_enabled": True, "input_maps": hostile}
+            ),
+            encoding="utf-8",
+        )
+        loaded = load_settings(str(config))
+        assert loaded.input_maps == [], hostile
+        assert loaded.local_capture_enabled is False, hostile
+        assert resolve_capture_tracks(loaded) == (), hostile
+        assert resolve_capture_tracks(loaded) != LEGACY_CAPTURE_TRACKS, hostile
+
+    config.write_text(
+        json.dumps({"local_capture_enabled": True}),
+        encoding="utf-8",
+    )
+    absent = load_settings(str(config))
+    assert absent.input_maps == []
+    assert absent.local_capture_enabled is True
+    assert resolve_capture_tracks(absent) == LEGACY_CAPTURE_TRACKS
+
+    config.write_text(
+        json.dumps({"local_capture_enabled": True, "input_maps": []}),
+        encoding="utf-8",
+    )
+    empty_list = load_settings(str(config))
+    assert empty_list.input_maps == []
+    assert empty_list.local_capture_enabled is True
+    assert resolve_capture_tracks(empty_list) == LEGACY_CAPTURE_TRACKS
+
+
 def test_hostile_input_maps_fail_safe_to_empty(tmp_path):
     hostile_lists = (
         "not-a-list",
