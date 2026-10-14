@@ -11,6 +11,7 @@ MAX_PACKAGE_METADATA_BYTES = 16 * 1024**2
 ROLES = frozenset({"manifest", "audio", "review", "studio", "art"})
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 _DEVICE = re.compile(r"(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\..*)?\Z", re.I)
+_WINDOWS_UNUSABLE_CHARS = frozenset('<>:"/\\|?*')
 
 
 def digest(value: object) -> str:
@@ -45,6 +46,20 @@ def local_source_basename(value: object) -> str:
             or value in {".", ".."}):
         raise ValueError("Local media source must be a single bounded file name.")
     return value
+
+
+def windows_unusable_regular_file(name: str) -> bool:
+    """True when Windows cannot store this basename as a regular file.
+
+    Reserved device stems (``CON.png``) and illegal characters (``:``) are
+    ordinary Mac names. They are not regular files on Windows and must not be
+    opened through the device or alternate-data-stream pathname.
+    """
+    return bool(
+        isinstance(name, str)
+        and name
+        and (_DEVICE.fullmatch(name) or any(c in name for c in _WINDOWS_UNUSABLE_CHARS))
+    )
 
 
 def file_inventory(files: object) -> None:

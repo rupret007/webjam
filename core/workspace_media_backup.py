@@ -35,6 +35,7 @@ from core.workspace_backup import (
 from core.workspace_media_schema import (
     MAX_PACKAGE_BYTES, MAX_PACKAGE_FILES, MAX_PACKAGE_METADATA_BYTES,
     digest, file_inventory, local_source_basename, relative_path,
+    windows_unusable_regular_file,
 )
 
 _FORMAT = "webjam.workspace-media"
@@ -191,8 +192,16 @@ def _pin_windows_directory(path):
         close(handle)
 
 
+_LOCAL_SOURCE_UNUSABLE_ON_HOST = (
+    "This computer cannot open that artwork filename as a regular file."
+)
+
+
 def _access_name(name, *, local_source=False):
-    return local_source_basename(name) if local_source else relative_path(name)
+    checked = local_source_basename(name) if local_source else relative_path(name)
+    if local_source and os.name == "nt" and windows_unusable_regular_file(checked):
+        raise WorkspaceBackupError(_LOCAL_SOURCE_UNUSABLE_ON_HOST)
+    return checked
 
 
 @contextmanager

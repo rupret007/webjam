@@ -22,7 +22,9 @@ from core.session_library import (
 )
 from core import workspace_media_backup as media
 from core.workspace_backup import export_workspace_backup, preview_workspace_backup, import_workspace_backup
-from core.workspace_media_schema import local_source_basename, relative_path
+from core.workspace_media_schema import (
+    local_source_basename, relative_path, windows_unusable_regular_file,
+)
 
 
 def _digest(data):
@@ -233,6 +235,7 @@ def test_cross_platform_member_names_are_rejected(name):
 @pytest.mark.parametrize("name", ["CON.png", "Study: blue.png", "cafe\u0301.png", "normal.png"])
 def test_local_source_basename_allows_ordinary_mac_art_names(name):
     assert local_source_basename(name) == name
+    assert windows_unusable_regular_file(name) is (name in {"CON.png", "Study: blue.png"})
 
 
 @pytest.mark.parametrize("name", ["../x", "/x", "a/b", "a\\b", ".", "..", "", "a\x00b"])
@@ -241,19 +244,13 @@ def test_local_source_basename_still_rejects_path_escape(name):
         local_source_basename(name)
 
 
-_WINDOWS_RESERVED_STEMS = frozenset({
-    "CON", "PRN", "AUX", "NUL",
-    *(f"COM{i}" for i in range(1, 10)),
-    *(f"LPT{i}" for i in range(1, 10)),
-})
 _ORDINARY_MAC_ART_FILENAMES = ("CON.png", "Study: blue.png", "cafe\u0301.png")
+_WINDOWS_UNUSABLE_MAC_ART_FILENAMES = ("CON.png", "Study: blue.png")
+_LOCAL_SOURCE_UNUSABLE_ON_HOST = "cannot open that artwork filename as a regular file"
 
 
 def _host_can_create_ordinary_file(filename):
-    if os.name != "nt":
-        return True
-    return (filename.split(".", 1)[0].upper() not in _WINDOWS_RESERVED_STEMS
-            and not any(c in filename for c in '<>:"/\\|?*'))
+    return os.name != "nt" or not windows_unusable_regular_file(filename)
 
 
 def _ordinary_mac_art_file(directory, filename, payload):
@@ -263,6 +260,29 @@ def _ordinary_mac_art_file(directory, filename, payload):
     path.write_bytes(payload)
     assert path.is_file() and path.name == filename
     return path
+
+
+def _assert_noncreatable_mac_art_filename_is_refused(tmp_path, filename):
+    assert not _host_can_create_ordinary_file(filename)
+    assert local_source_basename(filename) == filename
+    with pytest.raises(ValueError, match="unsafe on a supported platform"):
+        relative_path(filename)
+    assert windows_unusable_regular_file(filename)
+    locator = tmp_path / filename
+    record = SessionLibrary(tmp_path / "refused").create(
+        "art", "Painting",
+        art=normalize_art_workspace({"version": 1, "references": [
+            {"id": "painting", "kind": "file", "locator": str(locator), "title": "Painting"}]}))
+    with pytest.raises(media.WorkspaceBackupError, match=_LOCAL_SOURCE_UNUSABLE_ON_HOST):
+        media.verify_workspace_media(record, "art", "painting")
+    plan = media.plan_workspace_package(
+        record, media.WorkspacePackageSelection(art_reference_ids=("painting",)))
+    assert plan.blockers and not plan.exportable
+    assert any(_LOCAL_SOURCE_UNUSABLE_ON_HOST in blocker for blocker in plan.blockers)
+    work = media._Work("Inspect")
+    with pytest.raises(media.WorkspaceBackupError, match=_LOCAL_SOURCE_UNUSABLE_ON_HOST):
+        media._inspect(tmp_path, filename, "art/example/content.png", "art", work, local_source=True)
+    assert filename not in {path.name for path in tmp_path.iterdir()}
 
 
 def test_default_inspect_still_rejects_nonportable_source_basenames(tmp_path):
@@ -280,17 +300,29 @@ def test_ordinary_mac_art_filenames_fixtures_refuse_windows_device_writes(filena
     assert filename not in {path.name for path in tmp_path.iterdir()}
 
 
-@pytest.mark.parametrize("filename", [
-    pytest.param(
-        name,
-        marks=pytest.mark.skipif(
-            not _host_can_create_ordinary_file(name),
-            reason="Windows cannot create this Mac-originated name as a regular file",
-        ),
-    )
-    for name in _ORDINARY_MAC_ART_FILENAMES
-])
+@pytest.mark.parametrize("filename", _WINDOWS_UNUSABLE_MAC_ART_FILENAMES)
+def test_ordinary_mac_art_filenames_windows_cannot_store_are_refused(filename, tmp_path, monkeypatch):
+    assert local_source_basename(filename) == filename
+    with pytest.raises(ValueError, match="unsafe on a supported platform"):
+        relative_path(filename)
+    assert windows_unusable_regular_file(filename)
+    with monkeypatch.context() as patched:
+        patched.setattr(os, "name", "nt")
+        with pytest.raises(media.WorkspaceBackupError, match=_LOCAL_SOURCE_UNUSABLE_ON_HOST):
+            media._access_name(filename, local_source=True)
+        assert media._access_name("cafe\u0301.png", local_source=True) == "cafe\u0301.png"
+    if _host_can_create_ordinary_file(filename):
+        assert media._access_name(filename, local_source=True) == filename
+    else:
+        _assert_noncreatable_mac_art_filename_is_refused(tmp_path, filename)
+    assert filename not in {path.name for path in tmp_path.iterdir()}
+
+
+@pytest.mark.parametrize("filename", _ORDINARY_MAC_ART_FILENAMES)
 def test_ordinary_mac_art_filenames_verify_open_and_roundtrip_unchanged(tmp_path, filename):
+    if not _host_can_create_ordinary_file(filename):
+        _assert_noncreatable_mac_art_filename_is_refused(tmp_path, filename)
+        return
     payload = b"mac artwork\x00\xff" + filename.encode("utf-8")
     original = _ordinary_mac_art_file(tmp_path, filename, payload)
     assert original.name == filename
