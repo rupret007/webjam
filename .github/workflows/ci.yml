@@ -232,6 +232,49 @@ jobs:
           done
 
   # ------------------------------------------------------------------
+  # Test-integrity guards (add-only). Fails when global test config fakes
+  # the clock (faketime, LD_PRELOAD/DYLD injection, TZ override, global
+  # freezegun/time-machine or fake timers), or when a change leaves tests
+  # weaker than master (deleted test files, fewer test functions, new
+  # skip/xfail markers). Comparison is always against origin/master.
+  # ------------------------------------------------------------------
+  test-integrity:
+    name: Test integrity guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Fetch master for the comparison base
+        run: git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
+      - name: Reject a global fake clock
+        run: python3 tools/gates/test_integrity_guard.py fake-clock
+      - name: Reject tests weaker than master
+        run: python3 tools/gates/test_integrity_guard.py loosening --base origin/master
+
+  # ------------------------------------------------------------------
+  # Changelog fragment (pull requests only). Each PR adds its entry as
+  # changelog.d/<topic>.md (or a reasoned .skip) and never edits
+  # CHANGELOG.md, so merges stop conflicting. See changelog.d/README.md.
+  # ------------------------------------------------------------------
+  changelog-fragment:
+    name: Changelog fragment
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Fetch master for the comparison base
+        run: git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
+      - name: Require a changelog fragment
+        run: python3 tools/changelog_fragments.py check --base origin/master
+
+  # ------------------------------------------------------------------
   # Job 1b: Integration against a REAL Jamulus binary.
   # Installs checksum-verified official server + client packages. The
   # headless package is SERVER_ONLY despite printing client flags, so the
