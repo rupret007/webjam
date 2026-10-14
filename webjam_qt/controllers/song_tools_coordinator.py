@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +72,22 @@ AUDIO_FILTER = (
     "Audio (*.wav *.mp3 *.flac *.m4a *.aif *.aiff *.ogg);;All files (*)"
 )
 _RESULTS_DIRNAME = "WebJam Song Tools"
+_STALE_BOUNCE_NOTE = (
+    "Those mixed stems stayed in Song tools. They were not sent."
+)
+
+
+@dataclass(frozen=True)
+class _StemBounceRequest:
+    """Ownership captured when Send to jam starts a mix."""
+
+    token: int
+    session_generation: int
+    room_generation: int
+    workspace_id: str
+    profile_key: str
+    source_choice: tuple[str, ...]
+    destination: str
 
 
 class SongToolsCoordinator:
@@ -100,6 +116,11 @@ class SongToolsCoordinator:
         # what they already agreed to.
         self._model_consent: set[str] = set()
         self._asking_model = ""
+        # A finished mix may arrive after End/Leave, a role change, or a
+        # newer song choice. Only the request that still owns this room
+        # may load, and it may load only once.
+        self._stem_bounce_token = 0
+        self._stem_bounce_request: _StemBounceRequest | None = None
 
     # ------------------------------------------------------------------
     # Panel lifecycle
@@ -540,6 +561,7 @@ class SongToolsCoordinator:
 
         destination = self._results_directory() / bench.bounce_name()
         audible = list(mix.audible)
+        request = self._begin_stem_bounce(destination)
         self._flash("Mixing stems for the jam…")
 
         def work() -> None:
@@ -547,21 +569,120 @@ class SongToolsCoordinator:
                 mixed = bounce_stems(audible, destination)
             except StemBenchError as exc:
                 message = str(exc)
-                self._on_ui(lambda: self._flash(message, ms=9000))
+                self._on_ui(
+                    lambda req=request, text=message: self._finish_stem_bounce_error(
+                        req, text
+                    )
+                )
                 return
             except Exception:  # noqa: BLE001 - a worker must never escape
                 LOGGER.warning("Stem bounce failed", exc_info=True)
                 self._on_ui(
-                    lambda: self._flash("WebJam could not mix those stems.", ms=9000)
+                    lambda req=request: self._finish_stem_bounce_error(
+                        req, "WebJam could not mix those stems."
+                    )
                 )
                 return
+            note = f"Sending {len(audible)} stems."
             self._on_ui(
-                lambda: self._load_shared_track(
-                    mixed, f"Sending {len(audible)} stems."
+                lambda req=request, path=mixed, text=note: self._finish_stem_bounce(
+                    req, path, text
                 )
             )
 
         threading.Thread(target=work, daemon=True, name="stem-bounce").start()
+
+    def _begin_stem_bounce(self, destination: Path) -> _StemBounceRequest:
+        self._stem_bounce_token += 1
+        (
+            session_generation,
+            room_generation,
+            workspace_id,
+            profile_key,
+            source_choice,
+        ) = self._stem_bounce_ownership()
+        request = _StemBounceRequest(
+            token=self._stem_bounce_token,
+            session_generation=session_generation,
+            room_generation=room_generation,
+            workspace_id=workspace_id,
+            profile_key=profile_key,
+            source_choice=source_choice,
+            destination=str(destination),
+        )
+        self._stem_bounce_request = request
+        return request
+
+    def _stem_bounce_ownership(
+        self,
+    ) -> tuple[int, int, str, str, tuple[str, ...]]:
+        library = getattr(self._c, "session_library", None)
+        current = getattr(library, "current", None) if library is not None else None
+        profile = getattr(self._c, "creator_profile", None)
+        mix = self.workbench.stem_bench.mix()
+        return (
+            int(getattr(self._c, "_reference_track_session_generation", 0) or 0),
+            int(getattr(self._c, "_reference_track_room_generation", 0) or 0),
+            str(getattr(current, "id", "") or ""),
+            str(getattr(profile, "key", "") or ""),
+            tuple(sorted(str(stem.path) for stem in mix.audible)),
+        )
+
+    def _queued_shared_track(self) -> str:
+        pending = getattr(self._c, "_reference_track_load_pending", None)
+        return str(pending or "")
+
+    def _stem_bounce_matches(
+        self, request: _StemBounceRequest, path: str
+    ) -> bool:
+        current = self._stem_bounce_request
+        if current is None or current.token != request.token:
+            return False
+        if request.token != self._stem_bounce_token:
+            return False
+        if not self._is_host() or not self.is_available():
+            return False
+        ownership = self._stem_bounce_ownership()
+        if (
+            request.session_generation != ownership[0]
+            or request.room_generation != ownership[1]
+            or request.workspace_id != ownership[2]
+            or request.profile_key != ownership[3]
+            or request.source_choice != ownership[4]
+        ):
+            return False
+        queued = self._queued_shared_track()
+        if queued and queued != str(path):
+            return False
+        return True
+
+    def _finish_stem_bounce(
+        self, request: _StemBounceRequest, path: str, note: str
+    ) -> None:
+        accepted = self._stem_bounce_matches(request, path)
+        still_ours = (
+            self._stem_bounce_request is not None
+            and self._stem_bounce_request.token == request.token
+        )
+        if still_ours:
+            self._stem_bounce_request = None
+        if accepted:
+            self._load_shared_track(path, note)
+            return
+        if still_ours:
+            self._flash(_STALE_BOUNCE_NOTE, ms=8000)
+
+    def _finish_stem_bounce_error(
+        self, request: _StemBounceRequest, message: str
+    ) -> None:
+        accepted = self._stem_bounce_matches(request, request.destination)
+        if (
+            self._stem_bounce_request is not None
+            and self._stem_bounce_request.token == request.token
+        ):
+            self._stem_bounce_request = None
+        if accepted:
+            self._flash(message, ms=9000)
 
     def _load_shared_track(self, path: str, note: str) -> None:
         loader = getattr(self._c, "_load_reference_track", None)
