@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
@@ -326,6 +327,7 @@ class SongOverlay(QFrame):
 
     def _build_stems_page(self) -> QWidget:
         page = QWidget()
+        page.setObjectName("SongOverlayStemsPage")
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(Space.XS)
@@ -338,6 +340,9 @@ class SongOverlay(QFrame):
         )
         self._stem_boundary.setObjectName("SongOverlayMuted")
         self._stem_container = QWidget()
+        self._stem_container.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum
+        )
         self._stem_layout = QVBoxLayout(self._stem_container)
         self._stem_layout.setContentsMargins(0, 0, 0, 0)
         self._stem_layout.setSpacing(Space.XS)
@@ -353,6 +358,9 @@ class SongOverlay(QFrame):
         self._split_button.clicked.connect(
             lambda: self.song_tool_requested.emit("stems")
         )
+        self._split_button.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+        )
 
         self._sing_button = QPushButton("Sing this one")
         self._sing_button.setObjectName("GhostButton")
@@ -362,6 +370,9 @@ class SongOverlay(QFrame):
         )
         self._sing_button.clicked.connect(self.sing_this_one_requested.emit)
         self._sing_button.setEnabled(False)
+        self._sing_button.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+        )
 
         self._send_stems_button = QPushButton("Send to jam")
         self._send_stems_button.setObjectName("GhostButton")
@@ -372,9 +383,15 @@ class SongOverlay(QFrame):
             self.send_stems_to_jam_requested.emit
         )
         self._send_stems_button.setEnabled(False)
+        self._send_stems_button.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed
+        )
 
         self._stem_note = _body_label("")
         self._stem_note.setObjectName("SongOverlayMuted")
+        self._stem_note.setSizePolicy(
+            QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum
+        )
 
         layout.addWidget(self._stem_status)
         layout.addWidget(self._stem_boundary)
@@ -384,7 +401,20 @@ class SongOverlay(QFrame):
         layout.addWidget(self._sing_button)
         layout.addWidget(self._send_stems_button)
         layout.addWidget(self._stem_note)
-        return page
+
+        # The page is taller than the 800×600 overlay column once stems and
+        # the two actions are present. Scroll instead of shrinking rows or
+        # stacking the buttons on top of each other.
+        scroll = QScrollArea()
+        scroll.setObjectName("SongOverlayStemsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
+        scroll.setWidget(page)
+        self._stems_page = page
+        self._stems_scroll = scroll
+        return scroll
 
     def _build_tools_page(self) -> QWidget:
         page = QWidget()
@@ -456,6 +486,7 @@ class SongOverlay(QFrame):
 
         compact = int(window_width or 0) < COMPACT_WINDOW_WIDTH
         if compact == self._compact:
+            self._fit_stems_page()
             return
         self._compact = compact
         self.setFixedWidth(OVERLAY_WIDTH_COMPACT if compact else OVERLAY_WIDTH)
@@ -465,6 +496,7 @@ class SongOverlay(QFrame):
             f" font-size: {size}px;"
             f" font-weight: {Font.WEIGHT_SEMIBOLD};"
         )
+        self._fit_stems_page()
 
     @property
     def compact(self) -> bool:
@@ -481,6 +513,11 @@ class SongOverlay(QFrame):
         if window is not None:
             self.set_available_width(window.width())
         super().showEvent(event)
+        self._fit_stems_page()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._fit_stems_page()
 
     def show_page(self, page: str) -> None:
         key = page if page in _PAGES else PAGE_SONG
@@ -960,6 +997,8 @@ class SongOverlay(QFrame):
         audible = {item.name for item in (mix.audible if mix is not None else ())}
         for stem in stems:
             row = QWidget()
+            row.setObjectName("SongOverlayStemRow")
+            row.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(0, 0, 0, 0)
             row_layout.setSpacing(Space.XS)
@@ -973,7 +1012,10 @@ class SongOverlay(QFrame):
             ):
                 button = QPushButton(text)
                 button.setObjectName("GhostButton")
-                button.setFixedSize(26, 22)
+                # Global GhostButton QSS uses min-height 34px and wide padding.
+                # A 26×22 chip then clips the letter; keep the compact control
+                # but size it to the glyph so M/S stay readable.
+                button.setStyleSheet("min-height: 0px; min-width: 0px; padding: 2px 6px;")
                 button.setCheckable(True)
                 button.setChecked(bool(active))
                 # Named so nobody can mistake this for a band fader or a
@@ -988,6 +1030,8 @@ class SongOverlay(QFrame):
                 button.clicked.connect(
                     lambda _checked=False, key=stem.name, emit=signal: emit.emit(key)
                 )
+                hint = button.sizeHint()
+                button.setFixedSize(max(26, hint.width()), max(22, hint.height()))
                 row_layout.addWidget(button)
             heard = QLabel("·" if stem.name in audible else " ")
             heard.setObjectName("SongOverlayMuted")
@@ -997,6 +1041,7 @@ class SongOverlay(QFrame):
                 else f"{stem.label} is silent"
             )
             row_layout.addWidget(heard)
+            row.setMinimumHeight(row.sizeHint().height())
             self._stem_layout.addWidget(row)
             self._stem_rows.append(row)
 
@@ -1012,6 +1057,7 @@ class SongOverlay(QFrame):
         self._send_stems_button.setEnabled(bool(can_send))
         self._stem_note.setText(note)
         self._stem_note.setVisible(bool(note))
+        self._fit_stems_page()
 
     def set_tools_state(
         self,
@@ -1149,6 +1195,26 @@ class SongOverlay(QFrame):
             row.deleteLater()
         self._tool_rows = []
         self._tool_buttons = []
+
+    def _fit_stems_page(self) -> None:
+        """Keep stem rows and actions at their natural height; scroll if short."""
+
+        page = getattr(self, "_stems_page", None)
+        scroll = getattr(self, "_stems_scroll", None)
+        if page is None or page.layout() is None:
+            return
+        layout = page.layout()
+        width = 1
+        if scroll is not None and scroll.viewport() is not None:
+            width = max(1, scroll.viewport().width())
+        elif page.width() > 0:
+            width = page.width()
+        height = max(
+            layout.minimumSize().height(),
+            layout.totalHeightForWidth(width),
+        )
+        if page.minimumHeight() != height:
+            page.setMinimumHeight(height)
 
     def _on_close(self) -> None:
         self.setVisible(False)

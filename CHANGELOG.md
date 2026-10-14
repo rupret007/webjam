@@ -6,6 +6,11 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Song tools Stems keeps each Vocals/Drums/Bass row and the Sing this one /
+  Send to jam actions at their natural height at the 800×600 window floor
+  and at 1280×800. The side panel scrolls instead of squashing mute/solo
+  chips or stacking the buttons on the helper line.
+
 - Same-network joins wait for pending Library media work before adopting the
   host's Art or Music profile. Art no longer reports connected early, and
   Music waits to start audio. Deferred receipts retry briefly and cannot
