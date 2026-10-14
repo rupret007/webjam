@@ -1036,6 +1036,41 @@ def test_a_stem_bounce_does_not_load_after_the_source_mix_changes(app, tmp_path)
     assert coordinator._is_host()
 
 
+def test_a_reversed_workspace_switch_does_not_load_a_stale_stem_bounce(
+    app, tmp_path
+):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+    coordinator._c.session_library = SimpleNamespace(
+        current=SimpleNamespace(id="ws-a"),
+        song_context=lambda: None,
+    )
+    with _deferred_stem_bounce(coordinator, tmp_path) as (_paths_out, workers):
+        coordinator._c.session_library.current.id = "ws-b"
+        coordinator._sync_workbench()
+        coordinator._c.session_library.current.id = "ws-a"
+        workers[0].run()
+
+    _assert_not_sent(coordinator, loaded)
+    assert coordinator._is_host()
+    assert coordinator._c.session_library.current.id == "ws-a"
+
+
+def test_a_reversed_source_mix_does_not_load_a_stale_stem_bounce(app, tmp_path):
+    coordinator, _paths = _with_stems(app, tmp_path)
+    loaded: list[str] = []
+    coordinator._c._load_reference_track = loaded.append
+    with _deferred_stem_bounce(coordinator, tmp_path) as (_paths_out, workers):
+        coordinator.toggle_stem_mute("bass")
+        coordinator.toggle_stem_mute("bass")
+        workers[0].run()
+
+    _assert_not_sent(coordinator, loaded)
+    assert coordinator._is_host()
+    assert not coordinator.workbench.stem_bench.stem("bass").muted
+
+
 # ----------------------------------------------------------------------
 # Shared Track owns the clock while it holds a song
 # ----------------------------------------------------------------------

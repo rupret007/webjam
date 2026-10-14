@@ -118,7 +118,8 @@ class SongToolsCoordinator:
         self._asking_model = ""
         # A finished mix may arrive after End/Leave, a role change, or a
         # newer song choice. Only the request that still owns this room
-        # may load, and it may load only once.
+        # may load, and it may load only once. Workspace and source
+        # transitions retire the request so reversing them cannot revive it.
         self._stem_bounce_token = 0
         self._stem_bounce_request: _StemBounceRequest | None = None
 
@@ -525,10 +526,12 @@ class SongToolsCoordinator:
     # ------------------------------------------------------------------
     def toggle_stem_mute(self, name: str) -> None:
         self.workbench.stem_bench.toggle_mute(str(name or ""))
+        self._invalidate_stem_bounce_if_ownership_changed()
         self._render_stems()
 
     def toggle_stem_solo(self, name: str) -> None:
         self.workbench.stem_bench.toggle_solo(str(name or ""))
+        self._invalidate_stem_bounce_if_ownership_changed()
         self._render_stems()
 
     def sing_this_one(self) -> None:
@@ -540,6 +543,7 @@ class SongToolsCoordinator:
                 ms=7000,
             )
             return
+        self._invalidate_stem_bounce_if_ownership_changed()
         self._render_stems()
         self._flash("Vocal muted. Sing it.")
 
@@ -612,6 +616,35 @@ class SongToolsCoordinator:
         )
         self._stem_bounce_request = request
         return request
+
+    def _retire_stem_bounce_request(self) -> None:
+        """Forget a pending mix so a later matching snapshot cannot revive it."""
+
+        if self._stem_bounce_request is None:
+            return
+        self._stem_bounce_request = None
+        self._stem_bounce_token += 1
+
+    def _invalidate_stem_bounce_if_ownership_changed(self) -> None:
+        """Retire a pending mix when this room or source is no longer the asker.
+
+        Finish-time snapshot comparison is not enough: switching a workspace
+        or audible mix away and back would restore the captured values and
+        let a stale mix load. The transition itself drops the request.
+        """
+
+        request = self._stem_bounce_request
+        if request is None:
+            return
+        ownership = self._stem_bounce_ownership()
+        if (
+            request.session_generation,
+            request.room_generation,
+            request.workspace_id,
+            request.profile_key,
+            request.source_choice,
+        ) != ownership:
+            self._retire_stem_bounce_request()
 
     def _stem_bounce_ownership(
         self,
@@ -1190,6 +1223,7 @@ class SongToolsCoordinator:
             title, notes = context
             self.workbench.set_notes(notes)
             self.workbench.set_title(title)
+            self._invalidate_stem_bounce_if_ownership_changed()
             return
         canvas = getattr(self._c.window, "session_canvas", None)
         if canvas is not None:
@@ -1197,6 +1231,7 @@ class SongToolsCoordinator:
         strip = getattr(self._c.window, "session_strip", None)
         if strip is not None:
             self.workbench.set_title(strip.current_title())
+        self._invalidate_stem_bounce_if_ownership_changed()
 
     def _shared_track_snapshot(self):
         """The host's Shared Track truth, host-local or guest projection."""
