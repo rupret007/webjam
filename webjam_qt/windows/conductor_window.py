@@ -1057,7 +1057,11 @@ class ConductorWindow(QMainWindow):
         """Keep private names separate from the public room projection."""
 
         self.art_room_overview.set_overview(overview, room_connections=room_connections)
-        self._setup_tab_order()
+        if (
+            QApplication.activeModalWidget() is None
+            and QApplication.activePopupWidget() is None
+        ):
+            self._setup_tab_order()
 
     def apply_art_notes_layout(self) -> bool:
         """Give compact Art Notes the workspace without changing its meeting."""
