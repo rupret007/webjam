@@ -11,6 +11,7 @@ MAX_PACKAGE_METADATA_BYTES = 16 * 1024**2
 ROLES = frozenset({"manifest", "audio", "review", "studio", "art"})
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 _DEVICE = re.compile(r"(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\..*)?\Z", re.I)
+_WINDOWS_UNUSABLE_CHARS = frozenset('<>:"/\\|?*')
 
 
 def digest(value: object) -> str:
@@ -30,6 +31,35 @@ def relative_path(value: object) -> str:
             or _DEVICE.fullmatch(p) for p in parts)):
         raise ValueError("Media member path is unsafe on a supported platform.")
     return value
+
+
+def local_source_basename(value: object) -> str:
+    """Single-component name of an explicitly selected local file.
+
+    Ordinary Mac names (``CON.png``, a colon, decomposed accents) are allowed
+    here. This is not a portable archive or package member; those stay under
+    ``relative_path``.
+    """
+    if (not isinstance(value, str) or not value or len(value.encode("utf-8")) > 1024
+            or "/" in value or "\\" in value
+            or any(ord(c) < 32 or ord(c) == 127 for c in value)
+            or value in {".", ".."}):
+        raise ValueError("Local media source must be a single bounded file name.")
+    return value
+
+
+def windows_unusable_regular_file(name: str) -> bool:
+    """True when Windows cannot store this basename as a regular file.
+
+    Reserved device stems (``CON.png``) and illegal characters (``:``) are
+    ordinary Mac names. They are not regular files on Windows and must not be
+    opened through the device or alternate-data-stream pathname.
+    """
+    return bool(
+        isinstance(name, str)
+        and name
+        and (_DEVICE.fullmatch(name) or any(c in name for c in _WINDOWS_UNUSABLE_CHARS))
+    )
 
 
 def file_inventory(files: object) -> None:
