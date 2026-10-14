@@ -6,6 +6,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Retrying **Send to jam** keeps the previous completed stem mix if saving
+  its replacement fails. A failed first export leaves no partial final WAV.
+
 - Keep saved profile titles and modes intact when reading their file hits an I/O error.
   A later successful save merges the current edit with the other profiles.
 
