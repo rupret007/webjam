@@ -1038,6 +1038,51 @@ def test_stems_page_keeps_row_and_action_height_without_overlap(app, size):
         app.processEvents()
 
 
+def test_stem_chips_grow_when_polished_hint_grows(app, overlay):
+    """Mute/solo chips must track sizeHint after style/font polish.
+
+    CI failed at 26px against a 27px hint when the first unpolished measure
+    was locked with setFixedSize. A later stylesheet must be allowed to
+    widen the chip; the test does not lower that floor.
+    """
+
+    workbench = _bench_workbench()
+    overlay.show()
+    overlay.show_page(PAGE_STEMS)
+    overlay.set_stems(
+        stems=workbench.stem_bench.stems,
+        mix=workbench.stem_bench.mix(),
+        note="",
+        can_send=False,
+    )
+    for _ in range(8):
+        app.processEvents()
+
+    chips = [
+        chip
+        for row in overlay._stem_rows
+        for chip in row.findChildren(QPushButton)
+    ]
+    assert chips
+    for chip in chips:
+        chip.setStyleSheet("min-height: 0px; min-width: 0px; padding: 6px 12px;")
+    for _ in range(8):
+        app.processEvents()
+    overlay._fit_stems_page()
+
+    for chip in chips:
+        assert chip.width() >= chip.sizeHint().width(), (
+            chip.text(),
+            chip.width(),
+            chip.sizeHint(),
+        )
+        assert chip.height() >= chip.sizeHint().height(), (
+            chip.text(),
+            chip.height(),
+            chip.sizeHint(),
+        )
+
+
 # ----------------------------------------------------------------------
 # Suggestions are labelled, keepable, dismissable
 # ----------------------------------------------------------------------

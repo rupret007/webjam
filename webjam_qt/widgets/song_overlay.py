@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -1010,12 +1010,7 @@ class SongOverlay(QFrame):
                 ("M", self.stem_mute_toggled, stem.muted, "Mute"),
                 ("S", self.stem_solo_toggled, stem.solo, "Solo"),
             ):
-                button = QPushButton(text)
-                button.setObjectName("GhostButton")
-                # Global GhostButton QSS uses min-height 34px and wide padding.
-                # A 26×22 chip then clips the letter; keep the compact control
-                # but size it to the glyph so M/S stay readable.
-                button.setStyleSheet("min-height: 0px; min-width: 0px; padding: 2px 6px;")
+                button = _StemMuteSoloChip(text)
                 button.setCheckable(True)
                 button.setChecked(bool(active))
                 # Named so nobody can mistake this for a band fader or a
@@ -1030,8 +1025,6 @@ class SongOverlay(QFrame):
                 button.clicked.connect(
                     lambda _checked=False, key=stem.name, emit=signal: emit.emit(key)
                 )
-                hint = button.sizeHint()
-                button.setFixedSize(max(26, hint.width()), max(22, hint.height()))
                 row_layout.addWidget(button)
             heard = QLabel("·" if stem.name in audible else " ")
             heard.setObjectName("SongOverlayMuted")
@@ -1058,6 +1051,10 @@ class SongOverlay(QFrame):
         self._stem_note.setText(note)
         self._stem_note.setVisible(bool(note))
         self._fit_stems_page()
+        # Chips are parented now, but the window stylesheet/font may still
+        # be unapplied until the next event-loop turn. Refit then so a
+        # 26px first measure cannot win against a 27px polished hint.
+        QTimer.singleShot(0, self._fit_stems_page)
 
     def set_tools_state(
         self,
@@ -1196,6 +1193,17 @@ class SongOverlay(QFrame):
         self._tool_rows = []
         self._tool_buttons = []
 
+    def _fit_stem_chips(self) -> None:
+        """Grow mute/solo chips to their polished hint so M/S stay unclipped."""
+
+        for row in self._stem_rows:
+            for chip in row.findChildren(QPushButton):
+                _fit_chip_to_hint(chip)
+            needed = row.sizeHint().height()
+            if row.minimumHeight() < needed:
+                row.setMinimumHeight(needed)
+            row.updateGeometry()
+
     def _fit_stems_page(self) -> None:
         """Keep stem rows and actions at their natural height; scroll if short."""
 
@@ -1203,6 +1211,7 @@ class SongOverlay(QFrame):
         scroll = getattr(self, "_stems_scroll", None)
         if page is None or page.layout() is None:
             return
+        self._fit_stem_chips()
         layout = page.layout()
         width = 1
         if scroll is not None and scroll.viewport() is not None:
@@ -1215,10 +1224,60 @@ class SongOverlay(QFrame):
         )
         if page.minimumHeight() != height:
             page.setMinimumHeight(height)
+        layout.activate()
 
     def _on_close(self) -> None:
         self.setVisible(False)
         self.closed.emit()
+
+
+def _fit_chip_to_hint(chip: QPushButton) -> None:
+    """Keep an M/S chip at least as large as its polished sizeHint."""
+
+    if getattr(chip, "_fitting_hint", False):
+        return
+    chip._fitting_hint = True
+    try:
+        chip.ensurePolished()
+        hint = chip.sizeHint()
+        width = max(26, hint.width())
+        height = max(22, hint.height())
+        if chip.minimumWidth() < width or chip.minimumHeight() < height:
+            chip.setMinimumSize(width, height)
+        if chip.width() < width or chip.height() < height:
+            chip.resize(width, height)
+        chip.updateGeometry()
+    finally:
+        chip._fitting_hint = False
+
+
+class _StemMuteSoloChip(QPushButton):
+    """Compact GhostButton that grows with its polished hint.
+
+    The first sizeHint is taken before the window stylesheet and font land.
+    Locking that measure with setFixedSize is what left CI at 26px while
+    the later hint was 27. Follow Polish/style/font instead.
+    """
+
+    def __init__(self, text: str) -> None:
+        super().__init__(text)
+        self.setObjectName("GhostButton")
+        # Global GhostButton QSS uses min-height 34px and wide padding.
+        # Keep the compact control, but size it to the glyph.
+        self.setStyleSheet("min-height: 0px; min-width: 0px; padding: 2px 6px;")
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setMinimumSize(26, 22)
+
+    def event(self, event):  # noqa: N802
+        result = super().event(event)
+        if event.type() in (
+            QEvent.Type.Polish,
+            QEvent.Type.FontChange,
+            QEvent.Type.StyleChange,
+            QEvent.Type.Show,
+        ):
+            _fit_chip_to_hint(self)
+        return result
 
 
 def _body_label(text: str, *, object_name: str = "SongOverlayBody") -> QLabel:
