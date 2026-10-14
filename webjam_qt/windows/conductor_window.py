@@ -366,7 +366,9 @@ class ConductorWindow(QMainWindow):
         """Make space for preview Help without hiding or clipping other actions."""
 
         compact = bool(getattr(self, "_room_help_enabled", False)) and self.width() < 900
-        follow_compact = self.session_strip._creator_profile_key == "music" and self.width() < 900
+        # Full labels return at 900 px, but Music's recording receipt still
+        # needs the denser rail until the wider workspace fits comfortably.
+        follow_compact = self.session_strip._creator_profile_key == "music" and self.width() < 1100
         bar = self.session_controls
         if (bar.property("helpPreviewCompact") == compact
                 and bar.property("followAlongCompact") == follow_compact):
@@ -374,10 +376,15 @@ class ConductorWindow(QMainWindow):
         bar.setProperty("helpPreviewCompact", compact)
         bar.setProperty("followAlongCompact", follow_compact)
         layout = bar.layout()
-        margin = Space.SM if compact else Space.LG
+        # Music also needs compact gaps for the full Conversation label and
+        # recording receipt, even when the optional Help button is absent.
+        compact_spacing = compact or follow_compact
+        # XS side margins recover the width the full Conversation label
+        # takes from the longest recording receipt at 720 px.
+        margin = Space.XS if compact_spacing else Space.LG
         layout.setContentsMargins(margin, Space.SM, margin, Space.SM)
-        layout.setSpacing(Space.XS if compact else Space.SM)
-        end_gap = Space.XS if compact else Space.MD
+        layout.setSpacing(Space.XS if compact_spacing else Space.SM)
+        end_gap = Space.XS if compact_spacing else Space.MD
         self._session_end_gap.changeSize(
             end_gap,
             1,
