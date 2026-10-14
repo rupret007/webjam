@@ -77,11 +77,12 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest -q tests/test_art_start_ux.
    open until WebJam confirms it.
 
 2. **Point out Copy Invite and Waiting for artists to connect.** The room
-   says **Make from your own space** and explains: "Use paper, clay, a model,
-   printer, or your usual app." With no saved meeting link, the next sentence
-   says "Choose Set Up Conversation to add an external meeting link."
-   With a saved link, it says "Choose Conversation for the external meeting
-   controls."
+   says **Make from your own space** and explains: "You do not need an art
+   app. Use paper, your usual tools, or just talk." HUD **Copy Invite** is
+   the one primary while you wait; the activity line does not ask to set up
+   Conversation. After someone joins, an unconfigured room adds "Choose Set
+   Up Conversation to add your meeting link." With a saved link, it says
+   "Choose Conversation to talk or share your screen."
    No one else has joined merely because the room is open or the invite was
    copied. For an actual collaborator, follow the invitation steps in
    [First Session](FIRST_JAM.md#start-an-art-room).
