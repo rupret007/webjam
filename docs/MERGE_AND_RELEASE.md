@@ -123,8 +123,17 @@ marked module passes once, in a fresh process, with local-socket permission.
 
 ### Complete hosted suite second
 
+Pull-request CI keeps the test, lint, and integration jobs. The four
+`Build Desktop` targets do not run on `pull_request`. They run on push to
+`master`, on version tags, and on `workflow_dispatch` when `final_build` is
+selected (the default) or a signing rehearsal needs those artifacts. Art
+companion and Pocket Stage stay on pull requests because they are the only
+hosted XCTest / simulator suites; a paths filter limits those two jobs to
+changes under `ios/` or the shared Python/protocol sources they exercise.
+
 The exact candidate head must then pass all 13 required hosted jobs in one
-automatic workflow run:
+automatic workflow run of the packaging lane (push to `master`, tag, or
+`final_build` dispatch), not on every pull request:
 
 - `test`
 - `Integration (real Jamulus 3.12.2)` and
@@ -142,8 +151,8 @@ automatic workflow run:
 
 `Build Desktop` requires the integrations, update-input checks, Transport,
 Reference, Pocket Stage, and hosted `test` through `needs:`, so all of them gate
-the same round. Art companion runs independently in that workflow and must
-also pass on the same candidate head before review.
+the same packaging round. Art companion runs independently in that workflow and
+must also pass on the same candidate head before a packaging/release review.
 
 Red means stop. Do not re-run a job to change its result, do not tag, and do not
 create or publish a release to hide a failure. Fix the cause and repeat the

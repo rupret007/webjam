@@ -34,6 +34,11 @@ on:
         required: false
         type: boolean
         default: false
+      final_build:
+        description: Final build — produce desktop packaging artifacts for all four targets
+        required: false
+        type: boolean
+        default: true
 
 # Default: read-only. Release job overrides to write.
 permissions:
@@ -773,11 +778,90 @@ jobs:
           exit 1
 
   # ------------------------------------------------------------------
+  # iOS jobs are the only hosted XCTest / simulator UI suites. Keep them
+  # on pull_request, but only when ios/ or the shared Python/protocol
+  # sources those suites exercise have changed. Every push and
+  # workflow_dispatch still runs them so packaging keeps a compile proof.
+  # ------------------------------------------------------------------
+  ios-change-gate:
+    name: iOS change gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ios: ${{ steps.filter.outputs.ios }}
+    steps:
+      - name: Decide whether iOS jobs should run
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          event = os.environ.get("GITHUB_EVENT_NAME", "")
+          # Fail open to running the XCTest suites: a filter error must not
+          # skip the only hosted Swift/simulator jobs.
+          if event != "pull_request":
+              output.open("a", encoding="utf-8").write("ios=true\n")
+              raise SystemExit(0)
+
+          prefixes = (
+              "ios/",
+              "packaging/ios/",
+              "tools/art_companion_simulator",
+              "tests/test_art_companion",
+              "tests/test_pocket_stage",
+              "requirements-lock/pocket-stage-integration-macos-arm64",
+              "core/pocket_stage.py",
+              "core/session_transfer.py",
+              "services/pocket_stage_gateway.py",
+              ".github/workflows/ci.yml",
+          )
+
+          def matches(path: str) -> bool:
+              return any(path == prefix or path.startswith(prefix) for prefix in prefixes)
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          number = os.environ.get("PR_NUMBER", "")
+          try:
+              raw = subprocess.check_output(
+                  [
+                      "gh",
+                      "api",
+                      "--paginate",
+                      f"repos/{repo}/pulls/{number}/files?per_page=100",
+                      "--jq",
+                      ".[].filename",
+                  ],
+                  text=True,
+              )
+          except (subprocess.CalledProcessError, OSError):
+              output.open("a", encoding="utf-8").write("ios=true\n")
+              raise SystemExit(0)
+          ios = any(matches(line.strip()) for line in raw.splitlines() if line.strip())
+          output.open("a", encoding="utf-8").write(f"ios={'true' if ios else 'false'}\n")
+          PY
+
+  # ------------------------------------------------------------------
   # Native Art guest: real LAN transport plus the unsigned iPhone/iPad app.
   # App-hosted tests exercise ATS; UI attachments are finite layout fixtures.
   # ------------------------------------------------------------------
   art-companion-ios:
     name: Art companion (iPhone and iPad)
+    needs: [ios-change-gate]
+    if: >-
+      always() &&
+      !cancelled() &&
+      (needs.ios-change-gate.result != 'success' ||
+       needs.ios-change-gate.outputs.ios == 'true')
     runs-on: macos-14
     timeout-minutes: 40
     env:
@@ -833,6 +917,12 @@ jobs:
   # No Apple signing credential enters either iOS gate.
   pocket-stage-ios:
     name: Pocket Stage (iOS app)
+    needs: [ios-change-gate]
+    if: >-
+      always() &&
+      !cancelled() &&
+      (needs.ios-change-gate.result != 'success' ||
+       needs.ios-change-gate.outputs.ios == 'true')
     runs-on: macos-14
     timeout-minutes: 30
     env:
@@ -1005,10 +1095,21 @@ jobs:
   # Windows: dist/WebJam/ directory → zipped with 7z
   # macOS:   dist/WebJam.app bundle → zipped with ditto
   # Linux:   dist/WebJam/ directory → zipped with zip
+  #
+  # Packaging stays off pull_request so PR CI is the test/lint/integration
+  # lane. The four targets still run on push to master, on tags (release
+  # needs the artifacts), and on workflow_dispatch when final_build is on
+  # (the default) or a signing rehearsal needs those artifacts.
   # ------------------------------------------------------------------
   build-desktop:
     name: Build Desktop (${{ matrix.target }})
     needs: [test, integration-jamulus, jamulus-platform-update-inputs, transport, reference-service, pocket-stage-ios]
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.final_build ||
+        inputs.macos_signing_rehearsal ||
+        inputs.windows_signing_rehearsal))
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:

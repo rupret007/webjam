@@ -520,6 +520,78 @@ def test_source_job_is_bounded_and_runs_required_environment_gates() -> None:
     assert "python -m pip check" in test_job
     assert "python -m compileall -q core webjam_qt ui services api tests" in test_job
     assert "git diff --check HEAD" in test_job
+    assert "if:" not in test_job.split("    steps:\n", 1)[0]
+
+
+def test_desktop_packaging_runs_on_master_and_final_build_not_pull_request() -> None:
+    build = _workflow_job("build-desktop")
+    header = build.split("    steps:\n", 1)[0]
+    condition = " ".join(
+        header.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0].split()
+    )
+    assert "github.event_name == 'push'" in condition
+    assert "github.event_name == 'workflow_dispatch'" in condition
+    assert "inputs.final_build" in condition
+    assert "inputs.macos_signing_rehearsal" in condition
+    assert "inputs.windows_signing_rehearsal" in condition
+    assert "pull_request" not in condition
+    dispatch = WORKFLOW.split("  workflow_dispatch:\n", 1)[1].split(
+        "\n\n# Default:", 1
+    )[0]
+    assert "final_build:" in dispatch
+    assert "Final build — produce desktop packaging artifacts" in dispatch
+    assert "default: true" in dispatch
+    assert "Upload Windows candidate artifact" in build
+    assert "Upload non-Windows build artifact" in build
+
+
+def test_pr_test_and_integration_jobs_stay_on_every_pull_request() -> None:
+    for name in (
+        "windows-diagnostic-control",
+        "test",
+        "integration-jamulus",
+        "jamulus-platform-update-inputs",
+        "transport",
+        "reference-service",
+    ):
+        header = _workflow_job(name).split("    steps:\n", 1)[0]
+        assert "pull_request" not in header, name
+        assert "ios-change-gate" not in header, name
+
+
+def test_ios_jobs_stay_on_pull_request_with_shared_source_paths() -> None:
+    gate = _workflow_job("ios-change-gate")
+    art = _workflow_job("art-companion-ios")
+    pocket = _workflow_job("pocket-stage-ios")
+    assert "needs: [ios-change-gate]" in art
+    assert "needs: [ios-change-gate]" in pocket
+    for job in (art, pocket):
+        condition = " ".join(
+            job.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0].split()
+        )
+        assert "always()" in condition
+        assert "!cancelled()" in condition
+        assert "needs.ios-change-gate.result != 'success'" in condition
+        assert "needs.ios-change-gate.outputs.ios == 'true'" in condition
+    assert "swift test --package-path ios --filter ArtCompanionCoreTests" in art
+    assert "tools/art_companion_simulator_check.py" in art
+    assert "swift test" in pocket
+    assert "Build full Pocket Stage app for iOS Simulator" in pocket
+    for marker in (
+        "ios/",
+        "packaging/ios/",
+        "tools/art_companion_simulator",
+        "tests/test_art_companion",
+        "tests/test_pocket_stage",
+        "requirements-lock/pocket-stage-integration-macos-arm64",
+        "core/pocket_stage.py",
+        "core/session_transfer.py",
+        "services/pocket_stage_gateway.py",
+        ".github/workflows/ci.yml",
+    ):
+        assert marker in gate, marker
+    assert 'write("ios=true\\n")' in gate or "ios=true" in gate
+    assert "Fail open" in gate or "fail open" in gate.lower()
 
 
 def test_protected_windows_release_is_verified_after_key_cleanup() -> None:

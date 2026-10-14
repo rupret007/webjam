@@ -224,6 +224,9 @@ def test_map_names_real_required_ci_jobs_and_fails_closed() -> None:
         assert f"target: {target}" in WORKFLOW_TEXT, target
     assert "\n  test:\n" in WORKFLOW_TEXT and "- `test`" in required_section
     assert "all 13 required hosted jobs" in required_section
+    assert "do not run on `pull_request`" in required_section
+    assert "`final_build`" in required_section
+    assert "ios/" in required_section
     assert "Red means stop" in required_section
     assert "Do not re-run a job to change its result" in required_section
 

@@ -6,6 +6,15 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Pull-request CI keeps every test, lint, and integration job and no longer
+  waits on desktop packaging. `Build Desktop` (linux-x64, macos-arm64,
+  macos-x64, windows-x64) runs on push to `master`, on version tags, and on
+  `workflow_dispatch` `final_build` (default on), and still uploads the same
+  artifacts. Art companion and Pocket Stage stay on pull requests as the only
+  hosted XCTest / simulator suites, filtered to `ios/` and their shared
+  sources. Branch protection was not changed; if those Build Desktop names
+  are required checks, skipped PR jobs may need a maintainer review.
+
 - Song tools Stems keeps each Vocals/Drums/Bass row and the Sing this one /
   Send to jam actions at their natural height at the 800×600 window floor
   and at 1280×800. The side panel scrolls instead of squashing mute/solo

@@ -121,7 +121,10 @@ and must not be read as current Latest facts.
 > v0.28.1 for Host/Join and component-input CI.
 
 This is the release boundary for WebJam's native desktop packages. The GitHub
-Actions `build-desktop` matrix is the authoritative source builder. Version
+Actions `build-desktop` matrix is the authoritative source builder. It runs on
+push to `master`, on version tags, and on `workflow_dispatch` when
+`final_build` is selected (the default) or a signing rehearsal needs those
+artifacts. It does not run on `pull_request`. Version
 tags may promote its explicitly unsigned/ad-hoc outputs as a private test
 candidate. The environment-bound `windows-release-trust` and
 `macos-release-trust` jobs remain the only authoritative packagers for a future
