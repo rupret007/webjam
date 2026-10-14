@@ -5578,13 +5578,11 @@ class RecordingCoordinator:
             )
             return
         self._set_phase(RecorderPhase.STOPPING)
-        if not self._take_id:
-            observed = self._observed_recorder
-            if observed is None:
-                self.apply_toggle_failure(
-                    "The captured recorder configuration is no longer available."
-                )
-                return
+        # An observed external cycle is the only empty-take Stop that uses
+        # captured authority. An unconfirmed owned start still retries Stop
+        # through the take-bound worker even when take_id is not yet bound.
+        observed = self._observed_recorder if not self._take_id else None
+        if observed is not None:
             attempt = _ObservedStopAttempt(observed)
             self._observed_stop_attempt = attempt
             threading.Thread(
