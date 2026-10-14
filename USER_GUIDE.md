@@ -481,6 +481,8 @@ or YouTube link for silent playback inside WebJam.
 
 For a YouTube lesson, such as a Bob Ross mountain painting, the host chooses
 **Choose YouTube…**, pastes its video link, then chooses **Open in browser**.
+Use an individual video link; playlist and channel-live embed links are rejected
+with “Paste a YouTube video link, such as youtube.com/watch?v=….”
 An existing embedded lesson supplies its current reference link and position;
 **Change YouTube…** selects a different browser lesson. Choosing a link starts
 nothing. Add the meeting link if needed, then **Join / Open Meeting**.

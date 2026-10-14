@@ -76,6 +76,10 @@ def parse_youtube_lesson_url(value: str) -> YouTubeLesson:
         elif url.path == "/watch" and len(query.get("v", [])) == 1:
             video_id = query["v"][0]
         elif url.path.startswith(("/embed/", "/shorts/", "/live/")):
+            # These embed endpoints select a playlist/channel, not one video.
+            # Their names happen to satisfy the 11-character video ID shape.
+            if url.path in {"/embed/videoseries", "/embed/live_stream"}:
+                raise ValueError(INVALID_LINK_MESSAGE)
             video_id = url.path.split("/", 2)[2]
         else:
             raise ValueError(INVALID_LINK_MESSAGE)
