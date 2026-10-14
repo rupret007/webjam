@@ -32,16 +32,26 @@ final class ArtCompanionUITests: XCTestCase {
         element.identifier.isEmpty ? element.label : element.identifier
     }
 
+    /// Software keyboard only. The toolbar Done button is always in the view
+    /// hierarchy (`ToolbarItemGroup(placement: .keyboard)`), so `Done.exists`
+    /// stays true on room screens that never showed a keyboard and after Done
+    /// dismisses it. Treating that as "keyboard up" kept reveal() on tiny
+    /// toolbar-avoiding drags — two of them in eight seconds on iPhone SE XXXL.
+    @MainActor private func softwareKeyboardUp(_ app: XCUIApplication) -> Bool {
+        app.keyboards.element.exists
+    }
+
     /// Visible, keyboard-unobscured portion of the Join/room scroll view.
     @MainActor private func visibleFormFrame(_ scroll: XCUIElement, in app: XCUIApplication) -> CGRect {
         let frame = scroll.frame
         var bottom = frame.maxY
-        if app.keyboards.element.exists {
+        if softwareKeyboardUp(app) {
             bottom = min(bottom, app.keyboards.element.frame.minY)
-        }
-        if app.buttons["Done"].exists {
-            // The keyboard toolbar can sit above app.keyboards and still steal hits.
-            bottom = min(bottom, app.buttons["Done"].frame.minY)
+            let done = app.buttons["Done"]
+            if done.exists {
+                // The keyboard toolbar can sit above app.keyboards and still steal hits.
+                bottom = min(bottom, done.frame.minY)
+            }
         }
         return CGRect(
             x: frame.minX,
@@ -55,7 +65,7 @@ final class ArtCompanionUITests: XCTestCase {
     /// A center swipe is fine when the keyboard is down; with the keyboard up it
     /// can land on the keys or a TextEditor and leave invitation unhittable.
     @MainActor private func nudgeForm(_ scroll: XCUIElement, in app: XCUIApplication, towardTop: Bool) {
-        if app.keyboards.element.exists || app.buttons["Done"].exists {
+        if softwareKeyboardUp(app) {
             let frame = scroll.frame
             let visible = visibleFormFrame(scroll, in: app)
             guard frame.height > 1, visible.height > 8 else { return }

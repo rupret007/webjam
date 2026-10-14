@@ -10,7 +10,9 @@ All notable improvements and features for the WebJam creator collaboration platf
   fields to exist, be hittable, and hold keyboard focus before typing, and
   scrolls the form from each field's real position above the keyboard. Large
   Dynamic Type room actions keep scrolling until they sit inside the visible
-  form. The same keyboard and recovery checks remain.
+  form, using a page swipe when the software keyboard is not shown. The
+  keyboard toolbar's Done control is not treated as the keyboard. The same
+  keyboard and recovery checks remain.
 
 - Local Art files with ordinary Mac names (`CON.png`, a colon in the name, or
   decomposed accents such as `café.png`) can be verified, opened after that
