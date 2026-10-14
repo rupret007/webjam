@@ -38,7 +38,7 @@ def _dialog(tmp_path: Path) -> LaunchDialog:
 
 
 def test_paint_along_helper_sits_above_host_at_800_by_600(qapp, tmp_path: Path):
-    """The longer Paint along line belongs above Host so it cannot fall below the fold."""
+    """Paint along's one extra step stays above Host and below the cards."""
 
     dialog = _dialog(tmp_path)
     try:
@@ -51,6 +51,8 @@ def test_paint_along_helper_sits_above_host_at_800_by_600(qapp, tmp_path: Path):
         host = dialog._host_button
         assert dialog.selected_start_key == "paint_along"
         assert helper.text() == PAINT_ALONG_DOOR_HELPER
+        assert helper.text() == "Then choose a file or lesson link."
+        assert helper.isVisible()
         assert host.isDefault() is True
 
         helper_bottom = helper.mapTo(dialog, helper.rect().bottomRight()).y()
