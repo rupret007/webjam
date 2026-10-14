@@ -30,10 +30,19 @@ from core.meeting_link import (
     COMPACT_MEETING_CAPTURE_NOTICE,
     RECORD_SESSION_MEETING_CAPTURE_NOTICE,
 )
-from core.settings import AppSettings, audio_format_environment_overrides, save_settings
+from core.settings import (
+    AppSettings,
+    audio_format_environment_overrides,
+    hosted_server_recordings_dir,
+    save_settings,
+)
 from webjam_qt.theme.tokens import Space
 
 LOGGER = logging.getLogger("webjam.qt.recording_setup")
+
+HOST_TAKES_FOLDER_HELP = (
+    "WebJam keeps host takes in this folder. Show Folder opens that location."
+)
 
 
 def _resolve_creator_profile(
@@ -188,6 +197,13 @@ class RecordingSetupDialog(QDialog):
         self._creator_profile = profile
         self._local_originals_available = bool(local_originals_available)
         self._takes_folder_editable = bool(takes_folder_editable)
+        self._hosted_takes = bool(getattr(self._settings, "host_server_enabled", False))
+        if self._hosted_takes:
+            # Loader always replaces a hosted path. Keep the draft and the
+            # visible folder on that managed location so Save cannot persist a
+            # choice reload would discard.
+            self._settings.takes_directory = str(hosted_server_recordings_dir())
+            self._takes_folder_editable = False
         self._format_change_guard = format_change_guard or (lambda: "")
         self.setObjectName("RecordingSetupDialog")
         self.setWindowTitle("WebJam Recording Setup")
@@ -446,9 +462,10 @@ class RecordingSetupDialog(QDialog):
         content.addWidget(self._tracks_summary)
         self._refresh_tracks_summary()
 
+        takes_path = self._takes_folder_path()
         folder_row = QHBoxLayout()
         self._folder = QLabel(
-            "Takes: " + (str(settings.takes_directory or "Not configured"))
+            "Takes: " + (takes_path or "Not configured")
         )
         self._folder.setObjectName("SimpleSettingsSubtitle")
         self._folder.setTextFormat(Qt.TextFormat.PlainText)
@@ -460,20 +477,37 @@ class RecordingSetupDialog(QDialog):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         folder_row.addWidget(self._folder, 1)
-        choose_folder = QPushButton("Choose Folder")
-        choose_folder.setObjectName("GhostButton")
-        choose_folder.setEnabled(self._takes_folder_editable)
-        if not self._takes_folder_editable:
-            choose_folder.setToolTip(locked_folder_tooltip)
-        choose_folder.clicked.connect(self._choose_folder)
-        folder_row.addWidget(choose_folder)
+        self._choose_folder_button = None
+        if not self._hosted_takes:
+            choose_folder = QPushButton("Choose Folder")
+            choose_folder.setObjectName("GhostButton")
+            choose_folder.setEnabled(self._takes_folder_editable)
+            if not self._takes_folder_editable:
+                choose_folder.setToolTip(locked_folder_tooltip)
+            choose_folder.clicked.connect(self._choose_folder)
+            self._choose_folder_button = choose_folder
+            folder_row.addWidget(choose_folder)
         show_folder = QPushButton("Show Folder")
         show_folder.setObjectName("GhostButton")
         self._show_folder_button = show_folder
-        show_folder.setEnabled(bool(settings.takes_directory))
+        show_folder.setEnabled(bool(takes_path))
+        if self._hosted_takes:
+            show_folder.setAccessibleName("Show host takes folder")
+            show_folder.setAccessibleDescription(HOST_TAKES_FOLDER_HELP)
         show_folder.clicked.connect(self._show_folder)
         folder_row.addWidget(show_folder)
         content.addLayout(folder_row)
+
+        self._folder_help = QLabel(
+            HOST_TAKES_FOLDER_HELP if self._hosted_takes else ""
+        )
+        self._folder_help.setObjectName("SimpleSettingsSubtitle")
+        self._folder_help.setWordWrap(True)
+        self._folder_help.setVisible(self._hosted_takes)
+        if self._hosted_takes:
+            self._folder_help.setAccessibleName("Host takes folder")
+            self._folder_help.setAccessibleDescription(HOST_TAKES_FOLDER_HELP)
+        content.addWidget(self._folder_help)
 
         self._error = QLabel("")
         self._error.setObjectName("SimpleSettingsError")
@@ -560,12 +594,19 @@ class RecordingSetupDialog(QDialog):
         self._error.setVisible(True)
         self._scroll.ensureWidgetVisible(self._error)
 
+    def _takes_folder_path(self) -> str:
+        if self._hosted_takes:
+            return str(hosted_server_recordings_dir())
+        return str(self._settings.takes_directory or "")
+
     def _show_folder(self) -> None:
-        path = str(self._settings.takes_directory or "")
+        path = self._takes_folder_path()
         if path:
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     def _choose_folder(self) -> None:
+        if self._hosted_takes or not self._takes_folder_editable:
+            return
         start = str(self._settings.takes_directory or "")
         path = QFileDialog.getExistingDirectory(
             self,
@@ -669,6 +710,8 @@ class RecordingSetupDialog(QDialog):
             )
             return
         candidate = deepcopy(self._settings)
+        if bool(getattr(candidate, "host_server_enabled", False)):
+            candidate.takes_directory = str(hosted_server_recordings_dir())
         if self._local_originals_available:
             candidate.local_capture_enabled = capture
             candidate.local_capture_choice_made = True
