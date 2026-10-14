@@ -6,10 +6,39 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Test, lint, and integration jobs still run on pull requests and on push
+  to `master`. `Build Desktop` (linux-x64, macos-arm64, macos-x64,
+  windows-x64) no longer runs on `pull_request` or on push to `master` /
+  tags. Packaging stays `workflow_dispatch` `final_build` only (default
+  on), or when a signing rehearsal needs those artifacts, and still
+  uploads the same files. A tag draft needs `final_build` against the
+  annotated tag. `macos_signing_rehearsal` / `windows_signing_rehearsal`
+  do not create a GitHub Release draft. Art companion and Pocket Stage
+  stay on `master`, on `workflow_dispatch`, and on pull requests that
+  touch `ios/` or their shared sources — they are the only hosted XCTest
+  / simulator suites. Branch protection was not changed; if those Build
+  Desktop names are required checks, skipped PR or master jobs may need a
+  maintainer review.
+
+- Local Art files with ordinary Mac names (`CON.png`, a colon in the name, or
+  decomposed accents such as `café.png`) can be verified, opened after that
+  check, and backed up under generated archive names. The original file is not
+  renamed. Portable archive-member and `relative_path` checks stay unchanged.
+
 - Song tools Stems keeps each Vocals/Drums/Bass row and the Sing this one /
   Send to jam actions at their natural height at the 800×600 window floor
   and at 1280×800. The side panel scrolls instead of squashing mute/solo
   chips or stacking the buttons on the helper line.
+
+- A waiting Paint along host has one orange room action: **Copy Invite**.
+  **Open Paint along** stays available as a quiet body action; guest
+  **Open my copy…** recovery keeps its emphasis.
+
+- Aligned-originals export hashes and renders each source through one open
+  file descriptor. A same-format rewrite or path replacement after that
+  handle is bound cannot publish. No package is published, the take files
+  are left as they are, and Studio does not show a success or an export
+  receipt.
 
 - Art/Music launch File menus keep Session library and hide New Music Project,
   Podcast, and Review starts, including the New shortcut. Help's Music setup
@@ -242,6 +271,9 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 - Music Help opens with “Host. Share. Join. Play.” and three short steps.
   Engine, meeting, room-control and keyboard details stay in searchable topics.
+- Idle host Recording Setup no longer offers a Takes folder that reload
+  discards. **Show Folder** opens WebJam's managed host location, with a short
+  explanation. Guest folder choice is unchanged.
 
 ### Follow-along pilot readiness — draft test-build scope
 ### Follow-along clarity and saved lessons — draft test-build scope
