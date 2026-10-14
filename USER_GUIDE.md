@@ -26,6 +26,11 @@ copy…** makes a separate workspace. Close the Library with its window button,
 If saving fails, the Library stays open with your draft so you can retry.
 Invitations and meeting credentials are not a reusable workspace template.
 
+If saving fails, keep the workspace open and choose **Save** to retry. WebJam
+can confirm an interrupted save without making a separate workspace, including
+edits made while you waited. Changes made by another writer still require
+review or **Save as copy…**.
+
 For Music, **More → Session library… → Rehearsal plan** opens the ordered setlist. Add song titles,
 key, tempo, goals, notes, and next steps. **Previous** / **Next** selects a song;
 **Move earlier** / **Move later** changes its order. Selection preserves each
@@ -591,6 +596,9 @@ Things worth knowing:
   the video is ready or paused.
 - **Only the host controls playback.** Guests have no play, pause, stop, or
   scrub control, by design.
+- If this computer cannot move the video, Paint along shows that it needs
+  attention instead of remaining **Paused.** Choose **Choose process video…**
+  to open a local video again. Guests wait until the host recovers it.
 - **The video is silent from its first frame.** Use an optional meeting app
   for conversation. Art does not start Jamulus, and Paint along adds no
   soundtrack.
