@@ -39,7 +39,7 @@ from core.youtube_lesson import YouTubeLesson, parse_youtube_lesson_url
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.scrollable_content import ScrollableContent
 
-_HOST_EMPTY_HEADLINE = "Or choose a silent reference"
+_HOST_EMPTY_HEADLINE = "Choose a silent reference"
 _GUEST_EMPTY_HEADLINE = "Optional silent reference"
 _STANDALONE_SURFACE_FLOOR = 360
 _COMPACT_SURFACE_FLOOR = 40
