@@ -181,6 +181,24 @@ class TestSessionLibraryCoordinator(TestCase):
         _app.processEvents()
         self.temp.cleanup()
 
+    def test_post_publication_create_retry_reuses_one_workspace(self):
+        from tests.support.workspace_save_faults import fail_create_sync
+
+        with fail_create_sync():
+            self.assertFalse(self.coordinator.ensure_current())
+        self.assertIsNone(self.coordinator.current)
+        listed = self.library.list()
+        self.assertEqual(len(listed), 1)
+        flashes = [call.args[0] for call in self.window.flash_message.call_args_list]
+        self.assertTrue(any("not confirmed" in text or "could not be saved" in text for text in flashes))
+        self.assertTrue(self.coordinator.ensure_current())
+        self.assertEqual(self.coordinator.current.id, listed[0].id)
+        self.assertEqual(self.coordinator.current.title, "Wednesday")
+        self.assertEqual(len(self.library.list()), 1)
+        other = self.library.create("music", "Separate explicit workspace")
+        self.assertNotEqual(other.id, listed[0].id)
+        self.assertEqual(len(self.library.list()), 2)
+
     def test_post_primary_sync_failure_retries_latest_live_draft(self):
         from tests.support.workspace_save_faults import fail_primary_sync
 

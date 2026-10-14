@@ -19,8 +19,8 @@ from core.session_intelligence import (
     build_session_pulse, notes_display_equivalent, session_notes_facts,
 )
 from core.session_library import (
-    SessionLibrary, SessionLibraryError, SessionLibraryImportUnconfirmed,
-    SessionLibrarySaveUnconfirmed,
+    SessionLibrary, SessionLibraryCreateUnconfirmed, SessionLibraryError,
+    SessionLibraryImportUnconfirmed, SessionLibrarySaveUnconfirmed,
     validate_session_record,
 )
 from core.workspace_backup import detach_take_ownership
@@ -171,6 +171,8 @@ class SessionLibraryDialog(QDialog):
         self.pending_records = deepcopy(dict(pending_records or {}))
         self._save_record = save_record
         self._save_attempts = {}
+        self._create_attempt = None
+        self._create_kind = None
         self._prepare_take_open = prepare_take_open
         from webjam_qt.controllers.workspace_media import LibraryMediaActions
         self.media_actions = LibraryMediaActions(self)
@@ -709,10 +711,18 @@ class SessionLibraryDialog(QDialog):
         title, accepted = QInputDialog.getText(self, "New workspace", "Name")
         if accepted and title.strip():
             try:
-                record = self.library.create(self.profile.currentData(), title.strip())
+                record = self.library.create(
+                    self.profile.currentData(), title.strip(), retry=self._create_attempt,
+                )
+                self._create_attempt = None
+                self._create_kind = None
                 self.search.clear()
                 self.refresh()
                 self.select_id(record.id)
+            except SessionLibraryCreateUnconfirmed as error:
+                self._create_attempt = error.attempt
+                self._create_kind = "new"
+                self.status.setText("This workspace was not confirmed saved. Retry New workspace.")
             except (OSError, ValueError) as error:
                 self.status.setText(f"Workspace could not be saved: {error}")
 
@@ -732,7 +742,18 @@ class SessionLibraryDialog(QDialog):
             # live ownership so it can't shadow the original as the completion
             # owner (recording_completed() fails closed on ambiguous matches).
             fields["take_links"] = detach_take_ownership(fields["take_links"], edited.id)
-            record = self.library.create(edited.profile, title.strip(), **fields)
+            pending_kind = self._create_kind
+            record = self.library.create(
+                edited.profile, title.strip(), retry=self._create_attempt, **fields,
+            )
+            self._create_attempt = None
+            self._create_kind = None
+            if pending_kind == "new":
+                self.search.clear()
+                self.refresh()
+                self.select_id(record.id)
+                self.status.setText("Previous workspace is now confirmed saved.")
+                return
             self._dirty = False
             self.pending_records.pop(edited.id, None)
             self.search.clear()
@@ -741,6 +762,10 @@ class SessionLibraryDialog(QDialog):
             # This is the original loaded snapshot, before editor changes or
             # normalization. Only that exact pending draft may be settled.
             self.copy_saved.emit(original, record)
+        except SessionLibraryCreateUnconfirmed as error:
+            self._create_attempt = error.attempt
+            self._create_kind = "copy"
+            self.status.setText("This workspace was not confirmed saved. Retry Save as copy.")
         except (OSError, ValueError) as error:
             self.status.setText(f"The separate copy could not be saved: {error}")
 
