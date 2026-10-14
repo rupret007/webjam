@@ -21,3 +21,14 @@ def fail_primary_sync():
     with patch.object(file_io, "_fsync_parent_directory", side_effect=sync):
         yield
     assert calls == 2
+
+
+@contextmanager
+def fail_create_sync():
+    """Inject a directory-sync failure after new-workspace publication."""
+    with patch.object(
+        file_io,
+        "_fsync_parent_directory",
+        side_effect=OSError("directory sync failed after create publication"),
+    ):
+        yield
