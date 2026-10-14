@@ -6,6 +6,10 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
+- Workspace summary export reconciles live Notes and late recap/take facts even
+  with a clean library editor. Conflicts retain both drafts and block export;
+  the summary stays bound to the workspace selected before the file picker.
+
 - Art’s idle first screen now tells a person with no art skill what to do:
   the room names Start Session and says you do not need an art app, instead
   of listing clay, printers, or a meeting-share essay.
