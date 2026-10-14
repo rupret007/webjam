@@ -156,6 +156,38 @@ def test_guest_transient_loss_keeps_binding_and_resumes_only_after_current_recei
     assert room.state is ArtRoomState.CONNECTED
 
 
+def test_transient_loss_cancels_deferred_admission_but_keeps_lesson_ownership(rig, monkeypatch):
+    owner = guest_rig(rig)
+    room = rig.room
+    binding = room._lesson_binding
+    pending = []
+    monkeypatch.setattr("webjam_qt.controllers.room_participant.QTimer", SimpleNamespace(
+        singleShot=lambda delay, callback: pending.append(callback),
+    ))
+    rig.app._apply_creator_profile_key.return_value = False
+    room.observe_creative_state = Mock()
+    receipt = SimpleNamespace(creator_profile_key="art")
+    room.receive_lan(owner, room.generation, receipt)
+    assert len(pending) == 1
+    assert room._lan_pending_admission is not None
+
+    room.lose_lan(owner, room.generation, False)
+    assert room._lan_pending_admission is None
+    assert room._lesson_binding is binding
+    assert room.state is ArtRoomState.RECONNECTING
+    rig.app._apply_creator_profile_key.return_value = True
+    pending[0]()
+    room.observe_creative_state.assert_not_called()
+    assert room.state is ArtRoomState.RECONNECTING
+    assert room._lesson_binding is binding
+    owner.set_lesson_requests_enabled.assert_not_called()
+
+    room.receive_lan(owner, room.generation, receipt)
+    room.observe_creative_state.assert_called_once_with(receipt)
+    assert room.state is ArtRoomState.CONNECTED
+    assert room._lesson_binding is binding
+
+
 @pytest.mark.parametrize("boundary", ["generation", "profile", "blocked", "owner", "terminal", "leave"])
 def test_guest_authority_still_retires_at_real_boundaries(rig, boundary):
     owner = guest_rig(rig)
