@@ -62,6 +62,7 @@ from core.host_startup_checklist import (
     host_startup_checklist_current_step,
 )
 from core.meeting_companion import (
+    art_room_hud_active_start_detail,
     ART_NO_SKILL_NEEDED,
     ART_OWN_TOOLS_LINE,
     build_invite_message,
@@ -377,10 +378,21 @@ class ApplicationController(QObject):
             or "music"
         )
         self._creator_profile_host_owned = False
+        if (
+            session_invite is not None
+            and not session_invite.peer_enabled
+            and self._active_creator_profile_key == "art"
+        ):
+            # Art's join path reopens paste when there is no peer. A v1
+            # invite has only a Music endpoint, so borrow that journey
+            # without changing the saved Art door choice. Podcast and
+            # other local profiles keep their own route.
+            self._active_creator_profile_key = "music"
+            self._creator_profile_host_owned = True
         self._chat_profile_generation = 0
         creator_setter = getattr(self.window, "set_creator_profile", None)
         if callable(creator_setter):
-            creator_setter(self.creator_profile, locked=False)
+            creator_setter(self.creator_profile, locked=self._creator_profile_host_owned)
         if not isinstance(offline_reference_studio, bool):
             raise TypeError("offline_reference_studio must be true or false")
         self._offline_reference_studio = offline_reference_studio
@@ -528,10 +540,10 @@ class ApplicationController(QObject):
         self.host_peer = HostPeerSession(
             on_take_updated=self._on_peer_take_updated,
         )
-        # A v2 invite credential is intentionally memory-only for the active
-        # join. A successful Leave/End clears it with the peer runtime, so a
-        # stale bearer cannot silently reopen on a later Start.
-        self._guest_invite = None
+        # Keep the accepted Music (v1) or peer (v2) invitation for routing
+        # and retries. Leave/End clears it with the peer runtime; v2 bearer
+        # credentials remain memory-only.
+        self._guest_invite = session_invite
         self._guest_peer_configuration_failed = False
         self.guest_peer: GuestPeerSession | None = None
         self._shared_track_peer_publish_failed = False
@@ -541,7 +553,6 @@ class ApplicationController(QObject):
         if session_invite is not None and bool(
             getattr(session_invite, "peer_enabled", False)
         ):
-            self._guest_invite = session_invite
             self._room_participant.probing = True
             self._room_participant.role = "guest"
 
@@ -672,9 +683,10 @@ class ApplicationController(QObject):
         self._pocket_stage_session_end_stop_confirmed = True
         self._invite_switch_generation = 0
         self._invite_switch_in_flight = False
-        # Deep links can arrive while the one authorized switch worker is
-        # still retiring the old jam. Keep only the newest typed invitation:
-        # cleanup remains single-flight and no serialized link is retained.
+        self._invite_confirmation_generation: int | None = None
+        # Deep links can arrive during confirmation or while the authorized
+        # switch worker is retiring the old jam. Keep only the newest typed
+        # invitation: cleanup remains single-flight; no serialized link is retained.
         self._pending_invitation: BandInvite | RemoteInvitation | None = None
         self._pending_invitation_meeting_url = ""
         # A busy BandInvite switch may be replaced by a v3 RemoteInvitation.
@@ -1214,6 +1226,9 @@ class ApplicationController(QObject):
         return False
 
     def _shutdown_once(self) -> bool:
+        # A question has not begun teardown. Retire it before shutdown takes
+        # ownership, so a late Yes cannot resume against a closed session.
+        ApplicationController._cancel_invitation_confirmation(self)
         if self._shutdown:
             return True  # closeEvent + app.py both call this; run teardown once
         if not ApplicationController._prepare_workspace_close(self):
@@ -2142,6 +2157,10 @@ class ApplicationController(QObject):
             borrowed or getattr(getattr(self, "settings", None), "last_creator_start_key", "")
         )
 
+    def _art_room_active_start_key(self) -> str:
+        start = self.creator_start
+        return start.key if start is not None else ""
+
     def _art_room_runs_paint_along(self) -> bool:
         """True when this computer's authenticated room state says the room
         runs Paint along.
@@ -2618,14 +2637,22 @@ class ApplicationController(QObject):
             takes_root / "WebJam Local Originals"
         )
 
+    @staticmethod
+    def _band_invite_is_legacy_music(invite) -> bool:
+        """True for a parsed v1 BandInvite with no same-LAN recording peer."""
+
+        return isinstance(invite, BandInvite) and not invite.peer_enabled
+
     def _local_originals_available(self) -> bool:
         """Whether this session has a real host or v2 guest capture path."""
 
+        invite = getattr(self, "_guest_invite", None)
         return bool(
             getattr(self.settings, "host_server_enabled", False)
             or getattr(self, "guest_peer", None) is not None
             or (
-                getattr(self, "_guest_invite", None) is not None
+                invite is not None
+                and not ApplicationController._band_invite_is_legacy_music(invite)
                 and not getattr(self, "_guest_peer_configuration_failed", False)
             )
         )
@@ -5092,9 +5119,28 @@ class ApplicationController(QObject):
                 return True
 
         room = getattr(self, "_room_participant", None)
+        invite = getattr(self, "_guest_invite", None)
+        if (
+            ApplicationController._band_invite_is_legacy_music(invite)
+            and self.creator_profile.key == "art"
+        ):
+            # Art would reopen Join for a non-peer invite. Borrow Music
+            # without replacing the saved Art preference. A media-operation
+            # veto must retain the invite for a later retry.
+            self._apply_creator_profile_key("music", host_owned=True)
+            if self.creator_profile.key != "music":
+                self.window.flash_message(
+                    "This invite is for a music jam. Finish the workspace "
+                    "operation, then join again.",
+                    ms=7000,
+                )
+                return False
         if room is not None:
-            invite = getattr(self, "_guest_invite", None)
-            if invite is not None and invite is not room.music_invite:
+            if (
+                invite is not None
+                and not ApplicationController._band_invite_is_legacy_music(invite)
+                and invite is not room.music_invite
+            ):
                 return room.start_lan_guest(invite)
             if self.creator_profile.key == "art":
                 if getattr(self, "_remote_invite_owner", None) is not None:
@@ -5528,7 +5574,11 @@ class ApplicationController(QObject):
             return
         guest = getattr(self, "guest_peer", None)
         invite = getattr(self, "_guest_invite", None)
-        if guest is None and invite is not None:
+        if (
+            guest is None
+            and invite is not None
+            and not ApplicationController._band_invite_is_legacy_music(invite)
+        ):
             self._configure_guest_peer(invite)
             guest = getattr(self, "guest_peer", None)
         # A broken optional Local Originals path must never retry in a poll
@@ -7350,7 +7400,11 @@ class ApplicationController(QObject):
                 return
             guest = getattr(self, "guest_peer", None)
             invite = getattr(self, "_guest_invite", None)
-            if guest is None and invite is not None:
+            if (
+                guest is None
+                and invite is not None
+                and not ApplicationController._band_invite_is_legacy_music(invite)
+            ):
                 self._configure_guest_peer(invite)
                 guest = getattr(self, "guest_peer", None)
             if guest is not None:
@@ -8021,15 +8075,19 @@ class ApplicationController(QObject):
         if bool(getattr(self, "_invite_switch_in_flight", False)):
             if not isinstance(invitation, (BandInvite, RemoteInvitation)):
                 raise TypeError("invitation must be a BandInvite or RemoteInvitation")
-            # The current worker remains the only teardown owner. Replacing
-            # this one-item memory slot gives OS deep-link delivery
+            # The current confirmation/worker remains the only switch owner.
+            # Replacing this one-item memory slot gives OS deep-link delivery
             # deterministic latest-wins behavior without spawning a second
             # worker or persisting private invitation material.
             self._pending_invitation = invitation
             self._pending_invitation_meeting_url = meeting_url
             self.window.flash_message(
-                "WebJam received a newer invitation. It will use that one "
-                "after the current jam finishes closing.",
+                (
+                    "WebJam received a newer invitation. Choose Yes to join that one."
+                    if getattr(self, "_invite_confirmation_generation", None) is not None
+                    else "WebJam received a newer invitation. It will use that one "
+                    "after the current jam finishes closing."
+                ),
                 ms=7000,
             )
             return True
@@ -8120,6 +8178,42 @@ class ApplicationController(QObject):
         self._begin_remote_join()
         return True
 
+    def _cancel_invitation_confirmation(self) -> None:
+        """Retire only a question's ownership; a teardown worker owns itself."""
+        generation = getattr(self, "_invite_confirmation_generation", None)
+        if generation is None:
+            return
+        self._invite_confirmation_generation = None
+        if generation == self._invite_switch_generation:
+            self._invite_switch_generation += 1
+            self._invite_switch_in_flight = False
+            self._pending_invitation = None
+            self._pending_invitation_meeting_url = ""
+
+    def _invitation_confirmation_context(self) -> tuple:
+        """Facts authorizing teardown must survive the modal event loop."""
+        room = getattr(self, "_room_participant", None)
+        startup = getattr(self, "_startup_attempt", None) or {}
+        return (
+            id(self.settings), bool(self.settings.host_server_enabled),
+            self.creator_profile.key,
+            id(self.recording), getattr(self.recording, "_session_id", None),
+            getattr(self.recording, "_take_id", None),
+            bool(getattr(
+                self.recording, "take_in_progress", self.recording.is_recording_active,
+            )),
+            id(self.bridge), id(getattr(self.bridge, "jamulus_process", None)),
+            id(getattr(self.bridge, "hosted_server_process", None)),
+            self._is_jamulus_running(), self.bridge.hosted_server_alive(),
+            self.bridge.hosted_server_owned(),
+            getattr(self, "_startup_generation", None), startup.get("phase"),
+            getattr(self, "_reference_track_session_generation", None),
+            id(getattr(self, "_remote_invite_owner", None)),
+            id(getattr(self, "_guest_invite", None)),
+            id(room), getattr(room, "generation", None),
+            getattr(room, "native_generation", None), self._art_room_role,
+        )
+
     def _accept_band_invitation(self, invite: BandInvite, *, meeting_url: str = "") -> bool:
         """Preserve the existing v1/v2 same-LAN join flow."""
 
@@ -8147,30 +8241,59 @@ class ApplicationController(QObject):
             )
             return False
         if busy:
-            reply = QMessageBox.question(
-                self.window,
-                "Join this room?" if switch_was_art else "Join this jam?",
-                (
-                    "WebJam will safely end your current room, then join the new one."
-                    if switch_was_art
-                    else "WebJam will safely end your current jam, then join the new one."
-                ),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return False
-            # Freeze the outgoing jam's Library recap before any teardown
-            # starts, exactly as normal End/Leave does, so the replacement
-            # jam below does not inherit this run's ID or live take set.
-            switch_library = getattr(self, "session_library", None)
-            if switch_library is not None:
-                switch_library.capture_summary()
+            # QMessageBox runs a nested Qt event loop. Claim the switch before
+            # opening it so reentrant OS invitations replace the pending slot
+            # instead of creating another question and teardown worker.
+            confirmation_context = self._invitation_confirmation_context()
             self._invite_switch_generation += 1
             switch_generation = self._invite_switch_generation
             self._invite_switch_in_flight = True
+            self._invite_confirmation_generation = switch_generation
             self._pending_invitation = None
             self._pending_invitation_meeting_url = ""
+            confirmed = False
+            try:
+                reply = QMessageBox.question(
+                    self.window,
+                    "Join this room?" if switch_was_art else "Join this jam?",
+                    (
+                        "WebJam will safely end your current room, then join the new one."
+                        if switch_was_art
+                        else "WebJam will safely end your current jam, then join the new one."
+                    ),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return False
+                if (
+                    switch_generation != self._invite_switch_generation
+                    or not self._invite_switch_in_flight
+                    or self._shutdown
+                    or getattr(self, "_shutdown_in_progress", False)
+                    or getattr(self, "_shutdown_cleanup_pending", False)
+                    or getattr(self, "_workspace_transition_pending", False)
+                    or getattr(self, "_primary_recovery_retire_inflight", False)
+                    or self.audio.stopping or self.audio.cleanup_retry_required
+                    or confirmation_context != self._invitation_confirmation_context()
+                ):
+                    self.window.flash_message(
+                        "The current room changed. Open the invitation again when you’re ready.",
+                        ms=7000,
+                    )
+                    return False
+                # Freeze the outgoing Library recap only after the question
+                # and its ownership checks, before any teardown starts.
+                switch_library = getattr(self, "session_library", None)
+                if switch_library is not None:
+                    switch_library.capture_summary()
+                confirmed = True
+            finally:
+                if self._invite_confirmation_generation == switch_generation:
+                    if confirmed:
+                        self._invite_confirmation_generation = None
+                    else:
+                        self._cancel_invitation_confirmation()
             # A failed switch is retried through AudioCoordinator after the
             # invitation closure has returned. Preserve the role that owns the
             # unresolved services; the replacement invite must never turn a
@@ -8254,10 +8377,14 @@ class ApplicationController(QObject):
                 self.recording.on_audio_session_stopped()
                 self.window.session_strip.reset_session_clock()
             self._reconfigure_services_after_settings(old_settings)
+            self._guest_invite = invitation
             if bool(getattr(invitation, "peer_enabled", False)):
-                self._guest_invite = invitation
                 self._room_participant.probing = True
                 self._room_participant.role = "guest"
+            elif self.creator_profile.key == "art":
+                # As on cold entry, a legacy endpoint starts the existing
+                # Music guest journey instead of Art's paste-invite prompt.
+                self._apply_creator_profile_key("music", host_owned=True)
             # The invitation's name labels this session, but it belongs to
             # whoever sent it. Marking it borrowed keeps it out of the
             # musician's persisted default, so a joined session's name cannot
@@ -10498,7 +10625,14 @@ class ApplicationController(QObject):
         )
         detail = presentation.message
         if presentation.preservation:
-            detail = f"{detail} {presentation.preservation}"
+            detail = f"{detail} {presentation.preservation}".strip()
+        if (
+            not detail
+            and display_override is None
+            and self.creator_profile.key == "art"
+            and facts.art_room is ArtRoomState.CONNECTED
+        ):
+            detail = art_room_hud_active_start_detail(self._art_room_active_start_key())
         # Explain what this profile allows without claiming a recorder or
         # a completed setup. The HUD remains the only startup action.
         stage_hint = ""
@@ -13288,8 +13422,11 @@ class ApplicationController(QObject):
             return
         local_originals_available = self._local_originals_available()
         session_running = self._is_jamulus_running()
-        takes_folder_editable = not session_running and not bool(
-            getattr(self.host_peer, "active", False)
+        hosting = bool(getattr(self.settings, "host_server_enabled", False))
+        takes_folder_editable = (
+            not session_running
+            and not bool(getattr(self.host_peer, "active", False))
+            and not hosting
         )
         old_settings = self.settings
         settings_path = self.settings.config_file
@@ -13336,6 +13473,7 @@ class ApplicationController(QObject):
         if (
             not session_running
             and retained_invite is not None
+            and not ApplicationController._band_invite_is_legacy_music(retained_invite)
             and self.settings.takes_directory != old_settings.takes_directory
         ):
             # GuestPeerSession owns a concrete transfer queue/root. Rebuild it

@@ -17,6 +17,7 @@ from core.art_companion import (
 )
 from core.art_room_activities import art_room_activities
 from core.art_room_overview import ArtRoomOverview, art_room_overview
+from core.meeting_companion import art_room_hud_active_start_detail
 from core.art_room_presence import ABSENT, art_room_presence
 from core.session_conductor import (
     ArtRoomState, SessionFacts, SessionPrimaryAction, SessionRole,
@@ -219,7 +220,8 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         view = derive_session_presentation(replace(facts, art_room=state))
         current = art_room_overview(state=state, hosting=role is SessionRole.HOST)
         window.set_art_room_overview(current)
-        hud.set_state(view.title, view.message, action_visible=False)
+        hud_detail = view.message or art_room_hud_active_start_detail()
+        hud.set_state(view.title, hud_detail, action_visible=False)
         _settle(qapp)
         if state is ArtRoomState.RECONNECTING:
             assert hud._detail.isVisibleTo(window)
@@ -235,10 +237,10 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         assert visible_text.count("Make from your own space") == 1
         assert hud._status.text() == "You’re in"
         assert hud._status.isVisibleTo(window)
-        assert hud._detail.text() == ""
-        assert not hud._detail.isVisibleTo(window)
+        assert hud._detail.text() == "Make together with your own tools."
+        assert hud._detail.isVisibleTo(window)
+        assert "own tools" in hud.accessibleDescription()
         assert "own space" not in hud.accessibleDescription()
-        assert "own tools" not in hud.accessibleDescription()
         assert panel._activity.text() == "Make from your own space"
         assert panel._activity_detail.text() == (
             "You do not need an art app. Use paper, your usual tools, or just talk. "
@@ -255,6 +257,77 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         assert panel.conversation_button().isVisibleTo(window)
         assert panel.conversation_button().isEnabled()
         assert panel.verticalScrollBar().maximum() == 0
+
+
+def _set_paint_room(window, *, hosting, state, video=VideoCompanionState.NONE):
+    presence = art_room_presence(
+        ArtCompanionProjection(in_room=True, video=video),
+        hosting=hosting, intended_video=hosting, paint_along_room=True,
+    )
+    current = art_room_overview(state=state, hosting=hosting, presence=presence)
+    view = derive_session_presentation(SessionFacts(
+        role=SessionRole.HOST if hosting else SessionRole.GUEST,
+        creator_profile_key="art", setup_requested=True, art_room=state,
+    ))
+    window.set_art_room_overview(current)
+    window.session_hud.set_state(
+        view.title, view.message, action_text=view.action_label,
+        action_visible=view.primary_action not in {
+            SessionPrimaryAction.NONE, SessionPrimaryAction.WAIT,
+        },
+        invite_available=view.primary_action is SessionPrimaryAction.COPY_INVITE,
+    )
+
+
+def _visible_room_primaries(window):
+    return [button for button in window.findChildren(QPushButton)
+            if button.isVisibleTo(window) and button.objectName() == "PrimaryButton"]
+
+
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_paint_host_room_has_one_orange_action_and_restores_emphasis(window, qapp, size):
+    window.resize(*size)
+    panel = window.art_room_overview
+    activity = panel.activity_button()
+    requested = []
+    panel.activity_requested.connect(requested.append)
+    # Reusing the same widget must update its actual styled appearance both ways.
+    for state in (ArtRoomState.WAITING, ArtRoomState.CONNECTED, ArtRoomState.WAITING):
+        _set_paint_room(window, hosting=True, state=state)
+        _settle(qapp)
+        waiting = state is ArtRoomState.WAITING
+        primary = window.session_hud._action if waiting else activity
+        assert _visible_room_primaries(window) == [primary]
+        assert primary.text() == ("Copy Invite" if waiting else "Open Paint along")
+        assert primary.isEnabled()
+        assert window.rect().contains(QRect(primary.mapTo(window, QPoint()), primary.size()))
+        assert activity.isVisibleTo(window) and activity.isEnabled()
+        assert panel.viewport().rect().contains(
+            QRect(activity.mapTo(panel.viewport(), QPoint()), activity.size())
+        )
+        assert activity.text() == activity.accessibleName() == "Open Paint along"
+        assert activity.objectName() == ("GhostButton" if waiting else "PrimaryButton")
+        if waiting:
+            assert activity.palette().button().color() != primary.palette().button().color()
+        assert panel.conversation_button().objectName() == "GhostButton"
+        QTest.mouseClick(activity, Qt.MouseButton.LeftButton)
+    assert requested == ["video", "video", "video"]
+
+
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_paint_guest_missing_copy_stays_primary_after_host_view(window, qapp, size):
+    window.resize(*size)
+    _set_paint_room(window, hosting=True, state=ArtRoomState.WAITING)
+    _settle(qapp)
+    _set_paint_room(window, hosting=False, state=ArtRoomState.CONNECTED,
+                    video=VideoCompanionState.NEEDS_FILE)
+    _settle(qapp)
+    panel = window.art_room_overview
+    assert _visible_room_primaries(window) == [panel.activity_button()]
+    assert panel.activity_button().text() == "Open my copy…"
+    assert panel.activity_button().accessibleName() == "Open my copy…"
+    assert panel._activity_detail.text() == "Open your own copy of the same video to follow along."
+    assert panel.activity_button().isEnabled()
 
 
 def test_art_body_replaces_empty_mixer_and_preserves_music_cards(window, qapp):
@@ -495,7 +568,7 @@ def test_production_room_copy_fits_and_coexists_with_conversation(
     window.session_hud.set_state(
         "Finish closing the room" if phase == "cleanup_required" else "Your Art room",
         "The room has not finished disconnecting. Choose the closing action to finish."
-        if phase == "cleanup_required" else "Your current room connection and activities are below.",
+        if phase == "cleanup_required" else art_room_hud_active_start_detail(),
         action_visible=False,
     )
     window.webex_embed.set_meeting_configured(True)

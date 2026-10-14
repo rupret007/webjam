@@ -6,13 +6,52 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-- Paint along room actions omit the stacked own-tools paragraph, keeping
-  Open Paint along visible at 800×600. Make together retains its guidance.
+- Art companion's iPhone/iPad Join UI test waits for the name and invitation
+  fields to exist, be hittable, and hold keyboard focus before typing, and
+  scrolls the form from each field's real position above the keyboard. Large
+  Dynamic Type room actions keep scrolling until the hittable point sits
+  inside the visible form. A page swipe is used only when the control is
+  still a page away and the software keyboard is down; a near miss uses a
+  short correction instead of a reverse page swipe. The keyboard toolbar's
+  Done control is not treated as the keyboard. The same keyboard and
+  recovery checks remain.
+- New `Test integrity guards` CI job (add-only). It fails when global test
+  config fakes the clock (`faketime`, `LD_PRELOAD` / `DYLD_INSERT_LIBRARIES`
+  injection, a `TZ` override, or global freezegun / time-machine / fake
+  timers), or when a change leaves tests weaker than `master` (deleted test
+  files, fewer test functions, new skip/xfail markers). Per-test clock
+  control is still allowed.
+- Test, lint, and integration jobs still run on pull requests and on push
+  to `master`. `Build Desktop` (linux-x64, macos-arm64, macos-x64,
+  windows-x64) no longer runs on `pull_request` or on push to `master` /
+  tags. Packaging stays `workflow_dispatch` `final_build` only (default
+  on), or when a signing rehearsal needs those artifacts, and still
+  uploads the same files. A tag draft needs `final_build` against the
+  annotated tag. `macos_signing_rehearsal` / `windows_signing_rehearsal`
+  do not create a GitHub Release draft. Art companion and Pocket Stage
+  stay on `master`, on `workflow_dispatch`, and on pull requests that
+  touch `ios/` or their shared sources — they are the only hosted XCTest
+  / simulator suites. Branch protection was not changed; if those Build
+  Desktop names are required checks, skipped PR or master jobs may need a
+  maintainer review.
+
+- Local Art files with ordinary Mac names (`CON.png`, a colon in the name, or
+  decomposed accents such as `café.png`) can be verified, opened after that
+  check, and backed up under generated archive names. The original file is not
+  renamed. Portable archive-member and `relative_path` checks stay unchanged.
 
 - Song tools Stems keeps each Vocals/Drums/Bass row and the Sing this one /
   Send to jam actions at their natural height at the 800×600 window floor
   and at 1280×800. The side panel scrolls instead of squashing mute/solo
   chips or stacking the buttons on the helper line.
+
+- Art's Make together door hides the repeated Host/Join helper. Paint along
+  keeps only “Then choose a file or lesson link.” Both cards and Host/Join
+  remain visible, including with larger text at 800×600.
+
+- A waiting Paint along host has one orange room action: **Copy Invite**.
+  **Open Paint along** stays available as a quiet body action; guest
+  **Open my copy…** recovery keeps its emphasis.
 
 - Aligned-originals export hashes and renders each source through one open
   file descriptor. A same-format rewrite or path replacement after that
@@ -86,6 +125,7 @@ All notable improvements and features for the WebJam creator collaboration platf
   the dialog lifecycle, like Escape. Reopening shows current saved or pending
   work; failed saves keep the draft visible and media cancellation retains
   its existing recovery guard.
+
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
@@ -247,6 +287,15 @@ All notable improvements and features for the WebJam creator collaboration platf
   The [workflow continuity pilot](docs/WORKFLOW_CONTINUITY_PILOT.md) starts all
   physical observations at **NOT RUN**, with exact package/hash fields and a
   ten-minute Music/Art try list. Jeff retains feel and Final Build judgment.
+
+- Music Help opens with “Host. Share. Join. Play.” and three short steps.
+  Engine, meeting, room-control and keyboard details stay in searchable topics.
+- Idle host Recording Setup no longer offers a Takes folder that reload
+  discards. **Show Folder** opens WebJam's managed host location, with a short
+  explanation. Guest folder choice is unchanged.
+
+- Retrying **Send to jam** keeps the previous completed stem mix if saving
+  its replacement fails. A failed first export leaves no partial final WAV.
 
 ### Follow-along pilot readiness — draft test-build scope
 ### Follow-along clarity and saved lessons — draft test-build scope

@@ -115,7 +115,8 @@ moment's **Open in take** also continues the imported workspace directly.
 If its saved context or media changes before Studio opens, select and open it again.
 
 In **Art project**, select a local file and choose **Verify reference**.
-**Open reference** checks it before opening its external app. **Relink…** locates
+**Open reference** checks it before opening its external app. Keep the filename
+you already use, including everyday Mac names. **Relink…** locates
 the same content while preserving the brief and bookmarks. A metadata-only file
 without an original checksum can be checked for availability, but cannot be
 proven to be the original or relinked as matching content.
@@ -198,6 +199,13 @@ send a request to a model, or contact a service. Topics match the current
 creator profile and distinguish session takes from standalone local projects.
 An open Help window updates when the profile changes, keeping your search
 without taking focus from your work.
+
+Music Help opens with **Host. Share. Join. Play.**: choose **Music** or **Art**
+(**Make together** / **Paint along**), then **Host** or **Join**; the host uses
+**Copy Invite**; play in WebJam and talk in the meeting. For setup details,
+select **Paint along and play along with sound**
+or **Live audio and Music room controls**. Room controls and shortcuts are in
+the live-audio topic.
 
 Selecting a topic only changes the instructions. Its explicit button, such
 as **Open Session library**, **Open Rehearsal plan**, **Open Art project** or
@@ -349,6 +357,11 @@ room. A canvas that needs a drawing app does not block **Open Paint along**,
 and video recovery does not hide **Open canvas**. If you hid the video, return
 through **Open Paint along**, then choose **Show video** when you want it
 visible again. Your existing local copy stays open.
+
+While a Paint along host waits for artists in Room, **Copy Invite** is the
+orange action. **Open Paint along** stays available as a quiet button below
+it to choose a local file or lesson link. Guest **Open my copy…** recovery
+keeps its emphasis.
 
 When Paint along is the room's next action, its activity and Open button
 follow the connection status without an extra own-tools paragraph. Make
@@ -781,7 +794,9 @@ host's Wi-Fi or local network first. After a paste error, the invitation
 field keeps keyboard focus so you can paste again. Private invitation values
 are never saved in settings or logs and are not echoed back after a private-link error.
 
-WebJam waits for the host's profile before choosing the room or audio path.
+For room invitations, WebJam waits for the host's profile before choosing the
+room or audio path. Older Music invitations start the Music guest journey even
+if you chose Art at the door; your saved Art preference stays unchanged.
 An Art invitation follows the waiting and connection states described in
 [Art](#art), without Jamulus. For a remote Music invitation, the normal visible
 sequence is **Checking invite → Contacting host → Securing connection → Opening
@@ -849,7 +864,7 @@ route to each.
 | Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
 | Conversation | Routes to the same panel as the direct action; it has no launch side effect |
 | Jamulus Updates… | Checks WebJam's signed compatibility catalog, downloads an approved update, waits until the session is idle, and offers explicit OS approval; managed previous-version rollback is macOS-only |
-| Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
+| Recording Setup | Sets Local Originals and takes storage; host takes stay in WebJam's host folder. It does not alter Jamulus music routing |
 | Shared Track… | Routes to the same host-only transport; source loading is independent, and current-source Play becomes eligible only after the Mac proves the required local BlackHole route |
 | Use iPhone as Pocket Stage… | Starts an explicit, private-Wi-Fi developer-preview pairing window; it does not put phone audio in the live session |
 | Notes | Opens session notes |
