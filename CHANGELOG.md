@@ -288,11 +288,6 @@ All notable improvements and features for the WebJam creator collaboration platf
   physical observations at **NOT RUN**, with exact package/hash fields and a
   ten-minute Music/Art try list. Jeff retains feel and Final Build judgment.
 
-- A legacy (v1) Music invitation pasted from the Art door now starts the
-  Music guest journey instead of reopening Join. The saved Art preference is
-  preserved; peer-enabled (v2) invitations still discover the host's room.
-  Offline paste → validate → join coverage and a CI 800×600 / compact layout
-  smoke now guard both invite versions and the launch door.
 - Music Help opens with “Host. Share. Join. Play.” and three short steps.
   Engine, meeting, room-control and keyboard details stay in searchable topics.
 - Idle host Recording Setup no longer offers a Takes folder that reload
