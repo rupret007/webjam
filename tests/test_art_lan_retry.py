@@ -396,7 +396,7 @@ def test_retry_waits_for_authenticated_non_art_profile_before_music_handoff(
     assert app.guest_peer is None and app.creator_profile.key == "art"
     second.client.responses.put(state(invite, "music"))
     drain(qapp, lambda: continuation.call_count == 1)
-    configure.assert_called_once_with(invite)
+    configure.assert_called_once_with(invite, preserve_room_profile=True)
     continuation.assert_called_once_with()
     assert room.lan_guest is None and second._stop.is_set()
     assert app.guest_peer is not None
