@@ -189,6 +189,9 @@ action unavailable in Preview.
 
 ## If you need help
 
+- **Send to jam could not save the mixed stems:** the previous completed mix
+  and your source stems stay intact. Retry **Send to jam** after resolving the
+  disk or folder access problem.
 - **Music sound needs attention:** choose **More → Audio Settings in Jamulus**.
 - **Talking/video:** choose the direct **Conversation** action (or **More →
   Conversation**). It does not open a meeting. Save a public HTTPS meeting link,

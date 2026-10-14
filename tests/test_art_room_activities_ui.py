@@ -16,6 +16,7 @@ from core.art_companion import (
     ArtCompanionProjection, CanvasCompanionState, VideoCompanionState,
 )
 from core.art_room_overview import art_room_overview
+from core.meeting_companion import art_room_hud_active_start_detail
 from core.art_room_activities import art_room_activities
 from core.art_room_presence import ABSENT
 from core.creative_modes import get_creator_profile_by_key
@@ -83,7 +84,8 @@ def window(qapp):
     window.set_art_room_overview(room_overview())
     window.session_strip.set_audio_state("Leave Room")
     window.session_hud.set_state(
-        "Your Art room", "Your current room connection and activities are below.",
+        "You’re in",
+        art_room_hud_active_start_detail(),
         action_visible=False,
     )
     window.resize(720, 560)

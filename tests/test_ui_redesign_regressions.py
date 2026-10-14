@@ -229,12 +229,15 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
         _destroy(dialog)
 
 
+@pytest.mark.parametrize("start_key", ["talk_and_make", "paint_along"])
 def test_art_door_keeps_two_starts_and_host_join_inside_760_by_600(
     styled_qapp,
     tmp_path,
+    start_key,
 ):
     settings = _settings(tmp_path)
     settings.last_creator_profile_key = "art"
+    settings.last_creator_start_key = start_key
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(settings)
     dialog._menu_bar.setNativeMenuBar(False)
@@ -246,8 +249,11 @@ def test_art_door_keeps_two_starts_and_host_join_inside_760_by_600(
         assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
         assert dialog.width() <= 760
         assert dialog.height() + 40 <= 600
-        assert dialog._choice_helper.isVisibleTo(dialog)
-        assert dialog.rect().contains(_rect_in(dialog._choice_helper, dialog))
+        assert dialog._choice_helper.isVisibleTo(dialog) is (start_key == "paint_along")
+        if start_key == "paint_along":
+            assert dialog.rect().contains(_rect_in(dialog._choice_helper, dialog))
+        else:
+            assert dialog._choice_helper.text() == ""
         for control in (
             dialog._art_profile_card,
             dialog._music_profile_card,
