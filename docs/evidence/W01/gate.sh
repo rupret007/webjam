@@ -1,20 +1,37 @@
 #!/usr/bin/env bash
-# W01: run offline from the worktree root. Fresh interpreter per Qt module.
+# W01 combined gate: launch File/Help menus and native invitation media ownership.
+# Run offline from the worktree root, with a fresh interpreter per Qt module.
 set -euo pipefail
 export QT_QPA_PLATFORM=offscreen
 export PYTHONDONTWRITEBYTECODE=1
 export PIP_DISABLE_PIP_VERSION_CHECK=1
+PY="${PYTHON:-python3.11}"
+status=0
 
-.venv/bin/python -m pytest tests/test_native_admission_deferred_profile.py -q
-.venv/bin/python -m ruff check webjam_qt/ core/ ui/ services/ api/
-.venv/bin/python -m compileall -q core webjam_qt ui services api tests
-.venv/bin/python -m pip check
-.venv/bin/python tools/runtime_dependency_policy.py --check
-.venv/bin/python ux_smoke_test.py
+run_tests() {
+  echo "Running ${1}"
+  "$PY" -m pytest -q -p no:cacheprovider "$1" || status=1
+}
 
-# Standard Python gate for the touched native admission/runtime/controller
-# areas, Library/Studio ownership, and mandatory door/start-card UX checks.
+# Union of both W01 gates: complete modules, no filters, retries or added skips.
+# This includes the compact launch footer and Art-door layout regressions.
 test_files=(
+  tests/test_art_start_ux.py
+  tests/test_feel_pass.py
+  tests/test_ui_redesign_regressions.py
+  tests/test_host_share_join_flow.py
+  tests/test_workspace_navigation.py
+  tests/test_launch_keyboard_compact.py
+  tests/test_launch_door_tall_balance.py
+  tests/test_launch_paint_along_door_helper.py
+  tests/test_art_profile.py
+  tests/test_art_join_entry_ui.py
+  tests/test_first_run_setup.py
+  tests/test_legacy_mode_picker_retired.py
+  tests/test_session_library_launch.py
+  tests/test_workspace_construction_failure.py
+  tests/test_offline_invitation_gate.py
+  tests/test_native_admission_deferred_profile.py
   tests/test_remote_session_runtime.py
   tests/test_native_remote_transport.py
   tests/test_transport_runtime.py
@@ -45,20 +62,27 @@ test_files=(
   tests/test_two_session_art_integration.py
   tests/test_two_session_art_host_recovery.py
   tests/test_two_session_music_host_recovery.py
-  tests/test_host_share_join_flow.py
   tests/test_jamulus_native_startup.py
-  tests/test_offline_invitation_gate.py
   tests/test_session_library_coordinator.py
   tests/test_workspace_media_library_ui.py
   tests/test_workspace_media_activation.py
-  tests/test_workspace_navigation.py
-  tests/test_art_start_ux.py
   tests/test_creative_modes_edge.py
 )
 for test_file in "${test_files[@]}"; do
-  echo "Running ${test_file}"
-  .venv/bin/python -m pytest "$test_file" -q
+  run_tests "$test_file"
 done
 
+"$PY" -m ruff check webjam_qt/ core/ ui/ services/ api/ tests/test_art_start_ux.py tests/test_feel_pass.py tests/test_workspace_navigation.py tests/test_ui_redesign_regressions.py tests/test_host_share_join_flow.py
+compile_cache=$(mktemp -d "${TMPDIR:-/tmp}/webjam-w01-compile.XXXXXX")
+trap 'rm -rf "$compile_cache"' EXIT
+PYTHONPYCACHEPREFIX="$compile_cache" "$PY" -m compileall -q core webjam_qt ui services api tests
+"$PY" -m pip check
+"$PY" tools/runtime_dependency_policy.py --check
+"$PY" ux_smoke_test.py
 git diff --check
-echo "W01 gate: PASS"
+
+if ((status != 0)); then
+  echo 'W01 combined gate: FAIL (see test results above)' >&2
+  exit "$status"
+fi
+echo 'W01 combined gate: PASS'

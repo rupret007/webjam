@@ -65,9 +65,19 @@ def _visible_copy(presentation) -> str:
     ).casefold()
 
 
+_IDLE_EMPTY_TITLES = frozenset({"Start when you are", "Host or join first"})
+
+
+def test_idle_conductor_title_has_no_whole_word_ready() -> None:
+    idle = derive_session_conductor(SessionConductorFacts())
+    assert idle.phase is SessionConductorPhase.IDLE
+    assert idle.title in _IDLE_EMPTY_TITLES
+    assert re.search(r"\bReady\b", idle.title) is None
+
+
 def test_music_profile_retains_the_existing_live_vocabulary() -> None:
     idle = derive_session_conductor(SessionConductorFacts())
-    assert idle.title == "Ready when you are"
+    assert idle.title == "Start when you are"
     assert idle.message == "Choose Host or Join to begin a rehearsal."
 
     live = derive_session_conductor(_live_facts("music"))

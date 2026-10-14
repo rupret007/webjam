@@ -26,6 +26,11 @@ copy…** makes a separate workspace. Close the Library with its window button,
 If saving fails, the Library stays open with your draft so you can retry.
 Invitations and meeting credentials are not a reusable workspace template.
 
+If saving fails, keep the workspace open and choose **Save** to retry. WebJam
+can confirm an interrupted save without making a separate workspace, including
+edits made while you waited. Changes made by another writer still require
+review or **Save as copy…**.
+
 For Music, **More → Session library… → Rehearsal plan** opens the ordered setlist. Add song titles,
 key, tempo, goals, notes, and next steps. **Previous** / **Next** selects a song;
 **Move earlier** / **Move later** changes its order. Selection preserves each
@@ -41,6 +46,8 @@ clock and room timer do not certify recording time. **Open in take** rechecks
 the saved take before navigation; a moved or changed recording needs attention.
 The **Summary** tab and **Export summary** collect progress and next steps;
 ending a rehearsal retains its recap with the workspace.
+**Export summary** includes the latest live Notes and saved recap even if the
+library editor has no new edits. Conflicting drafts must be resolved before export.
 
 For Art, open **More → Session library… → Art project**. Keep a **Project brief**, **Progress**,
 and **Next steps** alongside references added with **Add file…** or **Add
@@ -108,7 +115,8 @@ moment's **Open in take** also continues the imported workspace directly.
 If its saved context or media changes before Studio opens, select and open it again.
 
 In **Art project**, select a local file and choose **Verify reference**.
-**Open reference** checks it before opening its external app. **Relink…** locates
+**Open reference** checks it before opening its external app. Keep the filename
+you already use, including everyday Mac names. **Relink…** locates
 the same content while preserving the brief and bookmarks. A metadata-only file
 without an original checksum can be checked for availability, but cannot be
 proven to be the original or relinked as matching content.
@@ -237,9 +245,11 @@ create a take or unlock export.
 
 At launch, choose **Art** or **Music**. Those are the equal first clicks.
 Art is **Make together** or **Paint along**, then **Host** or **Join**. Music
-is **Host** or **Join** only. The launch **File** menu opens **New Music
-Project…**, **Podcast & Voice…**, or **Review & Rehearsal…** before a live session
-starts. The profile follows the
+is **Host** or **Join** only. On these live doors, **File → Session library…**
+opens saved work; File does not offer Music projects, Podcast, or Review as
+additional starts. **Help → Music setup…** appears only for Music when a
+verified Windows installer is available. In a Music room, **Studio** still
+opens completed-take review. The profile follows the
 launch, live session, recording, Studio, local session metadata, and new
 standalone projects. Legacy content without a saved profile opens as Music.
 Review & Rehearsal allows live WebJam-audio Host/Join, Record Session, local
@@ -248,6 +258,10 @@ standalone projects, take editing/comp/mix mutation, track export, shared
 notes, visual sync, and media timecode. Art is a room for artists in any
 medium; see [Art](#art) below. No profile directly or automatically taps a
 meeting app, browser, or system output.
+
+If a file-access error prevents WebJam from reading your saved profile titles
+and modes, it leaves that file untouched. Your title edit stays visible; a
+later successful save keeps the other profiles' saved titles and modes.
 
 Local notes save shortly after an edit. If a save fails, choose **Save Notes**.
 The Notes notice names retained workspaces, including a draft outside the one
@@ -326,8 +340,9 @@ it. Any meeting already open stays open until you leave it in that service.
 
 The room view shows whether you are waiting for artists or connected to the
 host. It does not show a full artist list yet. Without a shared activity,
-**Make from your own space** is a complete place to start: use paper, clay, a
-model, a printer, or your usual app while the room stays open beside you.
+**Make from your own space** is a complete place to start: you do not need an
+art app. Use paper, your usual tools, or just talk while the room stays open
+beside you.
 Conversation is optional when you want to talk or share your screen. When the
 host shares a canvas or Paint along video, the room offers that existing
 panel. When both are offered, each has its own status and Open action in the
@@ -336,8 +351,13 @@ and video recovery does not hide **Open canvas**. If you hid the video, return
 through **Open Paint along**, then choose **Show video** when you want it
 visible again. Your existing local copy stays open.
 
+While a Paint along host waits for artists in Room, **Copy Invite** is the
+orange action. **Open Paint along** stays available as a quiet button below
+it to choose a local file or lesson link. Guest **Open my copy…** recovery
+keeps its emphasis.
+
 When the room offers a shared canvas or Paint along, its next step still
-includes paper, clay, a model, printer, or your usual app. Shared activities
+includes paper, your usual tools, or just talk. Shared activities
 are optional. You only need Drawpile to use the shared canvas; artists using
 their own tools can keep making together.
 
@@ -584,6 +604,9 @@ Things worth knowing:
   the video is ready or paused.
 - **Only the host controls playback.** Guests have no play, pause, stop, or
   scrub control, by design.
+- If this computer cannot move the video, Paint along shows that it needs
+  attention instead of remaining **Paused.** Choose **Choose process video…**
+  to open a local video again. Guests wait until the host recovers it.
 - **The video is silent from its first frame.** Use an optional meeting app
   for conversation. Art does not start Jamulus, and Paint along adds no
   soundtrack.
@@ -742,6 +765,10 @@ still match. Otherwise it returns safely to native Jamulus setup.
 
 ## Join a live session
 
+In Unreleased builds, a same-network join waits for pending Library media
+work to finish before switching to the host's Art or Music room. During that
+wait, WebJam keeps “Contacting the host” visible and does not start audio.
+
 Choose **Join**, **Join Recording**, or **Join Review**, then paste one WebJam
 invite—or open it from Finder. WebJam parses it at ingress,
 does not leave the bearer visible in the interface, and starts only the guest
@@ -826,7 +853,7 @@ route to each.
 | Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
 | Conversation | Routes to the same panel as the direct action; it has no launch side effect |
 | Jamulus Updates… | Checks WebJam's signed compatibility catalog, downloads an approved update, waits until the session is idle, and offers explicit OS approval; managed previous-version rollback is macOS-only |
-| Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
+| Recording Setup | Sets Local Originals and takes storage; host takes stay in WebJam's host folder. It does not alter Jamulus music routing |
 | Shared Track… | Routes to the same host-only transport; source loading is independent, and current-source Play becomes eligible only after the Mac proves the required local BlackHole route |
 | Use iPhone as Pocket Stage… | Starts an explicit, private-Wi-Fi developer-preview pairing window; it does not put phone audio in the live session |
 | Notes | Opens session notes |
@@ -1349,9 +1376,14 @@ or control that editor for you.
 Track Export produces equal-length 24-bit edited stems, aligned unity originals,
 and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
-manifest changed instead of guessing. Importing that package in an external
-editor is still a separate physical workflow gate; it is **NOT RUN** for the
-current source.
+manifest changed instead of guessing, including a same-format rewrite of a
+source WAV while aligned originals are being prepared. Validation hashes
+the same open file the renderer reads, so a path replacement after that
+handle is bound cannot publish. In that case WebJam publishes no export
+folder, leaves the take files as they are, and does not show a success or
+an export receipt. Reopen the take, then export again.
+Importing that package in an external editor is still a separate physical
+workflow gate; it is **NOT RUN** for the current source.
 
 For a standalone Podcast & Voice episode, use the 48 kHz Host-mono +
 Guest-stereo preset, record the first pass, add a chapter marker, set a cycle
