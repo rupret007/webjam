@@ -299,7 +299,11 @@ def test_repeated_profile_presentation_preserves_help_reading_position(app, wind
     window.show_help()
     dialog = window._workflow_help_dialog
     # A short reading viewport makes a lost scroll position observable.
-    dialog._body.setMaximumHeight(96)
+    # The first Music topic is intentionally brief, so size the viewport from
+    # the rendered document (fonts differ by platform) and keep it at most
+    # half the content height; the assertions below are unchanged.
+    content_height = int(dialog._body.document().size().height())
+    dialog._body.setMaximumHeight(min(96, max(32, content_height // 2)))
     app.processEvents()
     cursor = dialog._body.textCursor()
     cursor.setPosition(4)
