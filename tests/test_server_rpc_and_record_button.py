@@ -5840,6 +5840,165 @@ class TestRecordButtonWiring(unittest.TestCase):
         peer_finished.assert_not_called()
         self.assertEqual(c.recording.phase, RecorderPhase.VALIDATING)
 
+    def test_late_start_rpc_result_cannot_undo_stop(self):
+        """A queued start reply must not restore Record after Stop."""
+        from core.take_project import RecoveryStatus, new_project_id
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        take_id = new_project_id()
+        c.recording._take_id = take_id
+        c.recording._reset_session_evidence()
+        c._recorder_armed = False
+        c._server_recording = False
+        c.recording._set_phase(RecorderPhase.STARTING)
+        c.recording.on_server_state(True)
+        self.assertEqual(c.recording.phase, RecorderPhase.RECORDING)
+        self.assertEqual(
+            self.window.session_strip._record_button.text(), "■ Stop Recording"
+        )
+        self.assertTrue(self.window.session_strip._record_button.isEnabled())
+
+        c.recording._set_phase(RecorderPhase.STOPPING)
+        c.window.flash_message.reset_mock()
+        with (
+            patch.object(
+                c.recording, "_signal_peer_recording_finalizing"
+            ) as peer_finalizing,
+            patch.object(c.recording, "_begin_take_validation") as begin,
+        ):
+            c.recording.apply_toggle_result(True, take_id=take_id)
+            self.assertEqual(c.recording.phase, RecorderPhase.STOPPING)
+            self.assertEqual(
+                self.window.session_strip._record_button.text(), "Stopping…"
+            )
+            self.assertFalse(self.window.session_strip._record_button.isEnabled())
+            self.assertEqual(
+                self.window.session_strip._record_elapsed.text(), "STOPPING"
+            )
+            self.assertIn(
+                "STOPPING RECORDING",
+                self.window.recording_studio._phase.text(),
+            )
+            confirmed_copy = [
+                call.args[0]
+                for call in c.window.flash_message.call_args_list
+                if call.args and "Recording confirmed" in str(call.args[0])
+            ]
+            self.assertEqual(confirmed_copy, [])
+            c.recording.on_server_state(False)
+
+        begin.assert_called_once_with(take_id)
+        peer_finalizing.assert_called_once()
+        self.assertNotIn(
+            "stopped unexpectedly",
+            peer_finalizing.call_args.kwargs["message"],
+        )
+        evidence = c.recording._current_session_evidence()
+        self.assertEqual(
+            [item.event for item in evidence.timeline],
+            ["recording_requested", "recording_started", "recording_stopped"],
+        )
+        self.assertEqual(evidence.recovery_status, RecoveryStatus.NOT_NEEDED)
+        self.assertEqual(c.recording.phase, RecorderPhase.VALIDATING)
+        self.assertEqual(
+            self.window.session_strip._record_button.text(), "Finalizing…"
+        )
+        self.assertFalse(self.window.session_strip._record_button.isEnabled())
+        self.assertEqual(
+            c.window.flash_message.call_args.args[0],
+            "Server recording stopped.",
+        )
+
+    def test_late_start_rpc_result_cannot_overwrite_stop_failed(self):
+        """A late start success must not hide Finish Stop after a failed Stop."""
+        from core.take_project import new_project_id
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        take_id = new_project_id()
+        c.recording._take_id = take_id
+        c.recording._reset_session_evidence()
+        c._recorder_armed = True
+        c._server_recording = True
+        c.recording._set_phase(RecorderPhase.STOP_FAILED)
+        c.window.flash_message.reset_mock()
+        c.recording.apply_toggle_result(True, take_id=take_id)
+
+        self.assertEqual(c.recording.phase, RecorderPhase.STOP_FAILED)
+        self.assertEqual(
+            self.window.session_strip._record_button.text(), "■ Finish Stop"
+        )
+        self.assertTrue(self.window.session_strip._record_button.isEnabled())
+        self.assertIn("CLEANUP PENDING", self.window.recording_studio._phase.text())
+        c.window.flash_message.assert_not_called()
+        c._show_actionable_error.assert_not_called()
+
+    def test_late_start_rpc_failure_cannot_undo_stop(self):
+        """A late start timeout must not steal Stop's in-flight confirmation."""
+        from core.take_project import new_project_id
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        take_id = new_project_id()
+        c.recording._take_id = take_id
+        c.recording._reset_session_evidence()
+        c._recorder_armed = True
+        c._server_recording = True
+        c.recording._set_phase(RecorderPhase.STOPPING)
+        c.recording.apply_toggle_failure(
+            "late start timeout",
+            take_id=take_id,
+            target_armed=True,
+        )
+
+        self.assertEqual(c.recording.phase, RecorderPhase.STOPPING)
+        self.assertEqual(
+            self.window.session_strip._record_button.text(), "Stopping…"
+        )
+        self.assertFalse(self.window.session_strip._record_button.isEnabled())
+        c._show_actionable_error.assert_not_called()
+
+    def test_true_unexpected_stop_keeps_fail_closed_recovery(self):
+        """A stop the host did not request still needs attention."""
+        from core.take_project import RecoveryStatus, new_project_id
+        from webjam_qt.controllers.recording_coordinator import RecorderPhase
+
+        c = self.controller
+        take_id = new_project_id()
+        c.recording._take_id = take_id
+        c.recording._reset_session_evidence()
+        c._recorder_armed = True
+        c._server_recording = True
+        c.recording._set_phase(RecorderPhase.RECORDING)
+        c.recording._confirmed_recording_started()
+        with (
+            patch.object(
+                c.recording, "_signal_peer_recording_finalizing"
+            ) as peer_finalizing,
+            patch.object(c.recording, "_begin_take_validation") as begin,
+        ):
+            c.recording.on_server_state(False)
+
+        begin.assert_called_once_with(take_id)
+        peer_finalizing.assert_called_once()
+        self.assertIn(
+            "stopped unexpectedly",
+            peer_finalizing.call_args.kwargs["message"],
+        )
+        evidence = c.recording._current_session_evidence()
+        self.assertEqual(
+            [item.event for item in evidence.timeline],
+            [
+                "recording_requested",
+                "recording_started",
+                "recording_stopped_unexpectedly",
+            ],
+        )
+        self.assertEqual(evidence.recovery_status, RecoveryStatus.NEEDS_ATTENTION)
+        self.assertEqual(c.recording.phase, RecorderPhase.VALIDATING)
+        self.assertFalse(c._recorder_armed)
+
     def test_unexpected_stop_cannot_publish_a_complete_take(self):
         from core.take_library import TakeInfo, TakeValidationResult
         from core.take_project import RecoveryStatus, new_project_id
