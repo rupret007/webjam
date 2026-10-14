@@ -520,7 +520,9 @@ volume and microphone details. Use **Conversation** to return after Notes;
 your selected lesson stays available. Changing the meeting link retires old
 pause requests. In a supported LAN Art room, **Restart pause requests**
 creates fresh controls without leaving the setup. Rejoining another room
-does not revive old request authority. Small windows and larger text scroll;
+does not revive old request authority. After a brief connection problem, use
+**Restart pause requests** when it appears; old requests are not resent.
+You can still ask the host aloud. Small windows and larger text scroll;
 Tab reveals the focused control and End/Leave remains outside that scroll.
 
 ### Playing along to a song
