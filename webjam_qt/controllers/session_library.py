@@ -11,7 +11,7 @@ from PySide6.QtCore import QObject, QTimer
 
 from core.art_workspace import art_summary
 from core.session_intelligence import notes_display_equivalent, session_notes_facts
-from core.session_library import SessionLibrary, SessionLibraryConflict
+from core.session_library import SessionLibrary, SessionLibraryConflict, SessionLibrarySaveUnconfirmed
 
 
 _EDITABLE_FIELDS = ("title", "mode_key", "notes", "decisions", "actions", "blockers",
@@ -86,6 +86,7 @@ class SessionLibraryCoordinator(QObject):
         self.dialog = None
         self._saved_editor_record = None
         self._pending = {}
+        self._save_attempts = {}
         self._captured = None
         self._applying = False
         self._run_id = ""
@@ -221,7 +222,7 @@ class SessionLibraryCoordinator(QObject):
                 return False
         for key, record in tuple(self._pending.items()):
             try:
-                saved = self.library.save(record)
+                saved = self._save_owned_record(record)
             except (OSError, ValueError):
                 self._flash("Workspace changes are still here but not saved. Open Session library to retry or save a separate copy.")
                 return False
@@ -441,11 +442,27 @@ class SessionLibraryCoordinator(QObject):
             latest = self._saved_editor_record
         latest = deepcopy(latest or base)
         merged = _merge_editor_changes(base, edited, latest)
-        saved = self.library.save(merged)
+        saved = self._save_owned_record(merged)
         self._saved_editor_record = deepcopy(saved)
         if _same_snapshot(self._pending.get(saved.id), latest):
             self._pending.pop(saved.id, None)
         self._record_saved(saved)
+        return saved
+
+    def _save_owned_record(self, record):
+        attempt = self._save_attempts.get(record.id)
+        if attempt is not None and (attempt.base_token != record._store_token
+                                    or attempt.base_revision != record.revision):
+            # A deliberate reload/selection has established a new base.
+            self._save_attempts.pop(record.id, None)
+            attempt = None
+        try:
+            saved = (self.library.save(record, retry=attempt) if attempt is not None
+                     else self.library.save(record))
+        except SessionLibrarySaveUnconfirmed as error:
+            self._save_attempts[record.id] = error.attempt
+            raise
+        self._save_attempts.pop(record.id, None)
         return saved
 
     def _record_saved(self, record):

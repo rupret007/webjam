@@ -14,6 +14,7 @@ import sys
 import textwrap
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,6 +32,7 @@ from core.reference_video import (  # noqa: E402
     ReferenceVideoHostController,
     ReferenceVideoPlayerError,
     ReferenceVideoState,
+    file_identity_token,
     identities_match,
     load_reference_video_source,
     session_identity_signer,
@@ -206,6 +208,83 @@ def test_directory_is_refused(tmp_path):
     folder.mkdir()
     with pytest.raises(ReferenceVideoError):
         load_reference_video_source(folder)
+
+
+def _split_ctime_video(tmp_path, monkeypatch, *, platform, changed):
+    """Real bytes with synthetic path/handle ctime receipts; native Windows: NOT RUN.
+
+    CPython 3.12 Windows lstat reports creation time in ctime while fstat
+    reports change time. Only those receipts and this module's OS name change.
+    """
+    from core import reference_video
+
+    video = write_video(tmp_path / "lesson.mp4", b"stable-local-video-bytes")
+    real_lstat = Path.lstat
+    real_fstat = os.fstat
+    inspections = {"path": 0, "handle": 0}
+
+    def inspect(info, source):
+        inspections[source] += 1
+        values = {
+            key: getattr(info, key)
+            for key in (
+                "st_mode",
+                "st_dev",
+                "st_ino",
+                "st_size",
+                "st_mtime",
+                "st_mtime_ns",
+                "st_ctime",
+                "st_ctime_ns",
+            )
+        }
+        values["st_ctime_ns"] = 1_000_000_000 if source == "path" else 2_000_000_000
+        if changed == source + "_ctime" and inspections[source] == 2:
+            values["st_ctime_ns"] += 1
+        return SimpleNamespace(**values)
+
+    monkeypatch.setattr(Path, "lstat", lambda path: inspect(real_lstat(path), "path"))
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.name = platform
+    simulated_os.fstat = lambda fd: inspect(real_fstat(fd), "handle")
+    monkeypatch.setattr(reference_video, "os", simulated_os)
+    return video, inspections
+
+
+@pytest.mark.parametrize("platform", ["posix", "nt"])
+@pytest.mark.parametrize("changed", [None, "path_ctime", "handle_ctime"])
+def test_local_video_load_checks_ctime_within_each_api_on_windows(
+    tmp_path, monkeypatch, platform, changed
+):
+    """Simulated Windows path/handle ctime split; native Windows: NOT RUN."""
+    video, inspections = _split_ctime_video(
+        tmp_path, monkeypatch, platform=platform, changed=changed
+    )
+    if platform == "nt" and changed is None:
+        source = load_reference_video_source(video)
+        assert source.byte_size == len(b"stable-local-video-bytes")
+        assert source._identity_token == file_identity_token(video)
+        assert inspections["path"] >= 2
+        assert inspections["handle"] >= 2
+    else:
+        with pytest.raises(ReferenceVideoError, match="moved or changed"):
+            load_reference_video_source(video)
+
+
+def test_host_share_accepts_windows_path_descriptor_ctime_split(tmp_path, monkeypatch):
+    """Unchanged Paint along file must share despite split Windows clocks."""
+    video, inspections = _split_ctime_video(
+        tmp_path, monkeypatch, platform="nt", changed=None
+    )
+    controller, player, _ = make_host(tmp_path)
+    snapshot = controller.share(video)
+    assert snapshot.state is ReferenceVideoState.READY
+    assert snapshot.shared is True
+    assert snapshot.needs_attention is False
+    assert snapshot.identity_digest
+    assert player.loaded == video
+    assert inspections["path"] >= 2
+    assert inspections["handle"] >= 2
 
 
 def test_non_regular_source_is_refused_before_open(tmp_path, monkeypatch):
@@ -443,8 +522,44 @@ def test_seek_is_clamped_to_the_shared_duration(tmp_path):
     controller, _, _ = make_host(tmp_path, duration=42.0)
     controller.share(write_video(tmp_path / "lesson.mp4"))
     assert controller.seek(9_999.0).position_s == pytest.approx(42.0)
+    before = controller.snapshot
     with pytest.raises(ReferenceVideoError):
         controller.seek(-1.0)
+    assert controller.snapshot == before
+    assert controller.snapshot.needs_attention is False
+
+
+def test_typed_player_seek_failure_marks_transport_failed(tmp_path):
+    """A backend seek error is not a healthy paused share.
+
+    Qt and YouTube adapters raise ``ReferenceVideoPlayerError``. Re-raising
+    that typed failure would leave the host paused and still advertised.
+    """
+
+    controller, player, events = make_host(tmp_path)
+    controller.share(write_video(tmp_path / "lesson.mp4"))
+    controller.play()
+    paused = controller.pause()
+    assert paused.state is ReferenceVideoState.PAUSED
+    assert paused.shared is True
+    assert paused.needs_attention is False
+
+    def refuse_seek(_position_s: float) -> None:
+        raise ReferenceVideoPlayerError(
+            "WebJam couldn't play that video on this computer."
+        )
+
+    player.seek = refuse_seek
+    snapshot = controller.seek(12.0)
+
+    assert snapshot.state is ReferenceVideoState.FAILED
+    assert snapshot.needs_attention is True
+    assert snapshot.shared is False
+    assert snapshot.identity_digest == ""
+    assert snapshot.source_display_name == ""
+    assert "couldn't move that video" in snapshot.error
+    assert events[-1] == snapshot
+    assert controller.snapshot == snapshot
 
 
 def test_playback_generation_marks_each_new_play_attempt(tmp_path):

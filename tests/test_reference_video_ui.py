@@ -178,6 +178,30 @@ def test_the_host_panel_shows_a_failure_instead_of_a_stale_source(host_dialog):
     assert host_dialog._clock.text() == "0:00 / 0:00"
 
 
+def test_the_host_panel_does_not_keep_paused_copy_after_a_failed_seek(host_dialog):
+    host_dialog.set_host_snapshot(
+        _shared(state=ReferenceVideoState.PAUSED, position_s=12.0)
+    )
+    assert host_dialog._status.text() == "Paused."
+
+    host_dialog.set_host_snapshot(
+        ReferenceVideoSnapshot(
+            state=ReferenceVideoState.FAILED,
+            error="WebJam couldn't move that video on this computer.",
+        )
+    )
+
+    status = host_dialog._status.text()
+    assert status.startswith("WebJam couldn't move that video on this computer.")
+    assert "Paused." not in status
+    assert "Choose process video" in status
+    assert host_dialog._headline.text() == "Or choose a silent reference"
+    assert host_dialog._play_button.isEnabled() is False
+    assert host_dialog._share_button.isHidden() is False
+    assert host_dialog._share_button.isEnabled() is True
+    assert host_dialog._position.isEnabled() is False
+
+
 def test_a_host_seek_is_emitted_only_when_scrubbing_ends(host_dialog, qapp):
     seeks: list[float] = []
     host_dialog.seek_requested.connect(seeks.append)
