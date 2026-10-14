@@ -1370,9 +1370,14 @@ or control that editor for you.
 Track Export produces equal-length 24-bit edited stems, aligned unity originals,
 and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
-manifest changed instead of guessing. Importing that package in an external
-editor is still a separate physical workflow gate; it is **NOT RUN** for the
-current source.
+manifest changed instead of guessing, including a same-format rewrite of a
+source WAV while aligned originals are being prepared. Validation hashes
+the same open file the renderer reads, so a path replacement after that
+handle is bound cannot publish. In that case WebJam publishes no export
+folder, leaves the take files as they are, and does not show a success or
+an export receipt. Reopen the take, then export again.
+Importing that package in an external editor is still a separate physical
+workflow gate; it is **NOT RUN** for the current source.
 
 For a standalone Podcast & Voice episode, use the 48 kHz Host-mono +
 Guest-stereo preset, record the first pass, add a chapter marker, set a cycle
