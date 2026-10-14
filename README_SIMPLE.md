@@ -123,6 +123,9 @@ chooses **Open my copy…** for the same local file, or **Open lesson** to strea
 the host's YouTube lesson silently. **Back to room** or Escape returns to the
 conductor without ending the room. There is no third preview window.
 
+While a host waits for artists in Room, **Copy Invite** is the orange action.
+**Open Paint along** stays available below it to choose a file or lesson link.
+
 For a demonstration with sound through a meeting, **Watch a shared lesson**
 opens **Conversation**. Choose **Join / Open Meeting** or **Show Webex App**,
 then use the meeting app's own share. That media is played by the meeting
