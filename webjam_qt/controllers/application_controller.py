@@ -1624,15 +1624,20 @@ class ApplicationController(QObject):
         room = getattr(self, "_room_participant", None)
         return room.host_publisher() if room is not None else getattr(self, "host_peer", None)
 
-    def _configure_guest_peer(self, invite) -> bool:
+    def _configure_guest_peer(self, invite, *, preserve_room_profile: bool = False) -> bool:
         """Install a replacement v2 transfer peer without orphaning its owner.
 
         Construction failure remains an optional Local Originals limitation,
         but an unconfirmed stop is an ownership failure: retain the old peer
         and invitation so End/Leave can retry it.
+
+        Only an admitted LAN discovery handoff preserves the host profile;
+        ordinary peer replacement still restores the personal room context.
         """
 
-        if not self._stop_session_peer(clear_invite=True):
+        if not self._stop_session_peer(
+            clear_invite=True, preserve_room_profile=preserve_room_profile,
+        ):
             return False
         self._guest_invite = invite
         self._guest_peer_configuration_failed = False
@@ -1796,7 +1801,9 @@ class ApplicationController(QObject):
 
         QTimer.singleShot(0, reopen_for_current_settings)
 
-    def _stop_session_peer(self, *, clear_invite: bool = False) -> bool:
+    def _stop_session_peer(
+        self, *, clear_invite: bool = False, preserve_room_profile: bool = False,
+    ) -> bool:
         cleanup_ok = True
         room = getattr(self, "_room_participant", None)
         guest = getattr(self, "guest_peer", None)
@@ -1867,6 +1874,11 @@ class ApplicationController(QObject):
                         invoke(clear_projection)
                     else:
                         clear_projection()
+                # LAN discovery already adopted the host profile. Its handoff
+                # to the recording peer continues that room, so do not restore
+                # the personal profile between admission and audio startup.
+                if preserve_room_profile:
+                    return
                 # Entry can borrow a title before the first authenticated
                 # profile arrives. Leaving that pending join must restore the
                 # personal title too, even though no profile was adopted.

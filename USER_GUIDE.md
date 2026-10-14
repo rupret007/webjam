@@ -26,6 +26,11 @@ copy…** makes a separate workspace. Close the Library with its window button,
 If saving fails, the Library stays open with your draft so you can retry.
 Invitations and meeting credentials are not a reusable workspace template.
 
+If saving fails, keep the workspace open and choose **Save** to retry. WebJam
+can confirm an interrupted save without making a separate workspace, including
+edits made while you waited. Changes made by another writer still require
+review or **Save as copy…**.
+
 For Music, **More → Session library… → Rehearsal plan** opens the ordered setlist. Add song titles,
 key, tempo, goals, notes, and next steps. **Previous** / **Next** selects a song;
 **Move earlier** / **Move later** changes its order. Selection preserves each
@@ -239,9 +244,11 @@ create a take or unlock export.
 
 At launch, choose **Art** or **Music**. Those are the equal first clicks.
 Art is **Make together** or **Paint along**, then **Host** or **Join**. Music
-is **Host** or **Join** only. The launch **File** menu opens **New Music
-Project…**, **Podcast & Voice…**, or **Review & Rehearsal…** before a live session
-starts. The profile follows the
+is **Host** or **Join** only. On these live doors, **File → Session library…**
+opens saved work; File does not offer Music projects, Podcast, or Review as
+additional starts. **Help → Music setup…** appears only for Music when a
+verified Windows installer is available. In a Music room, **Studio** still
+opens completed-take review. The profile follows the
 launch, live session, recording, Studio, local session metadata, and new
 standalone projects. Legacy content without a saved profile opens as Music.
 Review & Rehearsal allows live WebJam-audio Host/Join, Record Session, local
@@ -591,6 +598,9 @@ Things worth knowing:
   the video is ready or paused.
 - **Only the host controls playback.** Guests have no play, pause, stop, or
   scrub control, by design.
+- If this computer cannot move the video, Paint along shows that it needs
+  attention instead of remaining **Paused.** Choose **Choose process video…**
+  to open a local video again. Guests wait until the host recovers it.
 - **The video is silent from its first frame.** Use an optional meeting app
   for conversation. Art does not start Jamulus, and Paint along adds no
   soundtrack.
@@ -748,6 +758,10 @@ It reuses progress only when the role and dedicated Jamulus profile fingerprint
 still match. Otherwise it returns safely to native Jamulus setup.
 
 ## Join a live session
+
+In Unreleased builds, a same-network join waits for pending Library media
+work to finish before switching to the host's Art or Music room. During that
+wait, WebJam keeps “Contacting the host” visible and does not start audio.
 
 Choose **Join**, **Join Recording**, or **Join Review**, then paste one WebJam
 invite—or open it from Finder. WebJam parses it at ingress,
