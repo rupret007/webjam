@@ -23,8 +23,8 @@ automatically taps a meeting app, browser, or system output.
 
 WebJam welcomes artists in any medium who want to make things together. Art
 is a newer Preview; the aim is to build it out to the same depth as Music.
-Make from your own space with paper, clay, a model, a printer, or your usual
-app. A shared canvas is optional. Inside the room, **Conversation** lets you
+You do not need an art app. Make from your own space with paper, your usual
+tools, or just talk. A shared canvas is optional. Inside the room, **Conversation** lets you
 open a meeting and share a demonstration in Webex or your chosen service.
 Everyone can follow there. In **Paint along**, **Watch a shared lesson** is
 the first action for a lesson with sound: it reaches Conversation so the host

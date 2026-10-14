@@ -12,11 +12,15 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 from shiboken6 import isValid
 
+from core.art_companion import (
+    ArtCompanionProjection, CanvasCompanionState, VideoCompanionState,
+)
+from core.art_room_activities import art_room_activities
 from core.art_room_overview import ArtRoomOverview, art_room_overview
-from core.art_companion import ArtCompanionProjection, CanvasCompanionState
-from core.art_room_presence import art_room_presence
+from core.art_room_presence import ABSENT, art_room_presence
 from core.session_conductor import (
-    ArtRoomState, SessionFacts, SessionRole, derive_session_presentation,
+    ArtRoomState, SessionFacts, SessionPrimaryAction, SessionRole,
+    derive_session_presentation,
 )
 from core.creative_modes import get_creator_profile_by_key
 from webjam_qt.theme import load_stylesheet
@@ -191,6 +195,64 @@ def test_presence_action_fits_without_scrolling_below_short_connection_copy(
     assert actions == [activity]
 
 
+def test_waiting_host_copy_invite_is_the_one_hud_primary_at_800x600(window, qapp):
+    """Compact waiting room: HUD Copy Invite owns the next click.
+
+    Conversation stays a ghost/footer. The activity line keeps own-space
+    copy and does not ask to set up Conversation.
+    """
+
+    facts = SessionFacts(
+        role=SessionRole.HOST,
+        creator_profile_key="art",
+        setup_requested=True,
+        art_room=ArtRoomState.WAITING,
+    )
+    view = derive_session_presentation(facts)
+    current = art_room_overview(
+        state=ArtRoomState.WAITING, hosting=True, conversation_configured=False,
+    )
+    window.set_art_room_overview(current)
+    hud = window.session_hud
+    hud.set_state(
+        view.title,
+        view.message,
+        invite_available=True,
+        action_text=view.action_label,
+        action_visible=True,
+        action_kind="invite",
+    )
+    window.resize(800, 600)
+    window.session_strip.set_compact_control_labels(True)
+    _settle(qapp)
+
+    own_space = (
+        "You do not need an art app. Use paper, your usual tools, or just talk."
+    )
+    panel = window.art_room_overview
+    assert view.primary_action is SessionPrimaryAction.COPY_INVITE
+    assert view.action_label == "Copy Invite"
+    assert hud._status.text() == "Your room is open"
+    assert hud._action.isVisibleTo(window)
+    assert hud._action.isEnabled()
+    assert hud._action.text() == "Copy Invite"
+    assert hud._action.objectName() == "PrimaryButton"
+    action_rect = QRect(hud._action.mapTo(window, QPoint()), hud._action.size())
+    assert window.rect().contains(action_rect)
+    assert not hud._action.visibleRegion().isEmpty()
+    assert hud._secondary_action.isHidden() or not hud._secondary_action.isVisibleTo(window)
+
+    assert panel._activity_detail.text() == own_space
+    assert "Conversation" not in panel._activity_detail.text()
+    assert panel._activity_detail.isVisibleTo(window)
+    conversation = panel.conversation_button()
+    assert conversation.isVisibleTo(window)
+    assert conversation.isEnabled()
+    assert conversation.text() == "Set Up Conversation"
+    assert conversation.objectName() == "GhostButton"
+    assert not panel.activity_button().isVisibleTo(window)
+
+
 @pytest.mark.parametrize("role", [SessionRole.HOST, SessionRole.GUEST])
 @pytest.mark.parametrize("size", [(720, 560), (1440, 900)])
 def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
@@ -228,9 +290,10 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         assert "own tools" not in hud.accessibleDescription()
         assert panel._activity.text() == "Make from your own space"
         assert panel._activity_detail.text() == (
-            "Use paper, clay, a model, printer, or your usual app, or just talk. "
+            "You do not need an art app. Use paper, your usual tools, or just talk. "
             "Choose Set Up Conversation to add your meeting link."
         )
+        assert "Choose Set Up Conversation" in panel._activity_detail.text()
         assert panel._activity_detail.isVisibleTo(window)
         assert panel._connection_detail.text() == (
             "An artist has connected to this room. WebJam does not yet show a full artist list."
@@ -537,3 +600,144 @@ def test_production_room_copy_fits_and_coexists_with_conversation(
         _settle(qapp)
         rect = QRect(button.mapTo(panel.viewport(), QPoint()), button.size())
         assert panel.viewport().rect().contains(rect), (phase, rect)
+
+
+def _guest_needs_file_room():
+    presence = art_room_presence(ArtCompanionProjection(
+        in_room=True, video=VideoCompanionState.NEEDS_FILE,
+    ))
+    current = art_room_overview(
+        state=ArtRoomState.CONNECTED, hosting=False, presence=presence,
+    )
+    return current, presence
+
+
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_guest_missing_file_open_my_copy_is_the_only_emphasized_room_action(
+    window, qapp, size,
+):
+    """NEEDS_FILE: one orange Open my copy…, Conversation in the footer only."""
+
+    current, presence = _guest_needs_file_room()
+    facts = SessionFacts(
+        role=SessionRole.GUEST, creator_profile_key="art", setup_requested=True,
+        art_room=ArtRoomState.CONNECTED,
+    )
+    view = derive_session_presentation(facts)
+    window.set_art_room_overview(current)
+    window.session_strip.set_art_room_presence(presence)
+    window.session_strip.set_audio_state("Leave Room")
+    window.session_hud.set_state(view.title, view.message, action_visible=False)
+    window.resize(*size)
+    _settle(qapp)
+
+    panel = window.art_room_overview
+    recovery = panel.activity_button()
+    body_conversation = panel.conversation_button()
+    footer_conversation = window.session_strip._video_button
+    assert current.open_my_copy_recovery
+    assert not current.making_detail
+    assert not panel._making_detail.isVisibleTo(window)
+    assert panel._activity.isVisibleTo(window)
+    assert panel._activity.text() == "Open my copy…"
+    assert panel._activity_detail.isVisibleTo(window)
+    assert panel._activity_detail.text() == (
+        "Open your own copy of the same video to follow along."
+    )
+    assert recovery.isVisibleTo(window) and recovery.isEnabled()
+    assert recovery.text() == "Open my copy…"
+    assert recovery.objectName() == "PrimaryButton"
+    assert recovery.accessibleName() == "Open my copy…"
+    assert not body_conversation.isVisibleTo(window)
+    assert footer_conversation.isVisibleTo(window)
+    assert footer_conversation.objectName() == "GhostButton"
+    assert window.session_hud._status.text() == "You’re in"
+    assert not window.session_hud._action.isVisibleTo(window)
+    emphasized = [
+        button.text() for button in panel.findChildren(QPushButton)
+        if button.isVisibleTo(window) and button.objectName() == "PrimaryButton"
+    ]
+    assert emphasized == ["Open my copy…"]
+    body_buttons = [
+        button.text() for button in panel.findChildren(QPushButton)
+        if button.isVisibleTo(window)
+    ]
+    assert body_buttons == ["Open my copy…"]
+    assert panel._connection_detail.isVisibleTo(window)
+    recovery_top = panel._activity.mapTo(panel._content, QPoint()).y()
+    connection_top = panel._connection.mapTo(panel._content, QPoint()).y()
+    assert recovery_top > connection_top
+    recovery.setFocus(Qt.FocusReason.TabFocusReason)
+    QTest.keyClick(recovery, Qt.Key.Key_Tab)
+    _settle(qapp)
+    assert not body_conversation.hasFocus()
+
+
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+@pytest.mark.parametrize("canvas", [
+    CanvasCompanionState.MISSING_APP, CanvasCompanionState.UNREADABLE,
+])
+def test_guest_missing_file_open_my_copy_owns_emphasis_when_canvas_needs_attention(
+    window, qapp, size, canvas,
+):
+    """Canvas attention must not demote NEEDS_FILE to a ghost beside Conversation."""
+
+    activities = art_room_activities(ArtCompanionProjection(
+        in_room=True, canvas=canvas, video=VideoCompanionState.NEEDS_FILE,
+    ))
+    current = art_room_overview(
+        state=ArtRoomState.CONNECTED, hosting=False,
+        presence=activities[0],
+        secondary_presence=activities[1] if len(activities) > 1 else ABSENT,
+    )
+    presence = activities[0]
+    facts = SessionFacts(
+        role=SessionRole.GUEST, creator_profile_key="art", setup_requested=True,
+        art_room=ArtRoomState.CONNECTED,
+    )
+    view = derive_session_presentation(facts)
+    window.set_art_room_overview(current)
+    window.session_strip.set_art_room_presence(presence)
+    window.session_strip.set_audio_state("Leave Room")
+    window.session_hud.set_state(view.title, view.message, action_visible=False)
+    window.resize(*size)
+    _settle(qapp)
+
+    panel = window.art_room_overview
+    recovery = panel.activity_button()
+    canvas_button = panel.secondary_activity_button()
+    body_conversation = panel.conversation_button()
+    footer_conversation = window.session_strip._video_button
+    assert current.open_my_copy_recovery
+    assert current.activity_actions == ("video", "canvas")
+    assert panel._making_detail.isVisibleTo(window)
+    assert "Start making with paper" in panel._making_detail.text()
+    assert panel._activity.text() == "Open my copy…"
+    assert panel._activity_detail.text() == (
+        "Open your own copy of the same video to follow along."
+    )
+    assert recovery.isVisibleTo(window) and recovery.isEnabled()
+    assert recovery.text() == "Open my copy…"
+    assert recovery.objectName() == "PrimaryButton"
+    assert recovery.accessibleName() == "Open my copy…"
+    assert canvas_button.isVisibleTo(window) and canvas_button.isEnabled()
+    assert canvas_button.text() == "Open workspace"
+    assert canvas_button.objectName() == "GhostButton"
+    assert not body_conversation.isVisibleTo(window)
+    assert footer_conversation.isVisibleTo(window)
+    assert footer_conversation.objectName() == "GhostButton"
+    assert window.session_hud._status.text() == "You’re in"
+    emphasized = [
+        button.text() for button in panel.findChildren(QPushButton)
+        if button.isVisibleTo(window) and button.objectName() == "PrimaryButton"
+    ]
+    assert emphasized == ["Open my copy…"]
+    recovery_top = panel._activity.mapTo(panel._content, QPoint()).y()
+    canvas_top = panel._secondary_activity.mapTo(panel._content, QPoint()).y()
+    making_top = panel._making_detail.mapTo(panel._content, QPoint()).y()
+    assert making_top < recovery_top < canvas_top
+    recovery.setFocus(Qt.FocusReason.TabFocusReason)
+    QTest.keyClick(recovery, Qt.Key.Key_Tab)
+    _settle(qapp)
+    assert canvas_button.hasFocus()
+    assert not body_conversation.hasFocus()
