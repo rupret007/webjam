@@ -801,6 +801,8 @@ class LaunchDialog(QDialog):
         # are centered with the shared brand row by the outer layout.
         layout.addWidget(self._build_start_cards())
 
+        # Keep the consequence line beside Host/Join, inside the centered
+        # action block. No stretch may separate this helper from the buttons.
         self._choice_helper = QLabel()
         self._choice_helper.setObjectName("LaunchHelper")
         self._choice_helper.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -1017,6 +1019,16 @@ class LaunchDialog(QDialog):
             if start.key == "paint_along" else
             f"Host starts {start.label}. Join uses the host's invite."
         )
+        # Make together keeps its compact footer beside Join. Paint along's
+        # longer guidance goes directly above Host so wrapped text stays visible.
+        layout = self._choice_helper.parentWidget().layout()
+        layout.removeWidget(self._choice_helper)
+        helper_index = (
+            layout.indexOf(self._host_button)
+            if start.key == "paint_along"
+            else layout.indexOf(self._studio_button) + 1
+        )
+        layout.insertWidget(helper_index, self._choice_helper)
         self._set_choice_helper(
             next_step
             if available else restriction

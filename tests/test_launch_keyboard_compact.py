@@ -138,6 +138,49 @@ def test_live_door_fits_800x600_with_larger_text(qapp, tmp_path: Path, profile_k
         dialog.deleteLater()
 
 
+def _rect_in_dialog(widget, dialog: LaunchDialog) -> QRect:
+    return QRect(widget.mapTo(dialog, QPoint()), widget.size())
+
+
+@pytest.mark.parametrize("start_key", ["talk_and_make", "paint_along"])
+def test_art_door_helper_sits_with_host_join_at_800x600(qapp, tmp_path: Path, start_key: str):
+    """Host/Join consequence stays beside the buttons, not above dead footer space."""
+
+    dialog = _dialog(tmp_path, "art")
+    try:
+        dialog.setStyleSheet(load_stylesheet())
+        dialog.resize(800, 600)
+        dialog.show()
+        qapp.processEvents()
+        # Exercise both directions: the helper must follow the selected start.
+        for key in ("paint_along", "talk_and_make", start_key):
+            next(card for card in dialog._visible_start_cards()
+                 if card.start_key == key).click()
+            qapp.processEvents()
+        assert dialog._choice_helper.isVisibleTo(dialog)
+        assert "Host starts" in dialog._choice_helper.text()
+        assert "Join uses" in dialog._choice_helper.text()
+        join = _rect_in_dialog(dialog._join_button, dialog)
+        host = _rect_in_dialog(dialog._host_button, dialog)
+        helper = _rect_in_dialog(dialog._choice_helper, dialog)
+        bounds = dialog.rect()
+        assert bounds.contains(helper)
+        assert helper.height() >= dialog._choice_helper.heightForWidth(helper.width())
+        # The action block is now centered. Measure its footer against Join,
+        # not the window edge; Paint along reserves its longer line above Host.
+        if start_key == "paint_along":
+            assert 0 < host.top() - helper.bottom() <= 24
+        else:
+            assert 0 < helper.top() - join.bottom() <= 24
+        assert 0 < join.top() - host.bottom() <= 24
+        for card in dialog._visible_start_cards():
+            card_rect = _rect_in_dialog(card, dialog)
+            assert card_rect.bottom() < join.top()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_every_visible_door_control_has_an_accessible_name(qapp, tmp_path: Path):
     dialog = _dialog(tmp_path)
     try:
