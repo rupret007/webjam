@@ -20,6 +20,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   and at 1280×800. The side panel scrolls instead of squashing mute/solo
   chips or stacking the buttons on the helper line.
 
+- A waiting Paint along host has one orange room action: **Copy Invite**.
+  **Open Paint along** stays available as a quiet body action; guest
+  **Open my copy…** recovery keeps its emphasis.
+
 - Aligned-originals export hashes and renders each source through one open
   file descriptor. A same-format rewrite or path replacement after that
   handle is bound cannot publish. No package is published, the take files
