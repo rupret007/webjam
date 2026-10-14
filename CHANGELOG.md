@@ -16,6 +16,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   and cancelled-cleanup callbacks no longer consume that budget before
   listener joiners are registered.
 
+- Session library Save can recover after a directory-sync failure without a
+  duplicate workspace. Retry confirms the exact attempted publication before
+  saving newer drafts; external changes still retain the conflict/copy path.
+
 - Keep saved profile titles and modes intact when reading their file hits an I/O error.
   A later successful save merges the current edit with the other profiles.
 
