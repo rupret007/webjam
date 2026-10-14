@@ -580,6 +580,10 @@ available only after continuing into the workspace.
 
 ### Silent Paint Along references
 
+For an embedded YouTube lesson, **Play** works while Paint along and its video
+surface are shown, including when a compact window clips the picture. Return
+to Paint along and restore the window before starting a hidden lesson.
+
 For the existing **silent local-file option**, the host chooses one video file:
 
 1. When a host chose **Paint along**, WebJam opens the large Paint along
