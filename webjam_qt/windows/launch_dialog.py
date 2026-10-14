@@ -1116,7 +1116,7 @@ class LaunchDialog(QDialog):
             self._sync_menu_visibility()
             self._install_jamulus_button.setEnabled(False)
             self._installer_error.setText(
-                "The included Jamulus installer failed its integrity check. "
+                "The included music component installer failed its integrity check. "
                 "Re-extract an official WebJam download and try again."
             )
             self._installer_error.setVisible(True)
@@ -1126,7 +1126,7 @@ class LaunchDialog(QDialog):
             subprocess.Popen([self._jamulus_installer], shell=False)
         except OSError:
             self._installer_error.setText(
-                "Jamulus couldn’t open. Re-extract WebJam and try Install Jamulus again."
+                "The installer couldn’t open. Re-extract WebJam and try Install the music component again."
             )
             self._installer_error.setVisible(True)
             self._announce_error(self._installer_error)
@@ -1135,7 +1135,7 @@ class LaunchDialog(QDialog):
         self._installer_error.clear()
         self._installer_error.setVisible(False)
         self._installer_status.setText(
-            "Finish the Jamulus installer, then choose Back to continue."
+            "Finish the music component installer, then choose Back to continue."
         )
 
     def _build_join_page(self) -> QWidget:
@@ -1529,11 +1529,11 @@ class LaunchDialog(QDialog):
         self._installer_status.setWordWrap(True)
         self._installer_status.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(self._installer_status)
-        self._install_jamulus_button = QPushButton("Install Jamulus")
+        self._install_jamulus_button = QPushButton("Install the music component")
         self._install_jamulus_button.setObjectName("GhostButton")
-        self._install_jamulus_button.setAccessibleName("Install Jamulus")
+        self._install_jamulus_button.setAccessibleName("Install the music component")
         self._install_jamulus_button.setAccessibleDescription(
-            "Open the Jamulus installer included with this Windows build."
+            "Open the music component installer included with this Windows build."
         )
         self._install_jamulus_button.clicked.connect(self._install_jamulus)
         self._install_jamulus_button.setVisible(bool(self._jamulus_installer))

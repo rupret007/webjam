@@ -349,7 +349,9 @@ def test_windows_clean_install_exposes_the_bundled_jamulus_installer(
         shell=False,
     )
     assert not dialog._install_jamulus_button.isEnabled()
-    assert "Finish the Jamulus installer" in dialog._installer_status.text()
+    assert dialog._installer_status.text() == (
+        "Finish the music component installer, then choose Back to continue."
+    )
     dialog.close()
 
 
@@ -393,7 +395,9 @@ def test_windows_installer_launch_failure_is_actionable(qapp, tmp_path):
     ):
         dialog = LaunchDialog(settings)
         dialog._install_jamulus_button.click()
-    assert "couldn’t open" in dialog._installer_error.text()
+    assert dialog._installer_error.text() == (
+        "The installer couldn’t open. Re-extract WebJam and try Install the music component again."
+    )
     assert dialog._install_jamulus_button.isEnabled()
 
 
@@ -415,7 +419,10 @@ def test_windows_installer_replacement_is_rejected_before_launch(qapp, tmp_path)
         dialog._install_jamulus_button.click()
 
     popen.assert_not_called()
-    assert "failed its integrity check" in dialog._installer_error.text()
+    assert dialog._installer_error.text() == (
+        "The included music component installer failed its integrity check. "
+        "Re-extract an official WebJam download and try again."
+    )
     assert not dialog._install_jamulus_button.isEnabled()
 
 
