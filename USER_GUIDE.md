@@ -598,6 +598,9 @@ For the existing **silent local-file option**, the host chooses one video file:
    have the right to play. WebJam does not ship, bundle, download, or fetch any
    video, and it will not open anything from a streaming service.
 3. If Room shows **Paint along is starting**, choose **Open Paint along**.
+   Guests on the same network also see this when the host chose Paint along,
+   even before the host shares a video. Joining uses the host's start without
+   changing your saved start choice.
    Before the host shares, the panel shows **Optional silent reference**.
    If you already have the video, choose **Open my copy…**. **Your copy is
    open** means it is waiting locally: WebJam still needs to check it against
