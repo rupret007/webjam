@@ -20,6 +20,10 @@ All notable improvements and features for the WebJam creator collaboration platf
   duplicate workspace. Retry confirms the exact attempted publication before
   saving newer drafts; external changes still retain the conflict/copy path.
 
+- Studio keeps ownership of its input device when close fails, including
+  cleanup after a failed start. Cleanup retries reach the original stream,
+  and another start stays blocked until the device is confirmed closed.
+
 - Keep saved profile titles and modes intact when reading their file hits an I/O error.
   A later successful save merges the current edit with the other profiles.
 
