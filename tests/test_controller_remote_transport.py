@@ -180,8 +180,9 @@ def test_direct_remote_route_activation_retires_reference_track_once(
     controller.shutdown()
 
 
+@pytest.mark.parametrize("arrival", ["confirmation", "teardown"])
 def test_busy_legacy_switch_latest_remote_invite_reuses_reference_retirement(
-    qapp, tmp_path, monkeypatch
+    qapp, tmp_path, monkeypatch, arrival
 ) -> None:
     class Backend(_AuthenticatedMusicRoomBackend):
         def start_guest(self, invitation, *, generation):
@@ -229,12 +230,17 @@ def test_busy_legacy_switch_latest_remote_invite_reuses_reference_retirement(
         Backend,
     )
 
+    def answer(*args):
+        if arrival == "confirmation" and question.call_count == 1:
+            assert controller.accept_invitation(remote)
+        return QMessageBox.StandardButton.Yes
+
     with (
         mock.patch.object(
             QMessageBox,
             "question",
-            return_value=QMessageBox.StandardButton.Yes,
-        ),
+            side_effect=answer,
+        ) as question,
         mock.patch(
             "webjam_qt.controllers.application_controller.threading.Thread",
             side_effect=thread_factory,
@@ -249,7 +255,9 @@ def test_busy_legacy_switch_latest_remote_invite_reuses_reference_retirement(
             create_invite_link("192.168.1.42", session_name="Legacy Replacement")
         )
         assert controller._invite_switch_in_flight is True
-        assert controller.accept_invitation(remote)
+        if arrival == "teardown":
+            assert controller.accept_invitation(remote)
+        assert question.call_count == 1
         assert controller._pending_invitation is remote
 
         switch_worker["target"]()
