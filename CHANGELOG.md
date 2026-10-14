@@ -6,10 +6,6 @@ All notable improvements and features for the WebJam creator collaboration platf
 
 ## [Unreleased]
 
-- Paint along allows Play for a shown YouTube lesson in a compact, clipped
-  panel. Hidden pages, hidden video surfaces, and minimized windows still
-  cannot start playback. Offline Qt regressions cover these visibility states;
-  real YouTube playback remains **NOT RUN**.
 - Art companion's iPhone/iPad Join UI test waits for the name and invitation
   fields to exist, be hittable, and hold keyboard focus before typing, and
   scrolls the form from each field's real position above the keyboard. Large
