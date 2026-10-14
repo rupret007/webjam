@@ -129,9 +129,6 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Connected Art rooms keep making guidance beside the Conversation action;
   the “You’re in” banner no longer repeats it or reserves an empty subtitle row.
 
-- Guests use only the host's room start, including on LAN. Joining waits for
-  confirmed room details instead of borrowing a saved Art door card; Leave
-  restores that personal card for the next Host choice.
 - Paint along rechecks the host's shared local file before Play and on each
   refresh, including while ready or paused. A changed or missing file retires
   its sharing proof and offers the existing Choose process video recovery.
