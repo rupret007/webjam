@@ -246,6 +246,20 @@ class ArtRoomOverviewWidget(QScrollArea):
             label.setAccessibleDescription(text)
             label.setVisible(bool(text))
         offered = bool(overview.activity_action and overview.activity_action_label)
+        # The waiting host's HUD owns Copy Invite. Keep Paint along available
+        # without a second orange action; connected rooms and guest recovery
+        # still emphasize their activity.
+        invite_owns_primary = (
+            overview.phase == "waiting"
+            and overview.role_label == "Host"
+            and overview.activity_action == "video"
+        )
+        button_style = "GhostButton" if invite_owns_primary else "PrimaryButton"
+        if self._activity_button.objectName() != button_style:
+            self._activity_button.setObjectName(button_style)
+            self._activity_button.style().unpolish(self._activity_button)
+            self._activity_button.style().polish(self._activity_button)
+            self._activity_button.update()
         self._activity_button.setText(overview.activity_action_label.replace("&", "&&"))
         self._activity_button.setAccessibleName(overview.activity_action_label)
         self._activity_button.setAccessibleDescription(overview.activity_detail)
