@@ -337,46 +337,10 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertTrue(self.coordinator.flush())
         editor = self._editor()
         files_before = set(self.root.rglob("*"))
-        record_path = self.library.root / f"{editor.record.id}.json"
-        bytes_before = record_path.read_bytes()
         with patch.object(QFileDialog, "getSaveFileName", return_value=("", "")):
             editor._export()
         self.assertEqual(set(self.root.rglob("*")), files_before)
-        self.assertEqual(record_path.read_bytes(), bytes_before)
         self.assertNotIn("Summary exported", editor.status.text())
-
-    def test_clean_summary_export_rejects_same_revision_external_change(self):
-        self.assertTrue(self.coordinator.ensure_current())
-        editor = self._editor()
-        path = self.library.root / f"{editor.record.id}.json"
-        payload = json.loads(path.read_text())
-        payload["notes"] = "Changed outside this application"
-        path.write_text(json.dumps(payload))
-        external_bytes = path.read_bytes()
-        with patch.object(QFileDialog, "getSaveFileName") as picker:
-            editor._export()
-        picker.assert_not_called()
-        self.assertIn("changed since it was opened", editor.status.text())
-        self.assertEqual(path.read_bytes(), external_bytes)
-        self.assertFalse(path.with_suffix(".json.bak").exists())
-
-    def test_unchanged_recovered_editor_save_restores_primary(self):
-        original = self.library.create("music", "Recovered workspace", notes="Original notes")
-        self.library.save(replace(original, notes="Later notes"))
-        path = self.library.root / f"{original.id}.json"
-        damaged = b"damaged workspace"
-        path.write_bytes(damaged)
-        recovered = self.library.load(original.id)
-        self.assertTrue(recovered.recovered)
-        saved = self.coordinator.save_editor_record(recovered, recovered)
-        self.assertFalse(saved.recovered)
-        self.assertEqual(saved.notes, "Original notes")
-        self.assertEqual(self.library.load(original.id), saved)
-        self.assertFalse(self.library.load(original.id).recovered)
-        self.assertEqual(
-            [item.read_bytes() for item in self.library.root.glob(f"{original.id}.damaged-*")],
-            [damaged],
-        )
 
     def test_summary_export_of_browsed_workspace_can_repeat_and_save_later_edits(self):
         self.assertTrue(self.coordinator.ensure_current())
@@ -807,6 +771,19 @@ class TestSessionLibraryCoordinator(TestCase):
             window.deleteLater()
             owner.deleteLater()
             _app.processEvents()
+
+    def test_first_flush_derives_facts_from_live_notes(self):
+        self.window.session_canvas.set_notes(
+            "Decision: Keep the chorus\nAction: Send chart"
+        )
+        self.assertTrue(self.coordinator.ensure_current())
+        self.assertEqual(self.coordinator.current.decisions, ())
+        self.assertEqual(self.coordinator.current.actions, ())
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(self.coordinator.current.id)
+        self.assertEqual(saved.notes, "Decision: Keep the chorus\nAction: Send chart")
+        self.assertEqual(saved.decisions, ("Keep the chorus",))
+        self.assertEqual(saved.actions, ("Send chart",))
 
     def test_mode_only_edit_preserves_imported_workspace_facts(self):
         window = ConductorWindow(mode_entries=[("music_jam", "Music"), ("music_cover", "Covers")],

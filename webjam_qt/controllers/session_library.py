@@ -129,13 +129,8 @@ class SessionLibraryCoordinator(QObject):
                     self._flash(" ".join(warnings))
             title, mode, notes = self._context()
             first_workspace = self.current is None
-            decisions, actions, blockers = session_notes_facts(
-                creator_profile_key=self._profile(), title=title, notes=notes,
-            )
             self.current = self.library.create(self._profile(), title or "Untitled workspace",
-                                               notes=notes, mode_key=mode,
-                                               decisions=decisions, actions=actions,
-                                               blockers=blockers)
+                                               notes=notes, mode_key=mode)
             follow_along = getattr(self._c, "follow_along", None)
             if first_workspace and follow_along is not None:
                 follow_along.workspace_created()
@@ -181,9 +176,15 @@ class SessionLibraryCoordinator(QObject):
                 if self._captured and self._captured[0] == self.current.id
                 else latest.notes
             )
+            # First capture after create still derives from live Notes so
+            # Decision/Action lines typed before the first save land on disk.
+            # Later captures treat Qt display normalization as unchanged Notes.
             untouched = (
-                notes == loaded_notes
-                or notes_display_equivalent(notes, latest.notes)
+                not first_capture
+                and (
+                    notes == loaded_notes
+                    or notes_display_equivalent(notes, latest.notes)
+                )
             )
             stored_notes = latest.notes if untouched else notes
             self._captured = context
@@ -440,12 +441,7 @@ class SessionLibraryCoordinator(QObject):
             latest = self._saved_editor_record
         latest = deepcopy(latest or base)
         merged = _merge_editor_changes(base, edited, latest)
-        stored = self.library.load(merged.id, profile=merged.profile)
-        # A clean export need not publish a new revision or rotate the backup.
-        # Check the actual stored snapshot, including its token, so external
-        # writes still reach save's conflict check. Recovery still needs a save.
-        saved = (stored if not stored.recovered and _same_snapshot(merged, stored)
-                 else self.library.save(merged))
+        saved = self.library.save(merged)
         self._saved_editor_record = deepcopy(saved)
         if _same_snapshot(self._pending.get(saved.id), latest):
             self._pending.pop(saved.id, None)
