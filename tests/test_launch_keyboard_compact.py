@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QAbstractButton, QApplication, QLabel
 
 from core.settings import AppSettings
 from tests.support.start_ux import assert_no_banned_first_screen_words, harvest_first_screen
-from webjam_qt.theme import load_stylesheet
+from webjam_qt.theme import Space, load_stylesheet
 from webjam_qt.windows.launch_dialog import LaunchDialog, ProfileCard, StartCard
 
 
@@ -128,11 +128,10 @@ def test_live_door_fits_800x600_with_larger_text(qapp, tmp_path: Path, profile_k
         ]
         assert "Host" in labels and "Join" in labels
         assert "New Music Project" not in labels
+        _assert_choice_block_centered(dialog)
         if profile_key == "art":
             assert "Make together" in labels
             assert "Paint along" in labels
-        else:
-            _assert_music_block_centered(dialog)
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -200,7 +199,11 @@ def test_every_visible_door_control_has_an_accessible_name(qapp, tmp_path: Path)
         dialog.deleteLater()
 
 
-def _assert_music_block_centered(dialog):
+def _mapped(dialog, widget) -> QRect:
+    return QRect(widget.mapTo(dialog, QPoint()), widget.size())
+
+
+def _assert_choice_block_centered(dialog):
     # Include the shared brand row, not just the choice page below it.
     top = min(widget.mapTo(dialog, QPoint()).y()
               for widget in (dialog._logo, dialog._wordmark))
@@ -211,21 +214,75 @@ def _assert_music_block_centered(dialog):
     assert abs((top - available_top) - (available_bottom - bottom)) <= 2
 
 
+def _gap_under_logo(dialog) -> int:
+    brand_bottom = max(
+        dialog._logo.mapTo(dialog, QPoint()).y() + dialog._logo.height(),
+        dialog._wordmark.mapTo(dialog, QPoint()).y() + dialog._wordmark.height(),
+    )
+    return dialog._art_profile_card.mapTo(dialog, QPoint()).y() - brand_bottom
+
+
+def test_art_door_clusters_like_music_at_800x600(qapp, tmp_path: Path):
+    """Art brand + two cards + Host/Join cluster; no empty third under the logo."""
+
+    dialog = _dialog(tmp_path, "art")
+    try:
+        dialog.setStyleSheet(load_stylesheet())
+        dialog.resize(800, 600)
+        dialog.show()
+        qapp.processEvents()
+        _assert_choice_block_centered(dialog)
+        gap = _gap_under_logo(dialog)
+        assert gap < dialog.height() // 3
+        # Music keeps brand close to the cards (capped 28px page bookend + spacing).
+        assert gap <= 28 + Space.MD * 2
+        assert [card.text() for card in dialog._visible_start_cards()] == [
+            "Make together",
+            "Paint along",
+        ]
+        for widget in (
+            dialog._logo,
+            dialog._wordmark,
+            dialog._art_profile_card,
+            dialog._music_profile_card,
+            *dialog._visible_start_cards(),
+            dialog._host_button,
+            dialog._join_button,
+        ):
+            assert dialog.rect().contains(_mapped(dialog, widget)), widget.objectName()
+        assert dialog._host_button.isVisibleTo(dialog)
+        assert dialog._join_button.isVisibleTo(dialog)
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize("profile_key", ["art", "music"])
 @pytest.mark.parametrize("size", [(620, 520), (800, 600), (1280, 800)])
 @pytest.mark.parametrize("styled", [False, True])
-def test_music_choice_block_is_vertically_centered(qapp, tmp_path, size, styled):
-    dialog = _dialog(tmp_path, "music")
+def test_choice_block_is_vertically_centered(qapp, tmp_path, profile_key, size, styled):
+    dialog = _dialog(tmp_path, profile_key)
     try:
         if styled:
             dialog.setStyleSheet(load_stylesheet())
         dialog.resize(*size)
         dialog.show()
         qapp.processEvents()
-        _assert_music_block_centered(dialog)
-        assert not dialog._visible_start_cards()
+        _assert_choice_block_centered(dialog)
+        if profile_key == "music":
+            assert not dialog._visible_start_cards()
+        else:
+            assert [card.text() for card in dialog._visible_start_cards()] == [
+                "Make together",
+                "Paint along",
+            ]
+            for widget in (dialog._host_button, dialog._join_button):
+                assert dialog.rect().contains(_mapped(dialog, widget))
         dialog.resize(760, 600)
         qapp.processEvents()
-        _assert_music_block_centered(dialog)
+        _assert_choice_block_centered(dialog)
+        for widget in (dialog._host_button, dialog._join_button):
+            assert dialog.rect().contains(_mapped(dialog, widget))
     finally:
         dialog.close()
         dialog.deleteLater()
@@ -242,7 +299,7 @@ def test_music_name_validation_keeps_the_block_centered_and_visible(qapp, tmp_pa
         qapp.processEvents()
         assert dialog._name_input.isVisibleTo(dialog)
         assert dialog._name_error.isVisibleTo(dialog)
-        _assert_music_block_centered(dialog)
+        _assert_choice_block_centered(dialog)
         for widget in (dialog._name_input, dialog._name_error, dialog._host_button,
                        dialog._join_button):
             assert dialog.rect().contains(QRect(widget.mapTo(dialog, QPoint()), widget.size()))
@@ -262,21 +319,26 @@ def test_centering_tracks_profile_and_page_changes(qapp, tmp_path):
         widgets = [dialog._logo, dialog._wordmark, dialog._art_profile_card,
                    dialog._music_profile_card, *dialog._visible_start_cards(),
                    dialog._host_button, dialog._join_button]
+        _assert_choice_block_centered(dialog)
         art_geometry = [QRect(widget.mapTo(dialog, QPoint()), widget.size())
                         for widget in widgets]
-        original_brand_top = dialog._logo.mapTo(dialog, QPoint()).y()
+        art_brand_top = dialog._logo.mapTo(dialog, QPoint()).y()
         dialog._music_profile_card.click()
         qapp.processEvents()
-        _assert_music_block_centered(dialog)
+        _assert_choice_block_centered(dialog)
         dialog.show_join()
         qapp.processEvents()
-        assert dialog._logo.mapTo(dialog, QPoint()).y() == original_brand_top
+        join_brand_top = dialog._logo.mapTo(dialog, QPoint()).y()
+        # Join is not the live door, so the brand returns toward the top.
+        assert join_brand_top < art_brand_top
+        assert dialog.layout().centered_pages is None
         assert dialog._invite_input.isVisibleTo(dialog)
         dialog.show_choices()
         qapp.processEvents()
-        _assert_music_block_centered(dialog)
+        _assert_choice_block_centered(dialog)
         dialog._art_profile_card.click()
         qapp.processEvents()
+        _assert_choice_block_centered(dialog)
         assert [QRect(widget.mapTo(dialog, QPoint()), widget.size())
                 for widget in widgets] == art_geometry
     finally:
