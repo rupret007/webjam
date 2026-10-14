@@ -122,3 +122,19 @@ def test_renamed_test_file_keeps_its_tests(repo):
     _git(repo, "mv", "tests/test_b.py", "tests/test_b_renamed.py")
     _commit(repo)
     assert guard.find_loosening("master", repo) == []
+
+
+def test_quoted_skip_examples_do_not_count(repo):
+    _write(
+        repo,
+        "tests/test_c.py",
+        "def test_four():\n    text = \"@pytest.mark.skip(reason='x')\"\n    assert text\n",
+    )
+    _commit(repo)
+    assert guard.find_loosening("master", repo) == []
+
+
+def test_skip_call_inside_test_body_is_rejected(repo):
+    _write(repo, "tests/test_b.py", "import pytest\n\ndef test_three():\n    pytest.skip('later')\n")
+    _commit(repo)
+    assert any("skip/xfail" in f for f in guard.find_loosening("master", repo))

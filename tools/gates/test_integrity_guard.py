@@ -23,9 +23,11 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import io
 import re
 import subprocess
 import sys
+import tokenize
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -115,6 +117,25 @@ SKIP_MARKER = re.compile(
 )
 
 
+def _code_only(path: str, text: str) -> str:
+    """Drop Python string literals and comments so quoted examples never count."""
+
+    if not path.endswith(".py") or not text:
+        return text
+    try:
+        tokens = [
+            tok for tok in tokenize.generate_tokens(io.StringIO(text).readline)
+            if tok.type not in (tokenize.STRING, tokenize.COMMENT)
+        ]
+        return tokenize.untokenize(tokens)
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return text
+
+
+def _is_test_file(path: str) -> bool:
+    return bool(TEST_FILE.search(path)) and not path.startswith("tools/gates/")
+
+
 def _git(*args: str, root: Path = REPO_ROOT) -> str:
     return subprocess.run(
         ["git", *args], cwd=root, check=True, capture_output=True, text=True
@@ -137,7 +158,7 @@ def find_loosening(base: str = "origin/master", root: Path = REPO_ROOT) -> list[
         parts = row.split("\t")
         status, old = parts[0], parts[1]
         new = parts[-1]
-        if not (TEST_FILE.search(old) or TEST_FILE.search(new)):
+        if not (_is_test_file(old) or _is_test_file(new)):
             continue
         before = _show(merge_base, old, root) if not status.startswith("A") else ""
         after = "" if status.startswith("D") else _show("HEAD", new, root)
@@ -145,7 +166,9 @@ def find_loosening(base: str = "origin/master", root: Path = REPO_ROOT) -> list[
             findings.append(f"{old}: test file deleted")
         before_total += len(TEST_FUNC.findall(before))
         after_total += len(TEST_FUNC.findall(after))
-        added_skips = len(SKIP_MARKER.findall(after)) - len(SKIP_MARKER.findall(before))
+        added_skips = len(SKIP_MARKER.findall(_code_only(new, after))) - len(
+            SKIP_MARKER.findall(_code_only(old, before))
+        )
         if added_skips > 0:
             findings.append(f"{new}: {added_skips} new skip/xfail marker(s)")
     if after_total < before_total:
