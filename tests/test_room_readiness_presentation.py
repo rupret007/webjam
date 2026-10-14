@@ -1,5 +1,6 @@
 """Visible and spoken room actions agree with the current session state."""
 
+import re
 from dataclasses import replace
 
 import pytest
@@ -25,6 +26,9 @@ def _dispose(widget):
     widget.close()
     widget.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+_IDLE_EMPTY_TITLES = frozenset({"Start when you are", "Host or join first"})
 
 
 @pytest.mark.parametrize("profile", ["music", "podcast_voice", "review_rehearsal"])
@@ -105,6 +109,21 @@ def test_idle_room_does_not_claim_recording_or_audio_readiness(qapp, hosting):
         assert not state.hint
         assert grid._empty_hint.isHidden()
         assert grid._empty_primary.isEnabled()
+    finally:
+        _dispose(grid)
+
+
+@pytest.mark.parametrize("hosting", [False, True])
+def test_idle_empty_card_title_has_no_whole_word_ready(qapp, hosting):
+    grid = ParticipantGrid()
+    try:
+        state = SessionUiState.idle(hosting=hosting)
+        grid.set_session_state(state)
+        title = grid._empty_title.text()
+        assert title in _IDLE_EMPTY_TITLES
+        assert title == state.title
+        assert re.search(r"\bReady\b", title) is None
+        assert re.search(r"\bReady\b", state.title) is None
     finally:
         _dispose(grid)
 

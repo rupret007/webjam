@@ -41,7 +41,7 @@ class SessionUiState:
     def idle(cls, server: str = "", hosting: bool = False) -> SessionUiState:
         return cls(
             SessionPhase.NOT_CONNECTED,
-            "Ready when you are",
+            "Start when you are",
             "Start the session and invite others."
             if hosting else "Start the session to play together.",
             primary_text="Start Session",
