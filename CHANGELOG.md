@@ -279,6 +279,8 @@ All notable improvements and features for the WebJam creator collaboration platf
   physical observations at **NOT RUN**, with exact package/hash fields and a
   ten-minute Music/Art try list. Jeff retains feel and Final Build judgment.
 
+- Music Help opens with “Host. Share. Join. Play.” and three short steps.
+  Engine, meeting, room-control and keyboard details stay in searchable topics.
 - Idle host Recording Setup no longer offers a Takes folder that reload
   discards. **Show Folder** opens WebJam's managed host location, with a short
   explanation. Guest folder choice is unchanged.

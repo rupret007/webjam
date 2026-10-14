@@ -56,6 +56,42 @@ def window(app):
     app.processEvents()
 
 
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_music_help_opens_with_only_three_short_beats(app, window, size):
+    available = QRect(0, 0, *size)
+    with patch.object(QGuiApplication, "screenAt", return_value=SimpleNamespace(availableGeometry=lambda: available)):
+        window.show_help()
+    dialog = window._workflow_help_dialog
+    app.processEvents()
+    assert dialog._topics.currentItem().text() == "Current workspace"
+    text = dialog._body.toPlainText()
+    lines = [line for line in text.splitlines() if line.strip()]
+    assert lines[1:] == [
+        "Host. Share. Join. Play.",
+        "1. At launch, choose Music or Art (Make together / Paint along), then Host or Join.",
+        "2. The host uses Copy Invite and shares the invite.",
+        "3. Play in WebJam. Talk in the meeting.",
+    ]
+    for word in ("Jamulus", "Webex", "Drawpile", "Krita", "Moises", "Music AI",
+                 "stems", "BYOK", "host-clocked", "Preview", "API", "Studio Visit", "Bob Ross"):
+        assert word.casefold() not in text.casefold()
+    assert available.contains(dialog.frameGeometry())
+    assert dialog._body.verticalScrollBar().maximum() == 0
+    assert dialog._body.horizontalScrollBar().maximum() == 0
+
+
+@pytest.mark.parametrize("query", ["Jamulus", "Webex"])
+def test_music_engine_guidance_stays_searchable_off_the_opening_card(app, window, query):
+    window.show_help()
+    dialog = window._workflow_help_dialog
+    dialog._search.setText(query)
+    app.processEvents()
+    assert dialog._topics.count() > 0
+    assert all(topic.key != "overview" for topic in dialog._matches)
+    assert query in dialog._body.toPlainText()
+    assert "Disconnect meeting audio while playing" in dialog._body.toPlainText()
+
+
 @pytest.mark.parametrize("profile", ["music", "art"])
 @pytest.mark.parametrize("route", ["f1", "more"])
 @pytest.mark.parametrize("large_text", [False, True])
@@ -97,7 +133,16 @@ def test_real_help_fits_scrolls_and_returns_without_changing_work(app, window, p
         assert dialog._body.isReadOnly()
         assert dialog._body.horizontalScrollBar().maximum() == 0
         text = dialog._body.toPlainText()
+        # Both openings name Art's doors; the title identifies the current profile.
+        assert "Paint along" in text
         assert ("— Art" in text) == (profile == "art")
+        if profile == "music":
+            # The opening card now fits. Exercise the relocated long guidance
+            # for the same enlarged-text scrolling and keyboard guarantees.
+            row = next(i for i, topic in enumerate(dialog._matches) if topic.key == "live_audio")
+            dialog._topics.setCurrentRow(row)
+            app.processEvents()
+            assert "Useful shortcuts" in dialog._body.toPlainText()
         bar = dialog._body.verticalScrollBar()
         # Music's long card still overflows at 22px. Art's three door beats
         # can fit on 760×680; compact Art still overflows and must stay
@@ -274,7 +319,11 @@ def test_repeated_profile_presentation_preserves_help_reading_position(app, wind
     window.show_help()
     dialog = window._workflow_help_dialog
     # A short reading viewport makes a lost scroll position observable.
-    dialog._body.setMaximumHeight(96)
+    # The first Music topic is intentionally brief, so size the viewport from
+    # the rendered document (fonts differ by platform) and keep it at most
+    # half the content height; the assertions below are unchanged.
+    content_height = int(dialog._body.document().size().height())
+    dialog._body.setMaximumHeight(min(96, max(32, content_height // 2)))
     app.processEvents()
     cursor = dialog._body.textCursor()
     cursor.setPosition(4)
