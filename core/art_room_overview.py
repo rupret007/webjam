@@ -10,7 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core.art_room_presence import ABSENT, ArtPresenceTarget, ArtRoomPresence
-from core.meeting_companion import art_make_together_activity_detail
+from core.meeting_companion import (
+    ART_NO_SKILL_NEEDED,
+    ART_OWN_TOOLS_LINE,
+    art_make_together_activity_detail,
+)
 from core.session_conductor import ArtRoomState
 
 
@@ -18,14 +22,14 @@ from core.session_conductor import ArtRoomState
 class ArtRoomOverview:
     phase: str = "idle"
     phase_label: str = "Before you join"
-    title: str = "Make room for your art"
+    title: str = "Open the room, then make with what you have"
     role_label: str = "Guest"
     connection_label: str = "No room connected"
-    connection_detail: str = "Use a host's invitation to join their room."
-    activity_label: str = "Make from your own space"
-    activity_detail: str = (
-        "Use paper, clay, a model, printer, or your usual app."
+    connection_detail: str = (
+        "Choose Start Session and paste the host's invitation."
     )
+    activity_label: str = "Make from your own space"
+    activity_detail: str = f"{ART_NO_SKILL_NEEDED} {ART_OWN_TOOLS_LINE}"
     activity_action: str = ""
     activity_action_label: str = ""
     activity_enabled: bool = False
@@ -173,12 +177,16 @@ def art_room_overview(
             "an invitation alone does not mean someone has joined."
         )
     else:
-        phase, label, title = "idle", "Before you host" if hosting else "Before you join", "Make room for your art"
+        phase, label, title = (
+            "idle",
+            "Before you host" if hosting else "Before you join",
+            "Open the room, then make with what you have",
+        )
         connection = "No room connected"
         detail = (
-            "Start a room, then share its invitation with the artists you want to join."
+            "Choose Start Session to open the room, then share its invitation."
             if hosting
-            else "Use a host's invitation to join their room."
+            else "Choose Start Session and paste the host's invitation."
         )
 
     active = phase in {"waiting", "connected"}
@@ -233,8 +241,8 @@ def art_room_overview(
         secondary_activity_action_label=secondary_action_label,
         secondary_activity_enabled=active and bool(secondary_action),
         making_detail=(
-            "Start making with paper, clay, a model, printer, or your usual app. "
-            "Shared activities are optional."
+            f"{ART_NO_SKILL_NEEDED} Start making with paper, your usual tools, "
+            "or just talk. Shared activities are optional."
             if active and (action or secondary_action) and not (
                 _is_open_my_copy_recovery(activity, action, action_label)
                 and not secondary_action

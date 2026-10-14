@@ -74,6 +74,23 @@ def test_cleanup_and_end_remove_stale_room_activity_before_connection_facts(host
     assert "own leave controls" in ended.connection_detail
 
 
+@pytest.mark.parametrize("hosting", [False, True])
+def test_idle_overview_names_start_session_without_requiring_art_skill(hosting):
+    """A person who just opened Art should see the next click, not a medium list."""
+
+    overview = art_room_overview(state=ArtRoomState.NONE, hosting=hosting)
+    assert overview.phase == "idle"
+    assert overview.title == "Open the room, then make with what you have"
+    assert "Start Session" in overview.connection_detail
+    assert "paint, sculpt" not in overview.activity_detail.casefold()
+    assert "3d print" not in overview.activity_detail.casefold()
+    assert "You do not need an art app" in overview.activity_detail
+    if hosting:
+        assert "share its invitation" in overview.connection_detail
+    else:
+        assert "paste the host's invitation" in overview.connection_detail
+
+
 def test_waiting_host_without_meeting_does_not_ask_to_set_up_conversation():
     """HUD Copy Invite is the one waiting-room primary; overview stays own-space."""
 
@@ -81,7 +98,7 @@ def test_waiting_host_without_meeting_does_not_ask_to_set_up_conversation():
         state=ArtRoomState.WAITING, hosting=True, conversation_configured=False,
     )
     own_space = (
-        "Use paper, clay, a model, printer, or your usual app, or just talk."
+        "You do not need an art app. Use paper, your usual tools, or just talk."
     )
     assert waiting.phase == "waiting"
     assert waiting.activity_detail == own_space
@@ -128,7 +145,8 @@ def test_make_together_is_complete_without_optional_tools_or_a_roster():
     for overview in (waiting, joined):
         assert overview.title == "Make from your own space"
         assert overview.activity_label == "Make from your own space"
-        assert "paper, clay, a model, printer, or your usual app" in overview.activity_detail
+        assert "You do not need an art app" in overview.activity_detail
+        assert "your usual tools, or just talk" in overview.activity_detail
         # Full Webex / movie essay stays on Conversation — not overview.
         assert "Join / Open Meeting or Show Webex App" not in overview.activity_detail
         assert "WebJam does not play the movie." not in overview.activity_detail
@@ -179,7 +197,8 @@ def test_guest_needs_file_keeps_making_detail_when_a_canvas_is_also_offered():
     )
     assert overview.open_my_copy_recovery
     assert overview.activity_actions == ("video", "canvas")
-    assert overview.making_detail.startswith("Start making with paper, clay")
+    assert overview.making_detail.startswith("You do not need an art app")
+    assert "your usual tools, or just talk" in overview.making_detail
     assert "Shared activities are optional." in overview.making_detail
 
 
@@ -209,7 +228,8 @@ def test_guest_needs_file_owns_emphasis_when_canvas_is_also_offered(canvas_state
     assert overview.secondary_activity_action == "canvas"
     assert overview.secondary_activity_action_label == "Open workspace"
     assert overview.activity_actions == ("video", "canvas")
-    assert overview.making_detail.startswith("Start making with paper, clay")
+    assert overview.making_detail.startswith("You do not need an art app")
+    assert "your usual tools, or just talk" in overview.making_detail
     assert overview.conversation_enabled
 
 
@@ -223,7 +243,8 @@ def test_mismatched_copy_is_not_the_needs_file_open_my_copy_emphasis():
     assert not overview.open_my_copy_recovery
     assert overview.activity_action_label == "Open my copy…"
     assert overview.activity_label == "Paint along needs a look"
-    assert overview.making_detail.startswith("Start making with paper, clay")
+    assert overview.making_detail.startswith("You do not need an art app")
+    assert "your usual tools, or just talk" in overview.making_detail
 
 
 @pytest.mark.parametrize("hosting", [False, True])
@@ -343,8 +364,8 @@ def test_optional_activity_keeps_an_any_artist_next_step(
             assert not overview.making_detail
             continue
         if expect_making_detail:
-            assert overview.making_detail.startswith("Start making with paper, clay")
-            assert "model, printer, or your usual app" in overview.making_detail
+            assert overview.making_detail.startswith("You do not need an art app")
+            assert "your usual tools, or just talk" in overview.making_detail
             assert "Shared activities are optional." in overview.making_detail
         else:
             assert not overview.making_detail
@@ -366,7 +387,8 @@ def test_optional_activity_keeps_an_any_artist_next_step(
 
 def test_own_tools_room_does_not_repeat_its_existing_instruction():
     overview = art_room_overview(state=ArtRoomState.CONNECTED, hosting=False)
-    assert "paper, clay, a model, printer, or your usual app" in overview.activity_detail
+    assert "You do not need an art app" in overview.activity_detail
+    assert "your usual tools, or just talk" in overview.activity_detail
     assert not overview.making_detail
 
 

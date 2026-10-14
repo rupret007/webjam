@@ -54,7 +54,8 @@ def test_cold_guest_room_loss_and_leave_never_show_music_roster(qapp, controller
     assert panel._overview.connection_label == "Connected to the host"
     assert "0 artists" not in panel.accessibleDescription()
     assert panel._overview.activity_label == "Make from your own space"
-    assert "paper, clay, a model, printer, or your usual app" in panel._overview.activity_detail
+    assert "You do not need an art app" in panel._overview.activity_detail
+    assert "your usual tools, or just talk" in panel._overview.activity_detail
     # Connected guests still name the Conversation setup step. Waiting
     # hosts omit that ask so HUD Copy Invite stays the one primary.
     assert not str(app.settings.webex_url or "").strip()
