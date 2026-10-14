@@ -165,8 +165,8 @@ if set(_CREATOR_LAUNCH_COPY) != {profile.key for profile in CREATOR_PROFILES}:
     # without copy at import time instead of as a KeyError mid-selection.
     raise RuntimeError("Every creator profile requires launch copy.")
 
-# Art and Music are the only first-screen rooms. Podcast and Review stay
-# reachable after Music, never as equal first clicks.
+# Art and Music are the only first-screen rooms. Secondary workflow actions
+# remain available to existing callers, never as equal first clicks.
 _FIRST_SCREEN_PROFILE_KEYS = ("art", "music")
 _ART_PROFILE_SUMMARY = "Make art together."
 _MUSIC_PROFILE_SUMMARY = "Write songs or play live together."
@@ -1116,6 +1116,7 @@ class LaunchDialog(QDialog):
 
         if not _is_pinned_jamulus_installer(self._jamulus_installer):
             self._jamulus_installer = ""
+            self._sync_menu_visibility()
             self._install_jamulus_button.setEnabled(False)
             self._installer_error.setText(
                 "The included Jamulus installer failed its integrity check. "
@@ -1285,8 +1286,8 @@ class LaunchDialog(QDialog):
         self._name_preview.setVisible(not hide_name)
         self._name_error.setVisible(bool(self._name_error.text()))
 
-        # Art and Music are the cards. The combo stays off until someone
-        # asks for podcast or review from the Music door.
+        # Art and Music are the cards. The combo stays off unless an existing
+        # caller selects a secondary workflow or explicitly reveals it.
         show_picker = (not first_screen_door) or (
             music_door and self._rooms_picker_revealed
         )
@@ -1320,6 +1321,7 @@ class LaunchDialog(QDialog):
             )
             if art_door:
                 self._refresh_start_presentation()
+        self._sync_menu_visibility()
         self._update_choice_centering()
         self._keep_door_cards_tabbable()
         if hasattr(self, "_join_title"):
@@ -1396,9 +1398,10 @@ class LaunchDialog(QDialog):
         self._workspace_actions = {}
         if self._allow_workspace_choices:
             file_menu = self._menu_bar.addMenu("&File")
+            self._file_menu = file_menu
             self._session_library_action = file_menu.addAction("Session library…")
             self._session_library_action.triggered.connect(self._open_session_library)
-            file_menu.addSeparator()
+            self._workspace_separator = file_menu.addSeparator()
             for key, label in (("music", "New Music Project…"),
                                ("podcast_voice", "Podcast & Voice…"),
                                ("review_rehearsal", "Review & Rehearsal…")):
@@ -1413,6 +1416,28 @@ class LaunchDialog(QDialog):
         self._setup_action = help_menu.addAction("Music setup…")
         self._setup_action.triggered.connect(self._show_music_setup)
         self._setup_action.setEnabled(bool(self._jamulus_installer))
+        self._sync_menu_visibility()
+
+    def _sync_menu_visibility(self) -> None:
+        # The choice page is built before its menus. Keep secondary starts
+        # out of both live doors, including their Join and Back transitions.
+        if not hasattr(self, "_setup_action"):
+            return
+        profile = self.selected_creator_profile_key
+        secondary_starts = profile not in _FIRST_SCREEN_PROFILE_KEYS
+        if hasattr(self, "_file_menu"):
+            # Detach these actions (and their shortcuts) from the live menu.
+            # Retain their enabled state for existing programmatic workflow
+            # and save-retry callers; QAction.setVisible(False) disables them.
+            for action in (self._workspace_separator, *self._workspace_actions.values()):
+                if secondary_starts:
+                    if action not in self._file_menu.actions():
+                        self._file_menu.addAction(action)
+                else:
+                    self._file_menu.removeAction(action)
+        # The resolver supplies a verified bundled path only on Windows
+        # when the music component is missing; revalidation can revoke it.
+        self._setup_action.setVisible(profile == "music" and bool(self._jamulus_installer))
 
     def _open_session_library(self) -> None:
         if self._submitting or not self._allow_workspace_choices:

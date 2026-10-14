@@ -10,6 +10,12 @@ All notable improvements and features for the WebJam creator collaboration platf
   keeps only “Then choose a file or lesson link.” Both cards and Host/Join
   remain visible, including with larger text at 800×600.
 
+- Art/Music launch File menus keep Session library and hide New Music Project,
+  Podcast, and Review starts, including the New shortcut. Help's Music setup
+  appears only for Music with an available verified Windows installer and
+  disappears if installer integrity validation fails. Host/Join and Art's
+  two start cards are unchanged; physical/live checks remain **NOT RUN**.
+
 - Send to jam loads a finished stem mix only for the room and source that
   asked for it. An old mix after End/Leave, a host-to-guest change, a
   workspace switch, or a newer song choice stays in Song tools and does not
