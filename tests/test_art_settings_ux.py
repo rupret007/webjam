@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
-from core.jamulus_name import JAMULUS_NAME_HELP
 from core.settings import AppSettings, load_settings
 from tests.support.start_ux import (
     assert_no_banned_first_screen_words,
@@ -101,11 +100,13 @@ def test_verify_sound_is_only_offered_for_music(
         assert "Save" in buttons
         assert "Cancel" in buttons
         if profile == "music":
-            assert dialog._name.accessibleDescription() == JAMULUS_NAME_HELP
+            # Master keeps the "You" identity section in plain words for every
+            # profile; Jamulus specifics stay in the Live music section.
+            assert dialog._name.accessibleDescription() == PLAIN_NAME_HELP
             assert dialog._open_jamulus.text() == "Open Jamulus Audio Settings"
             dialog._name.setText("Alex Painter")
             assert dialog._name_preview.text() == (
-                f"{JAMULUS_NAME_HELP}\nMixer preview: Alex Pai / nter"
+                f"{PLAIN_NAME_HELP}\nOthers see: Alex Pai / nter"
             )
             assert dialog._keys_toggle.accessibleName() == (
                 "Optional Music AI and writing help keys"
