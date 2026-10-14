@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QPoint, QRect, QSize, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMenu, QPushButton
 
@@ -422,18 +422,17 @@ def test_the_name_field_asks_for_a_name(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
-def test_the_page_names_what_host_and_join_do_with_the_card_choice(qapp, tmp_path: Path):
-    """The visible next step follows the card; Join still uses the invitation."""
+def test_art_helper_only_adds_the_paint_along_next_step(qapp, tmp_path: Path):
+    """Cards carry the activity; only Paint along needs another step."""
 
     dialog = _dialog(tmp_path)
     try:
-        for card in _visible_cards(dialog):
+        for card in [*_visible_cards(dialog), _visible_cards(dialog)[0]]:
             card.click()
-            assert dialog._choice_helper.isVisibleTo(dialog._choice_page)
+            paint_along = card.start_key == "paint_along"
+            assert dialog._choice_helper.isVisibleTo(dialog._choice_page) is paint_along
             assert dialog._choice_helper.text() == (
-                "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
-                if card.accessibleName() == "Paint along" else
-                f"Host starts {card.accessibleName()}. Join uses the host's invite."
+                "Then choose a file or lesson link." if paint_along else ""
             )
         # The two cards carry the instruction, so the headline and the
         # subtitle above them step aside rather than crowd them.
@@ -450,11 +449,76 @@ def test_the_page_names_what_host_and_join_do_with_the_card_choice(qapp, tmp_pat
         try:
             assert elsewhere._host_button.isEnabled() is available
             assert elsewhere._choice_helper.text() == (
-                "Host starts Make together. Join uses the host's invite."
+                ""
                 if available else "Hosting is available in the macOS app."
             )
+            assert elsewhere._choice_helper.isHidden() is available
         finally:
             elsewhere.deleteLater()
+
+
+@pytest.mark.parametrize("remembered_start", ["talk_and_make", "paint_along"])
+@pytest.mark.parametrize("larger_text", [False, True])
+def test_art_helper_and_actions_survive_start_profile_and_back_changes(
+    qapp, tmp_path: Path, remembered_start: str, larger_text: bool
+):
+    from webjam_qt.theme import load_stylesheet
+
+    settings = _settings(tmp_path)
+    settings.last_creator_profile_key = "art"
+    settings.last_creator_start_key = remembered_start
+    with patch.object(sys, "platform", "darwin"):
+        dialog = LaunchDialog(settings)
+    try:
+        dialog._menu_bar.setNativeMenuBar(False)
+        dialog.setStyleSheet(
+            load_stylesheet() + ("\nQWidget { font-size: 20px; }" if larger_text else "")
+        )
+        dialog.resize(800, 600)
+        dialog.show()
+        qapp.processEvents()
+        assert dialog.selected_start_key == remembered_start
+
+        def assert_art_door():
+            qapp.processEvents()
+            paint_along = dialog.selected_start_key == "paint_along"
+            helper = dialog._choice_helper
+            assert helper.isVisible() is paint_along
+            assert helper.text() == (
+                "Then choose a file or lesson link." if paint_along else ""
+            )
+            cards = _visible_cards(dialog)
+            assert len(cards) == 2
+            widgets = [*cards, dialog._host_button, dialog._join_button]
+            if paint_along:
+                widgets.append(helper)
+                assert helper.height() >= helper.heightForWidth(helper.width())
+            else:
+                assert helper.minimumHeight() == 0
+            for widget in widgets:
+                assert widget.isVisible()
+                assert dialog.rect().contains(
+                    QRect(widget.mapTo(dialog, QPoint()), widget.size())
+                )
+            assert dialog._host_button.isEnabled()
+            assert dialog._host_button.isDefault()
+            assert dialog._join_button.isEnabled()
+            assert_no_banned_first_screen_words(harvest_first_screen(dialog))
+
+        assert_art_door()
+        for card in [*_visible_cards(dialog), _visible_cards(dialog)[0]]:
+            card.click()
+            assert_art_door()
+            dialog._join_button.click()
+            dialog._join_back_button.click()
+            assert_art_door()
+            dialog._music_profile_card.click()
+            assert dialog._choice_helper.isHidden()
+            dialog._art_profile_card.click()
+            assert_art_door()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
 
 
 def test_host_accessible_description_never_promises_an_immediate_invite_copy(
@@ -1036,9 +1100,9 @@ def test_every_visible_door_button_matches_owner_lock(qapp, tmp_path, profile, i
             assert dialog.rect().contains(button.mapTo(dialog, button.rect().bottomRight()))
         if profile == "art":
             helper = dialog._choice_helper
-            assert helper.isVisibleTo(dialog)
-            assert helper.height() >= helper.heightForWidth(helper.width())
-            assert dialog.rect().contains(helper.mapTo(dialog, helper.rect().bottomRight()))
+            assert helper.isHidden()
+            assert helper.text() == ""
+            assert helper.minimumHeight() == 0
         assert not dialog._install_jamulus_button.isVisibleTo(dialog)
         assert_no_banned_first_screen_words(harvest_first_screen(dialog))
     finally:
