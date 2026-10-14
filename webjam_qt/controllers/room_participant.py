@@ -24,6 +24,7 @@ from core.session_transfer import (
     SharedCanvasSessionSnapshot,
 )
 from services.lan_room_guest import LanRoomTerminalReason, LessonRequestGuestState
+from services.remote_session_runtime import RemoteSessionPhase
 
 
 LOGGER = logging.getLogger("webjam.qt.room_participant")
@@ -149,6 +150,7 @@ class RoomParticipantController:
         self.app = app
         self.lan_guest = None
         self._lan_terminal_owner = None
+        self._lan_pending_admission = None
         self._lan_retry_in_progress = False
         self._lan_host_retry_in_progress = False
         self._music_host_retry_in_progress = False
@@ -170,6 +172,7 @@ class RoomParticipantController:
         self.native_received_at = 0.0
         self.native_applied = None
         self.native_wait_started = 0.0
+        self.native_profile_deferred = False
         self.publisher = None
         self.stopping = False
         self._lesson_binding = None
@@ -325,13 +328,43 @@ class RoomParticipantController:
 
     def receive_lan(self, owner, generation, state):
         if (owner is not self.lan_guest or generation != self.generation
-                or self.blocked or self.lan_invitation_rejected):
+                or self.blocked
+                or getattr(owner, "terminal_reason", None) is not None):
             return
         profile = canonical_creator_profile_key(state.creator_profile_key)
         if profile is None:
             self.lose_lan(owner, generation, True)
             return
         self._lan_terminal_owner = None
+        pending = (owner, generation, state, time.monotonic())
+        self._lan_pending_admission = pending
+        self._apply_lan_admission(pending)
+
+    def _apply_lan_admission(self, pending):
+        owner, generation, state, received_at = pending
+        if (self._lan_pending_admission is not pending
+                or owner is not self.lan_guest or generation != self.generation
+                or self.blocked or self.lan_failed
+                or getattr(owner, "terminal_reason", None) is not None):
+            return
+        if time.monotonic() - received_at >= 5.0:
+            self._lan_pending_admission = None
+            return
+        profile = canonical_creator_profile_key(state.creator_profile_key)
+        if profile != "art":
+            previous_profile = self.app.creator_profile.key
+            previous_host_owned = self.app._creator_profile_host_owned
+        if not self.app._apply_creator_profile_key(profile, host_owned=True):
+            # Like native admission, retry only a current, fresh receipt.
+            # A newer receipt or any loss invalidates this callback.
+            QTimer.singleShot(200, lambda: self._apply_lan_admission(pending))
+            return
+        if (self._lan_pending_admission is not pending
+                or owner is not self.lan_guest or generation != self.generation
+                or self.blocked or self.lan_failed
+                or getattr(owner, "terminal_reason", None) is not None):
+            return
+        self._lan_pending_admission = None
         if profile != "art":
             self.retire_lesson_requests()
             invite = owner.invite
@@ -352,6 +385,9 @@ class RoomParticipantController:
                 return
             if not stopped:
                 LOGGER.warning("Music LAN room discovery cleanup unconfirmed")
+                self.app._apply_creator_profile_key(
+                    previous_profile, host_owned=previous_host_owned,
+                )
                 self.app.audio.require_cleanup_retry(
                     hosting=False, art_room=True,
                     error="The previous room connection is still closing.",
@@ -362,7 +398,7 @@ class RoomParticipantController:
             self.probing = False
             self.state = ArtRoomState.NONE
             self.stopping = False
-            if not self.app._configure_guest_peer(invite):
+            if not self.app._configure_guest_peer(invite, preserve_room_profile=True):
                 return
             # Configuration retires the prior peer once. Any additional
             # retirement or new invitation belongs to its newer owner.
@@ -374,19 +410,18 @@ class RoomParticipantController:
                 return
             self.music_invite = invite
             self.stopping = False
-            self.app._apply_creator_profile_key(profile, host_owned=True)
             self.app.begin_startup_journey()
             return
         self.probing = False
         self.probe_failed = False
         self.state = ArtRoomState.CONNECTED
-        self.app._apply_creator_profile_key(profile, host_owned=True)
         self.observe_creative_state(state)
         self.app._refresh_readiness()
 
     def lose_lan(self, owner, generation, terminal):
         if owner is not self.lan_guest or generation != self.generation or self.blocked:
             return
+        self._lan_pending_admission = None
         self.retire_lesson_requests()
         # An earlier transient-loss callback must not erase a later rejected
         # credential while both still belong to this exact observer.
@@ -656,6 +691,7 @@ class RoomParticipantController:
         self.native_applied = None
         self.native_generation = 0
         self.native_wait_started = 0.0
+        self.native_profile_deferred = False
         self.probing = role == "guest"
         self.probe_failed = False
         if self.app.creator_profile.key == "art":
@@ -707,26 +743,40 @@ class RoomParticipantController:
                 and generation == self.generation and not self.blocked
                 and getattr(source.snapshot, "generation", 0) == native_generation):
             from services.remote_session_runtime import RemoteSessionErrorCode
+            # A locally deferred profile is not evidence of an unsupported
+            # peer. Preserve the existing absent/stale-state failure otherwise.
+            error = RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED
+            if (self.native_source is source and self.native_generation == native_generation
+                    and self.native_profile_deferred):
+                error = RemoteSessionErrorCode.LOCAL_OPERATION_PENDING
             source.mark_connection_lost(expected_generation=native_generation,
-                                        error_code=RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED)
+                                        error_code=error)
             self.app._show_remote_session_failure(
-                guest_enrollment=True, error_code=RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED,
+                guest_enrollment=True, error_code=error,
             )
 
     def apply_native(self, source, snapshot):
         state = self.native_state
         if (state is None or snapshot.generation != self.native_generation
-                or source is not self.app._remote_session or self.blocked):
+                or source is not self.app._remote_session or self.blocked
+                or snapshot.phase is not RemoteSessionPhase.CONNECTED):
             return
         key = (source, snapshot.generation, state.revision)
         if key == self.native_applied:
             return
         if time.monotonic() - self.native_received_at >= 5.0:
             return
+        if not self.app._apply_creator_profile_key(state.creator_profile_key, host_owned=True):
+            self.native_profile_deferred = True
+            # A Library media operation is still pending. Retry shortly
+            # without declaring admission complete; the 5s deadline above
+            # bounds how long these retries can run.
+            generation = self.generation
+            QTimer.singleShot(200, lambda: self._retry_apply_native(source, key, generation))
+            return
         self.native_applied = key
         self.probing = False
         self.borrowed_start = state.art_start_key
-        self.app._apply_creator_profile_key(state.creator_profile_key, host_owned=True)
         if state.creator_profile_key == "art":
             self.state = ArtRoomState.CONNECTED
             self.app._remote_invitation = None
@@ -735,6 +785,17 @@ class RoomParticipantController:
         else:
             self.state = ArtRoomState.NONE
             self.app._activate_remote_guest_route(snapshot, source=source)
+
+    def _retry_apply_native(self, source, key, generation):
+        state = self.native_state
+        if (state is None or self.blocked or generation != self.generation
+                or source is not self.app._remote_session
+                or (source, self.native_generation, state.revision) != key):
+            return
+        snapshot = getattr(source, "snapshot", None)
+        if snapshot is None or snapshot.generation != self.native_generation:
+            return
+        self.apply_native(source, snapshot)
 
     def observe_creative_state(self, state):
         for method, field in (("_reference_video_coordinator", "reference_video"),
@@ -967,7 +1028,15 @@ class RoomParticipantController:
         if panel is None or getattr(panel, "_shared_lesson_hosting", None) is None:
             return
         binding = self._lesson_binding
-        if not self._lesson_current(binding):
+        # A transient poll failure disables the guest worker's request authority
+        # even while the room connection itself stays current; surface Restart
+        # rather than leaving the guest stuck with no way back in.
+        disarmed_guest = (
+            binding is not None and binding.role == "guest"
+            and self._lesson_current(binding)
+            and not binding.owner.lesson_requests_enabled
+        )
+        if disarmed_guest or not self._lesson_current(binding):
             self.retire_lesson_requests()
             self._wire_lesson_actions(None)
             panel.set_lesson_request_guest(status="Ask the host aloud.")
@@ -1088,6 +1157,7 @@ class RoomParticipantController:
     def stop_lan(self):
         # Request authority goes away before a possibly blocking/failed stop.
         self.retire_lesson_requests()
+        self._lan_pending_admission = None
         self.stopping = True
         self.generation += 1
         generation = self.generation

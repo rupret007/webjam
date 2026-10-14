@@ -230,7 +230,7 @@ QLabel#PaintAlongTitle {
 }
 
 QLabel#PaintAlongRole {
-    color: ${COLOR_TEXT_MUTED};
+    color: ${COLOR_TEXT_SECONDARY};
     border: 1px solid ${COLOR_BORDER_SUBTLE};
     border-radius: ${RADIUS_PILL}px;
     padding: ${SPACE_XS}px ${SPACE_SM}px;
@@ -816,6 +816,7 @@ QLineEdit#CanvasChatInput {
     color: ${COLOR_TEXT_MUTED};
     font-size: ${FONT_SIZE_SM}px;
     padding-top: ${SPACE_XS}px;
+    padding-bottom: 0px;
 }
 
 QPushButton#LaunchMoreRooms {
@@ -1929,7 +1930,7 @@ QPushButton#StudioRecordButton {
  * recording-status text at the compact floor; only horizontal padding changes. */
 #SessionControlBar[followAlongCompact="true"] QPushButton#GhostButton,
 #SessionControlBar[followAlongCompact="true"] QToolButton#GhostButton {
-    padding: 0 6px;
+    padding: 0 4px;
 }
 
 #SessionControlBar[followAlongCompact="true"] QPushButton#StudioRecordButton {
@@ -1943,7 +1944,7 @@ QPushButton#StudioRecordButton {
 #SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QPushButton#GhostButton,
 #SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QToolButton#GhostButton,
 #SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QPushButton#StudioRecordButton {
-    padding: 0 4px;
+    padding: 0 3px;
 }
 
 #SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QPushButton#AudioButton[destructive="true"] {

@@ -163,7 +163,7 @@ def _track_export_failure_message(error: str) -> str:
     """Return safe, musician-facing copy for a failed track export.
 
     Export workers can surface implementation exceptions containing local paths
-    or other diagnostic details.  A small, fixed allowlist preserves the two
+    or other diagnostic details.  A small, fixed allowlist preserves the
     recording-safety actions that a musician can resolve in Studio while every
     other failure remains a general retry message.
     """
@@ -185,6 +185,12 @@ def _track_export_failure_message(error: str) -> str:
             "timeline alignment. Keep the Jamulus server track for this take, "
             "or align and verify each local original before exporting. The "
             "original take is safe."
+        )
+    if message.startswith("A source recording changed after validation."):
+        return (
+            "Track export paused: a source recording changed while WebJam was "
+            "preparing the aligned originals. No export was published. Reopen "
+            "the take, then export again. The original take is safe."
         )
     return (
         "Track export couldn't be completed. The original take is safe. "
