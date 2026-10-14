@@ -128,11 +128,12 @@ Pull-request and `master` push CI keep the test, lint, and integration
 jobs. The four `Build Desktop` targets do not run on `pull_request` and
 do not run on push to `master` or on a tag push. They run only on
 `workflow_dispatch` when `final_build` is selected (the default) or a
-signing rehearsal needs those artifacts. Art companion and Pocket Stage
-stay on pull requests and on push to `master` because they are the only
-hosted XCTest / simulator suites; a paths filter limits those two jobs on
-PRs to changes under `ios/` or the shared Python/protocol sources they
-exercise.
+signing rehearsal needs those artifacts. Signing rehearsals may still
+run `Build Desktop` for the trust jobs; they do not create a GitHub Release draft.
+Art companion and Pocket Stage stay on push to `master`,
+on `workflow_dispatch`, and on pull requests that touch `ios/` or the
+shared Python/protocol sources they exercise, because they are the only
+hosted XCTest / simulator suites.
 
 The exact candidate head must then pass all 13 required hosted jobs in one
 automatic `final_build` dispatch (against `master`, or against the
@@ -170,7 +171,7 @@ These stay **NOT RUN** unless real evidence exists for the exact candidate:
 | `Certify Jamulus/JACK (one hour, manual)` | manual dispatch only (`run_one_hour_certification`) |
 | `Windows Release Trust (windows-x64)`, `macOS Release Trust` | credentialed signing/notarization rehearsals behind `windows_signing_rehearsal` / `macos_signing_rehearsal` |
 | `Jamulus 3.12.3 HEADLESS evidence` | quarantined dispatch-only evidence build |
-| `Publish GitHub Release` | `final_build` dispatch against the annotated tag; a tag push alone does not draft |
+| `Publish GitHub Release` | `final_build` dispatch against the annotated tag; a tag push or signing-rehearsal-only dispatch does not draft |
 | Two-Mac Art room video and Drawpile | two physical machines, real observation |
 | Live Music AI | needs a real service credential |
 | Physical and hardware checklist rows | real musician observation against an exact package |

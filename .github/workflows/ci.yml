@@ -779,10 +779,10 @@ jobs:
 
   # ------------------------------------------------------------------
   # iOS jobs are the only hosted XCTest / simulator UI suites. Keep them
-  # on pull_request and on push to master. On pull_request, run them only
-  # when ios/ or the shared Python/protocol sources they exercise change.
-  # workflow_dispatch always runs them so a final_build still has a
-  # compile proof.
+  # on push to master and on workflow_dispatch. On pull_request, run them
+  # only when ios/ or the shared Python/protocol sources they exercise
+  # change. Packaging stays dispatch final_build (or a signing rehearsal
+  # that needs those artifacts). Signing rehearsals never draft a release.
   # ------------------------------------------------------------------
   ios-change-gate:
     name: iOS change gate
@@ -3629,6 +3629,8 @@ jobs:
   # its checksum manifest as a draft. Packaging is dispatch-only, so a tag
   # push no longer builds or drafts. Dispatch final_build against the
   # annotated v*.*.* tag so this job and build-desktop share one run.
+  # macos_signing_rehearsal / windows_signing_rehearsal may still run
+  # build-desktop for trust jobs, but they never draft a GitHub Release.
   # Existing published tags are immutable, and no release or asset is
   # pruned or silently replaced by this job.
   # ------------------------------------------------------------------
@@ -3638,9 +3640,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' &&
       startsWith(github.ref, 'refs/tags/v') &&
-      (inputs.final_build ||
-       inputs.macos_signing_rehearsal ||
-       inputs.windows_signing_rehearsal)
+      inputs.final_build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

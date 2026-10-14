@@ -9,12 +9,14 @@ All notable improvements and features for the WebJam creator collaboration platf
 - Test, lint, and integration jobs still run on pull requests and on push
   to `master`. `Build Desktop` (linux-x64, macos-arm64, macos-x64,
   windows-x64) no longer runs on `pull_request` or on push to `master` /
-  tags. It runs only on `workflow_dispatch` `final_build` (default on), or
-  when a signing rehearsal needs those artifacts, and still uploads the
-  same files. A tag draft needs that dispatch against the annotated tag.
-  Art companion and Pocket Stage stay on pull requests and master as the
-  only hosted XCTest / simulator suites, filtered on PRs to `ios/` and
-  their shared sources. Branch protection was not changed; if those Build
+  tags. Packaging stays `workflow_dispatch` `final_build` only (default
+  on), or when a signing rehearsal needs those artifacts, and still
+  uploads the same files. A tag draft needs `final_build` against the
+  annotated tag. `macos_signing_rehearsal` / `windows_signing_rehearsal`
+  do not create a GitHub Release draft. Art companion and Pocket Stage
+  stay on `master`, on `workflow_dispatch`, and on pull requests that
+  touch `ios/` or their shared sources — they are the only hosted XCTest
+  / simulator suites. Branch protection was not changed; if those Build
   Desktop names are required checks, skipped PR or master jobs may need a
   maintainer review.
 

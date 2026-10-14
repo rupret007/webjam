@@ -274,10 +274,10 @@ def test_candidate_release_is_a_tag_only_draft_from_tested_builds() -> None:
     assert condition == (
         "github.event_name == 'workflow_dispatch' && "
         "startsWith(github.ref, 'refs/tags/v') && "
-        "(inputs.final_build || "
-        "inputs.macos_signing_rehearsal || "
-        "inputs.windows_signing_rehearsal)"
+        "inputs.final_build"
     )
+    assert "macos_signing_rehearsal" not in condition
+    assert "windows_signing_rehearsal" not in condition
     assert "name: webjam-macos-arm64" in release
     assert "name: webjam-macos-x64" in release
     create = _workflow_step("Create GitHub Release")

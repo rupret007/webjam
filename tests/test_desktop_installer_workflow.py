@@ -710,6 +710,30 @@ def test_signing_rehearsals_do_not_implicitly_start_the_one_hour_soak() -> None:
     assert "inputs.windows_signing_rehearsal" not in certification
 
 
+def test_signing_rehearsals_do_not_draft_a_github_release() -> None:
+    release = _workflow_job("release")
+    condition = " ".join(
+        release.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0].split()
+    )
+    assert condition == (
+        "github.event_name == 'workflow_dispatch' && "
+        "startsWith(github.ref, 'refs/tags/v') && "
+        "inputs.final_build"
+    )
+    assert "macos_signing_rehearsal" not in condition
+    assert "windows_signing_rehearsal" not in condition
+    build = _workflow_job("build-desktop")
+    build_condition = " ".join(
+        build.split("    if: >-\n", 1)[1].split("    runs-on:", 1)[0].split()
+    )
+    assert "inputs.macos_signing_rehearsal" in build_condition
+    assert "inputs.windows_signing_rehearsal" in build_condition
+    assert "do not create a GitHub Release draft" in CHANGELOG
+    assert "signing-rehearsal-only dispatch does not draft" in DESKTOP_RELEASE_RUNBOOK or (
+        "they do not create a GitHub Release" in DESKTOP_RELEASE_RUNBOOK
+    )
+
+
 def test_every_external_action_is_pinned_to_an_immutable_commit() -> None:
     external_uses = re.findall(r"(?m)^\s+uses: ([^\s#]+)", WORKFLOW)
     assert external_uses
