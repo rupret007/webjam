@@ -20,7 +20,7 @@ worktree. Product commit: `05d8055` (`Use only host room starts for guests`).
   an older LAN host with no start, waiting-room actions, no premature video
   opening, and real Leave-worker restoration of the saved card.
 - `CHANGELOG.md` and `USER_GUIDE.md`: document guest ownership and saved-card
-  restoration. `docs/evidence/w23/` contains this report, the runnable gate,
+  restoration. `docs/evidence/w23-guest-creator-start/` contains this report, the runnable gate,
   and exact per-command results. Copies are provided in the campaign's
   `items/W23/` directory.
 
@@ -48,7 +48,7 @@ or existing tests were changed or removed.
 | Final focused selection, same command (five cases) | **5 passed, 17 deselected in 1.39s** |
 | Complete room-controller module, independent focused run | **22 passed in 2.24s** |
 | Door UX module in final gate | **55 passed in 1.02s** |
-| `bash docs/evidence/w23/gate.sh` | **FAIL, exit 1**; 102 complete relevant modules: **3387 passed, 11 subtests passed, 14 skipped, 5 failed, 30 errors**; totals exclude the repeated focused selection |
+| `bash docs/evidence/w23-guest-creator-start/gate.sh` | **FAIL, exit 1**; 102 complete relevant modules: **3387 passed, 11 subtests passed, 14 skipped, 5 failed, 30 errors**; totals exclude the repeated focused selection |
 | Final gate duration, log creation through final write | **257.04 seconds**, below 25 minutes |
 | Ruff: standard product directories and modified test file | **PASS** |
 | Standard `compileall`, `pip check`, runtime dependency policy | **PASS**; pip reported no broken requirements |
