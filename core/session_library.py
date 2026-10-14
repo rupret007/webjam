@@ -83,6 +83,23 @@ class SessionLibrarySaveUnconfirmed(OSError):
         self.attempt = attempt
 
 
+@dataclass(frozen=True)
+class SessionCreateAttempt:
+    """Owner-held proof of an attempted regular create; never persisted as content."""
+
+    workspace_id: str
+    profile: str
+    data: bytes = field(repr=False)
+
+
+class SessionLibraryCreateUnconfirmed(OSError):
+    """Retain this attempt so its owner can retry the same identity."""
+
+    def __init__(self, attempt: SessionCreateAttempt, error: OSError) -> None:
+        super().__init__(str(error))
+        self.attempt = attempt
+
+
 class SessionLibraryMediaImportRequired(SessionLibraryError):
     """A media import requires cancellable package reconciliation, not metadata retry."""
 
@@ -445,6 +462,7 @@ class SessionLibrary:
         self.warnings: tuple[str, ...] = ()
         self._unconfirmed_import: SessionRecord | None = None
         self._unconfirmed_media_import: bytes | None = None
+        self._unconfirmed_create: SessionCreateAttempt | None = None
 
     def _root_exists(self, *, create: bool = False) -> bool:
         try:
@@ -508,12 +526,62 @@ class SessionLibrary:
         path = self._path(session_id)
         if _read(path) is not None or _read(path.with_suffix(".json.bak")) is not None:
             raise SessionLibraryConflict("Workspace already exists.")
-        atomic_write_bytes(path, data, mode=0o600)
+        try:
+            atomic_write_bytes(path, data, mode=0o600)
+        except OSError as exc:
+            attempt = SessionCreateAttempt(session_id, profile, data)
+            self._unconfirmed_create = attempt
+            raise SessionLibraryCreateUnconfirmed(attempt, exc) from exc
         return replace(_decode(data, session_id), _store_token=_token(data))
 
-    def create(self, profile: str, title: str, **payload: object) -> SessionRecord:
-        """Create a named session; notes and payloads are never truncated."""
+    def _reconcile_create(self, attempt: SessionCreateAttempt) -> SessionRecord:
+        """Confirm one prepared identity by exact bytes; never adopt replacements."""
+        path = self._path(attempt.workspace_id)
+        published = _read(path)
+        backup = _read(path.with_suffix(".json.bak"))
+        if published is not None and published != attempt.data:
+            self._unconfirmed_create = None
+            raise SessionLibraryConflict(
+                "The intended workspace changed; it cannot be replaced or retried."
+            )
+        if published is None and backup is not None:
+            self._unconfirmed_create = None
+            raise SessionLibraryConflict(
+                "The intended workspace has recovery or newer evidence; preserve it before retrying."
+            )
+        try:
+            atomic_write_bytes(path, attempt.data, mode=0o600)
+        except OSError as exc:
+            self._unconfirmed_create = attempt
+            raise SessionLibraryCreateUnconfirmed(attempt, exc) from exc
+        self._unconfirmed_create = None
+        return replace(_decode(attempt.data, attempt.workspace_id), _store_token=_token(attempt.data))
+
+    def create(
+        self,
+        profile: str,
+        title: str,
+        *,
+        retry: SessionCreateAttempt | None = None,
+        **payload: object,
+    ) -> SessionRecord:
+        """Create a named session; notes and payloads are never truncated.
+
+        After an uncertain publication, retry the exact prepared identity
+        before allocating another workspace ID. Matching bytes alone do not
+        prove durability; retry re-publishes through file and directory sync.
+        Replaced or conflicting bytes are preserved and never adopted.
+        """
         with self._locked():
+            pending = self._unconfirmed_create
+            if retry is not None:
+                if pending is not None and retry != pending:
+                    raise SessionLibraryConflict("Create retry no longer belongs to this workspace.")
+                pending = retry
+            if pending is not None:
+                if profile != pending.profile:
+                    raise SessionLibraryConflict("A previous workspace creation is still unconfirmed.")
+                return self._reconcile_create(pending)
             return self._create(profile, title, uuid4().hex, payload)
 
     @staticmethod
