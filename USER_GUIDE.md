@@ -251,6 +251,10 @@ notes, visual sync, and media timecode. Art is a room for artists in any
 medium; see [Art](#art) below. No profile directly or automatically taps a
 meeting app, browser, or system output.
 
+If a file-access error prevents WebJam from reading your saved profile titles
+and modes, it leaves that file untouched. Your title edit stays visible; a
+later successful save keeps the other profiles' saved titles and modes.
+
 Local notes save shortly after an edit. If a save fails, choose **Save Notes**.
 The Notes notice names retained workspaces, including a draft outside the one
 you are editing, and keeps that recovery action available while you type.
@@ -744,6 +748,10 @@ It reuses progress only when the role and dedicated Jamulus profile fingerprint
 still match. Otherwise it returns safely to native Jamulus setup.
 
 ## Join a live session
+
+In Unreleased builds, a same-network join waits for pending Library media
+work to finish before switching to the host's Art or Music room. During that
+wait, WebJam keeps “Contacting the host” visible and does not start audio.
 
 Choose **Join**, **Join Recording**, or **Join Review**, then paste one WebJam
 invite—or open it from Finder. WebJam parses it at ingress,
