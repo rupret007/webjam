@@ -6,10 +6,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QCoreApplication
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QCoreApplication, QPoint, QRect
+from PySide6.QtWidgets import QApplication, QLabel
 
 from core.musician_guidance import GuidanceRecovery, GuidanceState, StudioGuidanceFacts
 from core.session_conductor import (
@@ -25,7 +27,9 @@ from core.session_conductor import (
 from core.session_lifecycle import SessionLifecyclePhase
 from core.settings import AppSettings
 from webjam_qt.controllers.application_controller import ApplicationController
+from webjam_qt.session_state import SessionUiState
 from webjam_qt.theme import load_stylesheet
+from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.widgets.recording_studio import RecordingStudio
 from webjam_qt.windows.conductor_window import ConductorWindow
 
@@ -73,6 +77,79 @@ def test_one_snapshot_drives_hud_stage_canvas_studio_and_public_surfaces(tmp_pat
         assert bundled == {
             key: value for key, value in public.items() if value not in ([], {})
         }
+    finally:
+        _close(controller, window, old_home)
+
+
+@pytest.mark.parametrize("hosting", [False, True])
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_music_idle_shows_one_guidance_block(tmp_path, monkeypatch, hosting, size):
+    monkeypatch.setattr(
+        "webjam_qt.platform_permissions.microphone_permission_status",
+        lambda: "granted",
+    )
+    controller, window, old_home = _controller(
+        tmp_path, host_server_enabled=hosting,
+    )
+    try:
+        window.setStyleSheet(load_stylesheet())
+        window.resize(*size)
+        window.show()
+        APP.processEvents()
+        assert (window.width(), window.height()) == size
+        guidance = controller._last_musician_guidance
+        assert guidance.phase is SessionConductorPhase.IDLE
+        assert guidance.title == "Start when you are"
+        grid = window.participant_grid
+        # Roster refreshes must not bring back the duplicate idle card.
+        grid.set_participants([])
+        APP.processEvents()
+        visible_copy = [
+            label.text() for label in window.findChildren(QLabel)
+            if label.isVisibleTo(window)
+        ]
+        assert visible_copy.count(guidance.title) == 1
+        assert visible_copy.count(guidance.message) == 1
+        assert not grid._empty_state.isVisibleTo(window)
+        hud = window.session_hud
+        assert hud._action.text() == "Start Session"
+        assert hud._action.isEnabled()
+        for control in (hud._status, hud._detail, hud._action):
+            assert control.isVisibleTo(window)
+            assert window.rect().contains(
+                QRect(control.mapTo(window, QPoint()), control.size())
+            )
+
+        grid.set_participants([ParticipantPresentation(channel_id=1, name="Player")])
+        APP.processEvents()
+        assert grid.cards()[0].isVisibleTo(window)
+        grid.set_participants([])
+        assert not grid._empty_state.isVisibleTo(window)
+
+        # Leaving idle restores actionable guidance; returning retires it.
+        for state in (
+            SessionUiState.connecting(""),
+            SessionUiState.connection_failed(),
+            SessionUiState.permission_denied(),
+        ):
+            grid.set_session_state(state)
+            grid.set_participants([])
+            APP.processEvents()
+            assert grid._empty_state.isVisibleTo(window)
+            assert grid._empty_title.isVisibleTo(window)
+            assert grid._empty_message.text() == state.message
+            controller._render_session_conductor()
+            assert not grid._empty_state.isVisibleTo(window)
+
+        # A permission override can need attention while the conductor is idle.
+        monkeypatch.setattr(
+            "webjam_qt.platform_permissions.microphone_permission_status",
+            lambda: "denied",
+        )
+        controller._update_session_hud()
+        assert controller._last_musician_guidance.phase is SessionConductorPhase.IDLE
+        assert window.session_hud._status.text() == "Microphone access is off"
+        assert grid._empty_state.isVisibleTo(window)
     finally:
         _close(controller, window, old_home)
 
@@ -608,15 +685,10 @@ def test_art_idle_guidance_supports_own_tools_without_recording_claim(tmp_path):
         controller._conductor_setup_requested = False
         controller._render_session_conductor()
         hint = window.participant_grid._empty_hint.text()
-        assert "Make from your own space" in hint
-        assert "paper, clay, a model, printer, or your usual app" in hint
-        assert "Conversation" in hint
-        assert "Join / Open Meeting or Show Webex App" in hint
-        assert "Talk in" in hint
-        assert "Share" in hint
-        assert "WebJam does not play the movie." in hint
-        assert "Watch a shared lesson" in hint
-        assert "screen share" not in hint
+        assert hint == "You do not need an art app. Use paper, your usual tools, or just talk."
+        assert "Join / Open Meeting or Show Webex App" not in hint
+        assert "WebJam does not play the movie." not in hint
+        assert "Watch a shared lesson" not in hint
         assert "recording" not in hint.casefold()
         assert controller.creator_start.talk_only
     finally:

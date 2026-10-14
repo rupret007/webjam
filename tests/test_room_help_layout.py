@@ -9,7 +9,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QSize, Qt  # noqa: E402
+from PySide6.QtCore import QPoint, QRect, QSize, Qt  # noqa: E402
 from PySide6.QtGui import QFont, QFontDatabase  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
@@ -186,6 +186,42 @@ def test_themed_720px_art_keeps_help_and_every_applicable_action_readable(qapp, 
     )
 
 
+@pytest.mark.parametrize("profile", ["art", "music"])
+@pytest.mark.parametrize("audio_action", ["End Session", "Leave Jam"])
+@pytest.mark.parametrize("configured", [False, True])
+def test_compact_conversation_keeps_its_name_and_footer_actions_readable(
+    qapp, window, profile, audio_action, configured
+):
+    _active_controls(window, profile=profile, phase="complete", preview=False)
+    strip = window.session_strip
+    strip.set_audio_state(audio_action)
+    strip.set_video_configured(configured)
+    strip.set_video_state("Open Meeting" if configured else "Set Up Conversation")
+    # Cross the compact breakpoint in both directions, including 800x600.
+    for width in (1280, 720, 800, 899, 900, 1039, 1040, 1099, 1100, 1280, 800):
+        window.resize(width, 600)
+        _settle(qapp)
+        assert window.size() == QSize(width, 600)
+        assert strip._video_button.text() == "Conversation"
+        assert strip._video_button.accessibleName() == strip._video_button.text()
+        assert strip._invite_button.text() == ("Invite" if width < 900 else "Copy Invite")
+        bar = window.session_controls
+        assert window.rect().contains(QRect(bar.mapTo(window, QPoint()), bar.size()))
+        assert bar.visibleRegion().contains(bar.rect())
+        _assert_readable_inside_bar(
+            window,
+            [
+                strip._invite_button,
+                *([strip._record_elapsed, strip._record_button] if profile == "music" else []),
+                strip._video_button,
+                *([strip._play_along_button, strip._song_button, strip._studio_button]
+                  if profile == "music" else []),
+                strip._tools_button,
+                strip._audio_button,
+            ],
+        )
+
+
 def test_disabling_preview_restores_original_bar_density_and_hides_help(qapp, window):
     _active_controls(window, phase="complete", preview=False)
     _settle(qapp)
@@ -193,13 +229,13 @@ def test_disabling_preview_restores_original_bar_density_and_hides_help(qapp, wi
     margins = layout.contentsMargins()
     baseline = (margins.left(), margins.top(), margins.right(), margins.bottom(), layout.spacing())
     original_invite_hint = window.session_strip._invite_button.sizeHint()
-    assert baseline == (Space.LG, Space.SM, Space.LG, Space.SM, Space.SM)
+    assert baseline == (Space.XS, Space.SM, Space.XS, Space.SM, Space.XS)
     assert window._room_help_button.isHidden()
     window.set_room_help_enabled(True)
     window.room_help.setVisible(True)
     _settle(qapp)
     assert window.session_controls.property("helpPreviewCompact") is True
-    assert layout.contentsMargins().left() == Space.SM
+    assert layout.contentsMargins().left() == Space.XS
     assert layout.spacing() == Space.XS
     assert window.session_strip._invite_button.sizeHint().width() < original_invite_hint.width()
     window._show_room_help()
@@ -221,6 +257,12 @@ def test_preview_density_only_applies_below_900px(qapp, window):
     window.resize(900, 560)
     _settle(qapp)
     assert window.session_controls.property("helpPreviewCompact") is False
+    assert window.session_controls.property("followAlongCompact") is True
+    assert window.session_controls.layout().contentsMargins().left() == Space.XS
+    window.resize(1100, 560)
+    _settle(qapp)
+    assert window.session_controls.property("helpPreviewCompact") is False
+    assert window.session_controls.property("followAlongCompact") is False
     assert window.session_controls.layout().contentsMargins().left() == Space.LG
     assert window._room_help_button.isVisible()
     window.resize(720, 560)

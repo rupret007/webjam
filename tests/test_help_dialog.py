@@ -1,6 +1,7 @@
 """Real searchable Help stays readable without blocking session controls."""
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -11,9 +12,33 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from core.creative_modes import get_creator_profile_by_key
+from tests.support.start_ux import assert_no_banned_first_screen_words
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.theme import load_stylesheet
 from webjam_qt.windows.conductor_window import ConductorWindow
+
+_ART_HELP_DETAIL_TOKENS = (
+    "YouTube",
+    "Shared Canvas",
+    "F11",
+    "Choose process video",
+    "YouTube link",
+    "Choose YouTube",
+    "Open in browser",
+    "Add Link",
+)
+
+
+def _art_overview_topic(window, app):
+    window.set_creator_profile(get_creator_profile_by_key("art"))
+    window.show()
+    window.show_help()
+    app.processEvents()
+    dialog = window._workflow_help_dialog
+    assert dialog._topics.item(0).text() == "Current workspace"
+    dialog._topics.setCurrentRow(0)
+    app.processEvents()
+    return dialog._topics.item(0).data(Qt.ItemDataRole.UserRole), dialog._body.toPlainText()
 
 
 @pytest.fixture(scope="module")
@@ -43,7 +68,7 @@ def test_music_help_opens_with_only_three_short_beats(app, window, size):
     lines = [line for line in text.splitlines() if line.strip()]
     assert lines[1:] == [
         "Host. Share. Join. Play.",
-        "1. At launch, choose Music, then Host or Join.",
+        "1. At launch, choose Music or Art (Make together / Paint along), then Host or Join.",
         "2. The host uses Copy Invite and shares the invite.",
         "3. Play in WebJam. Talk in the meeting.",
     ]
@@ -108,7 +133,9 @@ def test_real_help_fits_scrolls_and_returns_without_changing_work(app, window, p
         assert dialog._body.isReadOnly()
         assert dialog._body.horizontalScrollBar().maximum() == 0
         text = dialog._body.toPlainText()
-        assert ("Paint along" in text) == (profile == "art")
+        # Both openings name Art's doors; the title identifies the current profile.
+        assert "Paint along" in text
+        assert ("— Art" in text) == (profile == "art")
         if profile == "music":
             # The opening card now fits. Exercise the relocated long guidance
             # for the same enlarged-text scrolling and keyboard guarantees.
@@ -117,7 +144,10 @@ def test_real_help_fits_scrolls_and_returns_without_changing_work(app, window, p
             app.processEvents()
             assert "Useful shortcuts" in dialog._body.toPlainText()
         bar = dialog._body.verticalScrollBar()
-        if large_text:
+        # Music's long card still overflows at 22px. Art's three door beats
+        # can fit on 760×680; compact Art still overflows and must stay
+        # keyboard-scrollable.
+        if large_text and (profile != "art" or size == (480, 500)):
             assert bar.maximum() > 0
         dialog._body.setFocus()
         for _ in range(2 + bar.maximum() // max(1, bar.pageStep())):
@@ -320,5 +350,71 @@ def test_compact_large_text_keeps_navigation_and_readable_body_visible(app, wind
         assert dialog._body.viewport().height() >= 90
         assert dialog._body.horizontalScrollBar().maximum() == 0
         assert dialog._navigate.fontMetrics().horizontalAdvance(dialog._navigate.text()) < dialog._navigate.width() - 20
+    finally:
+        app.setStyleSheet(previous_style)
+
+
+def test_art_help_opens_on_three_door_beats(app, window):
+    topic, text = _art_overview_topic(window, app)
+    steps = re.findall(r"<b>(\d+)\.</b>", topic.body)
+    assert steps == ["1", "2", "3"], steps
+    beats = re.split(r"<b>\d+\.</b>", topic.body)[1:]
+    assert len(beats) == 3
+    for beat in beats:
+        words = re.findall(r"\w+", re.sub(r"<[^>]*>", " ", beat))
+        assert len(words) <= 28, beat
+    assert "Make together" in text
+    assert "Paint along" in text
+    assert "Host" in text
+    assert "Join" in text
+    assert "invite" in text.casefold()
+    assert "meeting" in text.casefold()
+    assert "silent" in text.casefold()
+    assert "Continue your work" not in text
+    beat_two = re.sub(r"<[^>]*>", " ", beats[1])
+    assert "invite" in beat_two.casefold()
+    assert "keep making" in beat_two.casefold()
+    assert "open the lesson" in beat_two.casefold()
+    assert "one next action" not in beat_two.casefold()
+
+
+def test_art_help_first_page_keeps_youtube_canvas_and_keyboard_in_topics(app, window):
+    topic, text = _art_overview_topic(window, app)
+    for token in _ART_HELP_DETAIL_TOKENS:
+        assert token not in topic.body, token
+        assert token not in text, token
+    assert_no_banned_first_screen_words(text)
+
+
+@pytest.mark.parametrize("size", [(760, 680), (480, 500)])
+def test_art_follow_along_topic_overflows_and_scrolls_with_large_text(app, window, size):
+    previous_style = app.styleSheet()
+    app.setStyleSheet(load_stylesheet() +
+        "\n#HelpDialog QWidget, QTextBrowser#HelpBody { font-size: 22px; }")
+    available = QRect(80, 40, *size)
+    window.set_creator_profile(get_creator_profile_by_key("art"))
+    window.session_canvas.restore_notes("Keep these local notes.")
+    window.show()
+    try:
+        with patch.object(
+            QGuiApplication, "screenAt",
+            return_value=SimpleNamespace(availableGeometry=lambda: available),
+        ):
+            window.show_help()
+        app.processEvents()
+        dialog = window._workflow_help_dialog
+        row = next(
+            i for i in range(dialog._topics.count())
+            if dialog._topics.item(i).text() == "Paint along and play along with sound"
+        )
+        dialog._topics.setCurrentRow(row)
+        app.processEvents()
+        bar = dialog._body.verticalScrollBar()
+        assert bar.maximum() > 0
+        dialog._body.setFocus()
+        for _ in range(2 + bar.maximum() // max(1, bar.pageStep())):
+            QTest.keyClick(dialog._body, Qt.Key.Key_PageDown)
+        assert bar.value() == bar.maximum()
+        assert window.session_canvas._notes.toPlainText() == "Keep these local notes."
     finally:
         app.setStyleSheet(previous_style)
