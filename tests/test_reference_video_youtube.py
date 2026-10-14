@@ -58,6 +58,29 @@ def test_host_shares_canonical_lesson_and_controls_its_transport():
     assert not host.snapshot.shared and not host.snapshot.video_id
 
 
+@pytest.mark.parametrize("endpoint", ["videoseries", "live_stream"])
+def test_embed_pseudo_ids_do_not_replace_or_publish_the_current_lesson(endpoint):
+    player, peer = LessonPlayer(), FakeHostPeer()
+    coordinator = ReferenceVideoCoordinator(
+        player_factory=FakePlayer, youtube_player_factory=lambda: player,
+        host_peer_provider=lambda: peer,
+    )
+    coordinator.begin_host(session_id=SESSION_ID, session_key=SESSION_KEY)
+    try:
+        coordinator.share_youtube(URL)
+        coordinator.play()
+        previous_snapshot = coordinator.host_snapshot
+        previous_publications = list(peer.published)
+        with pytest.raises(ReferenceVideoError, match="YouTube video link"):
+            coordinator.share_youtube(f"https://www.youtube.com/embed/{endpoint}")
+        assert coordinator.host_snapshot == previous_snapshot
+        assert peer.published == previous_publications
+        assert player.source == LESSON
+        assert player.state == "playing"
+    finally:
+        coordinator.end()
+
+
 def test_guest_explicit_open_follows_host_and_stale_room_pauses():
     player = LessonPlayer()
     player.set_muted(True)

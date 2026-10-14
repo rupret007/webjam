@@ -17,6 +17,7 @@ from core.art_companion import (
 )
 from core.art_room_activities import art_room_activities
 from core.art_room_overview import ArtRoomOverview, art_room_overview
+from core.meeting_companion import art_room_hud_active_start_detail
 from core.art_room_presence import ABSENT, art_room_presence
 from core.session_conductor import (
     ArtRoomState, SessionFacts, SessionPrimaryAction, SessionRole,
@@ -146,6 +147,55 @@ def test_own_tools_guidance_has_one_heading_and_keeps_recovery_context(window, q
     assert not panel._title.isVisibleTo(window)
 
 
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+@pytest.mark.parametrize("state,hosting,named_connections", [
+    (ArtRoomState.WAITING, True, False),
+    (ArtRoomState.CONNECTED, True, False),
+    (ArtRoomState.CONNECTED, False, False),
+    (ArtRoomState.CONNECTED, True, True),
+])
+@pytest.mark.parametrize("activity", ["video", "canvas"])
+def test_presence_action_fits_without_scrolling_below_short_connection_copy(
+    window, qapp, size, state, hosting, named_connections, activity,
+):
+    presence = art_room_presence(
+        ArtCompanionProjection(
+            in_room=True,
+            canvas=(CanvasCompanionState.MISSING_APP if activity == "canvas"
+                    else CanvasCompanionState.NONE),
+        ),
+        hosting=hosting, intended_video=activity == "video",
+        paint_along_room=activity == "video",
+    )
+    current = art_room_overview(
+        state=state, hosting=hosting, named_connections=named_connections,
+        presence=presence,
+    )
+    window.set_art_room_overview(current)
+    window.resize(*size)
+    _settle(qapp)
+    assert window.size() == QSize(*size)
+    panel = window.art_room_overview
+    detail = panel._connection_detail
+    assert len(detail.text()) <= 55
+    if detail.isVisibleTo(window):
+        assert detail.fontMetrics().horizontalAdvance(detail.text()) <= detail.contentsRect().width()
+    assert panel.verticalScrollBar().value() == 0
+    assert panel.verticalScrollBar().maximum() == 0
+    button = panel.activity_button()
+    assert button.isVisibleTo(window) and button.isEnabled()
+    # Check before focusing: focus must not scroll a hidden action into view.
+    assert panel.viewport().rect().contains(
+        QRect(button.mapTo(panel.viewport(), QPoint()), button.size())
+    )
+    assert window.rect().contains(QRect(button.mapTo(window, QPoint()), button.size()))
+    actions = []
+    panel.activity_requested.connect(actions.append)
+    button.setFocus(Qt.FocusReason.TabFocusReason)
+    QTest.keyClick(button, Qt.Key.Key_Space)
+    assert actions == [activity]
+
+
 def test_waiting_host_copy_invite_is_the_one_hud_primary_at_800x600(window, qapp):
     """Compact waiting room: HUD Copy Invite owns the next click.
 
@@ -219,7 +269,8 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         view = derive_session_presentation(replace(facts, art_room=state))
         current = art_room_overview(state=state, hosting=role is SessionRole.HOST)
         window.set_art_room_overview(current)
-        hud.set_state(view.title, view.message, action_visible=False)
+        hud_detail = view.message or art_room_hud_active_start_detail()
+        hud.set_state(view.title, hud_detail, action_visible=False)
         _settle(qapp)
         if state is ArtRoomState.RECONNECTING:
             assert hud._detail.isVisibleTo(window)
@@ -235,10 +286,10 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         assert visible_text.count("Make from your own space") == 1
         assert hud._status.text() == "You’re in"
         assert hud._status.isVisibleTo(window)
-        assert hud._detail.text() == ""
-        assert not hud._detail.isVisibleTo(window)
+        assert hud._detail.text() == "Make together with your own tools."
+        assert hud._detail.isVisibleTo(window)
+        assert "own tools" in hud.accessibleDescription()
         assert "own space" not in hud.accessibleDescription()
-        assert "own tools" not in hud.accessibleDescription()
         assert panel._activity.text() == "Make from your own space"
         assert panel._activity_detail.text() == (
             "You do not need an art app. Use paper, your usual tools, or just talk. "
@@ -247,10 +298,12 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         assert "Choose Set Up Conversation" in panel._activity_detail.text()
         assert panel._activity_detail.isVisibleTo(window)
         assert panel._connection_detail.text() == (
-            "An artist has connected to this room. WebJam does not yet show a full artist list."
+            "An artist is here with you."
             if role is SessionRole.HOST else
-            "This room connection is confirmed. WebJam does not yet show a full artist list."
+            "You’re connected and ready to make."
         )
+        assert "does not yet" not in panel._connection_detail.text()
+        assert "does not yet show a full artist list" in panel._connection_detail.accessibleDescription()
         assert panel.conversation_button().text() == "Set Up Conversation"
         assert panel.conversation_button().isVisibleTo(window)
         assert panel.conversation_button().isEnabled()
@@ -566,7 +619,7 @@ def test_production_room_copy_fits_and_coexists_with_conversation(
     window.session_hud.set_state(
         "Finish closing the room" if phase == "cleanup_required" else "Your Art room",
         "The room has not finished disconnecting. Choose the closing action to finish."
-        if phase == "cleanup_required" else "Your current room connection and activities are below.",
+        if phase == "cleanup_required" else art_room_hud_active_start_detail(),
         action_visible=False,
     )
     window.webex_embed.set_meeting_configured(True)

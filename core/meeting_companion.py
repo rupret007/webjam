@@ -524,6 +524,18 @@ def art_watch_share_sentence(
     )
 
 
+def art_room_hud_active_start_detail(art_start_key: str = "") -> str:
+    """One HUD line naming the room's active Art start when connected.
+
+    The panel keeps the longer making guidance; the top band only needs enough
+    context to stand alone without reading the room body.
+    """
+
+    if str(art_start_key or "").strip() == "paint_along":
+        return "Paint along: follow a silent video from a file or lesson link."
+    return "Make together with your own tools."
+
+
 # First-screen / idle Art copy: a person with no art skill should see that
 # talking and their usual tools are enough. Clay / printer / 3D lists belong
 # in later help, not the ten-second read.
@@ -622,6 +634,7 @@ __all__ = [
     "ART_OWN_TOOLS_LINE",
     "art_conversation_guidance",
     "art_make_together_activity_detail",
+    "art_room_hud_active_start_detail",
     "art_watch_share_sentence",
     "build_invite_message",
     "is_webex_meeting_service",

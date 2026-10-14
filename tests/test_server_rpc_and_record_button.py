@@ -5663,7 +5663,12 @@ class TestRecordButtonWiring(unittest.TestCase):
         )
         self.assertTrue(self.window.session_strip._record_clock.isActive())
         self.assertIn("CLEANUP PENDING", self.window.recording_studio._phase.text())
-        _args, kwargs = c._show_actionable_error.call_args
+        args, kwargs = c._show_actionable_error.call_args
+        self.assertEqual(args[0], "Recording Could Not Stop")
+        self.assertEqual(
+            kwargs["what_failed"],
+            "WebJam couldn't confirm that recording stopped.",
+        )
         self.assertEqual(kwargs["retry_callback"], c.recording.on_record_requested)
 
         c._recorder_armed = False
@@ -6615,6 +6620,47 @@ class TestRecordButtonWiring(unittest.TestCase):
             c.recording.last_validation = previous_validation
             c.recording.phase = RecorderPhase.IDLE
 
+    def test_late_peer_reconciliation_forwards_accepted_manifest_to_library(self):
+        """Library status/source identity must track a late-accepted manifest."""
+        from core.take_library import TakeInfo, TakeValidationResult
+        from core.take_project import new_project_id
+
+        c = self.controller
+        take_id = new_project_id()
+        take_path = Path("/tmp/webjam-late-peer-library-update")
+        transfer_error = "Peer transfer: Alex's local original has not arrived."
+        prior = TakeInfo(
+            path=take_path,
+            name="Late peer reconciliation",
+            validation_status="needs_attention",
+            manifest_errors=(transfer_error,),
+            take_id=take_id,
+        )
+        refreshed = TakeInfo(
+            path=take_path,
+            name="Late peer reconciliation",
+            validation_status="complete",
+            take_id=take_id,
+        )
+        previous_validation = c.recording.last_validation
+        c.recording.last_validation = TakeValidationResult(
+            prior,
+            (transfer_error,),
+        )
+        try:
+            with (
+                patch(
+                    "webjam_qt.controllers.recording_coordinator.load_take",
+                    return_value=refreshed,
+                ),
+                patch.object(c, "signal_peer_recording_stopped"),
+                patch.object(c.session_library, "recording_completed") as linked,
+            ):
+                c.recording.on_peer_take_reconciled(take_id, take_path)
+            linked.assert_called_once_with(refreshed, validated=True)
+        finally:
+            c.recording.last_validation = previous_validation
+
     def test_peer_reconciliation_racing_validation_is_reloaded_before_complete(self):
         from core.take_library import TakeInfo, TakeValidationResult
         from core.take_project import new_project_id
@@ -6800,8 +6846,29 @@ class TestRecordButtonWiring(unittest.TestCase):
         self.assertEqual(
             self.window.session_strip._record_button.text(), "■ Finish Stop"
         )
-        _args, kwargs = c._show_actionable_error.call_args
+        args, kwargs = c._show_actionable_error.call_args
+        self.assertEqual(args[0], "Recording Start Unconfirmed")
+        self.assertEqual(
+            kwargs["what_failed"],
+            "WebJam couldn't confirm that recording started.",
+        )
         self.assertIn("may still be recording", kwargs["next_action"])
+        self.assertEqual(kwargs["retry_callback"], c.recording.on_record_requested)
+
+        # The dialog's retry must still request Stop, never another Start.
+        c.settings.server_rpc_secret_file = "/tmp/secret"
+        with patch(
+            "webjam_qt.controllers.recording_coordinator.threading.Thread"
+        ) as worker:
+            kwargs["retry_callback"]()
+        worker.assert_called_once()
+        attempt = worker.call_args.kwargs["args"][0]
+        self.assertFalse(attempt.target_armed)
+        worker.return_value.start.assert_called_once()
+        self.assertEqual(c.recording.phase, RecorderPhase.STOPPING)
+        self.assertIs(c.recording._local_capture, capture)
+        capture.abort.assert_not_called()
+        capture.stop_into.assert_not_called()
 
         c.recording._local_capture = None
         c._recorder_armed = False

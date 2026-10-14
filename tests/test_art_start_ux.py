@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QPoint, QRect, QSize, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMenu, QPushButton
 
@@ -213,7 +213,15 @@ def test_join_title_tracks_visible_profile_and_back_navigation(
                     dialog._join_title.fontMetrics().horizontalAdvance(expected)
                 )
                 assert dialog._join_subtitle.text() == (
-                    "Paste the invite or the whole message.\n"
+                    "Paste the invite or the whole message."
+                )
+                with patch(
+                    "webjam_qt.windows.launch_dialog.QMessageBox.information"
+                ) as help_box:
+                    dialog._join_help_action.trigger()
+                help_box.assert_called_once()
+                assert help_box.call_args.args[2] == (
+                    "Paste the invite or the whole message.\n\n"
                     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
                 )
                 assert dialog._join_button_primary.text() == "Join"
@@ -414,18 +422,17 @@ def test_the_name_field_asks_for_a_name(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
-def test_the_page_names_what_host_and_join_do_with_the_card_choice(qapp, tmp_path: Path):
-    """The visible next step follows the card; Join still uses the invitation."""
+def test_art_helper_only_adds_the_paint_along_next_step(qapp, tmp_path: Path):
+    """Cards carry the activity; only Paint along needs another step."""
 
     dialog = _dialog(tmp_path)
     try:
-        for card in _visible_cards(dialog):
+        for card in [*_visible_cards(dialog), _visible_cards(dialog)[0]]:
             card.click()
-            assert dialog._choice_helper.isVisibleTo(dialog._choice_page)
+            paint_along = card.start_key == "paint_along"
+            assert dialog._choice_helper.isVisibleTo(dialog._choice_page) is paint_along
             assert dialog._choice_helper.text() == (
-                "Host starts Paint along, then chooses a file or lesson link. Join uses the host's invite."
-                if card.accessibleName() == "Paint along" else
-                f"Host starts {card.accessibleName()}. Join uses the host's invite."
+                "Then choose a file or lesson link." if paint_along else ""
             )
         # The two cards carry the instruction, so the headline and the
         # subtitle above them step aside rather than crowd them.
@@ -442,11 +449,76 @@ def test_the_page_names_what_host_and_join_do_with_the_card_choice(qapp, tmp_pat
         try:
             assert elsewhere._host_button.isEnabled() is available
             assert elsewhere._choice_helper.text() == (
-                "Host starts Make together. Join uses the host's invite."
+                ""
                 if available else "Hosting is available in the macOS app."
             )
+            assert elsewhere._choice_helper.isHidden() is available
         finally:
             elsewhere.deleteLater()
+
+
+@pytest.mark.parametrize("remembered_start", ["talk_and_make", "paint_along"])
+@pytest.mark.parametrize("larger_text", [False, True])
+def test_art_helper_and_actions_survive_start_profile_and_back_changes(
+    qapp, tmp_path: Path, remembered_start: str, larger_text: bool
+):
+    from webjam_qt.theme import load_stylesheet
+
+    settings = _settings(tmp_path)
+    settings.last_creator_profile_key = "art"
+    settings.last_creator_start_key = remembered_start
+    with patch.object(sys, "platform", "darwin"):
+        dialog = LaunchDialog(settings)
+    try:
+        dialog._menu_bar.setNativeMenuBar(False)
+        dialog.setStyleSheet(
+            load_stylesheet() + ("\nQWidget { font-size: 20px; }" if larger_text else "")
+        )
+        dialog.resize(800, 600)
+        dialog.show()
+        qapp.processEvents()
+        assert dialog.selected_start_key == remembered_start
+
+        def assert_art_door():
+            qapp.processEvents()
+            paint_along = dialog.selected_start_key == "paint_along"
+            helper = dialog._choice_helper
+            assert helper.isVisible() is paint_along
+            assert helper.text() == (
+                "Then choose a file or lesson link." if paint_along else ""
+            )
+            cards = _visible_cards(dialog)
+            assert len(cards) == 2
+            widgets = [*cards, dialog._host_button, dialog._join_button]
+            if paint_along:
+                widgets.append(helper)
+                assert helper.height() >= helper.heightForWidth(helper.width())
+            else:
+                assert helper.minimumHeight() == 0
+            for widget in widgets:
+                assert widget.isVisible()
+                assert dialog.rect().contains(
+                    QRect(widget.mapTo(dialog, QPoint()), widget.size())
+                )
+            assert dialog._host_button.isEnabled()
+            assert dialog._host_button.isDefault()
+            assert dialog._join_button.isEnabled()
+            assert_no_banned_first_screen_words(harvest_first_screen(dialog))
+
+        assert_art_door()
+        for card in [*_visible_cards(dialog), _visible_cards(dialog)[0]]:
+            card.click()
+            assert_art_door()
+            dialog._join_button.click()
+            dialog._join_back_button.click()
+            assert_art_door()
+            dialog._music_profile_card.click()
+            assert dialog._choice_helper.isHidden()
+            dialog._art_profile_card.click()
+            assert_art_door()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
 
 
 def test_host_accessible_description_never_promises_an_immediate_invite_copy(
@@ -658,7 +730,7 @@ def test_join_paste_prompt_is_shared_from_first_paint_through_empty_submit(
 ):
     dialog = _dialog(tmp_path, profile_key)
     try:
-        expected = "Paste your invitation to continue"
+        expected = "Paste an invite to continue"
         assert LaunchDialog._EMPTY_JOIN_PROMPT == expected
         assert dialog._join_status.text() == expected
         dialog.resize(*size)
@@ -728,6 +800,7 @@ def test_empty_join_return_in_invite_field_announces_paste_prompt(
         assert dialog.result() == initial_result
         assert dialog._invite_input.hasFocus()
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
     finally:
         dialog.deleteLater()
 
@@ -745,11 +818,13 @@ def test_whitespace_only_invite_stays_blocked_and_empty_join_on_submit(
         dialog._on_invite_text_changed()
         assert dialog._join_button_primary.property("joinBlocked") is True
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
         initial_result = dialog.result()
         QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
         qapp.processEvents()
         assert dialog.result() == initial_result
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
         assert dialog._invite_input.hasFocus()
     finally:
         dialog.deleteLater()
@@ -768,6 +843,7 @@ def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
         QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
         qapp.processEvents()
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
 
         dialog._invite_input.setText("webjam://invite?v=2&token=test")
         dialog._on_invite_text_changed()
@@ -777,6 +853,7 @@ def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
         dialog._invite_input.clear()
         dialog._on_invite_text_changed()
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
         assert dialog._join_button_primary.property("joinBlocked") is True
     finally:
         dialog.deleteLater()
@@ -1028,9 +1105,9 @@ def test_every_visible_door_button_matches_owner_lock(qapp, tmp_path, profile, i
             assert dialog.rect().contains(button.mapTo(dialog, button.rect().bottomRight()))
         if profile == "art":
             helper = dialog._choice_helper
-            assert helper.isVisibleTo(dialog)
-            assert helper.height() >= helper.heightForWidth(helper.width())
-            assert dialog.rect().contains(helper.mapTo(dialog, helper.rect().bottomRight()))
+            assert helper.isHidden()
+            assert helper.text() == ""
+            assert helper.minimumHeight() == 0
         assert not dialog._install_jamulus_button.isVisibleTo(dialog)
         assert_no_banned_first_screen_words(harvest_first_screen(dialog))
     finally:
@@ -1091,6 +1168,41 @@ def test_windows_door_with_missing_music_component_stays_compact(qapp, tmp_path,
         dialog.deleteLater()
 
 
+@pytest.mark.parametrize(
+    ("property_name", "expected"),
+    [
+        ("text", "Install the music component"),
+        ("accessibleName", "Install the music component"),
+        (
+            "accessibleDescription",
+            "Open the music component installer included with this Windows build.",
+        ),
+    ],
+)
+def test_music_setup_button_uses_engine_neutral_copy(
+    qapp, tmp_path, property_name, expected
+):
+    with patch("webjam_qt.windows.launch_dialog.sys.platform", "win32"), patch(
+        "webjam_qt.windows.launch_dialog._windows_jamulus_installer",
+        return_value="C:/WebJam/setup.exe",
+    ):
+        dialog = LaunchDialog(_settings(tmp_path))
+    try:
+        dialog.show()
+        qapp.processEvents()
+        assert dialog._setup_action.isEnabled()
+        dialog._setup_action.trigger()
+        button = dialog._install_jamulus_button
+        assert button.isVisibleTo(dialog)
+        assert button.isEnabled()
+        copy = getattr(button, property_name)()
+        assert copy == expected
+        _assert_first_screen_has_no_banned_words(copy)
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_paint_along_mark_stays_neutral_in_every_native_icon_state(qapp, tmp_path):
     from PySide6.QtGui import QIcon
 
@@ -1134,6 +1246,53 @@ def test_make_together_summary_does_not_promise_a_canvas_at_start():
     assert start.shared_canvas is False
     assert "shared canvas from inside the room" in start.detail.casefold()
     assert "work in their own space" in start.detail.casefold()
+
+
+@pytest.mark.parametrize("profile_key", ["music", "art"])
+def test_hidden_profile_picker_a11y_keeps_other_workspaces_off_door(
+    qapp, tmp_path, profile_key
+):
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        selector = dialog._creator_profile_selector
+        assert selector.isHidden()
+        # Include the hidden combo's metadata: the visible-only harvest would
+        # miss stale descriptions advertising extra doors to accessibility tools.
+        spoken = " ".join((
+            harvest_first_screen(dialog),
+            selector.accessibleName(),
+            selector.accessibleDescription(),
+        )).casefold()
+        for hidden_door in ("podcast", "review"):
+            assert hidden_door not in spoken
+        assert_no_banned_first_screen_words(spoken)
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize("profile_key", ["music", "art"])
+@pytest.mark.parametrize("legacy_key", ["podcast_voice", "review_rehearsal"])
+def test_profile_picker_a11y_tracks_visibility_after_switching(
+    qapp, tmp_path, profile_key, legacy_key
+):
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        selector = dialog._creator_profile_selector
+        # Repeat to catch a description that is narrowed once but never restored.
+        for _ in range(2):
+            selector.setCurrentIndex(selector.findData(legacy_key))
+            assert not selector.isHidden()
+            assert selector.accessibleDescription() == (
+                "Choose Music, Podcast and Voice, Review and Rehearsal, or Art."
+            )
+            assert [selector.itemData(i) for i in range(selector.count())] == [
+                profile.key for profile in CREATOR_PROFILES
+            ]
+            dialog._profile_cards[profile_key].click()
+            assert selector.isHidden()
+            assert selector.accessibleDescription() == "Art or Music"
+    finally:
+        dialog.deleteLater()
 
 
 @pytest.mark.parametrize("profile_key", ["music", "art"])
