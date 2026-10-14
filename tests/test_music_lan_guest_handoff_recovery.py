@@ -57,11 +57,14 @@ def test_authenticated_music_handoff_stops_observer_before_recording_owner(disco
         events.append("observer stop")
         return stop()
 
-    def configure(invite):
+    def configure(invite, *, preserve_room_profile):
         assert rig.observer._stop.is_set()
         assert rig.room.lan_guest is None
         events.append("recording owner")
-        return ApplicationController._configure_guest_peer(rig.app, invite)
+        assert preserve_room_profile is True
+        return ApplicationController._configure_guest_peer(
+            rig.app, invite, preserve_room_profile=preserve_room_profile,
+        )
 
     rig.observer.stop = confirmed_stop
     rig.configure.side_effect = configure
@@ -372,7 +375,7 @@ def test_music_configuration_does_not_overwrite_invitation_retired_during_peer_s
     with monkeypatch.context() as patch:
         patch.setattr(app.host_peer, "stop", retire_during_configuration_stop)
         rig.room.receive_lan(rig.observer, rig.generation, state(rig.invite, "music"))
-    rig.configure.assert_called_once_with(rig.invite)
+    rig.configure.assert_called_once_with(rig.invite, preserve_room_profile=True)
     rig.continuation.assert_not_called()
     assert app.creator_profile.key == "art"
     assert app.guest_peer is None
