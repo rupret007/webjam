@@ -30,6 +30,11 @@ All notable improvements and features for the WebJam creator collaboration platf
   **Choose process video…** as the next action, instead of remaining
   **Paused.** Physical playback remains **NOT RUN**.
 
+- When Paint along needs a guest file, Room’s only emphasized action is
+  **Open my copy…**, including when a shared canvas also needs attention.
+  Conversation stays in the footer, and the missing-file line is not buried
+  by the optional making-detail sentence.
+
 - Keep saved profile titles and modes intact when reading their file hits an I/O error.
   A later successful save merges the current edit with the other profiles.
 
