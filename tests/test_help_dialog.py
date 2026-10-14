@@ -121,6 +121,24 @@ def test_real_help_fits_scrolls_and_returns_without_changing_work(app, window, p
         app.setStyleSheet(previous_style)
 
 
+@pytest.mark.parametrize("profile, example", [("art", "paint along"), ("music", "unsaved draft")])
+def test_help_search_example_matches_profile_and_finds_help(app, window, profile, example):
+    window.set_creator_profile(get_creator_profile_by_key(profile))
+    window.show_help()
+    dialog = window._workflow_help_dialog
+    assert dialog._search.placeholderText() == f"Search help, for example: {example}"
+    assert dialog._search.accessibleName() == "Search workflow help"
+    assert dialog._topics.currentItem().text() == "Current workspace"
+    original_body = dialog._body.toPlainText()
+
+    dialog._search.setText(example)
+    assert dialog._topics.count() > 0
+    assert example in dialog._body.toPlainText().casefold()
+    dialog._search.clear()
+    assert dialog._topics.currentItem().text() == "Current workspace"
+    assert dialog._body.toPlainText() == original_body
+
+
 def test_help_falls_back_to_primary_display_for_an_offscreen_parent(app, window):
     available = QRect(100, 100, 760, 600)
     window.move(-12000, -12000)
@@ -223,6 +241,8 @@ def test_visible_help_tracks_profile_without_losing_search_or_stealing_focus(app
         app.processEvents()
         assert window._workflow_help_dialog is dialog and dialog.isVisible()
         assert dialog._search.text() == "favorite"
+        example = "paint along" if profile == "art" else "unsaved draft"
+        assert dialog._search.placeholderText() == f"Search help, for example: {example}"
         assert target.hasFocus()
         assert window.workspace_stack.currentWidget() is workspace
         if profile == "art":
