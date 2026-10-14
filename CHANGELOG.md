@@ -15,6 +15,30 @@ All notable improvements and features for the WebJam creator collaboration platf
   Music waits to start audio. Deferred receipts retry briefly and cannot
   reopen a room after connection loss, Leave, or a replacement invitation.
 
+- Reference-service Close starts its one shared shutdown budget when it first
+  joins unfinished work, not when the caller enters Close. Scheduling delay
+  and cancelled-cleanup callbacks no longer consume that budget before
+  listener joiners are registered.
+
+- Session library Save can recover after a directory-sync failure without a
+  duplicate workspace. Retry confirms the exact attempted publication before
+  saving newer drafts; external changes still retain the conflict/copy path.
+
+- Studio keeps ownership of its input device when close fails, including
+  cleanup after a failed start. Cleanup retries reach the original stream,
+  and another start stays blocked until the device is confirmed closed.
+
+- A Paint along seek that the local player cannot honor now marks the
+  transport failed and stops sharing a healthy paused clock. The host panel
+  shows “WebJam couldn't move that video on this computer.” with
+  **Choose process video…** as the next action, instead of remaining
+  **Paused.** Physical playback remains **NOT RUN**.
+
+- When Paint along needs a guest file, Room’s only emphasized action is
+  **Open my copy…**, including when a shared canvas also needs attention.
+  Conversation stays in the footer, and the missing-file line is not buried
+  by the optional making-detail sentence.
+
 - Keep saved profile titles and modes intact when reading their file hits an I/O error.
   A later successful save merges the current edit with the other profiles.
 
@@ -210,6 +234,7 @@ All notable improvements and features for the WebJam creator collaboration platf
 Source remains v0.29.0. These changes are after the published v0.29.0 baseline;
 
 they do not request a new release/tag or claim new published package evidence.
+
 ## [0.29.0] — Unsigned testing candidate
 
 > Source identity is **v0.29.0**. For current download and publication status,
