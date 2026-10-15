@@ -1,0 +1,35 @@
+{
+  "case": "relay",
+  "conductor_line": "webjam.cross-network-acceptance sha=96bed4140e1af21d87033c840d5176c2a4f128a1 status=PASS case=relay",
+  "expect_path": "relay",
+  "git_sha": "96bed4140e1af21d87033c840d5176c2a4f128a1",
+  "invite_host_routable_from_guest": null,
+  "kernel": "6.17.0-1022-azure",
+  "nat_mode": "symmetric",
+  "netem": true,
+  "notes": "Proof exchanged.",
+  "port_forwarding": false,
+  "profiles": [
+    {
+      "art_echo": "8cca2161173b52fe7e4309f9730b6b84",
+      "local_type": "relay",
+      "music_echo": "d0da12c53875da848169693917eb603c",
+      "remote_type": "relay",
+      "role": "host"
+    },
+    {
+      "art_echo": "8cca2161173b52fe7e4309f9730b6b84",
+      "local_type": "relay",
+      "music_echo": "d0da12c53875da848169693917eb603c",
+      "remote_type": "relay",
+      "role": "guest"
+    }
+  ],
+  "relay_bytes": 30286,
+  "rendezvous_reachable_from_guest": true,
+  "rendezvous_reachable_from_host": true,
+  "schema": "webjam.cross-network-acceptance.v2",
+  "status": "PASS",
+  "stun_reachable_from_guest": true,
+  "stun_reachable_from_host": true
+}

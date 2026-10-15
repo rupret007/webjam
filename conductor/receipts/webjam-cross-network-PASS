@@ -1,31 +1,40 @@
-R13 — Cross-network Host/Join (proof-only lab PASS)
+96bed4140e1af21d87033c840d5176c2a4f128a1 PASS
+
+R13 — Cross-network Host/Join (proof-only lab PASS on current master tip)
 
 webjam.cross-network-acceptance status=PASS
-run=38785589158
-head=d081f6796b3cbeb354a290773c39cd69ae1aa387
-merge=41870ca0dce49711b6af9bbb7780e40c01ea7c8b
-pr=https://github.com/rupret007/webjam/pull/373
-ci=https://github.com/rupret007/webjam/actions/runs/38785589158
+run=38797252463
+tip=96bed4140e1af21d87033c840d5176c2a4f128a1
+merge=#383 coturn usage-dump harvest race (0153e0b4)
+ci=https://github.com/rupret007/webjam/actions/runs/38797252463
+ci_suite=https://github.com/rupret007/webjam/actions/runs/38797252444
 kernel=6.17.0-1022-azure
 
-Karen passed this at d081f679. Jeff merged #373 to master as 41870ca0.
+Master tip 96bed414 is GREEN. Cross-network acceptance on that tip
+concluded success for Same-LAN, Two cone NATs (direct), and Symmetric
+NATs via relay. WebJam CI on the same tip is also GREEN.
 
-Checkout SHA in the job receipts is c12231b428b8d74372087e559a41e99c03561457
-(GitHub pull_request merge ref for that run, not the branch tip).
+Checkout SHA in the job receipts is 96bed4140e1af21d87033c840d5176c2a4f128a1
+(push of master, not a pull_request merge ref).
 
 ## Artifacts (GitHub Actions, 14-day retention)
 
-Run: https://github.com/rupret007/webjam/actions/runs/38785589158
-- same-lan-38785589158-1  https://github.com/rupret007/webjam/actions/runs/38785589158/artifacts/11998605361
-- cone-38785589158-1      https://github.com/rupret007/webjam/actions/runs/38785589158/artifacts/11998565651
-- relay-38785589158-1     https://github.com/rupret007/webjam/actions/runs/38785589158/artifacts/11997372370
+Run: https://github.com/rupret007/webjam/actions/runs/38797252463
+- same-lan-38797252463-1  https://github.com/rupret007/webjam/actions/runs/38797252463/artifacts/12002886360
+- cone-38797252463-1      https://github.com/rupret007/webjam/actions/runs/38797252463/artifacts/12002229068
+- relay-38797252463-1     https://github.com/rupret007/webjam/actions/runs/38797252463/artifacts/12003011084
 
 Copies of the three job JSON receipts sit beside this file:
-conductor/receipts/38785589158-same-lan.json
-conductor/receipts/38785589158-cone.json
-conductor/receipts/38785589158-relay.json
+conductor/receipts/38797252463-same-lan.json
+conductor/receipts/38797252463-cone.json
+conductor/receipts/38797252463-relay.json
 
-## Per-case proof
+Jobs:
+- Same-LAN control           https://github.com/rupret007/webjam/actions/runs/38797252463/job/116636780630
+- Two cone NATs (direct)     https://github.com/rupret007/webjam/actions/runs/38797252463/job/116636780845
+- Symmetric NATs via relay   https://github.com/rupret007/webjam/actions/runs/38797252463/job/116636780880
+
+## Per-case proof (tip 96bed414 / run 38797252463)
 
 same-lan  PASS  session_path=direct (host and guest). Music and Art nonce
 echo both ways. relay_bytes=0. No NAT, no netem.
@@ -36,17 +45,26 @@ stun_reachable_from_host/guest=true.
 
 relay     PASS  Dual-STUN, symmetric SNAT --random-fully, netem.
 session_path=relay (host and guest). Music and Art nonce echo both ways.
-coturn ALLOCATE and CHANNEL_BIND succeeded. Receipt relay_bytes=26594 from
+coturn ALLOCATE and CHANNEL_BIND succeeded. Receipt relay_bytes=30286 from
 coturn log rb=/sb=. stun_reachable_from_host/guest=true.
 
 Proof types are sidecar session_path. Topology labels and loopback-shim
 counts are not proof.
 
+## Prior lab copies (not the tip proof)
+
+The #373 lab at Karen-passed head d081f679 / merge 41870ca0 is still on
+disk as conductor/receipts/38785589158-{same-lan,cone,relay}.json from
+run 38785589158. That run is historical. Tip 96bed414's Cross-network
+acceptance is the evidence this receipt attests.
+
 ## Honesty / not proven
 
 - coturn byte counts currently sum every rb=/sb= match in the harvested
-  log, not just this pair's allocation. The 26594 figure includes every
-  usage and peer-usage line in that file. Follow-up: https://github.com/rupret007/webjam/issues/380
+  log, not just this pair's allocation. The tip-run 30286 figure includes
+  every usage and peer-usage line in that file. #383 waits for rb=/sb=
+  before harvest (race fix); it does not scope the sum. Follow-up:
+  https://github.com/rupret007/webjam/issues/380
 - The relay case used the harness test TURN path (WEBJAM_TEST_HARNESS=1,
   WEBJAM_TEST_TURN_SERVER, WEBJAM_TEST_TURN_CREDENTIAL_URL to the lab
   inet POST /turn-credentials and the job's coturn). The packaged
