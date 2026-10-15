@@ -150,7 +150,10 @@ def test_guest_transient_loss_keeps_binding_and_resumes_only_after_current_recei
     assert not room._lesson_available(binding)
     assert rig.panel.set_lesson_request_guest.call_args.kwargs["can_pause"] is False
     owner.connection_available = True
-    room.receive_lan(owner, room.generation, SimpleNamespace(creator_profile_key="art"))
+    room.receive_lan(
+        owner, room.generation,
+        SimpleNamespace(creator_profile_key="art", art_start_key=""),
+    )
     owner.set_lesson_requests_enabled.assert_called_once_with(True)
     assert room._lesson_binding is binding
     assert room.state is ArtRoomState.CONNECTED
@@ -166,7 +169,7 @@ def test_transient_loss_cancels_deferred_admission_but_keeps_lesson_ownership(ri
     ))
     rig.app._apply_creator_profile_key.return_value = False
     room.observe_creative_state = Mock()
-    receipt = SimpleNamespace(creator_profile_key="art")
+    receipt = SimpleNamespace(creator_profile_key="art", art_start_key="")
     room.receive_lan(owner, room.generation, receipt)
     assert len(pending) == 1
     assert room._lan_pending_admission is not None
@@ -216,7 +219,10 @@ def test_guest_authority_still_retires_at_real_boundaries(rig, boundary):
 def test_room_receipt_does_not_reenable_other_retired_worker_states(rig, error):
     owner = guest_rig(rig)
     owner.lesson_request_state = LessonRequestGuestState(error=error)
-    rig.room.receive_lan(owner, rig.room.generation, SimpleNamespace(creator_profile_key="art"))
+    rig.room.receive_lan(
+        owner, rig.room.generation,
+        SimpleNamespace(creator_profile_key="art", art_start_key=""),
+    )
     owner.set_lesson_requests_enabled.assert_not_called()
 
 
