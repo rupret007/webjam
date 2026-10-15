@@ -432,7 +432,7 @@ def test_art_helper_only_adds_the_paint_along_next_step(qapp, tmp_path: Path):
             paint_along = card.start_key == "paint_along"
             assert dialog._choice_helper.isVisibleTo(dialog._choice_page) is paint_along
             assert dialog._choice_helper.text() == (
-                "Then choose a file or lesson link." if paint_along else ""
+                "Then watch a shared lesson, or choose a silent file." if paint_along else ""
             )
         # The two cards carry the instruction, so the headline and the
         # subtitle above them step aside rather than crowd them.
@@ -485,7 +485,7 @@ def test_art_helper_and_actions_survive_start_profile_and_back_changes(
             helper = dialog._choice_helper
             assert helper.isVisible() is paint_along
             assert helper.text() == (
-                "Then choose a file or lesson link." if paint_along else ""
+                "Then watch a shared lesson, or choose a silent file." if paint_along else ""
             )
             cards = _visible_cards(dialog)
             assert len(cards) == 2

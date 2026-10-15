@@ -81,7 +81,10 @@ _JOIN_PRIVACY_LINE = (
 )
 
 # Single door line when Paint along is the checked Art start (harvest + UX tests).
-PAINT_ALONG_DOOR_HELPER = "Then choose a file or lesson link."
+# Door next-step matches the empty Paint along orange (PR #320): Watch a
+# shared lesson. Silent file/YouTube stay available as ghosts. When the room
+# HUD owns Copy Invite, that same Watch control is ghosted (one-orange rule).
+PAINT_ALONG_DOOR_HELPER = "Then watch a shared lesson, or choose a silent file."
 
 
 @dataclass(frozen=True)

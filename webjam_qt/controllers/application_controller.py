@@ -14311,6 +14311,19 @@ class ApplicationController(QObject):
                 # control, so keyboard focus stays inside Paint along.
                 dialog.set_room_available(video_available)
             dialog.set_watch_lesson_available(room_available)
+            invite_owns = False
+            if coordinator.hosting:
+                presentation = getattr(self, "_last_session_conductor", None)
+                action = getattr(presentation, "primary_action", None)
+                invite_owns = action is SessionPrimaryAction.COPY_INVITE
+                attempt = getattr(self, "_startup_attempt", None)
+                if (
+                    isinstance(attempt, dict)
+                    and attempt.get("role") == "host"
+                    and attempt.get("phase") == "invite_ready"
+                ):
+                    invite_owns = True
+            dialog.set_invite_owns_primary(invite_owns)
             if not coordinator.hosting:
                 dialog.set_room_available(video_available)
                 if video_available and coordinator.following:
