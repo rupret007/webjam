@@ -1,8 +1,4 @@
-"""Placeholder rendezvous / relay listeners in the public namespace.
-
-Ordinary Host/Join does not use these endpoints today. They exist so the
-harness can prove both homes can reach the simulated internet.
-"""
+"""Placeholder rendezvous listeners so both homes can reach the simulated internet."""
 
 from __future__ import annotations
 

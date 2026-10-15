@@ -9,28 +9,14 @@ from typing import Any
 
 from tools.cross_network_acceptance import CONDUCTOR_KIND, SCHEMA
 
-ALLOWED_CASES = frozenset(
-    {
-        "same-lan",
-        "cross-network",
-        "cross-network-cone",
-        "cross-network-symmetric",
-    }
-)
+ALLOWED_CASES = frozenset({
+    "same-lan", "cross-network", "cross-network-cone", "cross-network-symmetric",
+})
 _SHA = re.compile(r"^[0-9a-f]{40}$")
-_SECRET_KEYS = frozenset(
-    {
-        "invite",
-        "invite_url",
-        "token",
-        "invite_token",
-        "host",
-        "peer_port",
-        "session_id",
-        "authorization",
-        "link",
-    }
-)
+_SECRET_KEYS = frozenset({
+    "invite", "invite_url", "token", "invite_token", "host", "peer_port",
+    "session_id", "authorization", "link",
+})
 
 
 class ReceiptError(ValueError):
@@ -116,7 +102,7 @@ def build_receipt(
 
 
 def write_receipt(directory: Path, receipt: dict[str, Any]) -> Path:
-    """Write JSON always; write ``.PASS`` only on PASS; unlink stale ``.PASS`` on FAIL."""
+    """Write JSON always; ``.PASS`` only on PASS; unlink stale ``.PASS`` on FAIL."""
 
     if contains_secret_keys(receipt):
         raise ReceiptError("A receipt must not carry invitation material.")

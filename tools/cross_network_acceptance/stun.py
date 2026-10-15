@@ -94,17 +94,12 @@ def probe(host: str, port: int, *, timeout_s: float = 2.0) -> tuple[str, int] | 
 def python_stun_command(bind_host: str, ports: tuple[int, ...]) -> list[str]:
     if not bind_host or not ports:
         raise StunError("STUN server needs a bind address and ports.")
-    return [
-        sys.executable,
-        "-m",
-        "tools.cross_network_acceptance.stun",
-        bind_host,
-        *[str(port) for port in ports],
-    ]
+    return [sys.executable, "-m", "tools.cross_network_acceptance.stun",
+            bind_host, *[str(port) for port in ports]]
 
 
 def stun_server_commands(bind_host: str, ports: tuple[int, ...]) -> list[list[str]]:
-    """Prefer coturn in the public ns; fall back to this Python Binding server."""
+    """Prefer coturn; fall back to this Python Binding server."""
 
     if not bind_host or not ports:
         raise StunError("STUN server needs a bind address and ports.")

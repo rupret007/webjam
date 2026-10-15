@@ -3,9 +3,10 @@
 Cross-network: host behind NAT-A, guest behind NAT-B, public internet
 between them. No DNAT, REDIRECT, or port forwarding.
 
-NAT modes: masquerade (restricted-cone); cone (MASQUERADE + UDP NETMAP onto
-the real LAN /32, not a WAN host-bit rewrite to 192.168.120.20); symmetric
-(NAT-A MASQUERADE --random-fully). These modes do not prove product cone-vs-symmetric
+NAT modes: masquerade (restricted-cone); cone (MASQUERADE + conntrack-gated
+UDP NETMAP onto the real LAN /32, not a WAN host-bit rewrite to 192.168.120.20);
+symmetric (NAT-A MASQUERADE --random-fully). Unsolicited inbound UDP is dropped
+until outbound creates a mapping. These modes do not prove product cone-vs-symmetric
 NAT behavior while packaged direct-stun discards TEST-NET-3 mappings.
 """
 
@@ -50,7 +51,7 @@ def required_bin(name: str) -> str:
         candidate = Path(folder) / name
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
-    raise TopologyError(f"This harness needs {name} on PATH or in /usr/sbin.")
+    raise TopologyError(f"This harness needs {name} on PATH or /usr/sbin.")
 
 
 @dataclass(frozen=True)
@@ -101,7 +102,7 @@ def _full_cone_inbound(spec: TopologySpec, side: str) -> bool:
 
 
 def cone_inbound_map_to(side: str) -> str:
-    """NETMAP destination: real LAN endpoint, not 192.168.120.20."""
+    """NETMAP dest: real LAN endpoint, not 192.168.120.20."""
 
     if side == "a":
         return f"{HOST_ADDR}/32"
@@ -111,7 +112,7 @@ def cone_inbound_map_to(side: str) -> str:
 
 
 def setup_commands(spec: TopologySpec) -> list[list[str]]:
-    """Return ip/iptables/tc argv lists. Tests assert these; they are not run."""
+    """ip/iptables/tc argv lists. Tests assert these; they are not run."""
 
     ip = "ip"
     iptables = "iptables"
@@ -202,12 +203,13 @@ def setup_commands(spec: TopologySpec) -> list[list[str]]:
         if _full_cone_inbound(spec, side):
             ns(
                 ns_name, iptables, "-t", "nat", "-A", "PREROUTING", "-i", wan_dev,
-                "-p", "udp", "-j", "NETMAP", "--to", cone_inbound_map_to(side),
+                "-p", "udp", "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED",
+                "-j", "NETMAP", "--to", cone_inbound_map_to(side),
             )
-            ns(
-                ns_name, iptables, "-A", "FORWARD", "-i", wan_dev, "-o", lan_dev,
-                "-p", "udp", "-j", "ACCEPT",
-            )
+        ns(
+            ns_name, iptables, "-A", "FORWARD", "-i", wan_dev, "-o", lan_dev,
+            "-j", "DROP",
+        )
 
     configure_nat(
         ns_name=names["nat_a"],
@@ -260,6 +262,21 @@ def assert_no_port_forward(commands: list[list[str]]) -> None:
             raise TopologyError("The topology must not configure port forwarding.")
 
 
+def assert_unsolicited_inbound_udp_dropped(commands: list[list[str]]) -> None:
+    """Inbound UDP needs an outbound mapping; no static forward."""
+
+    for argv in commands:
+        if "NETMAP" in argv and (
+            "conntrack" not in argv or "ESTABLISHED,RELATED" not in argv
+        ):
+            raise TopologyError("Cone NETMAP must require an outbound mapping.")
+        if (
+            "FORWARD" in argv and "ACCEPT" in argv and "udp" in argv
+            and "conntrack" not in argv
+        ):
+            raise TopologyError("Unsolicited inbound UDP must not be forwarded.")
+
+
 def _resolve(commands: list[list[str]]) -> list[list[str]]:
     mapping = {
         "ip": required_bin("ip"),
@@ -306,6 +323,7 @@ def remove_stun_name_override(spec: TopologySpec) -> None:
 def apply_topology(spec: TopologySpec) -> AppliedTopology:
     commands = setup_commands(spec)
     assert_no_port_forward(commands)
+    assert_unsolicited_inbound_udp_dropped(commands)
     names = ns_names(spec.prefix)
     try:
         for argv in _resolve(commands):

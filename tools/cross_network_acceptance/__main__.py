@@ -19,15 +19,8 @@ def _maybe_sudo() -> None:
         return
     os.execvp(
         "sudo",
-        [
-            "sudo",
-            "-n",
-            "-E",
-            sys.executable,
-            "-m",
-            "tools.cross_network_acceptance",
-            *sys.argv[1:],
-        ],
+        ["sudo", "-n", "-E", sys.executable, "-m", "tools.cross_network_acceptance",
+         *sys.argv[1:]],
     )
 
 
@@ -40,11 +33,8 @@ def main(argv: list[str] | None = None) -> int:
     run = sub.add_parser("run", help="Build topology and drive host/join.")
     run.add_argument("--case", choices=("same-lan", "cross-network"), required=True)
     run.add_argument("--profiles", default="art,music")
-    run.add_argument(
-        "--output-dir",
-        type=Path,
-        default=REPO_ROOT / "out" / "cross-network-acceptance",
-    )
+    run.add_argument("--output-dir", type=Path,
+                     default=REPO_ROOT / "out" / "cross-network-acceptance")
     run.add_argument("--sha", default="")
     run.add_argument("--netem", action="store_true", default=None)
     run.add_argument("--no-netem", action="store_true")
@@ -53,12 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--product-root", type=Path, default=None)
     run.add_argument("--transport-binary", default="")
     run.add_argument("--build-id", default="")
-    run.add_argument(
-        "--expected-status",
-        choices=("PASS", "FAIL"),
-        default="PASS",
-        help="CI exit-code target. FAIL is green only for an honest completed guest FAIL.",
-    )
+    run.add_argument("--expected-status", choices=("PASS", "FAIL"), default="PASS",
+                     help="CI exit-code target. FAIL is green only for an honest guest FAIL.")
 
     role = sub.add_parser("role", help="Internal host/guest worker.")
     role.add_argument("--role", choices=("host", "guest"), required=True)
@@ -67,11 +53,8 @@ def main(argv: list[str] | None = None) -> int:
 
     build = sub.add_parser("build-sidecar", help="Compile webjam-fabric from a product tree.")
     build.add_argument("--product-root", type=Path, required=True)
-    build.add_argument(
-        "--output",
-        type=Path,
-        default=REPO_ROOT / "out" / "cross-network-acceptance" / "webjam-fabric",
-    )
+    build.add_argument("--output", type=Path,
+                      default=REPO_ROOT / "out" / "cross-network-acceptance" / "webjam-fabric")
 
     args = parser.parse_args(argv)
     if args.command == "role":

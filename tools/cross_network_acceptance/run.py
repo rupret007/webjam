@@ -97,7 +97,7 @@ _NON_NETWORK_REASONS = frozenset(
     {"startup_refused", "ingress_rejected", "clipboard_unavailable"}
 )
 _NON_NETWORK_CLASSES = frozenset(
-    {"programming_error", "startup_failure", "unknown"}
+    {"programming_error", "startup_failure", "unknown", "state_exchange_failure"}
 )
 _HONEST_NETWORK_CLASSES = frozenset({"honest_unreachable"})
 
@@ -114,7 +114,7 @@ def completed_guest_result(
     timed_out: bool,
     returncode: int | None = 0,
 ) -> bool:
-    """True for a full success or an honest failure-to-connect, not a crash."""
+    """True for success or an honest failure-to-connect, not a crash."""
 
     if timed_out or returncode not in _CLEAN_GUEST_CODES:
         return False
@@ -134,7 +134,7 @@ def job_exit_code(
     harness_ok: bool,
     fake_connect: bool = False,
 ) -> int:
-    """Map a receipt onto a CI exit code without changing PASS/FAIL assertions."""
+    """Map a receipt onto a CI exit code. PASS/FAIL assertions stay unchanged."""
 
     actual = str(status or "").strip().upper()
     expected = str(expected_status or "PASS").strip().upper()
@@ -146,7 +146,7 @@ def job_exit_code(
 
 
 def discarded_test_net3_hides_nat_type(nat_mode: str) -> bool:
-    """Cone/symmetric TEST-NET-3 runs do not prove product NAT-type behavior."""
+    """Cone/symmetric TEST-NET-3 runs are not product NAT-type proof."""
 
     return nat_mode in {"cone", "symmetric"}
 
@@ -161,7 +161,7 @@ def honest_product_fail_notes(*, case: str, nat_mode: str) -> str:
     if case == "cross-network":
         return (
             "Expected until ordinary Host/Join uses the v3 rendezvous/relay "
-            "described in docs/REMOTE-SESSIONS-PLAN.md (usability PR #372)."
+            "in docs/REMOTE-SESSIONS-PLAN.md (usability PR #372)."
         )
     return "Guest completed without connecting."
 
@@ -171,11 +171,11 @@ def _incomplete_guest_notes(profile_rows: list[dict[str, Any]]) -> str:
     if "guest_timeout" in reasons:
         return "The guest timed out before writing a completed result."
     if "guest_crash" in reasons or "guest_never_started" in reasons:
-        return "The guest crashed or never started; that is not a network failure."
+        return "The guest crashed or never started; not a network failure."
     if "guest_result_missing" in reasons or "startup_refused" in reasons:
         return "The guest did not finish a network connect attempt."
     if "host_crash" in reasons:
-        return "The host exited during the guest attempt; that is not a network failure."
+        return "The host exited during the guest attempt; not a network failure."
     if "host_not_ready" in reasons:
         return "The harness could not start the host on the simulated network."
     return "The harness did not complete an honest guest result."
@@ -184,25 +184,13 @@ def _incomplete_guest_notes(profile_rows: list[dict[str, Any]]) -> str:
 def _drop_privs(argv: list[str]) -> list[str]:
     uid, gid = _drop_ids()
     if os.geteuid() == 0 and uid != 0:
-        return [
-            "setpriv",
-            f"--reuid={uid}",
-            f"--regid={gid}",
-            "--clear-groups",
-            "--",
-            *argv,
-        ]
+        return ["setpriv", f"--reuid={uid}", f"--regid={gid}", "--clear-groups", "--", *argv]
     return list(argv)
 
 
 def ns_popen(
-    ns: str,
-    argv: list[str],
-    *,
-    cwd: Path,
-    env: dict[str, str],
-    stderr_path: Path | None = None,
-    drop_privs: bool = True,
+    ns: str, argv: list[str], *, cwd: Path, env: dict[str, str],
+    stderr_path: Path | None = None, drop_privs: bool = True,
 ) -> subprocess.Popen[str]:
     inner = _drop_privs(argv) if drop_privs else list(argv)
     handle = None
@@ -213,11 +201,7 @@ def ns_popen(
         stderr = handle
     proc = subprocess.Popen(
         [required_bin("ip"), "netns", "exec", ns, *inner],
-        cwd=cwd,
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=stderr,
-        text=True,
+        cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=stderr, text=True,
     )
     proc._stderr_handle = handle  # type: ignore[attr-defined]
     return proc
@@ -334,10 +318,11 @@ def _run_profile(
         topology.host_ns, role_cmd("host"), cwd=cwd, stderr_path=work_dir / "host.stderr", env=env,
     )
     guest_proc = None
+    row: dict[str, Any] = {}
     try:
         ready = _wait_json(work_dir / "host.ready", 45.0)
         if not ready.get("ok"):
-            return {
+            row = {
                 "profile": profile,
                 "guest_connected": False,
                 "session_state_exchanged": False,
@@ -348,6 +333,7 @@ def _run_profile(
                 "share_route": ready.get("share_route", ""),
                 "failure_class": ready.get("failure_class", ""),
             }
+            return row
         guest_proc = ns_popen(
             topology.guest_ns, role_cmd("guest"), cwd=cwd,
             stderr_path=work_dir / "guest.stderr", env=env,
@@ -383,7 +369,7 @@ def _run_profile(
             reason = "guest_crash"
         elif not completed:
             reason = str(result.get("reason") or "guest_result_missing")
-        return {
+        row = {
             "profile": profile,
             "guest_connected": connected,
             "session_state_exchanged": bool(result.get("session_state_exchanged")),
@@ -399,6 +385,7 @@ def _run_profile(
             "error_code": result.get("error_code", ""),
             "fake_connect": connected and topology.spec.nat_mode == "symmetric",
         }
+        return row
     finally:
         (work_dir / "host.stop").write_text("1\n", encoding="utf-8")
         for proc in (guest_proc, host_proc):
@@ -410,6 +397,11 @@ def _run_profile(
             handle = getattr(proc, "_stderr_handle", None)
             if handle is not None:
                 handle.close()
+        host_final = host_proc.returncode
+        if row and host_final != 0:
+            row["harness_ok"] = False
+            row["reason"] = "host_crash"
+            row["host_returncode"] = host_final
         invite = work_dir / "invite"
         if invite.exists():
             invite.write_text("", encoding="utf-8")

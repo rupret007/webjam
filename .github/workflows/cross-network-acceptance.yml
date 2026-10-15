@@ -1,8 +1,6 @@
-# Optional two-NAT Host/Join proof. Not a required check.
-# Same-LAN must PASS. Cross-network FAIL is a green job only for an honest
-# classified failure-to-connect (no timeout, crash after guest.result, missing
-# result, never-started process, programming/startup failure, host crash after
-# ready, connected-without-state-exchange, or fake connect).
+# Optional two-NAT Host/Join proof. Not a required check. Same-LAN must PASS.
+# Cross-network FAIL is green only for an honest classified failure-to-connect
+# (no connected-without-state-exchange or fake connect).
 # On master the two-NAT job is report-only; networking PRs must match the receipt.
 name: Cross-network acceptance
 

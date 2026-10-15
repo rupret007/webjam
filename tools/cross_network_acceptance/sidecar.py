@@ -25,11 +25,10 @@ def product_sha(product_root: Path) -> str:
 
 
 def resolve_sidecar_output(output: Path | None = None, *, cwd: Path | None = None) -> Path:
-    """Resolve ``--output`` from the caller's cwd, not from ``transport/``."""
+    """Resolve ``--output`` from cwd, not from ``transport/``."""
 
     target = output if output is not None else (
-        HARNESS_ROOT / "out" / "cross-network-acceptance" / "webjam-fabric"
-    )
+        HARNESS_ROOT / "out" / "cross-network-acceptance" / "webjam-fabric")
     target = Path(target)
     if not target.is_absolute():
         target = (cwd or Path.cwd()) / target

@@ -1,4 +1,4 @@
-"""Optional Cross-network acceptance harness. Not part of tests/test_*.py."""
+"""Optional Cross-network acceptance harness."""
 
 from __future__ import annotations
 

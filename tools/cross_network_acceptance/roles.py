@@ -52,6 +52,21 @@ def _honest_failure(text: str) -> bool:
     return any(snippet in lowered for snippet in _HONEST_FAIL_SNIPPETS)
 
 
+def classify_native_guest_failure(
+    *, transport_connected: bool, state_exchanged: bool,
+    failure_text: str, room_failed: bool,
+) -> str:
+    """Connected-without-state is never honest_unreachable."""
+
+    if state_exchanged:
+        return ""
+    if transport_connected:
+        return "state_exchange_failure"
+    if _honest_failure(failure_text) or room_failed:
+        return "honest_unreachable"
+    return "unknown"
+
+
 def _read_invite(work_dir: Path) -> str:
     path = work_dir / _INVITE_NAME
     deadline = time.monotonic() + 20.0
@@ -458,18 +473,10 @@ def _native_host(work_dir: Path, profile: str) -> int:
 
 
 def _native_guest_connected(app, profile: str) -> bool:
-    from core.session_conductor import ArtRoomState
     from services.remote_session_runtime import RemoteSessionPhase
 
     snapshot = getattr(getattr(app, "_remote_session", None), "snapshot", None)
-    phase = getattr(snapshot, "phase", None)
-    if phase is not RemoteSessionPhase.CONNECTED:
-        return False
-    room = app._room_participant
-    if profile == "art":
-        return room.state is ArtRoomState.CONNECTED
-    native = getattr(room, "native_state", None)
-    return bool(native is not None and getattr(native, "creator_profile_key", "") == "music")
+    return getattr(snapshot, "phase", None) is RemoteSessionPhase.CONNECTED
 
 
 def _native_state_exchanged(app, profile: str) -> bool:
@@ -524,18 +531,23 @@ def _native_guest(work_dir: Path, profile: str) -> int:
                     },
                 )
                 return 1
-            connected = _drain(qapp, lambda: _native_guest_connected(app, profile), 50.0)
+            _drain(
+                qapp,
+                lambda: _native_guest_connected(app, profile)
+                and _native_state_exchanged(app, profile),
+                50.0,
+            )
+            connected = _native_guest_connected(app, profile)
             exchanged = connected and _native_state_exchanged(app, profile)
             room = app._room_participant
             snapshot = getattr(getattr(app, "_remote_session", None), "snapshot", None)
             error_code = getattr(getattr(snapshot, "error_code", None), "value", "")
             failure_text = _sanitize_text(" ".join(flashes) or _hud_text(app))
-            if connected:
-                failure_class = ""
-            elif _honest_failure(failure_text) or room.state is ArtRoomState.FAILED:
-                failure_class = "honest_unreachable"
-            else:
-                failure_class = "unknown"
+            failure_class = classify_native_guest_failure(
+                transport_connected=connected, state_exchanged=exchanged,
+                failure_text=failure_text,
+                room_failed=room.state is ArtRoomState.FAILED,
+            )
             _write_json(
                 work_dir / _RESULT_NAME,
                 {
