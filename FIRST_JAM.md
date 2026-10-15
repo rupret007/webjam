@@ -21,9 +21,9 @@ On a Mac, drag WebJam into Applications; if macOS blocks it, open
 **System Settings → Privacy & Security**, click **Open Anyway** for WebJam,
 and confirm **Open**.
 
-Stay on the **same Wi-Fi** as the host. Keep the host's window open.
-**A Mac starts a Music jam.** Windows and Linux can Join Music; they cannot
-Host it. Any computer can Host or Join Art.
+Friends in another house can Host and Join. No extra setup. Keep the host's
+window open. **A Mac starts a Music jam.** Windows and Linux can Join Music;
+they cannot Host it. Any computer can Host or Join Art.
 
 Before Host or Join, choose **Art** or **Music**. Those are the equal first
 clicks. Art then offers **Make together** or **Paint along**, then **Host** or
@@ -98,7 +98,8 @@ These steps apply to Music, Podcast & Voice, and Review & Rehearsal.
    Jamulus connection. If Jamulus is behind another window, choose **Bring
    Jamulus Forward**.
 5. When **Copy Invite** appears, send the complete message to the intended
-   collaborator on the same Wi-Fi. Keep this window open.
+   collaborator. Keep this window open. If they send a short reply, choose
+   **Paste Reply**.
 6. Make sound and verify you can hear each other. Use the profile's **Band
    Check**, **Sound Check**, or **Session Check** if you need help.
 7. Add conversation/video only if the group wants it: choose **Conversation**

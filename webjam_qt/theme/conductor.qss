@@ -686,6 +686,23 @@ QSlider:focus {
     font-size: ${FONT_SIZE_SM}px;
 }
 
+#SessionHudNotice {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_SM}px ${SPACE_MD}px;
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#SessionHudDisclosure {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+    border: none;
+    background: transparent;
+    padding: 0;
+}
+
 #SessionCanvas {
     background-color: ${COLOR_BG_PANEL};
     border-left: 1px solid ${COLOR_BORDER_SUBTLE};

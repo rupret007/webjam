@@ -406,7 +406,7 @@ def test_empty_incomplete_expired_malformed_and_unsupported_are_distinct() -> No
         (
             "webjam://join?v=3&r=reference-local&i=" + ("!" * 156),
             InvitationIngressErrorCode.INVALID,
-            "malformed",
+            "not a webjam invite",
         ),
         (
             _remote_link().replace("reference-local", "untrusted-profile"),
@@ -430,3 +430,16 @@ def test_empty_incomplete_expired_malformed_and_unsupported_are_distinct() -> No
         assert caught.value.code is code
         assert fragment in str(caught.value).casefold()
         assert raw not in str(caught.value)
+
+
+def test_invalid_paste_tells_the_guest_to_ask_for_the_whole_invite() -> None:
+    with pytest.raises(InvitationIngressError) as caught:
+        parse_invitation_at_ingress(
+            "https://example.com/not-an-invite",
+            source=InvitationSource.PASTE,
+        )
+    assert caught.value.code is InvitationIngressErrorCode.INVALID
+    assert str(caught.value) == (
+        "That's not a WebJam invite. Ask your host to press Copy Invite "
+        "and send you the whole message."
+    )

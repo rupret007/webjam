@@ -86,8 +86,9 @@ def test_all_entry_profiles_explain_whole_message_and_conditional_network(
     help_box.assert_called_once()
     help_text = help_box.call_args.args[2]
     assert guidance in help_text
-    assert "If your invitation says “same network,”" in help_text
-    assert "your host’s Wi-Fi or local network" in help_text
+    assert "A friend in another house can Join" in help_text
+    assert "only works on the host's Wi-Fi or local" in help_text
+    assert "join from that network" in help_text
     assert dialog._invite_input.accessibleDescription() == guidance
     assert dialog._invite_input.echoMode() == QLineEdit.EchoMode.Password
     assert dialog._invite_input.hasFocus()
@@ -152,7 +153,7 @@ def test_join_keyboard_route_keeps_field_action_and_back_reachable(
     assert field.isEnabled()
     assert field.hasFocus()
     assert dialog._invite_input.accessibleDescription() == dialog._join_subtitle.text()
-    assert dialog._join_status.text() == "Needs attention"
+    assert dialog._join_status.text() == "That invite didn't work"
     assert dialog._join_error.isVisibleTo(dialog)
     assert not dialog.showing_choices
     assert dialog._join_error.accessibleDescription() == dialog._join_error.text()

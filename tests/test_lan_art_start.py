@@ -72,7 +72,13 @@ def test_lan_host_start_updates_and_leave_restore_personal_choice(
         assert room.state is ArtRoomState.CONNECTED
         assert room.borrowed_start == start
         assert app._art_room_runs_paint_along() is (start == "paint_along")
-        assert app.creator_start.key == (start or "paint_along")
+        if start:
+            assert app.creator_start is not None
+            assert app.creator_start.key == start
+        else:
+            # PR #206: a connected guest has no start until the host supplies
+            # one. last_creator_start_key must not invent Paint along here.
+            assert app.creator_start is None
         assert app.settings.last_creator_start_key == "paint_along"
         overview = app.window.art_room_overview._overview
         assert (overview.activity_label == "Paint along is starting") is (start == "paint_along")

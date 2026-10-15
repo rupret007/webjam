@@ -2,8 +2,9 @@
 
 WebJam is a desktop app for people who make music or art together.
 
-On today's download, you and your friend stay on the **same Wi-Fi**. Keep the
-host's window open. Playing from two different houses is not in this app yet.
+Friends in another house can play or make together. No extra setup. Keep the
+host's window open. If Join cannot connect, use home Wi-Fi on both computers,
+not a phone hotspot, and ask for a fresh invite.
 
 The [creator guide](USER_GUIDE.md) is the one complete how-to. This page is
 the short version.
@@ -44,9 +45,10 @@ leaves the meeting open.
 
 ## Invite, record, leave
 
-- **Invite:** send the whole copied message, not just a short code. Stay on
-  the same Wi-Fi as the host. If Join says the invite was already used, ask
-  the host for a new one and choose **Paste New Invite**.
+- **Invite:** send the whole copied message, not just a short code. If
+  WebJam shows a short reply, send that back; the host chooses **Paste
+  Reply**. If Join says the invite was already used, ask the host for a
+  new one and choose **Paste New Invite**.
 - **Record (Music):** the host chooses **Record Session**. When the take
   says **Ready**, it is saved. On a Mac host, takes live under
   `Library/Application Support/WebJam/JamulusServer/Recordings`. On Windows

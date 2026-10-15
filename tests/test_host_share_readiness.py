@@ -44,7 +44,8 @@ def test_host_share_readiness_is_explicitly_private_lan_only():
     assert result.shareable
     assert result.status is HostShareReadinessStatus.READY_PRIVATE_LAN
     assert result.address == "192.168.1.8"
-    assert "same network" in result.detail
+    assert "only works on this Mac's local network" in result.detail
+    assert "Share the link with musicians on this same network" not in result.detail
 
 
 def test_port_inspection_failure_detail_names_try_again_button():
