@@ -102,7 +102,7 @@ def test_host_copy_invite_describes_selected_art_start(
     else:
         assert "Make from your own space with paper, clay, a model, a printer, or your usual app." in message
         assert "Paint along" not in message
-    assert ("same Wi-Fi" in message) is (not native)
+    assert ("only works on the host's Wi-Fi or local network" in message) is (not native)
     if meeting:
         assert "Optional Webex conversation and work sharing (example.webex.com):" in message
     # Copy still enters through the same parser with exactly the original bearer.
@@ -159,24 +159,29 @@ def test_actual_host_copy_leads_to_explicit_join_with_the_complete_invitation(
         visible_copy = visible_copy.replace(meeting, "[optional meeting]")
     link_count = message.splitlines().count(link)
     assert link_count == 1
-    assert "same Wi-Fi or local network" in visible_copy
+    assert "only works on the host's Wi-Fi or local network" in visible_copy
     assert "choose Join" in visible_copy and "paste this full invitation" in visible_copy
-    assert "host needs to keep this room open" in visible_copy
+    assert "Keep this room open" in visible_copy
     assert "Open the link in WebJam" not in visible_copy
     parsed = parse_invitation_at_ingress(message, source=InvitationSource.PASTE)
     expected = parse_invitation_at_ingress(link, source=InvitationSource.PASTE)
     assert parsed == expected
     meeting_preserved = (meeting in message) if meeting else ("Optional" not in message)
     assert meeting_preserved
-    feedback = app.window.flash_message.call_args.args[0]
+    from webjam_qt.widgets.session_hud import INVITE_COPIED_NOTICE
+
+    feedback = app.window.session_hud.notice_text()
     feedback_exposes_invitation = link in feedback or expected.invite_token in feedback
     assert not feedback_exposes_invitation
     visible_feedback = feedback.replace(link, "[private invitation]")
     visible_feedback = visible_feedback.replace(expected.invite_token, "[private token]")
     if meeting:
         visible_feedback = visible_feedback.replace(meeting, "[optional meeting]")
-    assert "same Wi-Fi or local network" in visible_feedback
-    assert "whole message" in visible_feedback and "Keep this room open" in visible_feedback
+    assert feedback == INVITE_COPIED_NOTICE
+    assert "your friend" in visible_feedback
+    assert "Wi-Fi" not in visible_feedback
+    assert "whole message" in visible_feedback and "Keep this window open" in visible_feedback
+    app.window.flash_message.assert_not_called()
     assert app._last_shared_lan_address == readiness.address
 
     personal_meeting = "https://zoom.us/j/987654321"
@@ -243,7 +248,7 @@ def test_native_owner_does_not_inherit_lan_or_public_reachability_claim(
     assert "same Wi-Fi" not in visible_copy
     assert "public" not in visible_copy.casefold()
     assert "anywhere" not in visible_copy.casefold()
-    feedback = app.window.flash_message.call_args.args[0]
+    feedback = app.window.session_hud.notice_text()
     private_link = issued.private_link.reveal_for_clipboard()
     feedback_exposes_invitation = private_link in feedback
     assert not feedback_exposes_invitation
@@ -251,6 +256,7 @@ def test_native_owner_does_not_inherit_lan_or_public_reachability_claim(
     assert "same Wi-Fi" not in visible_feedback
     assert "public" not in visible_feedback.casefold()
     assert "anywhere" not in visible_feedback.casefold()
+    app.window.flash_message.assert_not_called()
     parsed = parse_invitation_at_ingress(
         message, source=InvitationSource.PASTE,
         allowed_remote_profiles=frozenset({"reference-local"}),
@@ -275,8 +281,12 @@ def test_failed_lan_share_does_not_copy_unusable_invitation(controllers, monkeyp
     app._update_session_hud = Mock()
     clipboard = Mock()
     monkeypatch.setattr(QApplication, "clipboard", lambda: clipboard)
+    app.window.flash_message = Mock()
     app._copy_band_invite()
     assert clipboard.setText.call_count == 0
+    from webjam_qt.widgets.session_hud import WIFI_NEEDED_NOTICE
+    assert app.window.session_hud.notice_text() == WIFI_NEEDED_NOTICE
+    app.window.flash_message.assert_not_called()
 
 
 def _replace_join_dialog(monkeypatch, *, result, value=None):
