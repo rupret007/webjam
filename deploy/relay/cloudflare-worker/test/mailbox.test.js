@@ -13,22 +13,32 @@ import {
 } from "../src/mailbox.js";
 import {
   applyQuota,
+  compactQuotaState,
   DEFAULT_DAILY_GB_S,
   DEFAULT_DAILY_REQUESTS,
   DEFAULT_DAILY_ROW_WRITES,
   DEFAULT_MAILBOX_RATE_LIMIT,
+  DEFAULT_NET_DAILY_GB_S,
+  DEFAULT_NET_DAILY_REQUESTS,
+  DEFAULT_NET_DAILY_ROW_WRITES,
   DEFAULT_NEW_BUCKETS_PER_MINUTE,
   DEFAULT_PREFIX_DAILY_REQUESTS,
   DEFAULT_RATE_LIMIT,
+  DEFAULT_RATE_PREFIX_DAILY,
   emptyQuotaState,
   ESTIMATED_GB_S_PER_REQUEST,
+  EXPIRE_PREFIX_SQL,
   MailboxQuota,
   MAX_IP_BUCKETS,
+  MAX_QUOTA_VALUE_BYTES,
+  PREFIX_SCHEMA_SQL,
   prefix48,
   prefixNet,
   quotaLimits,
   RATE_WINDOW_MS,
   rateKey,
+  SELECT_PREFIX_SQL,
+  UPSERT_PREFIX_SQL,
 } from "../src/quota.js";
 import { handleRequest, resetWorkerState } from "../src/worker.js";
 
@@ -64,6 +74,82 @@ function memoryMailbox() {
       JSON.stringify(result.payload ? { payload: result.payload } : { error: result.code }),
       { status: result.status, headers: { "content-type": "application/json" } },
     );
+  };
+}
+
+function sqlCursor(rows) {
+  return {
+    *[Symbol.iterator]() {
+      yield* rows;
+    },
+    toArray() {
+      return rows.slice();
+    },
+  };
+}
+
+function memoryPrefixSql(prefixRows) {
+  const keyOf = (scope, prefix) => `${scope}\t${prefix}`;
+  return {
+    exec(query, ...params) {
+      if (query === PREFIX_SCHEMA_SQL) {
+        return sqlCursor([]);
+      }
+      if (query === SELECT_PREFIX_SQL) {
+        const [scope, prefix, day] = params;
+        const row = prefixRows.get(keyOf(scope, prefix));
+        if (!row || row.day !== day) {
+          return sqlCursor([]);
+        }
+        return sqlCursor([row]);
+      }
+      if (query === UPSERT_PREFIX_SQL) {
+        const [scope, prefix, day, at, requests, row_writes, gb_s] = params;
+        prefixRows.set(keyOf(scope, prefix), {
+          at,
+          requests,
+          row_writes,
+          gb_s,
+          day,
+          scope,
+          prefix,
+        });
+        return sqlCursor([]);
+      }
+      if (query === EXPIRE_PREFIX_SQL) {
+        const [scope, day] = params;
+        for (const [key, row] of prefixRows) {
+          if (row.scope === scope && row.day !== day) {
+            prefixRows.delete(key);
+          }
+        }
+        return sqlCursor([]);
+      }
+      throw new Error("unsupported sql");
+    },
+  };
+}
+
+function memoryQuotaStorage() {
+  const data = new Map();
+  const prefixRows = new Map();
+  let puts = 0;
+  return {
+    data,
+    prefixRows,
+    get puts() {
+      return puts;
+    },
+    storage: {
+      async get(key) {
+        return data.get(key);
+      },
+      async put(key, value) {
+        puts += 1;
+        data.set(key, value);
+      },
+      sql: memoryPrefixSql(prefixRows),
+    },
   };
 }
 
@@ -150,6 +236,14 @@ test("per-IP rate limit lives in durable quota state", () => {
   assert.equal(LIMITS.newBucketsPerMinute, DEFAULT_NEW_BUCKETS_PER_MINUTE);
   assert.equal(DEFAULT_PREFIX_DAILY_REQUESTS, 200);
   assert.equal(LIMITS.prefixDailyRequests, 200);
+  assert.equal(DEFAULT_RATE_PREFIX_DAILY, 2_000);
+  assert.equal(LIMITS.ratePrefixDaily, 2_000);
+  assert.equal(DEFAULT_NET_DAILY_REQUESTS, 2_000);
+  assert.equal(DEFAULT_NET_DAILY_ROW_WRITES, 2_000);
+  assert.equal(DEFAULT_NET_DAILY_GB_S, 200);
+  assert.equal(LIMITS.netDailyRequests, 2_000);
+  assert.equal(LIMITS.netDailyRowWrites, 2_000);
+  assert.equal(LIMITS.netDailyGbS, 200);
   for (let i = 0; i < DEFAULT_MAILBOX_RATE_LIMIT; i += 1) {
     assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: LIMITS }).allow, true);
   }
@@ -277,6 +371,30 @@ test("one prefix cannot drain the daily cap", () => {
   assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: tight }).code, "cap");
   assert.equal(applyQuota(state, { ip: "203.0.113.11", nowMs: 1, limits: tight }).allow, true);
   assert.equal(state.requests, 3);
+});
+
+test("one /24 or /32 cannot drain the daily cap", () => {
+  assert.ok(DEFAULT_NET_DAILY_REQUESTS <= DEFAULT_DAILY_REQUESTS);
+  assert.ok(LIMITS.netDailyRequests <= LIMITS.dailyRequests);
+  assert.ok(DEFAULT_PREFIX_DAILY_REQUESTS * 50 <= DEFAULT_DAILY_REQUESTS);
+  const v4 = emptyQuotaState();
+  const tight = {
+    ...LIMITS,
+    dailyRequests: 100,
+    prefixDailyRequests: 50,
+    netDailyRequests: 2,
+  };
+  assert.equal(applyQuota(v4, { ip: "203.0.113.10", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(v4, { ip: "203.0.113.11", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(v4, { ip: "203.0.113.12", nowMs: 1, limits: tight }).code, "cap");
+  assert.equal(applyQuota(v4, { ip: "198.51.100.1", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(v4.requests, 3);
+  const v6 = emptyQuotaState();
+  assert.equal(applyQuota(v6, { ip: "2001:db8:1::1", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(v6, { ip: "2001:db8:2::1", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(v6, { ip: "2001:db8:3::1", nowMs: 1, limits: tight }).code, "cap");
+  assert.equal(applyQuota(v6, { ip: "2001:db9::1", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(v6.requests, 3);
 });
 
 test("a 60s mailbox wait at the 10s poll interval does not 429", () => {
@@ -722,20 +840,9 @@ test("rate-only allows count toward the daily row-write cap", () => {
 });
 
 test("MailboxQuota fails closed before a rate-only storage put that would exceed daily row writes", async () => {
-  let puts = 0;
-  const data = new Map();
+  const memory = memoryQuotaStorage();
   const quota = new MailboxQuota(
-    {
-      storage: {
-        async get(key) {
-          return data.get(key);
-        },
-        async put(key, value) {
-          puts += 1;
-          data.set(key, value);
-        },
-      },
-    },
+    { storage: memory.storage },
     {
       MAILBOX_DAILY_ROW_WRITES: "2",
       MAILBOX_RATE_LIMIT_PER_MINUTE: "100",
@@ -762,7 +869,64 @@ test("MailboxQuota fails closed before a rate-only storage put that would exceed
   assert.equal(second.status, 200);
   assert.equal(third.status, 429);
   assert.equal((await third.json()).error, "cap");
-  assert.equal(puts, 2);
+  assert.equal(memory.puts, 2);
+});
+
+test("30k prefixes from one /32 still serve other users and never 503", async () => {
+  const memory = memoryQuotaStorage();
+  const quota = new MailboxQuota(
+    { storage: memory.storage },
+    {
+      MAILBOX_DAILY_REQUESTS: "100000",
+      MAILBOX_DAILY_ROW_WRITES: "100000",
+      MAILBOX_DAILY_GB_S: "100000",
+      MAILBOX_NET_DAILY_REQUESTS: "100000",
+      MAILBOX_NET_DAILY_ROW_WRITES: "100000",
+      MAILBOX_NET_DAILY_GB_S: "100000",
+      MAILBOX_PREFIX_DAILY_REQUESTS: "2",
+      MAILBOX_RATE_LIMIT_PER_MINUTE: "100000",
+      MAILBOX_NEW_BUCKETS_PER_MINUTE: "100000",
+      MAILBOX_RATE_PREFIX_DAILY: "100000",
+    },
+  );
+  const check = (ip, nowMs) =>
+    quota.fetch(
+      new Request("https://quota/check", {
+        method: "POST",
+        headers: {
+          "CF-Connecting-IP": ip,
+          "X-WebJam-Now": String(nowMs),
+          "X-WebJam-Row-Writes": "0",
+          "X-WebJam-Quota-Scope": "mailbox",
+          "X-WebJam-Quota-Charge": "all",
+        },
+      }),
+    );
+  const flood = 30_000;
+  const other = "198.51.100.50";
+  for (let i = 0; i < flood; i += 1) {
+    const ip = `2001:db8:${i.toString(16)}::1`;
+    const response = await check(ip, 1);
+    assert.notEqual(response.status, 503);
+    assert.equal(response.status, 200);
+  }
+  const stored = memory.data.get("quota:mailbox");
+  assert.equal(stored.knownPrefixes, undefined);
+  const encoded = JSON.stringify(stored);
+  assert.ok(encoded.length < MAX_QUOTA_VALUE_BYTES);
+  assert.ok(encoded.length < 32 * 1024);
+  assert.equal("knownPrefixes" in stored, false);
+  assert.deepEqual(stored, compactQuotaState(stored));
+  assert.ok(memory.prefixRows.size >= flood);
+  const outsider = await check(other, 1);
+  assert.notEqual(outsider.status, 503);
+  assert.equal(outsider.status, 200);
+  const firstAgain = await check("2001:db8::1", 1);
+  assert.notEqual(firstAgain.status, 503);
+  assert.equal(firstAgain.status, 200);
+  assert.equal(prefixNet("2001:db8:1::1"), "2001:db8::/32");
+  assert.equal(prefixNet("2001:db8:7530::1"), "2001:db8::/32");
+  assert.notEqual(prefixNet(other), "2001:db8::/32");
 });
 
 test("http mailbox requests are rejected", async () => {
