@@ -695,6 +695,14 @@ QSlider:focus {
     font-size: ${FONT_SIZE_SM}px;
 }
 
+#SessionHudDisclosure {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+    border: none;
+    background: transparent;
+    padding: 0;
+}
+
 #SessionCanvas {
     background-color: ${COLOR_BG_PANEL};
     border-left: 1px solid ${COLOR_BORDER_SUBTLE};

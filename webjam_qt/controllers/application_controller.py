@@ -57,6 +57,7 @@ from core.recording_readiness_presentation import (
     local_capture_shared_recovery_detail,
 )
 from core.host_startup_checklist import (
+    HOST_STARTUP_HEAR_YOURSELF,
     HOST_STARTUP_PROFILE_NOTE,
     format_host_startup_checklist,
     host_startup_checklist_current_step,
@@ -6304,19 +6305,15 @@ class ApplicationController(QObject):
             )
         elif phase in {"launching_client", "native_sound_setup"}:
             checklist = ApplicationController._host_startup_checklist_fields(phase)
-            guidance = ApplicationController._startup_guidance_override(
-                attempt,
-                self.creator_profile.key,
-            )
             self.window.session_hud.set_state(
-                guidance.title,
-                checklist["plain"],
+                HOST_STARTUP_HEAR_YOURSELF,
+                "",
                 action_text="Bring Jamulus Forward",
                 action_visible=True,
                 action_kind="bring_jamulus",
-                checklist_current_step=checklist["current_step"],
-                checklist_detail_rich=checklist["rich"],
-                checklist_note=HOST_STARTUP_PROFILE_NOTE,
+                sound_help_plain=str(checklist["plain"]),
+                sound_help_rich=str(checklist["rich"]),
+                sound_help_note=HOST_STARTUP_PROFILE_NOTE,
             )
         elif phase == "verifying_music":
             self.window.session_hud.set_state(
@@ -6466,11 +6463,10 @@ class ApplicationController(QObject):
 
     @staticmethod
     def _startup_checklist_message(phase: str) -> str:
-        fields = ApplicationController._host_startup_checklist_fields(phase)
-        plain = str(fields["plain"])
         if phase in {"launching_client", "native_sound_setup"}:
-            return f"{plain}\n\n{HOST_STARTUP_PROFILE_NOTE}"
-        return plain
+            return HOST_STARTUP_HEAR_YOURSELF
+        fields = ApplicationController._host_startup_checklist_fields(phase)
+        return str(fields["plain"])
 
     @staticmethod
     def _startup_guidance_override(
@@ -6500,13 +6496,13 @@ class ApplicationController(QObject):
                 SessionPrimaryAction.WAIT,
             ),
             "launching_client": GuidanceDisplayOverride(
-                creator_copy["setup_title"],
+                HOST_STARTUP_HEAR_YOURSELF,
                 ApplicationController._startup_checklist_message("launching_client"),
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
             ),
             "native_sound_setup": GuidanceDisplayOverride(
-                creator_copy["setup_title"],
+                HOST_STARTUP_HEAR_YOURSELF,
                 ApplicationController._startup_checklist_message("native_sound_setup"),
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",

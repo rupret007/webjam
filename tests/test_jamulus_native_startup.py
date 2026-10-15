@@ -1202,18 +1202,30 @@ def test_native_sound_setup_watches_connection_without_a_completion_click() -> N
 
     ApplicationController._render_startup_journey(controller)
 
+    from core.host_startup_checklist import (
+        HOST_STARTUP_CHECKLIST_STEPS,
+        HOST_STARTUP_HEAR_YOURSELF,
+        HOST_STARTUP_PROFILE_NOTE,
+        SOUND_ISNT_RIGHT_LABEL,
+    )
+
     call = controller.window.session_hud.set_state.call_args
-    assert call.args[0] == "Set up your sound in Jamulus"
-    detail_lines = [line for line in call.args[1].splitlines() if line.strip()]
-    assert len(detail_lines) == 3
-    assert detail_lines[0].startswith("1.")
-    assert detail_lines[1].startswith("2.")
-    assert "10 minutes" in detail_lines[1]
-    assert detail_lines[2].startswith("3.")
-    assert call.kwargs["checklist_current_step"] == 2
-    assert call.kwargs["checklist_note"]
+    assert call.args[0] == HOST_STARTUP_HEAR_YOURSELF
+    assert call.args[1] == ""
     assert call.kwargs["action_text"] == "Bring Jamulus Forward"
     assert call.kwargs["action_kind"] == "bring_jamulus"
+    assert "checklist_current_step" not in call.kwargs
+    help_lines = [
+        line for line in str(call.kwargs["sound_help_plain"]).splitlines() if line.strip()
+    ]
+    assert help_lines == [
+        f"1. {HOST_STARTUP_CHECKLIST_STEPS[0]}",
+        f"2. {HOST_STARTUP_CHECKLIST_STEPS[1]}",
+        f"3. {HOST_STARTUP_CHECKLIST_STEPS[2]}",
+    ]
+    assert "10 minutes" in help_lines[1]
+    assert call.kwargs["sound_help_note"] == HOST_STARTUP_PROFILE_NOTE
+    assert SOUND_ISNT_RIGHT_LABEL == "Sound isn't right"
     assert "secondary_action_text" not in call.kwargs
 
 

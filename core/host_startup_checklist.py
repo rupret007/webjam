@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+HOST_STARTUP_HEAR_YOURSELF = "Play a note. If you hear yourself, you're in."
+SOUND_ISNT_RIGHT_LABEL = "Sound isn't right"
+
 HOST_STARTUP_CHECKLIST_STEPS: tuple[str, str, str] = (
     "Pick your interface, input channels, headphones, and buffer in Jamulus.",
     "WebJam continues when Jamulus connects. It will wait up to 10 minutes.",

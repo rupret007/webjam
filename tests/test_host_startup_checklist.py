@@ -13,7 +13,9 @@ from PySide6.QtWidgets import QApplication
 
 from core.host_startup_checklist import (
     HOST_STARTUP_CHECKLIST_STEPS,
+    HOST_STARTUP_HEAR_YOURSELF,
     HOST_STARTUP_PROFILE_NOTE,
+    SOUND_ISNT_RIGHT_LABEL,
     WIN32_MUSIC_HOST_REASON,
     format_host_startup_checklist,
 )
@@ -57,19 +59,32 @@ def test_native_sound_setup_hud_shows_three_step_checklist(qapp, tmp_path: Path)
         window.show()
         qapp.processEvents()
         hud = window.session_hud
+        assert hud._status.text() == HOST_STARTUP_HEAR_YOURSELF
+        assert hud._status.text() == "Play a note. If you hear yourself, you're in."
+        assert hud._sound_help.isVisibleTo(window)
+        assert hud._sound_help.text() == SOUND_ISNT_RIGHT_LABEL
+        assert hud._sound_help.isChecked() is False
+        assert hud.checklist_lines() == ()
+        assert hud._sound_help_body.isHidden()
+        assert hud._action.isHidden()
+        expected_message = ApplicationController._startup_checklist_message(
+            "native_sound_setup"
+        )
+        assert expected_message == HOST_STARTUP_HEAR_YOURSELF
+        assert controller._last_guidance_display_override.message == expected_message
+
+        hud._sound_help.click()
+        qapp.processEvents()
+        assert hud._sound_help.isChecked() is True
         assert hud.checklist_lines() == (
             f"1. {HOST_STARTUP_CHECKLIST_STEPS[0]}",
             f"2. {HOST_STARTUP_CHECKLIST_STEPS[1]}",
             f"3. {HOST_STARTUP_CHECKLIST_STEPS[2]}",
         )
-        assert hud.property("currentStep") == 2
         assert hud._checklist_note.text() == HOST_STARTUP_PROFILE_NOTE
+        assert hud._checklist_note.isVisibleTo(window)
         assert hud._action.isVisibleTo(window)
         assert hud._action.text().replace("&", "") == "Bring Jamulus Forward"
-        expected_message = ApplicationController._startup_checklist_message(
-            "native_sound_setup"
-        )
-        assert controller._last_guidance_display_override.message == expected_message
     finally:
         window.deleteLater()
 
