@@ -226,6 +226,10 @@ def run_peer(work_dir: Path, role: str) -> int:
             "profile_id": "reference-local",
         }
         _write_json(work_dir / f"{role}.proof", proof)
+        # Guest must keep the sidecar up until the host has the echo; netem
+        # delay made process.stop() tear down QUIC before help arrived.
+        if role == "guest":
+            _wait_text(work_dir / "host.proof", 20.0)
         return 0 if music_echo and art_echo else 1
     finally:
         try:

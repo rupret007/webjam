@@ -435,6 +435,7 @@ def test_proof_peers_drive_real_sidecar_not_standalone_ice():
     readme = Path("tools/cross_network_acceptance/README.md").read_text(encoding="utf-8")
     assert "TransportProcess" in proof and "issue_remote_invitation" in proof
     assert "TurnClient" not in proof and "KIND_MUSIC" not in proof
+    assert "host.proof" in proof
     assert "webjam_reference" in run and "mint_coturn" not in proof
     assert "credential_script" in run and "_post_in_ns" in run
     assert "inner.connect(" not in shim and "_udp_loop" in shim
