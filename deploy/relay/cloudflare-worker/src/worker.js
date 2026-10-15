@@ -82,6 +82,9 @@ function applyQuotaEnv(env) {
     MAILBOX_DAILY_REQUESTS: env.MAILBOX_DAILY_REQUESTS,
     MAILBOX_DAILY_ROW_WRITES: env.MAILBOX_DAILY_ROW_WRITES,
     MAILBOX_DAILY_GB_S: env.MAILBOX_DAILY_GB_S,
+    MAILBOX_PREFIX_DAILY_REQUESTS: env.MAILBOX_PREFIX_DAILY_REQUESTS,
+    MAILBOX_PREFIX_DAILY_ROW_WRITES: env.MAILBOX_PREFIX_DAILY_ROW_WRITES,
+    MAILBOX_PREFIX_DAILY_GB_S: env.MAILBOX_PREFIX_DAILY_GB_S,
   };
   globalThis.WEBJAM_QUOTA_ENV = quotaEnv;
   return quotaEnv;
@@ -98,9 +101,9 @@ function requireHttps(request) {
   return errorResponse(403, "https");
 }
 
-async function enforceAccess(request, env, deps, nowMs, rowWrites) {
+async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all") {
   if (typeof deps.enforceAccess === "function") {
-    return deps.enforceAccess(request, nowMs, rowWrites);
+    return deps.enforceAccess(request, nowMs, rowWrites, charge);
   }
   const ip = clientIP(request.headers);
   const scope = quotaScope(new URL(request.url).pathname);
@@ -115,6 +118,7 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites) {
             "X-WebJam-Now": String(nowMs),
             "X-WebJam-Row-Writes": String(rowWrites),
             "X-WebJam-Quota-Scope": scope,
+            "X-WebJam-Quota-Charge": charge,
           },
         }),
       );
@@ -128,6 +132,7 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites) {
     nowMs,
     rowWrites,
     limits: quotaLimits(applyQuotaEnv(env), scope),
+    charge,
   });
   if (decision.allow) {
     return null;
@@ -139,6 +144,18 @@ function isWebsocketUpgrade(request) {
   return String(request.headers.get("Upgrade") || "").toLowerCase() === "websocket";
 }
 
+function closeAcceptedSocket(response) {
+  const socket = response && response.webSocket;
+  if (!socket || typeof socket.close !== "function") {
+    return;
+  }
+  try {
+    socket.close(1013, "quota");
+  } catch {
+    // The Durable Object waiter can already be gone.
+  }
+}
+
 async function handleMailbox(request, env, deps, mailbox, nowMs) {
   if (mailbox.invalid) {
     return errorResponse(404, "not_found");
@@ -146,11 +163,16 @@ async function handleMailbox(request, env, deps, mailbox, nowMs) {
   const writes =
     request.method === "POST" || request.method === "DELETE" ? 1 : 0;
   const websocket = isWebsocketUpgrade(request);
-  if (!websocket) {
-    const denied = await enforceAccess(request, env, deps, nowMs, writes);
-    if (denied) {
-      return denied;
-    }
+  const denied = await enforceAccess(
+    request,
+    env,
+    deps,
+    nowMs,
+    websocket ? 0 : writes,
+    websocket ? "rate" : "all",
+  );
+  if (denied) {
+    return denied;
   }
   let response;
   if (typeof deps.mailboxFetch === "function") {
@@ -168,9 +190,10 @@ async function handleMailbox(request, env, deps, mailbox, nowMs) {
     }
   }
   if (websocket && response.status === 101) {
-    const denied = await enforceAccess(request, env, deps, nowMs, writes);
-    if (denied) {
-      return denied;
+    const charged = await enforceAccess(request, env, deps, nowMs, writes, "daily");
+    if (charged) {
+      closeAcceptedSocket(response);
+      return charged;
     }
   }
   return response;

@@ -18,12 +18,14 @@ import {
   DEFAULT_DAILY_ROW_WRITES,
   DEFAULT_MAILBOX_RATE_LIMIT,
   DEFAULT_NEW_BUCKETS_PER_MINUTE,
+  DEFAULT_PREFIX_DAILY_REQUESTS,
   DEFAULT_RATE_LIMIT,
   emptyQuotaState,
   ESTIMATED_GB_S_PER_REQUEST,
   MAX_IP_BUCKETS,
   prefix48,
   quotaLimits,
+  RATE_WINDOW_MS,
   rateKey,
 } from "../src/quota.js";
 import { handleRequest, resetWorkerState } from "../src/worker.js";
@@ -193,6 +195,7 @@ test("a flood of new IPs does not block a legitimate user", () => {
   }
   assert.equal(applyQuota(state, { ip: legit, nowMs: 1, limits: roomy }).allow, true);
   assert.ok(Object.keys(state.ipBuckets).length <= MAX_IP_BUCKETS);
+  assert.ok(Object.keys(state.knownPrefixes).length <= MAX_IP_BUCKETS);
 });
 
 test("a cap on new buckets stops rotating addresses from burning the daily cap", () => {
@@ -213,6 +216,37 @@ test("a cap on new buckets stops rotating addresses from burning the daily cap",
   assert.equal(applyQuota(rotator, { ip: "2001:db8:9:2::2", nowMs: 1, limits: oneNew }).allow, true);
   assert.equal(applyQuota(rotator, { ip: "2001:db8:a::1", nowMs: 1, limits: oneNew }).code, "rate");
   assert.equal(rotator.requests, 2);
+});
+
+test("a known prefix is still allowed after the new-bucket cap fills next minute", () => {
+  for (const scope of ["mailbox", "turn"]) {
+    const state = emptyQuotaState();
+    const limits = { ...quotaLimits({}, scope), newBucketsPerMinute: 2 };
+    assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits }).allow, true);
+    assert.equal(applyQuota(state, { ip: "203.0.113.11", nowMs: 1, limits }).allow, true);
+    const nextMinute = 1 + RATE_WINDOW_MS;
+    assert.equal(applyQuota(state, { ip: "198.51.100.1", nowMs: nextMinute, limits }).allow, true);
+    assert.equal(applyQuota(state, { ip: "198.51.100.2", nowMs: nextMinute, limits }).allow, true);
+    assert.equal(applyQuota(state, { ip: "198.51.100.3", nowMs: nextMinute, limits }).code, "rate");
+    assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: nextMinute, limits }).allow, true);
+    assert.equal(applyQuota(state, { ip: "203.0.113.11", nowMs: nextMinute, limits }).allow, true);
+  }
+});
+
+test("one prefix cannot drain the daily cap", () => {
+  const state = emptyQuotaState();
+  const tight = {
+    ...LIMITS,
+    dailyRequests: 100,
+    prefixDailyRequests: 2,
+  };
+  assert.ok(DEFAULT_PREFIX_DAILY_REQUESTS <= DEFAULT_DAILY_REQUESTS);
+  assert.ok(LIMITS.prefixDailyRequests <= LIMITS.dailyRequests);
+  assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: tight }).code, "cap");
+  assert.equal(applyQuota(state, { ip: "203.0.113.11", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(state.requests, 3);
 });
 
 test("a 60s mailbox wait at the 10s poll interval does not 429", () => {
@@ -407,6 +441,75 @@ test("a websocket upgrade that succeeds is charged", async () => {
   assert.equal(blocked.status, 429);
   const body = await blocked.json();
   assert.equal(body.error, "cap");
+});
+
+test("a failed websocket upgrade is still rate limited before the mailbox", async () => {
+  resetWorkerState();
+  let forwarded = 0;
+  const mailboxFetch = async () => {
+    forwarded += 1;
+    return new Response(JSON.stringify({ error: "rate" }), {
+      status: 429,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  const env = { MAILBOX_RATE_LIMIT_PER_MINUTE: "2" };
+  const headers = { "CF-Connecting-IP": "203.0.113.10", Upgrade: "websocket" };
+  const first = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, headers),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  const second = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, headers),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  const third = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, headers),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(first.status, 429);
+  assert.equal(second.status, 429);
+  assert.equal(third.status, 429);
+  assert.equal(forwarded, 2);
+});
+
+test("a denied charge after a 101 closes the accepted socket", async () => {
+  resetWorkerState();
+  let closed = null;
+  const mailboxFetch = async (request) => {
+    if (String(request.headers.get("Upgrade") || "").toLowerCase() === "websocket") {
+      return {
+        status: 101,
+        webSocket: {
+          close(code, reason) {
+            closed = { code, reason };
+          },
+        },
+      };
+    }
+    return new Response(null, { status: 204 });
+  };
+  const env = { MAILBOX_DAILY_REQUESTS: "1" };
+  const emptied = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(emptied.status, 204);
+  const denied = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, {
+      "CF-Connecting-IP": "203.0.113.10",
+      Upgrade: "websocket",
+    }),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(denied.status, 429);
+  assert.equal(closed.code, 1013);
+  assert.equal(closed.reason, "quota");
 });
 
 test("http mailbox requests are rejected", async () => {
