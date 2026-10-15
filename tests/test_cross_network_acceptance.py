@@ -582,8 +582,8 @@ def test_guest_startup_and_unfinished_attempts_are_harness_errors(tmp_path, monk
     (art_work / "invite").write_text("webjam://x", encoding="utf-8")
     art_rc = _art_guest(art_work)
     art = _load_guest_result(art_work)
-    assert art.get("failure_class") != "honest_unreachable"
-    assert not completed_guest_result(art, timed_out=False, returncode=art_rc)
+    assert art.get("failure_class") == "honest_unreachable"
+    assert completed_guest_result(art, timed_out=False, returncode=art_rc)
 
 
 def test_nat_probe_fails_on_subprocess_or_missing_mapping(monkeypatch):

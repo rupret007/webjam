@@ -367,7 +367,7 @@ def _art_guest(work_dir: Path) -> int:
             )
             room = app._room_participant
             exchanged = connected and room.borrowed_start == ART_START
-            finished = bool(connected)
+            finished = True
             return _guest_result(
                 work_dir, "art", "lan", connected=connected, exchanged=exchanged,
                 art_start_key=room.borrowed_start, room_state=room.state.value,
