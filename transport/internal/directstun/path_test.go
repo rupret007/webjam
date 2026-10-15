@@ -109,7 +109,8 @@ func TestPunchNominatesLoopbackPair(t *testing.T) {
 	}
 	hostCtx, hostCancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer hostCancel()
-	if nominated, nomErr := hostMux.WaitNominated(hostCtx); nomErr != nil || nominated == nil {
-		t.Fatal("host must nominate the guest source")
+	nominated, nomErr := hostMux.WaitNominated(hostCtx)
+	if nomErr != nil || nominated == nil || nominated.Port != right.LocalAddr().(*net.UDPAddr).Port {
+		t.Fatalf("host nominated = %v, %v", nominated, nomErr)
 	}
 }

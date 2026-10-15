@@ -428,6 +428,29 @@ def test_cli_has_no_expected_status_fail():
     assert not Path("tools/cross_network_acceptance/roles.py").exists()
 
 
+def test_guest_holds_sidecar_until_delayed_host_proof(tmp_path):
+    import threading
+    import time
+
+    from tools.cross_network_acceptance import proof as p
+
+    host = tmp_path / "host.proof"
+
+    def writer():
+        time.sleep(0.08)
+        host.write_text("ready\n", encoding="utf-8")
+
+    threading.Thread(target=writer, daemon=True).start()
+    started = time.monotonic()
+    assert p._wait_text(host, 1.0) == "ready"
+    assert time.monotonic() - started >= 0.05
+    source = Path("tools/cross_network_acceptance/proof.py").read_text(encoding="utf-8")
+    send_at = source.rfind("process.send_help")
+    wait_at = source.find('_wait_text(work_dir / "host.proof"')
+    stop_at = source.rfind("process.stop()")
+    assert 0 <= send_at < wait_at < stop_at
+
+
 def test_proof_peers_drive_real_sidecar_not_standalone_ice():
     proof = Path("tools/cross_network_acceptance/proof.py").read_text(encoding="utf-8")
     run = Path("tools/cross_network_acceptance/run.py").read_text(encoding="utf-8")
