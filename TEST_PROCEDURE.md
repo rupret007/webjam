@@ -23,8 +23,7 @@ remain **NOT RUN** until observed; source click-path tests are separate proof.
 
 Use the [short first-test guide](docs/FOLLOW_ALONG_FIRST_TEST.md) and copy the
 [pilot record](docs/FOLLOW_ALONG_PILOT_RECORD.md) for this identified build.
-Ordinary Host/Join works from another house. Same-network still works when
-the invite says so.
+The default Art room invitation requires the same Wi-Fi/local network.
 Observe the first attempt without coaching before offering the click guide;
 record time to the first shared lesson and any assistance separately.
 
