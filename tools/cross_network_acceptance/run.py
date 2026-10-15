@@ -1,4 +1,4 @@
-"""Orchestrate topology, mapping probe, proof peers. Proof-only: non-success is FAIL."""
+"""Orchestrate topology, probes, proof peers. Non-success is FAIL."""
 
 from __future__ import annotations
 

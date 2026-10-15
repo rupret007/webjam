@@ -1,8 +1,4 @@
-"""Userspace 127.0.0.1:{control,relay} <-> public rendezvous. Not router DNAT.
-
-Compiled sidecar dials only loopback. UDP is one select loop with unconnected
-inner sockets so a recv timeout cannot drop the return path.
-"""
+"""Userspace 127.0.0.1:{control,relay} <-> public rendezvous. Not router DNAT."""
 
 from __future__ import annotations
 

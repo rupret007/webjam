@@ -1,4 +1,4 @@
-"""Build PR #372 webjam-fabric. Missing WEBJAM_TRANSPORT_BINARY is FAIL."""
+"""Build webjam-fabric."""
 
 import os
 import subprocess

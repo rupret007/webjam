@@ -1,6 +1,4 @@
-"""Two-home netns. Cone: explicit SNAT. Symmetric: --random-fully + probe.
-Routers default-DROP INPUT/FORWARD; ESTABLISHED,RELATED only inbound. No REJECT/ICMP.
-"""
+"""Two-home netns. Cone: SNAT. Symmetric: --random-fully. DROP+ESTABLISHED inbound."""
 
 from __future__ import annotations
 
@@ -207,15 +205,15 @@ def assert_no_port_forward(commands: list[list[str]]) -> None:
     joined = " ".join(" ".join(item) for item in commands)
     for banned in ("DNAT", "REDIRECT", "TPROXY", "--dport", "port-forward", "REJECT", "ICMP"):
         if banned in joined:
-            raise TopologyError("No port forwarding or REJECT/ICMP.")
+            raise TopologyError("No port forward/REJECT.")
 
 
 def assert_unsolicited_inbound_udp_dropped(commands: list[list[str]]) -> None:
     for argv in commands:
         if "NETMAP" in argv or "DNAT" in argv:
-            raise TopologyError("Inbound rewrite is endpoint-independent filtering.")
+            raise TopologyError("No inbound rewrite.")
         if "FORWARD" in argv and "ACCEPT" in argv and "udp" in argv and "conntrack" not in argv:
-            raise TopologyError("Unsolicited inbound UDP must not be forwarded.")
+            raise TopologyError("No unsolicited UDP.")
 
 
 def assert_router_drop(commands: list[list[str]]) -> None:
@@ -223,7 +221,7 @@ def assert_router_drop(commands: list[list[str]]) -> None:
     if "REJECT" in text or "ICMP" in text:
         raise TopologyError("No REJECT/ICMP.")
     if text.count("-P INPUT DROP") < 2 or text.count("-P FORWARD DROP") < 2:
-        raise TopologyError("Routers must default-DROP INPUT/FORWARD.")
+        raise TopologyError("Need default DROP.")
     if "ESTABLISHED,RELATED" not in text:
         raise TopologyError("Need ESTABLISHED,RELATED allow.")
 

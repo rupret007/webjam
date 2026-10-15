@@ -1,4 +1,4 @@
-"""Proof peers drive real webjam-fabric IPC (same contract as the Qt desktop)."""
+"""Proof peers drive webjam-fabric IPC."""
 
 from __future__ import annotations
 
@@ -49,10 +49,6 @@ def evaluate_proof(
     art_nonce: str,
     relay_bytes: int = 0,
 ) -> str:
-    """Return empty string on PASS; any other string is FAIL.
-
-    relay_bytes is coturn session rb=+sb= only. Loopback-shim counts are never proof.
-    """
     if not isinstance(host, dict) or not isinstance(guest, dict):
         return "missing peer proof"
     for row in (host, guest):
@@ -86,14 +82,12 @@ def evaluate_proof(
 
 
 def path_label(*, same_lan: bool) -> str:
-    """Never a selected pair. Sidecar session_path is the only path proof."""
     if same_lan:
         return "host"
     return ""
 
 
 def types_from_session_path(path: str) -> tuple[str, str]:
-    """Map sidecar session_path onto proof pair types. Empty if unknown."""
     text = str(path or "").strip().lower()
     if text == "relay":
         return RELAY_TYPE, RELAY_TYPE

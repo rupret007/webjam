@@ -1,4 +1,4 @@
-"""Proof-only harness contracts. Never skip/xfail'd."""
+"""Harness contracts. Never skip/xfail'd."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from tools.cross_network_acceptance.topology import (
     addrs, assert_no_port_forward, assert_router_drop, assert_unsolicited_inbound_udp_dropped,
     netem_commands, setup_commands,
 )
-from tools.cross_network_acceptance.turn import mint_credentials, relayed_bytes
+from tools.cross_network_acceptance.turn import mint_credentials, relayed_bytes, turn_command
 
 FULL_SHA = "a" * 40
 MUSIC, ART = "11" * 16, "22" * 16
@@ -452,6 +452,7 @@ def test_nat_probe_fails_on_subprocess_or_missing_mapping(monkeypatch):
 
 
 def test_turn_credentials_contract_and_relay_byte_logs(monkeypatch):
+    import inspect
     import time
 
     from deploy.relay import turn_credentials as tc
@@ -475,9 +476,11 @@ def test_turn_credentials_contract_and_relay_byte_logs(monkeypatch):
     assert relayed_bytes("session x usage: rp=2, rb=80, sp=2, sb=40") == 120
     assert relayed_bytes("incoming packet Data from peer") == 0
     assert relayed_bytes("idle") == 0
+    cmd = inspect.getsource(turn_command)
+    assert "--simple-log" in cmd and "-v" in cmd and "--pidfile" in cmd
     turn_src = Path("tools/cross_network_acceptance/turn.py").read_text(encoding="utf-8")
     assert "mint_coturn" in turn_src and "def stop_turn" in turn_src
-    assert "SIGTERM" in turn_src and "pidfile" in turn_src.lower()
+    assert "SIGTERM" in turn_src
 
 
 def test_stop_turn_terms_pidfile_process(tmp_path):
@@ -576,7 +579,9 @@ def test_proof_peers_drive_real_sidecar_not_standalone_ice():
     assert "TurnClient" not in proof and "KIND_MUSIC" not in proof
     assert "host.proof" in proof
     assert "apply_guest_signal" in proof and "types_from_session_path" in proof
-    assert "except TransportProcessError" in proof
+    apply_at = proof.find("apply_guest_signal")
+    wait_at = proof.find('_wait_connected(process, "host"')
+    assert 0 <= apply_at < wait_at and "except TransportProcessError" in proof[apply_at:wait_at]
     native = Path("services/native_remote_transport.py").read_text(encoding="utf-8")
     assert "except TransportProcessError" in native
     assert "RemoteSessionPhase.CONNECTED" in native
@@ -591,3 +596,6 @@ def test_proof_peers_drive_real_sidecar_not_standalone_ice():
     assert "loopback_shim_bytes.log" not in run and "shim.count.log" not in run
     assert " + shim" not in run
     assert "loopback_bytes" in shim
+    stop = run.find("stop_turn(")
+    usage = run.find("relayed_bytes(")
+    assert 0 <= stop < usage

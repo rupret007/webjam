@@ -1,4 +1,4 @@
-"""Proof-only two-NAT Host/Join acceptance. Any non-success is FAIL."""
+"""Proof-only two-NAT Host/Join. Non-success is FAIL."""
 
 import os
 import sys

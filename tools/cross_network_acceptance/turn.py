@@ -1,4 +1,4 @@
-"""Coturn on the public network + production POST /turn-credentials mint."""
+"""Coturn + POST /turn-credentials mint."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def turn_command(
 
 
 def relayed_bytes(log_text: str) -> int:
-    """Coturn session usage rb=+sb= only. Signaling lines are not relayed bytes."""
+    """Coturn session rb=+sb= only."""
     total = 0
     for match in _USAGE.finditer(log_text or ""):
         total += int(match.group(1)) + int(match.group(2))
