@@ -222,7 +222,8 @@ def test_join_title_tracks_visible_profile_and_back_navigation(
                 help_box.assert_called_once()
                 assert help_box.call_args.args[2] == (
                     "Paste the invite or the whole message.\n\n"
-                    "If your invitation says “same network,” use your host’s Wi-Fi or local network."
+                    "A friend in another house can Join. If your invitation says it only "
+                    "works on the host's Wi-Fi or local network, join from that network."
                 )
                 assert dialog._join_button_primary.text() == "Join"
                 assert not dialog._join_button_primary.isEnabled()
@@ -432,7 +433,7 @@ def test_art_helper_only_adds_the_paint_along_next_step(qapp, tmp_path: Path):
             paint_along = card.start_key == "paint_along"
             assert dialog._choice_helper.isVisibleTo(dialog._choice_page) is paint_along
             assert dialog._choice_helper.text() == (
-                "Then choose a file or lesson link." if paint_along else ""
+                "Then watch a shared lesson, or choose a silent file." if paint_along else ""
             )
         # The two cards carry the instruction, so the headline and the
         # subtitle above them step aside rather than crowd them.
@@ -485,7 +486,7 @@ def test_art_helper_and_actions_survive_start_profile_and_back_changes(
             helper = dialog._choice_helper
             assert helper.isVisible() is paint_along
             assert helper.text() == (
-                "Then choose a file or lesson link." if paint_along else ""
+                "Then watch a shared lesson, or choose a silent file." if paint_along else ""
             )
             cards = _visible_cards(dialog)
             assert len(cards) == 2
@@ -1018,6 +1019,19 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+def test_paint_along_selected_start_names_the_room_title():
+    from core.creative_modes import (
+        get_creator_profile_by_key,
+        session_title_for_start,
+    )
+
+    profile = get_creator_profile_by_key("art")
+    assert session_title_for_start(profile, "paint_along") == "Paint along"
+    assert session_title_for_start(profile, "talk_and_make") == "Make together"
+    assert session_title_for_start(profile, "") == "Make together"
+    assert session_title_for_start(profile, "nonsense") == profile.default_template
+
+
 def test_make_together_door_card_matches_the_in_room_session_title(
     qapp, tmp_path: Path
 ):
@@ -1149,7 +1163,13 @@ def test_windows_door_with_missing_music_component_stays_compact(qapp, tmp_path,
         qapp.processEvents()
         assert dialog.height() + 40 <= 600
         assert dialog.width() <= 760
-        assert dialog._host_button.isEnabled() is (profile == "art")
+        assert dialog._can_host() is (profile == "art")
+        if profile == "music":
+            assert dialog._host_button.isEnabled()
+            assert dialog._host_button.objectName() == "LaunchSecondary"
+            assert dialog._join_button.objectName() == "LaunchPrimary"
+        else:
+            assert dialog._host_button.isEnabled() is True
         assert dialog._join_button.isEnabled()
         assert not dialog._install_jamulus_button.isVisibleTo(dialog)
         assert_no_banned_first_screen_words(harvest_first_screen(dialog))

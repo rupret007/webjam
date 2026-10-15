@@ -51,7 +51,7 @@ def test_paint_along_helper_sits_above_host_at_800_by_600(qapp, tmp_path: Path):
         host = dialog._host_button
         assert dialog.selected_start_key == "paint_along"
         assert helper.text() == PAINT_ALONG_DOOR_HELPER
-        assert helper.text() == "Then choose a file or lesson link."
+        assert helper.text() == "Then watch a shared lesson, or choose a silent file."
         assert helper.isVisible()
         assert host.isDefault() is True
 

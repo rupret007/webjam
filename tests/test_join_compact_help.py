@@ -73,7 +73,10 @@ def test_help_opens_network_advice_without_using_the_invitation(join_door, qapp)
         parse.assert_not_called()
         save.assert_not_called()
     assert "Paste the invite or the whole message." in observed["text"]
-    assert "If your invitation says “same network,” use your host’s Wi-Fi or local network." in observed["text"]
+    assert (
+        "A friend in another house can Join. If your invitation says it only "
+        "works on the host's Wi-Fi or local network, join from that network."
+    ) in observed["text"]
     assert dialog._invite_input.text() == "Private unchecked invitation"
     assert dialog.selected_role == ""
     assert not dialog.showing_choices

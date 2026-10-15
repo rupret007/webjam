@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+HOST_STARTUP_HEAR_YOURSELF = "Play a note. If you hear yourself, you're in."
+SOUND_ISNT_RIGHT_LABEL = "Sound isn't right"
+
 HOST_STARTUP_CHECKLIST_STEPS: tuple[str, str, str] = (
     "Pick your interface, input channels, headphones, and buffer in Jamulus.",
     "WebJam continues when Jamulus connects. It will wait up to 10 minutes.",
@@ -20,7 +23,7 @@ HOST_STARTUP_PROFILE_NOTE = (
 )
 
 WIN32_MUSIC_HOST_REASON = (
-    "Hosting needs the macOS app. You can still Join."
+    "A Mac starts the band. Join with their invite."
 )
 
 

@@ -466,8 +466,9 @@ class ArtLanHostPortableTest(unittest.TestCase):
         self.assertTrue(note not in message and music_note not in message, "Invitation exposed local Notes")
         self.assertEqual(sum(line.startswith("webjam://") for line in message.splitlines()), 1)
         self.assertTrue(all(text in message for text in (
-            "choose Join, then paste this full invitation", "same Wi-Fi or local network",
-            "host needs to keep this room open",
+            "choose Join, then paste this full invitation",
+            "only works on the host's Wi-Fi or local network",
+            "Keep this room open",
         )), "Complete invitation guidance is missing")
 
         # A person with the default Music workspace pastes once. Only the

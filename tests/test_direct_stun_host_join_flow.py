@@ -178,6 +178,8 @@ def test_host_then_join_then_reply_ends_connected(qapp, tmp_path, monkeypatch) -
     assert guest._remote_session.guest_reply == SIGNAL
     delivered = guest._guest_reply_delivery_text()
     assert delivered
+    guest._copy_guest_reply()
+    assert QApplication.clipboard().text() == delivered
     assert host._apply_guest_reply_paste(delivered)
     _drain_until(
         qapp,

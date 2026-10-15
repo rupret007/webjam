@@ -550,8 +550,8 @@ CREATOR_PROFILES: tuple[CreatorProfile, ...] = (
         key="art",
         label="Art",
         release_tier=RELEASE_TIER_PREVIEW,
-        # Same phrase as the Make together door card. Preview honesty stays
-        # on the session-strip subtitle ("Art · Preview"), not a second title.
+        # Default Art title matches the Make together door card. Paint along
+        # uses that start's label when last_creator_start_key selects it.
         default_template=_ART_STARTS[0].label,
         default_goal="Share a table, talk, and move one piece forward.",
         quick_help=(
@@ -783,6 +783,16 @@ def get_creator_profile_by_key(profile_key: object) -> CreatorProfile | None:
 
 def get_creator_profile_by_key_or_default(profile_key: object) -> CreatorProfile:
     return get_creator_profile_by_key(profile_key) or CREATOR_PROFILES[0]
+
+
+def session_title_for_start(profile: CreatorProfile, start_key: object = "") -> str:
+    """Room title matches the selected start, else the profile default."""
+
+    key = str(start_key or "").strip()
+    for start in profile.starts:
+        if start.key == key:
+            return start.label
+    return profile.default_template
 
 
 def get_creator_profile_by_label(label: object) -> CreatorProfile | None:

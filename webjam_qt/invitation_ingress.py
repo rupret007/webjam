@@ -277,7 +277,8 @@ def parse_invitation_at_ingress(
             ) from None
         raise InvitationIngressError(
             InvitationIngressErrorCode.INVALID,
-            "That invitation is malformed. Copy a new invitation from your host.",
+            "That's not a WebJam invite. Ask your host to press Copy Invite "
+            "and send you the whole message.",
         ) from None
     if isinstance(invitation, RemoteInvitation):
         from core.direct_stun_invite import DIRECT_STUN_PROFILE_ID, parse_host_signal_from_paste
@@ -287,7 +288,8 @@ def parse_invitation_at_ingress(
         except ValueError:
             raise InvitationIngressError(
                 InvitationIngressErrorCode.INVALID,
-                "That invitation is malformed. Copy a new invitation from your host.",
+                "That's not a WebJam invite. Ask your host to press Copy Invite "
+                "and send you the whole message.",
             ) from None
         if invitation.profile_id == DIRECT_STUN_PROFILE_ID:
             if not signal:
@@ -299,7 +301,8 @@ def parse_invitation_at_ingress(
         elif signal:
             raise InvitationIngressError(
                 InvitationIngressErrorCode.INVALID,
-                "That invitation is malformed. Copy a new invitation from your host.",
+                "That's not a WebJam invite. Ask your host to press Copy Invite "
+                "and send you the whole message.",
             )
 
     if isinstance(invitation, RemoteInvitation) and invitation.advisory_expired():
