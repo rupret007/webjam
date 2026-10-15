@@ -1,16 +1,19 @@
-"""Coturn on the public network + REST credentials + relayed-byte proof."""
+"""Coturn on the public network + production POST /turn-credentials mint."""
 
 from __future__ import annotations
 
 import os
 import re
 import shutil
+import time
 from pathlib import Path
 
-from deploy.relay.turn_credentials import REALM, mint
+from deploy.relay.turn_credentials import mint_coturn
 from tools.cross_network_acceptance import HarnessError
 from tools.cross_network_acceptance.topology import required_bin
 
+REALM = "webjam"
+CREDENTIAL_PORT = 8787
 _USAGE = re.compile(r"\brb=(\d+)\b.*\bsb=(\d+)\b")
 _DATA = re.compile(r"Data indication|incoming packet Data", re.IGNORECASE)
 
@@ -27,7 +30,26 @@ def turnserver_bin() -> str:
 
 
 def mint_credentials(secret: str, host: str, port: int) -> dict[str, object]:
-    return mint(secret=secret, uris=[f"turn:{host}:{port}?transport=udp"])
+    import deploy.relay.turn_credentials as tc
+
+    saved = (tc.SECRET, tc.EXTERNAL_IP, tc.LISTEN_PORT)
+    try:
+        tc.SECRET = secret.encode("utf-8")
+        tc.EXTERNAL_IP = host
+        tc.LISTEN_PORT = int(port)
+        return mint_coturn(time.time())
+    finally:
+        tc.SECRET, tc.EXTERNAL_IP, tc.LISTEN_PORT = saved
+
+
+def credential_server_env(secret: str, host: str, port: int) -> dict[str, str]:
+    return {
+        "TURN_STATIC_AUTH_SECRET": secret,
+        "TURN_EXTERNAL_IP": host,
+        "TURN_LISTEN_PORT": str(int(port)),
+        "TURN_LISTEN_ADDR": "127.0.0.1",
+        "TURN_CREDENTIAL_PORT": str(CREDENTIAL_PORT),
+    }
 
 
 def turn_command(
@@ -63,3 +85,7 @@ def conntrack_dump(ns: str) -> str:
         [ip, "netns", "exec", ns, conntrack, "-L"],
         check=False, capture_output=True, text=True,
     ).stdout
+
+
+def credential_script() -> str:
+    return str(Path(__file__).resolve().parents[2] / "deploy" / "relay" / "turn_credentials.py")

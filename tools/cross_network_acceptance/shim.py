@@ -1,10 +1,7 @@
 """Userspace 127.0.0.1:{control,relay} <-> public rendezvous. Not router DNAT.
 
-The compiled sidecar dials only 127.0.0.1:47131/47132. Each peer namespace has
-its own loopback, so the harness forwards those sockets to the public bind of
-the reference service (which itself stays on loopback, as required by
-ServiceConfig). UDP clients keep distinct inner sockets so the exact-pair
-relay still sees two peers.
+Compiled sidecar dials only loopback. UDP is one select loop with unconnected
+inner sockets so a recv timeout cannot drop the return path.
 """
 
 from __future__ import annotations
@@ -19,7 +16,7 @@ from pathlib import Path
 
 from tools.cross_network_acceptance.topology import RENDEZVOUS_TCP, RENDEZVOUS_UDP
 
-_UDP_MAX = 2048
+_UDP_MAX = 4096
 
 
 class LoopbackShim:
@@ -34,7 +31,6 @@ class LoopbackShim:
         self.bytes = 0
         self._stop = threading.Event()
         self._lock = threading.Lock()
-        self._udp_lock = threading.Lock()
         self._socks: list[socket.socket] = []
         self._threads: list[threading.Thread] = []
 
@@ -51,7 +47,7 @@ class LoopbackShim:
         udp.bind((self.listen_host, RENDEZVOUS_UDP))
         self._socks.extend((tcp, udp))
         self._spawn(self._accept_tcp, tcp)
-        self._spawn(self._udp_outer, udp)
+        self._spawn(self._udp_loop, udp)
 
     def stop(self) -> None:
         self._stop.set()
@@ -130,55 +126,82 @@ class LoopbackShim:
             except OSError:
                 pass
 
-    def _udp_outer(self, outer: socket.socket) -> None:
+    def _inner_host(self) -> str:
         if self.dest_host == "127.0.0.1":
-            inner_host = "127.0.0.1"
-        else:
-            inner_host = self.source_host or "0.0.0.0"
+            return "127.0.0.1"
+        return self.source_host or "0.0.0.0"
+
+    def _udp_loop(self, outer: socket.socket) -> None:
         dest = (self.dest_host, RENDEZVOUS_UDP)
         table: dict[tuple[str, int], socket.socket] = {}
+        reverse: dict[socket.socket, tuple[str, int]] = {}
         while not self._stop.is_set():
-            ready, _, _ = select.select([outer], [], [], 0.5)
-            if not ready:
-                continue
+            readers = [outer, *table.values()]
             try:
-                payload, remote = outer.recvfrom(_UDP_MAX)
-            except OSError:
+                ready, _, _ = select.select(readers, [], [], 0.5)
+            except (OSError, ValueError):
                 return
-            self._add(len(payload))
-            inner = table.get(remote)
-            if inner is None:
-                inner = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                inner.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256 * 1024)
-                inner.bind((inner_host, 0))
-                inner.connect(dest)
-                self._socks.append(inner)
-                table[remote] = inner
-                self._spawn(self._udp_inner, inner, outer, remote)
-            try:
-                inner.send(payload)
-            except OSError:
-                continue
+            for sock in ready:
+                if sock is outer:
+                    self._udp_from_outer(outer, dest, table, reverse)
+                else:
+                    self._udp_from_inner(sock, outer, reverse)
 
-    def _udp_inner(
-        self, inner: socket.socket, outer: socket.socket, remote: tuple[str, int],
+    def _new_inner(self) -> socket.socket:
+        inner = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        inner.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256 * 1024)
+        inner.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 256 * 1024)
+        inner.bind((self._inner_host(), 0))
+        inner.setblocking(False)
+        self._socks.append(inner)
+        return inner
+
+    def _udp_from_outer(
+        self,
+        outer: socket.socket,
+        dest: tuple[str, int],
+        table: dict[tuple[str, int], socket.socket],
+        reverse: dict[socket.socket, tuple[str, int]],
     ) -> None:
-        while not self._stop.is_set():
-            ready, _, _ = select.select([inner], [], [], 0.5)
-            if not ready:
-                continue
-            try:
-                payload = inner.recv(_UDP_MAX)
-            except OSError:
-                return
-            if not payload:
-                return
-            self._add(len(payload))
-            try:
-                with self._udp_lock:
-                    outer.sendto(payload, remote)
-            except OSError:
-                continue
+        try:
+            payload, remote = outer.recvfrom(_UDP_MAX)
+        except OSError:
+            return
+        if not payload:
+            return
+        self._add(len(payload))
+        inner = table.get(remote)
+        if inner is None:
+            inner = self._new_inner()
+            table[remote] = inner
+            reverse[inner] = remote
+        try:
+            inner.sendto(payload, dest)
+        except OSError:
+            return
+
+    def _udp_from_inner(
+        self,
+        inner: socket.socket,
+        outer: socket.socket,
+        reverse: dict[socket.socket, tuple[str, int]],
+    ) -> None:
+        try:
+            payload, _src = inner.recvfrom(_UDP_MAX)
+        except BlockingIOError:
+            return
+        except OSError:
+            return
+        if not payload:
+            return
+        remote = reverse.get(inner)
+        if remote is None:
+            return
+        self._add(len(payload))
+        try:
+            outer.sendto(payload, remote)
+        except OSError:
+            return
 
 
 def serve(listen_host: str, dest_host: str, count_path: Path | None) -> int:

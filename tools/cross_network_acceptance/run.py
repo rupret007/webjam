@@ -28,7 +28,8 @@ from tools.cross_network_acceptance.topology import (
     cleanup_topology, ns_names, required_bin,
 )
 from tools.cross_network_acceptance.turn import (
-    conntrack_dump, mint_credentials, relayed_bytes, turn_command,
+    CREDENTIAL_PORT, conntrack_dump, credential_script, credential_server_env,
+    mint_credentials, relayed_bytes, turn_command,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -235,6 +236,29 @@ def _pause(seconds: float) -> None:
     time.sleep(seconds)
 
 
+def _post_in_ns(ns: str, url: str, env: dict[str, str]) -> dict[str, Any]:
+    script = (
+        "import json,secrets,sys,urllib.request\n"
+        "session=secrets.token_hex(32)\n"
+        "token=secrets.token_urlsafe(32).replace('=','A')\n"
+        "body=json.dumps({'session_id':session,'invite_token':token}).encode()\n"
+        "req=urllib.request.Request(sys.argv[1],data=body,method='POST',"
+        "headers={'Content-Type':'application/json','Accept':'application/json'})\n"
+        "payload=json.loads(urllib.request.urlopen(req,timeout=3).read().decode())\n"
+        "urls=payload.get('urls') or payload.get('uris')\n"
+        "ok=bool(payload.get('username') and payload.get('credential') and urls)\n"
+        "print(json.dumps({'ok':ok,'has_urls':bool(urls)}))\n"
+    )
+    result = _run_in_ns(ns, [sys.executable, "-c", script, url], env)
+    try:
+        payload = json.loads(result.stdout) if result.returncode == 0 else {}
+    except json.JSONDecodeError:
+        payload = {}
+    if not payload.get("ok"):
+        raise HarnessError("turn credentials missing")
+    return payload
+
+
 def _wait_port(ns: str, host: str, port: int, env: dict[str, str], timeout_s: float = 8.0) -> None:
     script = (
         "import socket,sys,time\n"
@@ -314,6 +338,7 @@ def run_case(
             stun_procs: list[subprocess.Popen[str]] = []
             pcap_procs: list[subprocess.Popen[str]] = []
             turn_proc: subprocess.Popen[str] | None = None
+            cred_proc: subprocess.Popen[str] | None = None
             ref_proc: subprocess.Popen[str] | None = None
             shim_proc: subprocess.Popen[str] | None = None
             turn_log = work_root / "turn.log"
@@ -333,8 +358,25 @@ def run_case(
                     ]
                     if case == "relay":
                         secret = secrets.token_hex(16)
-                        creds = mint_credentials(secret, topology.inet_addr, STUN_UDP)
-                        if not creds.get("username") or not creds.get("uris"):
+                        cred_env = env.copy()
+                        cred_env.update(credential_server_env(
+                            secret, topology.inet_addr, STUN_UDP))
+                        cred_proc = ns_popen(
+                            topology.inet_ns,
+                            [sys.executable, credential_script()],
+                            cwd=REPO_ROOT, env=cred_env, drop_privs=False,
+                            stderr_path=work_root / "turn-credentials.stderr",
+                        )
+                        _wait_port(topology.inet_ns, "127.0.0.1", CREDENTIAL_PORT, env)
+                        posted = _post_in_ns(
+                            topology.inet_ns,
+                            f"http://127.0.0.1:{CREDENTIAL_PORT}/turn-credentials",
+                            env,
+                        )
+                        if not posted.get("ok"):
+                            raise HarnessError("turn credentials missing")
+                        minted = mint_credentials(secret, topology.inet_addr, STUN_UDP)
+                        if not minted.get("username") or not minted.get("urls"):
                             raise HarnessError("turn credentials missing")
                         turn_proc = ns_popen(
                             topology.inet_ns,
@@ -444,7 +486,9 @@ def run_case(
                 if asserting:
                     break
             finally:
-                _stop_procs([*pcap_procs, turn_proc, *stun_procs, ref_proc, shim_proc])
+                _stop_procs(
+                    [*pcap_procs, turn_proc, cred_proc, *stun_procs, ref_proc, shim_proc],
+                )
                 if spec is not None:
                     try:
                         _capture_router_state(spec, work_root)

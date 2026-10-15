@@ -353,16 +353,32 @@ def test_nat_probe_fails_on_subprocess_or_missing_mapping(monkeypatch):
         _read(proc)
 
 
-def test_turn_credentials_contract_and_relay_byte_logs():
-    from deploy.relay.turn_credentials import REALM, post_turn_credentials
-    minted = post_turn_credentials("s3cret", ["turn:27.1.0.1:3478?transport=udp"])
-    assert minted["realm"] == REALM and minted["username"] and minted["credential"]
-    assert minted["uris"][0].startswith("turn:")
+def test_turn_credentials_contract_and_relay_byte_logs(monkeypatch):
+    import time
+
+    from deploy.relay import turn_credentials as tc
+    from tools.cross_network_acceptance.turn import REALM
+
+    monkeypatch.setattr(tc, "SECRET", b"s3cret")
+    monkeypatch.setattr(tc, "EXTERNAL_IP", "27.1.0.1")
+    monkeypatch.setattr(tc, "LISTEN_PORT", 3478)
+    minted = tc.mint_coturn(time.time())
+    assert minted["username"].endswith(":webjam")
+    assert minted["urls"][0] == "turn:27.1.0.1:3478?transport=udp"
+    assert minted["credential"] and minted["allowed_relay_ips"] == ["27.1.0.1"]
     also = mint_credentials("s3cret", "27.1.0.1", 3478)
-    assert also["credential"]
+    assert also["urls"] == minted["urls"] and also["credential"]
+    assert REALM == "webjam"
+    assert tc.valid_session_invite_shape({
+        "session_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "invite_token": "A" * 32,
+    })
+    assert not tc.valid_session_invite_shape({"session_id": "x", "invite_token": "y"})
     assert relayed_bytes("session x usage: rp=2, rb=80, sp=2, sb=40") == 120
     assert relayed_bytes("incoming packet Data from peer") >= 8
     assert relayed_bytes("idle") == 0
+    assert "mint_coturn" in Path(
+        "tools/cross_network_acceptance/turn.py").read_text(encoding="utf-8")
 
 
 def test_stun_server_prefers_coturn(monkeypatch):
@@ -415,9 +431,12 @@ def test_cli_has_no_expected_status_fail():
 def test_proof_peers_drive_real_sidecar_not_standalone_ice():
     proof = Path("tools/cross_network_acceptance/proof.py").read_text(encoding="utf-8")
     run = Path("tools/cross_network_acceptance/run.py").read_text(encoding="utf-8")
+    shim = Path("tools/cross_network_acceptance/shim.py").read_text(encoding="utf-8")
     readme = Path("tools/cross_network_acceptance/README.md").read_text(encoding="utf-8")
     assert "TransportProcess" in proof and "issue_remote_invitation" in proof
     assert "TurnClient" not in proof and "KIND_MUSIC" not in proof
-    assert "webjam_reference" in run
+    assert "webjam_reference" in run and "mint_coturn" not in proof
+    assert "credential_script" in run and "_post_in_ns" in run
+    assert "inner.connect(" not in shim and "_udp_loop" in shim
     assert "transport/internal/ipc" in readme and "POST /turn-credentials" in readme
-    assert "reference-local" in readme and "Pion ICE Agent" in readme
+    assert "reference-local" in readme and "directstun" in readme

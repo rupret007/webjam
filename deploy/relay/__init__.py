@@ -1,1 +1,0 @@
-"""Relay credential contract."""

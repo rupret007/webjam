@@ -1,47 +1,44 @@
 # Cross-network acceptance (proof-only)
 
-Three jobs must **PASS**. Any non-success is FAIL. There is no expected-FAIL
-and no honest-unreachable taxonomy.
+Three jobs must **PASS**. Any non-success is FAIL. No expected-FAIL taxonomy.
 
-Proof peers drive the **real** `webjam-fabric` sidecar through
-`services.transport_runtime.TransportProcess` (the same JSON-lines IPC the Qt
-desktop uses: `hello`/`ready`, `prepare_host`, `open_peer`, `send_help`,
-Jamulus loopback UDP). Qt itself is not started.
+Proof peers drive real `webjam-fabric` via `TransportProcess` (same IPC as Qt:
+`hello`/`ready`, `prepare_host`, `open_peer`, `send_help`, Jamulus loopback).
+Qt is not started. Sidecar env is empty.
 
 | Case | Proof |
 | --- | --- |
-| `same-lan` | Host/host labels. Both sidecars plus `webjam_reference` on the LAN; guest reaches the compiled loopback via a userspace shim (not router DNAT). |
-| `cone` | Two endpoint-independent NATs (dual-STUN verified). Labels are **srflx**. Compiled fabric still uses the exact-pair relay; this is **not** a Pion ICE selected pair. TURN is not used. |
-| `relay` | Two symmetric NATs plus coturn on the public net. Labels are **relay**. Sidecars still use the compiled exact-pair relay. `deploy.relay.turn_credentials.post_turn_credentials` mints the `POST /turn-credentials` body (same helper as `deploy/relay`). Relayed-byte proof is shim/coturn counters on the path that carried the sidecar payloads. |
+| `same-lan` | Labels `host`. Sidecars + `webjam_reference` on the LAN. |
+| `cone` | Dual-STUN EIM. Labels `srflx`. No TURN. |
+| `relay` | Dual-STUN EDM. Labels `relay`. Coturn on the public net. Harness POSTs `/turn-credentials` to `deploy/relay/turn_credentials.py` (`mint_coturn`). Relayed-byte proof is shim/coturn counters. |
 
-PASS requires Music (Jamulus datagrams on the sidecar loopback) and Art
-(`send_help` nonce) both ways, plus path labels from **both** peers. Missing
-or unknown fields fail. Receipt `.PASS` is deleted at start and written
-atomically only after every assertion.
+PASS needs Music and Art nonces both ways plus path labels from both peers.
+`.PASS` is removed at start and written atomically after every assertion.
 
-## Production code paths exercised
+## Production paths
 
-- `transport/cmd/webjam-fabric` (built with `-X main.buildID=<sha>`)
+- `transport/cmd/webjam-fabric` (`-X main.buildID=<sha>`)
+- `services.transport_runtime.TransportProcess`
 - `transport/internal/ipc` runner + `referenceFabricOrchestrator`
-- `transport/internal/icequic` QUIC over the exact-pair `RelayPacketConn`
-  (not `icequic.Agent` gathering)
-- `transport/internal/profile` compiled `reference-local` only
-  (`127.0.0.1:47131` control, `127.0.0.1:47132` relay)
-- `reference_service.webjam_reference` loopback bind (public bind still
-  requires TLS + host admission; the harness never loosens that)
-- `core.remote_invitation.issue_remote_invitation` /
-  `parse_remote_invitation_link`
-- `deploy.relay.turn_credentials` POST `/turn-credentials` mint
+- `transport/internal/icequic` QUIC over exact-pair `RelayPacketConn`
+- compiled `reference-local` (`127.0.0.1:47131` / `47132`)
+- `reference_service.webjam_reference` loopback
+- `core.remote_invitation`
+- `deploy.relay.turn_credentials.mint_coturn` and HTTP `POST /turn-credentials`
 
-**Not exercised:** Qt UI; Pion ICE Agent gathering (`icequic.Agent` remains
-`transport/internal/icequic/lab_test.go`); a public rendezvous profile.
+IPC is still **reference-local**. `transport/internal/directstun` is on master
+(#375) but not selected by `profile.Lookup`. Ordinary `direct-stun` IPC is
+#376 and is not stacked (diff budget). Labels `host`/`srflx`/`relay` are
+topology-derived; this IPC path does not expose a Pion selected pair.
 
-NAT mapping is probed (one inside socket, two STUN endpoints) before each
-cross-network case. Cone routers use explicit SNAT (not MASQUERADE). Symmetric
-`--random-fully` is accepted only if the probe sees different ports. Routers
-default-DROP INPUT/FORWARD and allow only ESTABLISHED,RELATED back in.
+**Not exercised:** Qt; `icequic.Agent`; public rendezvous; sidecar TURN
+Allocate (empty env; no `WEBJAM_TEST_TURN_*` on master).
 
-Deferred (follow-up): pion vnet in-process tier; hairpin and mixed cone/symmetric
-cases; compiling an ICE profile into sidecar IPC.
+Userspace loopback shim (not router DNAT) reaches compiled 127.0.0.1 sockets
+across NAT. UDP is one `select` loop with unconnected inner sockets.
 
-Physical two-home Join, signing, and notarization are **NOT RUN**.
+Cone SNAT is explicit (not MASQUERADE). `--random-fully` only if the probe
+sees different ports. Routers default-DROP; ESTABLISHED,RELATED only back in.
+
+Deferred: pion vnet; hairpin/mixed NATs; `direct-stun` IPC once on master.
+Physical two-home Join, signing, notarization: **NOT RUN**.

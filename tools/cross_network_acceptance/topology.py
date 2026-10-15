@@ -152,6 +152,8 @@ def setup_commands(spec: TopologySpec) -> list[list[str]]:
         ns(inet, ip, "link", "set", dev, "master", "br-pub")
         ns(inet, ip, "link", "set", dev, "up")
     ns(inet, ip, "addr", "add", f"{a['inet']}/24", "dev", "br-pub")
+    ns(inet, sysctl, "-w", "net.ipv4.conf.all.rp_filter=2")
+    ns(inet, sysctl, "-w", "net.ipv4.conf.br-pub.rp_filter=2")
 
     def configure_nat(
         ns_name: str, wan_dev: str, wan_addr: str, lan_dev: str, lan_addr: str,
