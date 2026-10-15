@@ -1342,6 +1342,10 @@ choice is open, review Studio and choose **Record Session** again. Returning
 through **New live take** shows the current live recording guidance; a save
 failure keeps the selected take open until its choices are safe.
 
+If WebJam shows a recording started outside WebJam, **Stop Recording** can
+stop it using the host's current recording connection. After confirmation,
+the controls return to idle; WebJam does not create a take for that recording.
+
 Before any recorder starts, WebJam freezes one take-scoped plan with the exact
 roster/server stem IDs, Shared Track fingerprint and playback generation, host
 mono/stereo topology, each guest's path-free Local Original count/map
