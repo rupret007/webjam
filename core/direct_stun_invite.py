@@ -1,13 +1,13 @@
-"""Clipboard signaling for the ordinary direct-stun v3 path.
+"""Clipboard codecs plus the replaceable guest-reply delivery.
 
 The v3 URL still carries no addresses. The host's sealed candidate bundle
 travels as a second clipboard line so a friend can Join without a rendezvous
 server or port forwarding.
 
-Guest-reply *delivery* is clipboard paste today. Host start and Join
-enrollment call only ``publish_guest_reply`` and ``accept_guest_reply``.
-Replace those two functions when another delivery exists; keep the
-``encode_*`` / ``parse_*`` codecs.
+Host start and Join enrollment call only ``publish_guest_reply`` and
+``accept_guest_reply``. Those two functions post and read the one-invite
+mailbox when a Worker origin is configured. Paste stays the visible
+fallback. Keep the ``encode_*`` / ``parse_*`` codecs.
 """
 
 from __future__ import annotations
@@ -40,15 +40,37 @@ def parse_guest_reply_from_paste(text: object) -> bytes:
     return _parse_signal_from_paste(text, GUEST_REPLY_PREFIX)
 
 
-def publish_guest_reply(envelope: bytes) -> str:
-    """Hand the sealed reply to the current delivery (clipboard paste)."""
+def publish_guest_reply(envelope: bytes, invitation=None, *, transport=None) -> str:
+    """Hand the sealed reply to the mailbox, with paste as hidden fallback."""
 
-    return encode_guest_reply_line(envelope)
+    line = encode_guest_reply_line(envelope)
+    if invitation is None:
+        return line
+    try:
+        from core.signaling_mailbox import MailboxUnavailable, post_answer
+
+        post_answer(invitation, envelope, transport=transport)
+    except (MailboxUnavailable, ValueError):
+        return line
+    return line
 
 
-def accept_guest_reply(text: object) -> bytes:
-    """Read the sealed reply from the current delivery (clipboard paste)."""
+def accept_guest_reply(text: object, invitation=None, *, transport=None) -> bytes:
+    """Read the sealed reply from the mailbox, then the hidden paste fallback."""
 
+    if invitation is not None:
+        try:
+            from core.signaling_mailbox import MailboxUnavailable, ack_answer, poll_answer
+
+            envelope = poll_answer(invitation, transport=transport, timeout_seconds=0.1)
+            if envelope:
+                try:
+                    ack_answer(invitation, transport=transport)
+                except MailboxUnavailable:
+                    pass
+                return envelope
+        except (MailboxUnavailable, ValueError):
+            pass
     return parse_guest_reply_from_paste(text)
 
 

@@ -73,15 +73,20 @@ LOGGER = logging.getLogger("webjam.qt.launch_dialog")
 
 _JOIN_INVITATION_GUIDANCE = "Paste the invite or the whole message."
 _JOIN_NETWORK_HELP = (
-    "If your invitation says “same network,” use your host’s Wi-Fi or local network."
+    "A friend in another house can Join. If your invitation says it only "
+    "works on the host's Wi-Fi or local network, join from that network."
 )
 _JOIN_INVITE_FIELD_NAME = "Paste the invite"
 _JOIN_PRIVACY_LINE = (
     "The invite stays on this screen. WebJam does not save it."
 )
+JOIN_INVITE_FAILED_STATUS = "That invite didn't work"
 
 # Single door line when Paint along is the checked Art start (harvest + UX tests).
-PAINT_ALONG_DOOR_HELPER = "Then choose a file or lesson link."
+# Door next-step matches the empty Paint along orange (PR #320): Watch a
+# shared lesson. Silent file/YouTube stay available as ghosts. When the room
+# HUD owns Copy Invite, that same Watch control is ghosted (one-orange rule).
+PAINT_ALONG_DOOR_HELPER = "Then watch a shared lesson, or choose a silent file."
 
 
 @dataclass(frozen=True)
@@ -185,6 +190,18 @@ class _InvitationInput(QLineEdit):
             # leaves the dialog open, so this same key must not reach Back
             # or another button that previously became the dialog default.
             event.accept()
+
+
+def _restyle_launch_button(button: QPushButton, object_name: str) -> None:
+    """Swap Host/Join orange vs ghost without leaving a stale QSS object name."""
+
+    if button.objectName() == object_name:
+        return
+    button.setObjectName(object_name)
+    style = button.style()
+    style.unpolish(button)
+    style.polish(button)
+    button.update()
 
 
 class _JoinPrimaryButton(QPushButton):
@@ -879,7 +896,6 @@ class LaunchDialog(QDialog):
         self._host_button = QPushButton()
         self._host_button.setObjectName("LaunchPrimary")
         self._host_button.setMinimumHeight(52)
-        self._host_button.setDefault(True)
         self._join_button = QPushButton()
         self._join_button.setObjectName("LaunchSecondary")
         self._join_button.setMinimumHeight(52)
@@ -1062,9 +1078,9 @@ class LaunchDialog(QDialog):
         self._host_reason.setVisible(bool(reason))
 
     def _can_host(self) -> bool:
-        # Ordinary Art uses the existing Python LAN listener, without the
-        # Music engine. An explicit native lab request must keep its existing
-        # platform gate; it must never silently become an ordinary LAN host.
+        # Ordinary Art uses the Python LAN listener when no sidecar is present.
+        # Packaged apps with webjam-fabric use direct-stun Host instead. An
+        # explicit native lab request must keep its existing platform gate.
         return self._host_available or (
             self._art_lan_host_platform
             and self.selected_creator_profile_key == "art"
@@ -1255,12 +1271,32 @@ class LaunchDialog(QDialog):
         elif music_reason:
             host_description += f" {music_reason}"
         self._host_button.setAccessibleDescription(host_description)
-        self._host_button.setEnabled(host_available and not self._submitting)
+        # Music on a non-Mac keeps Host clickable so a grey control never
+        # silently swallows the click. Join becomes the one orange primary.
+        if music_reason:
+            self._host_button.setEnabled(not self._submitting)
+            _restyle_launch_button(self._host_button, "LaunchSecondary")
+            _restyle_launch_button(self._join_button, "LaunchPrimary")
+            self._host_button.setAutoDefault(False)
+            self._join_button.setAutoDefault(True)
+            self._join_button.setDefault(True)
+            self._host_button.setDefault(False)
+        else:
+            _restyle_launch_button(self._host_button, "LaunchPrimary")
+            _restyle_launch_button(self._join_button, "LaunchSecondary")
+            self._join_button.setAutoDefault(False)
+            self._host_button.setAutoDefault(True)
+            self._host_button.setDefault(True)
+            self._join_button.setDefault(False)
+            self._host_button.setEnabled(host_available and not self._submitting)
         self._refresh_host_reason()
 
         self._join_button.setText(copy.join)
         self._join_button.setAccessibleName(copy.join)
-        self._join_button.setAccessibleDescription(copy.join_description)
+        join_description = copy.join_description
+        if music_reason:
+            join_description = f"{join_description} {music_reason}"
+        self._join_button.setAccessibleDescription(join_description)
         self._join_button.setEnabled(not self._submitting)
 
         # Music's live door is Host / Join only. Local studio stays a
@@ -1642,6 +1678,10 @@ class LaunchDialog(QDialog):
         if not self._can_host():
             if not self._submitting:
                 self._apply_creator_profile_presentation()
+                reason = self._host_reason
+                if reason.text():
+                    reason.setVisible(True)
+                    self._announce_error(reason, focus=self._join_button)
             return
         musician_name = self._validated_musician_name()
         if musician_name is None:
@@ -1735,7 +1775,7 @@ class LaunchDialog(QDialog):
             # Restore controls before showing the error; refreshing invite status
             # would clear the message we are about to present.
             self._restore_submission(refresh_invite_status=False)
-            self._join_status.setText("Needs attention")
+            self._join_status.setText(JOIN_INVITE_FAILED_STATUS)
             self._join_error.setText(str(exc))
             self._join_error.setVisible(True)
             self._announce_error(self._join_error, focus=self._invite_input)
@@ -1794,7 +1834,7 @@ class LaunchDialog(QDialog):
                 "The invitation was cleared. Paste the full invitation again, then choose Join."
             )
             self._join_error.setVisible(True)
-            self._join_status.setText("Needs attention")
+            self._join_status.setText(JOIN_INVITE_FAILED_STATUS)
             self._announce_error(self._join_error, focus=self._invite_input)
             return False
         self.selected_role = "join"
@@ -1832,7 +1872,7 @@ class LaunchDialog(QDialog):
         self._pages.setCurrentWidget(self._join_page)
         self.invitation_meeting_url = ""
         self._invite_input.clear()
-        self._join_status.setText("Needs attention")
+        self._join_status.setText(JOIN_INVITE_FAILED_STATUS)
         self._join_error.setText(
             str(message or "WebJam could not open that invitation.")
         )

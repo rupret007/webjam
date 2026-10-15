@@ -19,7 +19,10 @@ from webjam_qt.windows.launch_dialog import LaunchDialog
 
 
 TOKEN = "synthetic-private-invite-token-for-tests-only"
-ERROR_COPY = "That invitation is malformed. Copy a new invitation from your host."
+ERROR_COPY = (
+    "That's not a WebJam invite. Ask your host to press Copy Invite "
+    "and send you the whole message."
+)
 
 
 def private_link(peer_text: str = "43121") -> str:
@@ -112,7 +115,7 @@ def test_oversized_peer_port_restores_door_and_allows_valid_paste(
         assert dialog._join_button.isEnabled() is join_available
         assert join_available
         assert not dialog._join_button_primary.submission_locked()
-        assert dialog._join_status.text() == "Needs attention"
+        assert dialog._join_status.text() == "That invite didn't work"
         assert dialog._join_error.isVisibleTo(dialog)
         assert dialog._join_error.text() == ERROR_COPY
         assert not (tmp_path / "settings.json").exists()

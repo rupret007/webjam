@@ -529,12 +529,14 @@ def test_invalid_invite_error_does_not_echo_sensitive_or_technical_text(tmp_path
     assert dialog.accept_invite(value) is False
     message = dialog._join_error.text()
     assert (
-        message == "That invitation is malformed. Copy a new invitation from your host."
+        message
+        == "That's not a WebJam invite. Ask your host to press Copy Invite "
+        "and send you the whole message."
     )
     assert "SUPER-SECRET" not in message
     assert "10.0.0.2" not in message
     assert dialog._invite_input.text() == value  # preserve editable user input
-    assert dialog._join_status.text() == "Needs attention"
+    assert dialog._join_status.text() == "That invite didn't work"
     assert dialog._submitting is False
     _destroy(dialog)
 

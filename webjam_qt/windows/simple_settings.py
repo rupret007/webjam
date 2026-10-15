@@ -226,32 +226,32 @@ class SimpleSettingsDialog(QDialog):
         self._conversation_toggle.setChecked(bool(settings.webex_url.strip()))
         self._set_conversation_visible(self._conversation_toggle.isChecked())
 
-        # Optional keys. Collapsed by default and last, because a musician who
-        # opens Settings mid-jam is looking for their name or a meeting link,
-        # and nothing below this line is needed to play.
-        keys = self._section("Optional keys")
-        self._keys_toggle = QToolButton()
-        self._keys_toggle.setObjectName("SimpleSettingsDisclosure")
-        self._keys_toggle.setText("Song tools and writing help keys (optional)")
-        self._keys_toggle.setCheckable(True)
-        self._keys_toggle.setToolButtonStyle(
-            Qt.ToolButtonStyle.ToolButtonTextBesideIcon
-        )
-        self._keys_toggle.setArrowType(Qt.ArrowType.RightArrow)
-        self._keys_toggle.setAccessibleName(
-            self._keys_toggle.text()
-            if self._creator_profile_key == "art"
-            else "Optional Music AI and writing help keys"
-        )
-        keys.layout().addWidget(self._keys_toggle)
-        self._keys_panel = ProviderKeyPanel(
-            (*AUDIO_PROVIDER_IDS, *TEXT_PROVIDER_IDS),
-            credentials=ProviderCredentials(settings=settings),
-        )
-        self._keys_panel.setVisible(False)
-        keys.layout().addWidget(self._keys_panel)
-        self._keys_toggle.toggled.connect(self._set_keys_visible)
-        root.addWidget(keys)
+        if self._creator_profile_key != "art":
+            # Optional keys. Collapsed by default and last, because a musician who
+            # opens Settings mid-jam is looking for their name or a meeting link,
+            # and nothing below this line is needed to play. Art has no song-tool
+            # or Jamulus keys on this screen.
+            keys = self._section("Optional keys")
+            self._keys_toggle = QToolButton()
+            self._keys_toggle.setObjectName("SimpleSettingsDisclosure")
+            self._keys_toggle.setText("Song tools and writing help keys (optional)")
+            self._keys_toggle.setCheckable(True)
+            self._keys_toggle.setToolButtonStyle(
+                Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+            )
+            self._keys_toggle.setArrowType(Qt.ArrowType.RightArrow)
+            self._keys_toggle.setAccessibleName(
+                "Optional Music AI and writing help keys"
+            )
+            keys.layout().addWidget(self._keys_toggle)
+            self._keys_panel = ProviderKeyPanel(
+                (*AUDIO_PROVIDER_IDS, *TEXT_PROVIDER_IDS),
+                credentials=ProviderCredentials(settings=settings),
+            )
+            self._keys_panel.setVisible(False)
+            keys.layout().addWidget(self._keys_panel)
+            self._keys_toggle.toggled.connect(self._set_keys_visible)
+            root.addWidget(keys)
 
         self._error = QLabel("")
         self._error.setObjectName("SimpleSettingsError")
@@ -308,7 +308,9 @@ class SimpleSettingsDialog(QDialog):
     def show_optional_keys(self) -> None:
         """Open on the keys section, for a caller that came looking for one."""
 
-        self._keys_toggle.setChecked(True)
+        toggle = getattr(self, "_keys_toggle", None)
+        if toggle is not None:
+            toggle.setChecked(True)
 
     @staticmethod
     def should_show_on_startup(_settings: AppSettings) -> bool:
@@ -341,12 +343,16 @@ class SimpleSettingsDialog(QDialog):
         )
 
     def _set_keys_visible(self, visible: bool) -> None:
+        panel = getattr(self, "_keys_panel", None)
+        toggle = getattr(self, "_keys_toggle", None)
+        if panel is None or toggle is None:
+            return
         if visible:
             # Re-read on open: a key may have been set in the environment, or
             # saved from the Song panel, since this dialog was built.
-            self._keys_panel.refresh()
-        self._keys_panel.setVisible(visible)
-        self._keys_toggle.setArrowType(
+            panel.refresh()
+        panel.setVisible(visible)
+        toggle.setArrowType(
             Qt.ArrowType.DownArrow if visible else Qt.ArrowType.RightArrow
         )
 

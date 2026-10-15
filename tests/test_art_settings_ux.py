@@ -50,8 +50,12 @@ def test_art_settings_first_paint_has_neutral_subtitle(art_dialog, qapp, size):
     assert "Jamulus" not in visible_copy
     assert "Live music" not in visible_copy
     assert_no_banned_first_screen_words(harvest_spoken_page(art_dialog))
-    assert art_dialog._keys_toggle.accessibleName() == art_dialog._keys_toggle.text()
+    assert not hasattr(art_dialog, "_keys_toggle")
+    assert not hasattr(art_dialog, "_keys_panel")
     assert not hasattr(art_dialog, "_open_jamulus")
+    assert "Optional keys" not in visible_copy
+    assert "Song tools" not in visible_copy
+    assert "Jamulus" not in harvest_spoken_page(art_dialog)
     for widget in (subtitle, art_dialog._name, art_dialog._name_preview):
         assert widget.isVisible()
         assert widget.visibleRegion().boundingRect() == widget.rect()
