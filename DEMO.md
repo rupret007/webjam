@@ -1,7 +1,8 @@
 # Show WebJam: the door and the first room action
 
-A short source walkthrough for a teammate, not a replacement for
-[First Session](FIRST_JAM.md) or the [simple-language guide](README_SIMPLE.md).
+A short source walkthrough for a teammate, not a replacement for the
+[creator guide](USER_GUIDE.md), [First Session](FIRST_JAM.md), or the
+[simple-language guide](README_SIMPLE.md).
 Allow two minutes for the door, then another minute to open a Make together
 room and find its Conversation controls. One computer is enough to show that
 next action; a second artist is needed to demonstrate joining and making together.

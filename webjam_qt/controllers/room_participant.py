@@ -166,6 +166,7 @@ class RoomParticipantController:
         self.probe_failed = False
         self.music_invite = None
         self.borrowed_start = ""
+        self._host_start_published = False
         self.native_source = None
         self.native_generation = 0
         self.native_state = None
@@ -301,6 +302,7 @@ class RoomParticipantController:
         self.state = ArtRoomState.STARTING
         self.probing = True
         self.probe_failed = False
+        self._host_start_published = False
         self._lan_terminal_owner = None
         self.stopping = False
         self.app._conductor_setup_requested = True
@@ -416,20 +418,28 @@ class RoomParticipantController:
         self.probe_failed = False
         self.state = ArtRoomState.CONNECTED
         self.borrowed_start = state.art_start_key
+        if state.art_start_key:
+            self._host_start_published = True
         self.observe_creative_state(state)
+        if (self._lesson_current(self._lesson_binding)
+                and owner.lesson_request_state.error == "unavailable"):
+            # A failed poll clears the worker's short-lived request evidence.
+            # This same-room receipt may resume the still-owned lesson; the
+            # next fresh feature receipt grants actions, never cached intent.
+            owner.set_lesson_requests_enabled(True)
         self.app._refresh_readiness()
 
     def lose_lan(self, owner, generation, terminal):
         if owner is not self.lan_guest or generation != self.generation or self.blocked:
             return
         self._lan_pending_admission = None
-        self.retire_lesson_requests()
         # An earlier transient-loss callback must not erase a later rejected
         # credential while both still belong to this exact observer.
         terminal = bool(terminal or self.lan_invitation_rejected)
         self._lan_terminal_owner = owner if terminal else None
         self.probe_failed = bool(terminal and self.probing)
         if terminal:
+            self.retire_lesson_requests()
             self.state = ArtRoomState.FAILED
         elif not self.probing:
             self.state = ArtRoomState.RECONNECTING
@@ -687,6 +697,7 @@ class RoomParticipantController:
         self.generation += 1
         self.role = role
         self.stopping = False
+        self._host_start_published = False
         self.native_source = None
         self.native_state = None
         self.native_applied = None
@@ -756,7 +767,7 @@ class RoomParticipantController:
                 guest_enrollment=True, error_code=error,
             )
 
-    def apply_native(self, source, snapshot):
+    def apply_native(self, source, snapshot, *, retry_deadline=None):
         state = self.native_state
         if (state is None or snapshot.generation != self.native_generation
                 or source is not self.app._remote_session or self.blocked
@@ -765,19 +776,25 @@ class RoomParticipantController:
         key = (source, snapshot.generation, state.revision)
         if key == self.native_applied:
             return
-        if time.monotonic() - self.native_received_at >= 5.0:
+        if retry_deadline is not None and time.monotonic() >= retry_deadline:
             return
         if not self.app._apply_creator_profile_key(state.creator_profile_key, host_owned=True):
             self.native_profile_deferred = True
             # A Library media operation is still pending. Retry shortly
-            # without declaring admission complete; the 5s deadline above
-            # bounds how long these retries can run.
+            # without declaring admission complete. Bound retries from the
+            # first apply attempt, not receipt: state may predate CONNECTED.
+            if retry_deadline is None:
+                retry_deadline = time.monotonic() + 5.0
             generation = self.generation
-            QTimer.singleShot(200, lambda: self._retry_apply_native(source, key, generation))
+            QTimer.singleShot(200, lambda: self._retry_apply_native(
+                source, key, generation, retry_deadline,
+            ))
             return
         self.native_applied = key
         self.probing = False
         self.borrowed_start = state.art_start_key
+        if state.art_start_key:
+            self._host_start_published = True
         if state.creator_profile_key == "art":
             self.state = ArtRoomState.CONNECTED
             self.app._remote_invitation = None
@@ -787,7 +804,7 @@ class RoomParticipantController:
             self.state = ArtRoomState.NONE
             self.app._activate_remote_guest_route(snapshot, source=source)
 
-    def _retry_apply_native(self, source, key, generation):
+    def _retry_apply_native(self, source, key, generation, retry_deadline):
         state = self.native_state
         if (state is None or self.blocked or generation != self.generation
                 or source is not self.app._remote_session
@@ -796,7 +813,7 @@ class RoomParticipantController:
         snapshot = getattr(source, "snapshot", None)
         if snapshot is None or snapshot.generation != self.native_generation:
             return
-        self.apply_native(source, snapshot)
+        self.apply_native(source, snapshot, retry_deadline=retry_deadline)
 
     def observe_creative_state(self, state):
         for method, field in (("_reference_video_coordinator", "reference_video"),
@@ -858,6 +875,7 @@ class RoomParticipantController:
             binding.owner.set_lesson_requests_enabled(False)
 
     def _lesson_current(self, binding):
+        """Lesson ownership outlives temporary route and names observations."""
         app = self.app
         panel = getattr(getattr(app, "window", None), "webex_embed", None)
         if (
@@ -873,8 +891,8 @@ class RoomParticipantController:
         if binding.role == "guest":
             return bool(
                 self.lan_guest is binding.owner and not self.probing
-                and not self.lan_invitation_rejected and self.state is ArtRoomState.CONNECTED
-                and binding.owner.connection_available
+                and not self.lan_failed and not self.lan_invitation_rejected
+                and self.state in {ArtRoomState.CONNECTED, ArtRoomState.RECONNECTING}
                 and binding is self._lesson_binding
                 and self.generation == binding.generation and not self.blocked
                 and self.lan_guest is binding.owner
@@ -883,9 +901,21 @@ class RoomParticipantController:
         return bool(
             app.host_peer is host and host.active and host.server is binding.server
             and getattr(host, "_lifecycle_generation", None) == binding.lifecycle
-            and self.state in {ArtRoomState.WAITING, ArtRoomState.CONNECTED}
+            and self.state in {
+                ArtRoomState.WAITING, ArtRoomState.CONNECTED, ArtRoomState.RECONNECTING,
+            }
+        )
+
+    def _lesson_available(self, binding):
+        """Fresh route evidence gates actions/display, not lesson ownership."""
+        if not self._lesson_current(binding):
+            return False
+        if binding.role == "guest":
+            return self.state is ArtRoomState.CONNECTED and binding.owner.connection_available
+        return bool(
+            self.state in {ArtRoomState.WAITING, ArtRoomState.CONNECTED}
             and self._host_names_owner == (
-                id(host), id(binding.server), binding.generation, binding.lifecycle,
+                id(binding.owner), id(binding.server), binding.generation, binding.lifecycle,
             )
             and 0 <= time.monotonic() - self._host_names_observed_at < 5.0
         )
@@ -913,7 +943,7 @@ class RoomParticipantController:
             getattr(app, "_reference_video", None),
         )
         self._lesson_binding = binding
-        if not self._lesson_current(binding):
+        if not self._lesson_available(binding):
             self.retire_lesson_requests()
             self.project_lesson_requests()
             return
@@ -966,7 +996,7 @@ class RoomParticipantController:
         from PySide6.QtWidgets import QApplication
 
         return bool(
-            self._lesson_current(binding)
+            self._lesson_available(binding)
             and QApplication.activeModalWidget() is None
             and QApplication.activePopupWidget() is None
             and self.app.window.webex_embed.isVisibleTo(self.app.window)
@@ -1035,7 +1065,8 @@ class RoomParticipantController:
         disarmed_guest = (
             binding is not None and binding.role == "guest"
             and self._lesson_current(binding)
-            and not binding.owner.lesson_requests_enabled
+            and self.state is ArtRoomState.CONNECTED
+            and not getattr(binding.owner, "lesson_requests_enabled", True)
         )
         if disarmed_guest or not self._lesson_current(binding):
             self.retire_lesson_requests()
@@ -1070,9 +1101,11 @@ class RoomParticipantController:
             )
             names = binding.server.lesson_request_names(
                 frozenset(notice.participant_id for notice in notices)
-            )
+            ) if self._lesson_available(binding) else None
             if not self._lesson_current(binding):
                 return
+            if not self._lesson_available(binding):
+                names = None
             self._wire_lesson_actions(binding)
             panel.set_lesson_request_host(tuple(
                 (names[notice.participant_id], notice) for notice in notices
@@ -1102,8 +1135,9 @@ class RoomParticipantController:
         elif state.status == "unconfirmed" and not state.can_retry:
             status = "Delivery unconfirmed. Ask the host aloud."
         panel.set_lesson_request_guest(
-            status=status, can_pause=state.can_submit, can_ready=state.can_submit,
-            can_retry=state.can_retry,
+            status=status, can_pause=state.can_submit and self._lesson_available(binding),
+            can_ready=state.can_submit and self._lesson_available(binding),
+            can_retry=state.can_retry and self._lesson_available(binding),
         )
 
     def tick(self):
@@ -1183,6 +1217,7 @@ class RoomParticipantController:
         self.native_source = None
         self.publisher = None
         self.borrowed_start = ""
+        self._host_start_published = False
         self.state = ArtRoomState.NONE
         self.role = ""
         return True

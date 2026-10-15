@@ -785,8 +785,8 @@ def test_guest_missing_file_open_my_copy_owns_emphasis_when_canvas_needs_attenti
     footer_conversation = window.session_strip._video_button
     assert current.open_my_copy_recovery
     assert current.activity_actions == ("video", "canvas")
-    assert panel._making_detail.isVisibleTo(window)
-    assert "Start making with paper" in panel._making_detail.text()
+    assert panel._making_detail.isHidden()
+    assert panel._making_detail.text() == ""
     assert panel._activity.text() == "Open my copy…"
     assert panel._activity_detail.text() == (
         "Open your own copy of the same video to follow along."
@@ -809,8 +809,7 @@ def test_guest_missing_file_open_my_copy_owns_emphasis_when_canvas_needs_attenti
     assert emphasized == ["Open my copy…"]
     recovery_top = panel._activity.mapTo(panel._content, QPoint()).y()
     canvas_top = panel._secondary_activity.mapTo(panel._content, QPoint()).y()
-    making_top = panel._making_detail.mapTo(panel._content, QPoint()).y()
-    assert making_top < recovery_top < canvas_top
+    assert recovery_top < canvas_top
     recovery.setFocus(Qt.FocusReason.TabFocusReason)
     QTest.keyClick(recovery, Qt.Key.Key_Tab)
     _settle(qapp)

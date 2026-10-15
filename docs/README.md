@@ -1,8 +1,9 @@
 # WebJam documentation
 
-This index is the front door for WebJam's documentation. Start with the
-audience that matches what you are trying to do; the root [README](../README.md)
-keeps the product story and five-minute demo intentionally short.
+This index is the front door for WebJam's documentation. Creators: start with
+the [creator guide](../USER_GUIDE.md). That is the one complete how-to. The
+root [README](../README.md) leads with what WebJam is and a three-step start,
+then keeps the technical story.
 
 > **Source identity:** v0.29.0 unsigned testing candidate.
 > **Current download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
@@ -23,9 +24,9 @@ keeps the product story and five-minute demo intentionally short.
 | Manager demo | [Show one-pager](../SHOW_ONEPAGER.md) and [demo script](../DEMO_SCRIPT.md) | Run the prepared four-part arc in under ten minutes; record the rehearsal result |
 | Evaluator or stakeholder | [Project brief](PROJECT_BRIEF.md) | Understand the product thesis, architecture, evidence, and roadmap |
 | Showing someone the door | [Two-minute demo script](../DEMO.md) | Show the Art/Music first screen without running a live session |
-| New creator | [Simple-language guide](../README_SIMPLE.md) | Understand WebJam in plain words before anything technical |
-| Creator | [Creator guide](../USER_GUIDE.md) | Choose a profile, host/join, record, and follow that profile's Studio boundary |
-| First-time demo | [First Session](../FIRST_JAM.md) | Follow the shortest profile-first live-session path |
+| New creator | [Simple-language guide](../README_SIMPLE.md) | Same story as the creator guide, in shorter words |
+| Creator | [Creator guide](../USER_GUIDE.md) | The one complete how-to: install, Host/Join, record, leave, Studio |
+| First-time demo | [First Session](../FIRST_JAM.md) | Shortest live path; details stay in the creator guide |
 | Follow-along pilot | [First test](FOLLOW_ALONG_FIRST_TEST.md) and [pilot record](FOLLOW_ALONG_PILOT_RECORD.md) | Two-person same-LAN Paint along / Play along; physical rows stay **NOT RUN** until observed |
 | Reference Studio user | [Reference Studio guide](REFERENCE_STUDIO_MUSICIAN_GUIDE.md) | Write, arrange, record, and bounce a local project |
 | Developer | [Development guide](../DEVELOPMENT.md) | Set up the repository, preserve ownership boundaries, and run checks |

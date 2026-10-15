@@ -1,5 +1,8 @@
 # First hands-on test
 
+Creators following the product, not this pilot script, should use the
+[creator guide](../USER_GUIDE.md).
+
 Use the identified draft build and keep its `SOURCE-AND-HASHES.json` with your
 results. Start a copy of [the pilot record](FOLLOW_ALONG_PILOT_RECORD.md).
 You need two people, headphones, a YouTube lesson and a Webex meeting. Start
@@ -50,6 +53,11 @@ For a failed connection, follow the room's recovery controls: **Try again**
 retries the connection; **Paste new invite** replaces a rejected invitation.
 Keep your saved workspace. A later meeting-link change uses **Copy Link** and
 **Add Link / Change Link** rather than a new room invitation.
+
+During a brief LAN interruption, lesson requests recover with the same room
+without **Restart requests**. Controls wait for a fresh connection and names
+may disappear temporarily. Request expiry still applies; ask again if your
+request expired. Ending or leaving the room retires its requests.
 
 ## Music video practice
 
