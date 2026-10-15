@@ -224,7 +224,9 @@ def test_topology_labels_and_shim_counts_are_never_proof():
 
     run_src = Path("tools/cross_network_acceptance/run.py").read_text(encoding="utf-8")
     assert "_read_count" not in run_src
+    assert "wait_turn_usage(" in run_src
     assert "stop_turn(" in run_src
+    assert run_src.find("wait_turn_usage(") < run_src.find("stop_turn(")
     assert run_src.find("stop_turn(") < run_src.find("relayed_bytes(")
     run_tree = ast.parse(run_src)
     for node in ast.walk(run_tree):
@@ -480,7 +482,52 @@ def test_turn_credentials_contract_and_relay_byte_logs(monkeypatch):
     assert "--simple-log" in cmd and "-v" in cmd and "--pidfile" in cmd
     turn_src = Path("tools/cross_network_acceptance/turn.py").read_text(encoding="utf-8")
     assert "mint_coturn" in turn_src and "def stop_turn" in turn_src
+    assert "def wait_turn_usage" in turn_src
     assert "SIGTERM" in turn_src
+
+
+def test_wait_turn_usage_polls_until_rb_sb(tmp_path):
+    import threading
+    import time
+
+    from tools.cross_network_acceptance.turn import wait_turn_usage
+
+    log = tmp_path / "turn.log"
+    log.write_text("11: REFRESH processed, success\n", encoding="utf-8")
+
+    def writer():
+        time.sleep(0.12)
+        log.write_text(
+            "11: REFRESH processed, success\n"
+            "12: session 1 usage: realm=<webjam>, username=<u>, rp=1, rb=40, sp=1, sb=20\n",
+            encoding="utf-8",
+        )
+
+    threading.Thread(target=writer, daemon=True).start()
+    started = time.monotonic()
+    text = wait_turn_usage(log, timeout_s=2.0)
+    assert time.monotonic() - started >= 0.1
+    assert relayed_bytes(text) == 60
+    run = Path("tools/cross_network_acceptance/run.py").read_text(encoding="utf-8")
+    wait_at = run.find("wait_turn_usage(")
+    stop_at = run.find("stop_turn(")
+    usage_at = run.find("relayed_bytes(")
+    assert 0 <= wait_at < stop_at < usage_at
+    assert evaluate_proof(
+        _proof(local_type="relay", remote_type="relay"),
+        _proof(local_type="relay", remote_type="relay"),
+        expect_path="relay", music_nonce=MUSIC, art_nonce=ART, relay_bytes=0,
+    ) == "relay carried no bytes"
+
+
+def test_wait_turn_usage_timeout_does_not_invent_bytes(tmp_path):
+    from tools.cross_network_acceptance.turn import wait_turn_usage
+
+    log = tmp_path / "turn.log"
+    log.write_text("11: REFRESH processed, success\n", encoding="utf-8")
+    text = wait_turn_usage(log, timeout_s=0.2)
+    assert relayed_bytes(text) == 0
+    assert "REFRESH" in text
 
 
 def test_stop_turn_terms_pidfile_process(tmp_path):
@@ -596,6 +643,7 @@ def test_proof_peers_drive_real_sidecar_not_standalone_ice():
     assert "loopback_shim_bytes.log" not in run and "shim.count.log" not in run
     assert " + shim" not in run
     assert "loopback_bytes" in shim
+    wait = run.find("wait_turn_usage(")
     stop = run.find("stop_turn(")
     usage = run.find("relayed_bytes(")
-    assert 0 <= stop < usage
+    assert 0 <= wait < stop < usage
