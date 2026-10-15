@@ -7,6 +7,7 @@ on:
     branches:
       - master
   pull_request:
+    types: [opened, synchronize, reopened]
     paths:
       - "core/network_invite.py"
       - "core/session_transfer.py"
