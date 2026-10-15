@@ -8,7 +8,8 @@ boundaries, privacy contracts, and evidence discipline.
 
 1. Read [Development](DEVELOPMENT.md), [Architecture](ARCHITECTURE.md), and the
    relevant decision record in `docs/adr/`.
-2. Check `CHANGELOG.md`'s `Unreleased` section and open issues before starting.
+2. Check open issues and `changelog.d/` (do not edit `CHANGELOG.md` on a
+   pull request; add a `changelog.d/<topic>.md` fragment instead).
 3. Keep the work focused. A UI improvement, a release change, and a new media
    subsystem should not be one unreviewable change.
 
@@ -40,7 +41,9 @@ separate evidence gates; do not mark them PASS from a source test.
   exceptions.
 - Add or update tests for behavior, accessibility, privacy, and release
   metadata that your change affects.
-- Update the canonical audience guide and changelog entry with the code.
+- Update the canonical creator guide (`USER_GUIDE.md`) and add a changelog
+  fragment when the change is user-visible. Do not copy competing install or
+  Host/Join steps into extra files; point here.
 - Do not move an existing release tag or mutate immutable release assets.
 
 Use a short imperative commit subject, explain the user-facing outcome, and

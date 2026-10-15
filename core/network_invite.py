@@ -256,6 +256,9 @@ def parse_invite_link(
         invite_token = query["token"][0]
         if (
             session_id != query["sid"][0].lower()
+            # Bound untrusted decimal text before int() can raise outside
+            # the invitation-error path (or consume an unbounded integer).
+            or len(peer_text) > 5
             or not peer_text.isascii()
             or not peer_text.isdigit()
             or not 1 <= int(peer_text) <= 65535

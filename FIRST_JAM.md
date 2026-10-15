@@ -12,13 +12,27 @@
 > macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
 > gates remain **NOT RUN**. A source checkout is not a published package.
 
+The [creator guide](USER_GUIDE.md) is the complete how-to. This page is the
+shortest live path.
+
+**Get the app** from [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
+Windows may say it protected your PC — choose **More info**, then **Run anyway**.
+On a Mac, drag WebJam into Applications; if macOS blocks it, open
+**System Settings → Privacy & Security**, click **Open Anyway** for WebJam,
+and confirm **Open**.
+
+Stay on the **same Wi-Fi** as the host. Keep the host's window open.
+**A Mac starts a Music jam.** Windows and Linux can Join Music; they cannot
+Host it. Any computer can Host or Join Art.
+
 Before Host or Join, choose **Art** or **Music**. Those are the equal first
 clicks. Art then offers **Make together** or **Paint along**, then **Host** or
 **Join**. **Make together** means “Talk and make with your own tools, or share a canvas”; a
 host may open one shared canvas from inside the room. Music is **Host** or
 **Join** only. Profiles that support recording keep the same evidence
-rules for their recorders. The launch **File** menu contains **New Music Project…**,
-**Podcast & Voice…**, and **Review & Rehearsal…**. No profile directly or
+rules for their recorders. On the Art/Music door, **File → Session library…**
+opens saved work; it does not add Podcast or Review as extra first-screen
+starts. No profile directly or
 automatically taps a meeting app, browser, or system output.
 
 WebJam welcomes artists in any medium who want to make things together. Art
@@ -74,16 +88,17 @@ See [the saved-work walkthrough](USER_GUIDE.md#save-a-session-and-continue-later
 
 These steps apply to Music, Podcast & Voice, and Review & Rehearsal.
 
-1. Open WebJam, choose a creator profile, then choose **Host**, **Host Remote
-   Recording**, or **Host Review** as shown for that profile.
+1. Open WebJam and choose **Music**, then **Host** on a Mac. On Windows or
+   Linux, Music Host is unavailable — ask a Mac to start the jam, then use
+   **Join**. Podcast and Review are not extra first-screen starts.
 2. WebJam starts the private JamulusServer and opens Jamulus.
 3. In Jamulus, set your interface, channels, headphones, and buffer. Use
    **Settings → Audio/Network Settings** if needed.
 4. WebJam moves into the session automatically when it sees the authenticated
    Jamulus connection. If Jamulus is behind another window, choose **Bring
    Jamulus Forward**.
-5. When **Copy Invite** appears, send the complete link to the intended
-   collaborator.
+5. When **Copy Invite** appears, send the complete message to the intended
+   collaborator on the same Wi-Fi. Keep this window open.
 6. Make sound and verify you can hear each other. Use the profile's **Band
    Check**, **Sound Check**, or **Session Check** if you need help.
 7. Add conversation/video only if the group wants it: choose **Conversation**
