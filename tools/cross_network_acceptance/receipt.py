@@ -1,23 +1,24 @@
-"""Receipts (full SHA + PASS)."""
+"""Receipts: stale .PASS deleted at start; atomic write only after assertions."""
+
+from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
 
-from tools.cross_network_acceptance import CONDUCTOR_KIND, SCHEMA
+from tools.cross_network_acceptance import CONDUCTOR_KIND, SCHEMA, HarnessError
 
-ALLOWED_CASES = frozenset({
-    "same-lan", "cross-network", "cross-network-cone", "cross-network-symmetric",
-})
+ALLOWED_CASES = frozenset({"same-lan", "cone", "relay"})
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _SECRET_KEYS = frozenset({
     "invite", "invite_url", "token", "invite_token", "host", "peer_port",
-    "session_id", "authorization", "link",
+    "session_id", "authorization", "link", "credential", "secret", "password",
 })
 
 
-class ReceiptError(ValueError):
+class ReceiptError(HarnessError, ValueError):
     pass
 
 
@@ -55,14 +56,35 @@ def conductor_line(*, sha: str, status: str, case: str) -> str:
     return f"{CONDUCTOR_KIND} sha={digest} status={label} case={name}"
 
 
+def pass_path(directory: Path, sha: str, case: str) -> Path:
+    return directory / f"{require_full_sha(sha)}-{case}.PASS"
+
+
+def json_path(directory: Path, sha: str, case: str) -> Path:
+    return directory / f"{require_full_sha(sha)}-{case}.json"
+
+
+def clear_pass(directory: Path, sha: str, case: str) -> None:
+    pass_path(directory, sha, case).unlink(missing_ok=True)
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.chmod(0o600)
+    os.replace(tmp, path)
+
+
 def build_receipt(
     *, sha: str, case: str, status: str, profiles: list[dict[str, Any]],
     rendezvous_reachable_from_host: bool | None,
     rendezvous_reachable_from_guest: bool | None,
-    invite_host_routable_from_guest: bool | None, netem: bool,
+    invite_host_routable_from_guest: bool | None = None, netem: bool = False,
     port_forwarding: bool = False, notes: str = "", nat_mode: str = "",
     stun_reachable_from_host: bool | None = None,
     stun_reachable_from_guest: bool | None = None,
+    kernel: str = "", expect_path: str = "", relay_bytes: int = 0,
 ) -> dict[str, Any]:
     digest = require_full_sha(sha)
     label, name = _status_case(status, case)
@@ -78,6 +100,8 @@ def build_receipt(
         "conductor_line": conductor_line(sha=digest, status=label, case=name),
         "stun_reachable_from_host": stun_reachable_from_host,
         "stun_reachable_from_guest": stun_reachable_from_guest,
+        "kernel": str(kernel or ""), "expect_path": str(expect_path or ""),
+        "relay_bytes": int(relay_bytes or 0),
     }
     if contains_secret_keys(payload):
         raise ReceiptError("A receipt must not carry invitation material.")
@@ -87,16 +111,13 @@ def build_receipt(
 def write_receipt(directory: Path, receipt: dict[str, Any]) -> Path:
     if contains_secret_keys(receipt):
         raise ReceiptError("A receipt must not carry invitation material.")
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     digest = require_full_sha(str(receipt["git_sha"]))
     case = str(receipt["case"])
-    json_path = directory / f"{digest}-{case}.json"
-    json_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    json_path.chmod(0o600)
-    pass_path = directory / f"{digest}-{case}.PASS"
+    target = json_path(directory, digest, case)
+    _atomic_write(target, json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+    marker = pass_path(directory, digest, case)
     if str(receipt["status"]).upper() == "PASS":
-        pass_path.write_text(str(receipt["conductor_line"]) + "\n", encoding="utf-8")
-        pass_path.chmod(0o600)
+        _atomic_write(marker, str(receipt["conductor_line"]) + "\n")
     else:
-        pass_path.unlink(missing_ok=True)
-    return json_path
+        marker.unlink(missing_ok=True)
+    return target

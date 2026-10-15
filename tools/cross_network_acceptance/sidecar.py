@@ -1,14 +1,26 @@
-"""Build PR #372 webjam-fabric."""
+"""Build PR #372 webjam-fabric. Missing WEBJAM_TRANSPORT_BINARY is FAIL."""
 
 import os
 import subprocess
 from pathlib import Path
 
+from tools.cross_network_acceptance import HarnessError
+
 HARNESS_ROOT = Path(__file__).resolve().parents[2]
 
 
-class SidecarError(RuntimeError):
+class SidecarError(HarnessError):
     pass
+
+
+def require_transport_binary(value: str = "") -> str:
+    raw = str(value or os.environ.get("WEBJAM_TRANSPORT_BINARY") or "").strip()
+    if not raw:
+        return ""
+    path = Path(raw).expanduser()
+    if not path.is_file() or not os.access(path, os.X_OK):
+        raise SidecarError("transport binary missing")
+    return str(path.resolve())
 
 
 def product_sha(product_root: Path) -> str:

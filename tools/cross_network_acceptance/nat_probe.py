@@ -1,15 +1,19 @@
-"""Live RFC 4787 UDP probes; punch_admitted is APDF reply-from-contacted-endpoint."""
+"""RFC 4787 UDP probes plus dual-STUN mapping verification (fail-closed)."""
+
+from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
 from typing import Any
 
+from tools.cross_network_acceptance import PROOF_PORT, HarnessError
+from tools.cross_network_acceptance.stun import probe_sock
 from tools.cross_network_acceptance.topology import (
-    INET_ADDR, NAT_A_WAN, TopologySpec,
-    apply_topology, cleanup_topology, required_bin,
+    TopologySpec, apply_topology, cleanup_topology, required_bin,
 )
 
 _COLLECT = (
@@ -32,13 +36,39 @@ _SEND = (
 )
 
 
-class ProbeError(RuntimeError):
+class ProbeError(HarnessError):
     pass
 
 
 def expected_behavior(nat_mode: str) -> dict[str, bool]:
-    cone = nat_mode in {"cone", "masquerade"}
+    cone = nat_mode == "cone"
     return {"unsolicited_dropped": True, "punch_admitted": True, "mapping_reused": cone}
+
+
+def mapping_mode_ok(nat_mode: str, port_a: int, port_b: int) -> bool:
+    if min(port_a, port_b) < 1 or max(port_a, port_b) > 65535:
+        return False
+    same = port_a == port_b
+    if nat_mode == "cone":
+        return same
+    if nat_mode == "symmetric":
+        return not same
+    return False
+
+
+def verify_mapping_mode(nat_mode: str, port_a: int, port_b: int) -> None:
+    if not mapping_mode_ok(nat_mode, port_a, port_b):
+        raise ProbeError("NAT mapping probe mismatch")
+
+
+def dual_stun_ports(
+    sock: socket.socket, stun_a: tuple[str, int], stun_b: tuple[str, int],
+) -> tuple[int, int]:
+    mapped_a = probe_sock(sock, stun_a[0], stun_a[1])
+    mapped_b = probe_sock(sock, stun_b[0], stun_b[1])
+    if not mapped_a or not mapped_b:
+        raise ProbeError("NAT mapping probe mismatch")
+    return mapped_a[1], mapped_b[1]
 
 
 def _exec(ns: str, script: str, args: list[str], *, popen: bool = False, timeout: float = 6):
@@ -95,19 +125,19 @@ def _row(mode: str, **fields: Any) -> dict[str, Any]:
     return base
 
 
-def probe_nat_behavior(nat_mode: str, *, prefix: str = "") -> dict[str, Any]:
+def probe_nat_behavior(nat_mode: str, *, prefix: str = "", salt: int = 1) -> dict[str, Any]:
     spec = TopologySpec(
-        case="cross-network",
+        case="cone" if nat_mode == "cone" else "relay",
         prefix=prefix or f"w{nat_mode[0]}{os.getpid() % 100:02d}",
-        nat_mode=nat_mode,
+        nat_mode=nat_mode, salt=salt,
     )
     topology = apply_topology(spec)
     host_ns, guest_ns, inet_ns = topology.host_ns, topology.guest_ns, topology.inet_ns
     if inet_ns is None:
         cleanup_topology(spec)
-        raise RuntimeError("Cross-network probe needs the public namespace.")
-    host, guest = "192.168.110.10", "192.168.120.10"
-    hp, gp, p1, p2, stranger = 41000, 42000, 51001, 51002, 51999
+        raise ProbeError("Cross-network probe needs the public namespace.")
+    host, guest = topology.host_addr, topology.guest_addr
+    hp, gp, p1, p2, stranger = PROOF_PORT, 42000, 51001, 51002, 51999
     try:
         def collect(ns: str, addr: str, port: int, limit: float = 2.0):
             return _exec(ns, _COLLECT, [addr, str(port), "1", str(limit)], popen=True)
@@ -115,10 +145,11 @@ def probe_nat_behavior(nat_mode: str, *, prefix: str = "") -> dict[str, Any]:
         def send(ns: str, src: str, sport: int, dest: str, dport: int, token: str) -> None:
             _exec(ns, _SEND, [src, str(sport), dest, str(dport), token])
 
-        c1, c2 = collect(inet_ns, INET_ADDR, p1), collect(inet_ns, INET_ADDR, p2)
+        inet = topology.inet_addr or ""
+        c1, c2 = collect(inet_ns, inet, p1), collect(inet_ns, inet, p2)
         time.sleep(0.15)
-        send(host_ns, host, hp, INET_ADDR, p1, "m1")
-        send(host_ns, host, hp, INET_ADDR, p2, "m2")
+        send(host_ns, host, hp, inet, p1, "m1")
+        send(host_ns, host, hp, inet, p2, "m2")
         seen = _read(c1) + _read(c2)
         ports = [row["src"][1] for row in seen if row.get("src")]
         if len(seen) < 2 or not seen[0].get("src") or len(ports) < 2:
@@ -126,9 +157,9 @@ def probe_nat_behavior(nat_mode: str, *, prefix: str = "") -> dict[str, Any]:
         reused = len(set(ports)) == 1
         mapped_addr = str(seen[0]["src"][0])
         host_mapped = int(seen[0]["src"][1])
-        gwait = collect(inet_ns, INET_ADDR, p1)
+        gwait = collect(inet_ns, inet, p1)
         time.sleep(0.1)
-        send(guest_ns, guest, gp, INET_ADDR, p1, "gm")
+        send(guest_ns, guest, gp, inet, p1, "gm")
         grown = _read(gwait)
         if not grown or not grown[0].get("src"):
             raise ProbeError("missing mapping")
@@ -140,11 +171,11 @@ def probe_nat_behavior(nat_mode: str, *, prefix: str = "") -> dict[str, Any]:
             raise ProbeError("missing mapping")
         inside = collect(host_ns, host, hp, 1.2)
         time.sleep(0.1)
-        send(inet_ns, INET_ADDR, stranger, NAT_A_WAN, host_mapped, "no")
+        send(inet_ns, inet, stranger, topology.nat_a_wan, host_mapped, "no")
         dropped = _read(inside) == []
         reply = collect(host_ns, host, hp, 1.4)
         time.sleep(0.1)
-        send(inet_ns, INET_ADDR, p1, NAT_A_WAN, host_mapped, "ok")
+        send(inet_ns, inet, p1, topology.nat_a_wan, host_mapped, "ok")
         punched = any(row.get("data") == "ok" for row in _read(reply))
         return _row(
             nat_mode, unsolicited_dropped=dropped, punch_admitted=punched,
@@ -162,7 +193,7 @@ def check_probe(row: dict[str, Any]) -> bool:
     return all(bool(row.get(key)) is want[key] for key in want)
 
 
-def run_probes(modes: tuple[str, ...] = ("masquerade", "cone", "symmetric")) -> int:
+def run_probes(modes: tuple[str, ...] = ("cone", "symmetric")) -> int:
     failed = 0
     for mode in modes:
         try:

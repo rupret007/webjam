@@ -1,4 +1,3 @@
-- Optional Cross-network acceptance: same-LAN PASS; two-NAT honest FAIL until
-  Internet Join. `--expected-status FAIL` exits 0 only for a finished
-  network-unreachable connect. `probe-nat` fails closed. Cone/masquerade: RFC 4787
-  endpoint-independent mapping + address-and-port-dependent filtering.
+- Optional Cross-network acceptance is proof-only: same-LAN, two cone NATs
+  (direct), and two symmetric NATs plus coturn (relay) must PASS. Dual-STUN
+  mapping is verified before each case. There is no expected-FAIL taxonomy.

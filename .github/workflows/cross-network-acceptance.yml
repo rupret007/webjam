@@ -1,6 +1,4 @@
-# Optional two-NAT proof. Not a required check. Same-LAN must PASS. Two-NAT FAIL
-# is green only for a classified failure-to-connect (no connected-without-state-exchange
-# or fake connect). Report-only on master.
+# Proof-only two-NAT harness. Every job must PASS. Not a required WebJam CI check.
 name: Cross-network acceptance
 
 on:
@@ -15,6 +13,7 @@ on:
       - "services/lan_room_guest.py"
       - "transport/**"
       - "tools/cross_network_acceptance/**"
+      - "deploy/relay/**"
       - ".github/workflows/cross-network-acceptance.yml"
       - "docs/CROSS-NETWORK-TEST.md"
       - "tests/test_cross_network_acceptance.py"
@@ -45,17 +44,15 @@ jobs:
       - name: Install Python deps
         run: python -m pip install --upgrade pip "setuptools>=83.0.0" && pip install -r requirements.txt pytest "ruff==0.15.22"
       - name: Lint the harness
-        run: ruff check tools/cross_network_acceptance tests/test_cross_network_acceptance.py
-
+        run: ruff check tools/cross_network_acceptance deploy/relay tests/test_cross_network_acceptance.py
       - name: Prove RFC 4787 NAT packet behavior
         run: python -m tools.cross_network_acceptance probe-nat
-
       - name: Run same-LAN control
         run: >
           python -m tools.cross_network_acceptance run --case same-lan
           --output-dir out/cross-network-acceptance
-          --sha "$(git rev-parse HEAD)" --no-netem --expected-status PASS
-
+          --sha "$(git rev-parse HEAD)" --no-netem
+          --job-id "${{ github.run_id }}-same-lan-${{ github.run_attempt }}"
       - name: Chown receipts
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance || true
@@ -68,11 +65,10 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  cross-network:
-    name: Cross-network (two NATs)
+  cone:
+    name: Two cone NATs (direct)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    continue-on-error: ${{ github.ref == 'refs/heads/master' }}
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -86,21 +82,55 @@ jobs:
         run: sudo bash tools/cross_network_acceptance/ci_prep.sh
       - name: Install Python deps
         run: python -m pip install --upgrade pip "setuptools>=83.0.0" && pip install -r requirements.txt pytest "ruff==0.15.22"
-
-      - name: Run two-NAT Host/Join (expected FAIL)
+      - name: Run two-cone direct
         run: >
-          python -m tools.cross_network_acceptance run --case cross-network
+          python -m tools.cross_network_acceptance run --case cone
           --output-dir out/cross-network-acceptance
-          --sha "$(git rev-parse HEAD)" --netem --expected-status FAIL
-
+          --sha "$(git rev-parse HEAD)" --netem
+          --job-id "${{ github.run_id }}-cone-${{ github.run_attempt }}"
       - name: Chown receipts
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance || true
-      - name: Retain receipts
+      - name: Retain pcap, conntrack, logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: two-nat-${{ github.run_id }}-${{ github.run_attempt }}
+          name: cone-${{ github.run_id }}-${{ github.run_attempt }}
+          path: out/cross-network-acceptance/
+          if-no-files-found: warn
+          retention-days: 14
+
+  relay:
+    name: Symmetric NATs via relay
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Install netns, sch_netem, coturn, and Qt
+        run: sudo bash tools/cross_network_acceptance/ci_prep.sh
+      - name: Install Python deps
+        run: python -m pip install --upgrade pip "setuptools>=83.0.0" && pip install -r requirements.txt pytest "ruff==0.15.22"
+      - name: Run symmetric relay
+        run: >
+          python -m tools.cross_network_acceptance run --case relay
+          --output-dir out/cross-network-acceptance
+          --sha "$(git rev-parse HEAD)" --netem
+          --job-id "${{ github.run_id }}-relay-${{ github.run_attempt }}"
+      - name: Chown receipts
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance || true
+      - name: Retain pcap, conntrack, logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: relay-${{ github.run_id }}-${{ github.run_attempt }}
           path: out/cross-network-acceptance/
           if-no-files-found: warn
           retention-days: 14

@@ -3,7 +3,7 @@ set -euo pipefail
 apt-get update
 KERNEL="$(uname -r)"
 env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  iproute2 iptables iputils-ping kmod coturn \
+  iproute2 iptables iputils-ping kmod coturn tcpdump conntrack \
   libegl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0 libportaudio2 libpulse0
 env DEBIAN_FRONTEND=noninteractive apt-get install -y \
   "linux-modules-extra-${KERNEL}" \
@@ -20,3 +20,5 @@ ip netns add "$PROBE"
 ip netns exec "$PROBE" true
 ip netns delete "$PROBE"
 command -v turnserver
+command -v tcpdump
+command -v conntrack
