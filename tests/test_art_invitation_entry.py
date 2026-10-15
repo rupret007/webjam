@@ -70,8 +70,8 @@ def test_art_lan_message_gives_portable_entry_and_preserves_private_invitation(
     )
     copy = _copy_without_link(message, link)
     assert PASTE_INSTRUCTION in copy
-    assert "same Wi-Fi or local network as the host" in copy
-    assert "host needs to keep this room open" in copy
+    assert "only works on the host's Wi-Fi or local network" in copy
+    assert "Keep this room open" in copy
     assert "Make from your own space" in copy
     assert "paper, clay, a model, a printer, or your usual app" in copy
     assert "Song:" not in copy
@@ -202,8 +202,8 @@ def test_explicit_network_fact_gives_music_a_working_private_join_action(meeting
     if meeting_url:
         copy = copy.replace(meeting_url, "[optional meeting]")
     assert PASTE_INSTRUCTION in copy
-    assert "same Wi-Fi or local network as the host" in copy
-    assert "host needs to keep this room open" in copy
+    assert "only works on the host's Wi-Fi or local network" in copy
+    assert "Keep this room open" in copy
     assert "Open the link in WebJam" not in copy
     assert message.includes_meeting is bool(meeting_url)
 

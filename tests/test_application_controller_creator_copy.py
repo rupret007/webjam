@@ -63,21 +63,8 @@ def _invite_controller(profile_key: str, *, webex_url: str = "") -> SimpleNamesp
     )
 
 
-@pytest.mark.parametrize(
-    ("profile_key", "expected"),
-    [
-        ("music", "Invite link copied — send it to another musician."),
-        ("podcast_voice", "Invite link copied — send it to another speaker."),
-        (
-            "review_rehearsal",
-            "Invite link copied — send it to another participant.",
-        ),
-    ],
-)
-def test_copy_invite_success_uses_creator_participant_vocabulary(
-    profile_key: str,
-    expected: str,
-) -> None:
+@pytest.mark.parametrize("profile_key", ["music", "podcast_voice", "review_rehearsal"])
+def test_copy_invite_success_uses_friend_facing_hud_card(profile_key: str) -> None:
     clipboard = MagicMock()
     controller = _invite_controller(profile_key)
 
@@ -88,8 +75,9 @@ def test_copy_invite_success_uses_creator_participant_vocabulary(
     copied = clipboard.setText.call_args.args[0]
     assert "webjam://join?v=3" in copied
     controller.window.flash_message.assert_not_called()
-    assert controller.window.session_hud.set_notice.call_args.args[0] == expected
-    assert controller._invite_share_notice == expected
+    assert controller.window.session_hud.set_notice.call_args.args[0] == INVITE_COPIED_NOTICE
+    assert controller._invite_share_notice == INVITE_COPIED_NOTICE
+    assert "Wi-Fi" not in INVITE_COPIED_NOTICE
 
 
 def test_copy_invite_carries_the_meeting_link_in_the_same_message() -> None:
@@ -109,10 +97,7 @@ def test_copy_invite_carries_the_meeting_link_in_the_same_message() -> None:
     assert "https://band.webex.com/meet/jeff" in copied
     assert "does not run it" in copied
     controller.window.flash_message.assert_not_called()
-    assert controller.window.session_hud.set_notice.call_args.args[0] == (
-        "One invite copied — jam link and meeting link. Send it to another "
-        "musician."
-    )
+    assert controller.window.session_hud.set_notice.call_args.args[0] == INVITE_COPIED_NOTICE
 
 
 def test_lan_copy_invite_uses_persistent_wifi_hud_card() -> None:
@@ -714,4 +699,4 @@ def test_art_copy_invite_names_the_room_and_optional_work_sharing():
     assert "Make from your own space" in copied
     assert "carries the music" not in copied
     controller.window.flash_message.assert_not_called()
-    assert "room link and meeting link" in controller.window.session_hud.set_notice.call_args.args[0]
+    assert controller.window.session_hud.set_notice.call_args.args[0] == INVITE_COPIED_NOTICE

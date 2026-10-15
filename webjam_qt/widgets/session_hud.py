@@ -20,7 +20,7 @@ from core.host_startup_checklist import SOUND_ISNT_RIGHT_LABEL
 from webjam_qt.theme.tokens import Space
 
 INVITE_COPIED_NOTICE = (
-    "Copied. Text the whole message to someone on this Wi-Fi. Keep this window open."
+    "Copied. Send the whole message to your friend. Keep this window open."
 )
 WIFI_NEEDED_NOTICE = "Connect this Mac to Wi-Fi, then try again."
 

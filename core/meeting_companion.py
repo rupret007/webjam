@@ -326,9 +326,11 @@ def build_invite_message(
     ))
     lines = [headline]
     if same_network_required:
+        # Ordinary Copy Invite is for a friend, including other houses.
+        # Same-network is a LAN-only limitation, not the default story.
         lines.append(
-            "Join on the same Wi-Fi or local network as the host. "
-            "The host needs to keep this room open."
+            "This invite only works on the host's Wi-Fi or local network. "
+            "Keep this room open."
         )
     if manual_paste:
         lines.append("Open WebJam, choose Join, then paste this full invitation.")

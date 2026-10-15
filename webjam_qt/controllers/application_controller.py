@@ -8007,22 +8007,7 @@ class ApplicationController(QObject):
             # The legacy invitation is intentionally still usable, but the
             # host must never miss why automatic originals are unavailable.
             self._update_session_hud()
-        participant = _creator_profile_for_controller(
-            self
-        ).vocabulary.participant_singular
-        link_noun = "room" if _creator_profile_for_controller(self).key == "art" else "jam"
-        if owner is None:
-            copied_detail = INVITE_COPIED_NOTICE
-        else:
-            copied_detail = (
-                (
-                    f"One invite copied — {link_noun} link and meeting link. Send it to "
-                    f"another {participant}."
-                )
-                if invite_message.includes_meeting
-                else f"Invite link copied — send it to another {participant}."
-            )
-        ApplicationController._publish_invite_share_notice(self, copied_detail)
+        ApplicationController._publish_invite_share_notice(self, INVITE_COPIED_NOTICE)
 
     @staticmethod
     def _publish_invite_share_notice(controller, text: str) -> None:
@@ -9882,18 +9867,12 @@ class ApplicationController(QObject):
             else:
                 detail = (
                     (
-                        "Your input is detected. Invite a bandmate on the same Wi-Fi."
-                        if remote_owner is None and self._local_audio_seen
-                        else "Your input is detected. Invite your bandmate."
+                        "Your input is detected. Invite your friend."
                         if self._local_audio_seen
-                        else "Play a note to check your input, then invite your bandmate."
+                        else "Play a note to check your input, then invite your friend."
                     )
                     if connected
-                    else (
-                        "Share this link with a bandmate on the same Wi-Fi."
-                        if remote_owner is None
-                        else "Share this private link with your bandmate."
-                    )
+                    else "Share this invite with your friend."
                 )
                 self.window.session_hud.set_state(
                     "Ready to share",

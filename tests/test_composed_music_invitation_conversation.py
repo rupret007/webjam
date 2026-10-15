@@ -128,8 +128,8 @@ def copied_room(qapp, monkeypatch, tmp_path):
         assert exact_link_count == 1
         instructions_present = (
             "choose Join, then paste this full invitation" in message
-            and "same Wi-Fi or local network" in message
-            and "host needs to keep this room open" in message
+            and "only works on the host's Wi-Fi or local network" in message
+            and "Keep this room open" in message
             and "Open the link in WebJam" not in message
         )
         assert instructions_present

@@ -71,6 +71,10 @@ def test_invite_notice_stays_on_the_hud_after_status_updates(qapp):
             action_kind="invite",
         )
         hud.set_notice(INVITE_COPIED_NOTICE)
+        assert INVITE_COPIED_NOTICE == (
+            "Copied. Send the whole message to your friend. Keep this window open."
+        )
+        assert "Wi-Fi" not in INVITE_COPIED_NOTICE
         assert hud.notice_text() == INVITE_COPIED_NOTICE
         assert not hud._notice.isHidden()
         hud.set_state(

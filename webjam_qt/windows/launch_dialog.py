@@ -73,7 +73,8 @@ LOGGER = logging.getLogger("webjam.qt.launch_dialog")
 
 _JOIN_INVITATION_GUIDANCE = "Paste the invite or the whole message."
 _JOIN_NETWORK_HELP = (
-    "If your invitation says “same network,” use your host’s Wi-Fi or local network."
+    "If your invitation says it only works on the host's Wi-Fi or local "
+    "network, join from that network."
 )
 _JOIN_INVITE_FIELD_NAME = "Paste the invite"
 _JOIN_PRIVACY_LINE = (
