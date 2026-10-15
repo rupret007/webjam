@@ -1,13 +1,11 @@
-"""Two-home netns topology. No DNAT, NETMAP, REDIRECT, or port forwarding.
+"""Two-home netns. No DNAT, NETMAP, REDIRECT, or port forwarding.
 
 RFC 4787: masquerade/cone = endpoint-independent mapping +
-address-and-port-dependent filtering (port-restricted cone). A peer is
-admitted only after the inside host sent to that address:port
-(`probe-nat` reply-from-contacted-endpoint). Unsolicited UDP is dropped.
-Not endpoint-independent filtering (that is a static inbound rewrite /
-NETMAP). symmetric = endpoint-dependent mapping on NAT-A (`--random-fully`).
-These modes do not prove product cone-vs-symmetric NAT behavior while
-packaged direct-stun discards TEST-NET-3 mappings.
+address-and-port-dependent filtering. Not endpoint-independent
+filtering (static inbound rewrite / NETMAP). symmetric =
+endpoint-dependent mapping on NAT-A (`--random-fully`). These modes
+do not prove product cone-vs-symmetric NAT behavior while packaged
+direct-stun discards TEST-NET-3 mappings.
 """
 
 import os
@@ -67,10 +65,10 @@ class TopologySpec:
 
     def __post_init__(self) -> None:
         if self.case not in {"same-lan", "cross-network"}:
-            raise TopologyError("Topology case must be same-lan or cross-network.")
+            raise TopologyError("Case must be same-lan or cross-network.")
         token = str(self.prefix or "")
         if not token.isalnum() or not 3 <= len(token) <= 6:
-            raise TopologyError("Topology prefix must be a short alphanumeric token.")
+            raise TopologyError("Prefix must be a short alphanumeric token.")
         mode = str(self.nat_mode or "masquerade")
         if mode not in NAT_MODES:
             raise TopologyError("NAT mode must be masquerade, cone, or symmetric.")
@@ -195,7 +193,7 @@ def assert_no_port_forward(commands: list[list[str]]) -> None:
     joined = " ".join(" ".join(item) for item in commands)
     for banned in ("DNAT", "REDIRECT", "TPROXY", "--dport", "port-forward"):
         if banned in joined:
-            raise TopologyError("The topology must not configure port forwarding.")
+            raise TopologyError("No port forwarding.")
 
 
 def assert_unsolicited_inbound_udp_dropped(commands: list[list[str]]) -> None:
@@ -290,14 +288,8 @@ def apply_netem(spec: TopologySpec) -> bool:
 
 def cleanup_topology(spec: TopologySpec) -> None:
     ip = required_bin("ip")
-    names = ns_names(spec.prefix)
-    for name in names.values():
-        subprocess.run(
-            [ip, "netns", "del", name],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+    for name in ns_names(spec.prefix).values():
+        subprocess.run([ip, "netns", "del", name], check=False, capture_output=True, text=True)
     leftover = subprocess.run(
         [ip, "link", "show"], check=False, capture_output=True, text=True,
     ).stdout

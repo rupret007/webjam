@@ -24,11 +24,11 @@ def _maybe_sudo() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Same-LAN and two-NAT Host/Join acceptance harness."
+        description="Same-LAN and two-NAT Host/Join acceptance."
     )
     sub = parser.add_subparsers(dest="command")
 
-    run = sub.add_parser("run", help="Build topology and drive host/join.")
+    run = sub.add_parser("run", help="Drive host/join.")
     run.add_argument("--case", choices=("same-lan", "cross-network"), required=True)
     run.add_argument("--profiles", default="art,music")
     run.add_argument("--output-dir", type=Path,
@@ -37,26 +37,23 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--netem", action="store_true", default=None)
     run.add_argument("--no-netem", action="store_true")
     run.add_argument("--keep-workdir", action="store_true")
-    run.add_argument("--nat", choices=("masquerade", "cone", "symmetric"), default="masquerade")
+    run.add_argument("--nat", choices=("masquerade", "cone", "symmetric"),
+                     default="masquerade")
     run.add_argument("--product-root", type=Path, default=None)
     run.add_argument("--transport-binary", default="")
     run.add_argument("--build-id", default="")
     run.add_argument("--expected-status", choices=("PASS", "FAIL"), default="PASS")
-
-    role = sub.add_parser("role", help="Internal host/guest worker.")
+    role = sub.add_parser("role", help="Host/guest worker.")
     role.add_argument("--role", choices=("host", "guest"), required=True)
     role.add_argument("--profile", choices=("art", "music"), required=True)
     role.add_argument("--work-dir", type=Path, required=True)
-
-    build = sub.add_parser("build-sidecar", help="Compile webjam-fabric from a product tree.")
+    build = sub.add_parser("build-sidecar", help="Compile webjam-fabric.")
     build.add_argument("--product-root", type=Path, required=True)
     build.add_argument("--output", type=Path,
                       default=REPO_ROOT / "out" / "cross-network-acceptance" / "webjam-fabric")
-    probe = sub.add_parser("probe-nat", help="Prove RFC 4787 mapping and filtering.")
-    probe.add_argument(
-        "--nat", action="append", dest="nats",
-        choices=("masquerade", "cone", "symmetric"),
-    )
+    probe = sub.add_parser("probe-nat", help="RFC 4787 mapping/filter proof.")
+    probe.add_argument("--nat", action="append", dest="nats",
+                       choices=("masquerade", "cone", "symmetric"))
 
     args = parser.parse_args(argv)
     if args.command == "role":
@@ -79,34 +76,19 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 2
     _maybe_sudo()
-    profiles = tuple(
-        item.strip() for item in str(args.profiles).split(",") if item.strip()
-    )
+    profiles = tuple(item.strip() for item in str(args.profiles).split(",") if item.strip())
     if not profiles or any(item not in {"art", "music"} for item in profiles):
         print("Profiles must be art and/or music.", file=sys.stderr)
         return 2
-    netem = True
-    if args.no_netem:
-        netem = False
-    elif args.netem is True:
-        netem = True
-    elif args.case == "same-lan":
-        netem = False
+    netem = False if args.no_netem or (args.netem is not True and args.case == "same-lan") else True
     product = args.product_root.resolve() if args.product_root else REPO_ROOT
     sha = str(args.sha or product_sha(product if args.product_root else REPO_ROOT))
     build_id = str(args.build_id or (product_sha(product) if args.transport_binary else sha))
     return run_case(
-        case=args.case,
-        profiles=profiles,
-        output_dir=args.output_dir,
-        netem=netem,
-        sha=sha,
-        keep_workdir=bool(args.keep_workdir),
-        nat_mode=str(args.nat),
-        product_root=product,
-        transport_binary=str(args.transport_binary or ""),
-        build_id=build_id,
-        expected_status=str(args.expected_status),
+        case=args.case, profiles=profiles, output_dir=args.output_dir, netem=netem,
+        sha=sha, keep_workdir=bool(args.keep_workdir), nat_mode=str(args.nat),
+        product_root=product, transport_binary=str(args.transport_binary or ""),
+        build_id=build_id, expected_status=str(args.expected_status),
     )
 
 

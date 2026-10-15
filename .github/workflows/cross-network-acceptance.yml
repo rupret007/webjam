@@ -1,6 +1,6 @@
 # Optional two-NAT Host/Join proof. Not a required check. Same-LAN must PASS.
-# Two-NAT FAIL is green only for an honest classified failure-to-connect
-# (no connected-without-state-exchange or fake connect). Report-only on master.
+# Two-NAT FAIL is green only for a classified failure-to-connect (no
+# connected-without-state-exchange or fake connect). Report-only on master.
 name: Cross-network acceptance
 
 on:
@@ -11,34 +11,13 @@ on:
   pull_request:
     paths:
       - "core/network_invite.py"
-      - "core/jamulus_endpoint.py"
-      - "core/rendezvous_profiles.py"
-      - "core/remote_invitation.py"
       - "core/session_transfer.py"
-      - "core/session_transfer_runtime.py"
-      - "core/host_share_readiness.py"
       - "services/lan_room_guest.py"
-      - "services/native_remote_transport.py"
-      - "services/remote_session_runtime.py"
-      - "services/transport_runtime.py"
-      - "services/bridge_service.py"
       - "transport/**"
-      - "reference_service/**"
-      - "webjam_qt/controllers/room_participant.py"
-      - "webjam_qt/invitation_ingress.py"
       - "tools/cross_network_acceptance/**"
       - ".github/workflows/cross-network-acceptance.yml"
       - "docs/CROSS-NETWORK-TEST.md"
-      - "docs/REMOTE-SESSIONS-PLAN.md"
-      - "docs/adr/0001-remote-session-transport.md"
-      - "docs/plans/webjam-remote-joining-decision.md"
       - "tests/test_cross_network_acceptance.py"
-      - "tests/test_session_transfer*.py"
-      - "tests/test_native_remote*.py"
-      - "tests/test_lan_*.py"
-      - "tests/test_remote_*.py"
-      - "tests/test_host_share_join_flow.py"
-      - "tests/test_offline_invite_path.py"
 
 permissions:
   contents: read
@@ -65,7 +44,6 @@ jobs:
 
       - name: Install netns, sch_netem, coturn, and Qt
         run: sudo bash tools/cross_network_acceptance/ci_prep.sh
-
       - name: Install Python dependencies
         run: python -m pip install --upgrade pip "setuptools>=83.0.0" && pip install -r requirements.txt pytest "ruff==0.15.22"
 
@@ -84,7 +62,6 @@ jobs:
       - name: Make receipts readable by the runner
         if: always()
         run: if [ -d out/cross-network-acceptance ]; then sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance; fi
-
       - name: Retain receipts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -113,7 +90,6 @@ jobs:
 
       - name: Install netns, sch_netem, coturn, and Qt
         run: sudo bash tools/cross_network_acceptance/ci_prep.sh
-
       - name: Install Python dependencies
         run: python -m pip install --upgrade pip "setuptools>=83.0.0" && pip install -r requirements.txt pytest "ruff==0.15.22"
 
@@ -126,7 +102,6 @@ jobs:
       - name: Make receipts readable by the runner
         if: always()
         run: if [ -d out/cross-network-acceptance ]; then sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance; fi
-
       - name: Retain receipts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

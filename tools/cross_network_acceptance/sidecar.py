@@ -42,19 +42,9 @@ def build_sidecar(product_root: Path, output: Path | None = None) -> Path:
     env.setdefault("GOTOOLCHAIN", "go1.25.13")
     env.setdefault("CGO_ENABLED", "0")
     result = subprocess.run(
-        [
-            "go",
-            "build",
-            "-trimpath",
-            f"-ldflags=-s -w -X main.buildID={digest}",
-            "-o",
-            str(target),
-            "./cmd/webjam-fabric",
-        ],
-        cwd=transport,
-        env=env,
-        capture_output=True,
-        text=True,
+        ["go", "build", "-trimpath", f"-ldflags=-s -w -X main.buildID={digest}",
+         "-o", str(target), "./cmd/webjam-fabric"],
+        cwd=transport, env=env, capture_output=True, text=True,
     )
     if result.returncode != 0 or not target.is_file():
         raise SidecarError("Could not build webjam-fabric from the product tree.")

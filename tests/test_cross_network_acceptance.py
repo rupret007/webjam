@@ -7,35 +7,33 @@ import pytest
 
 from tools.cross_network_acceptance import CONDUCTOR_KIND, SCHEMA
 from tools.cross_network_acceptance.receipt import (
-    ReceiptError,
-    build_receipt,
-    conductor_line,
-    contains_secret_keys,
-    require_full_sha,
-    write_receipt,
+    ReceiptError, build_receipt, conductor_line, contains_secret_keys,
+    require_full_sha, write_receipt,
 )
 from tools.cross_network_acceptance.run import (
-    _run_profile,
-    completed_guest_result,
-    discarded_test_net3_hides_nat_type,
-    honest_product_fail_notes,
-    job_exit_code,
+    _run_profile, completed_guest_result, discarded_test_net3_hides_nat_type,
+    honest_product_fail_notes, job_exit_code,
 )
 from tools.cross_network_acceptance.topology import (
-    HOST_ADDR,
-    NETEM_DELAY,
-    NETEM_JITTER,
-    NETEM_LOSS,
-    RFC4787,
-    TopologyError,
-    TopologySpec,
-    assert_no_port_forward,
-    assert_unsolicited_inbound_udp_dropped,
-    netem_commands,
-    setup_commands,
+    HOST_ADDR, NETEM_DELAY, NETEM_JITTER, NETEM_LOSS, RFC4787, TopologyError,
+    TopologySpec, assert_no_port_forward, assert_unsolicited_inbound_udp_dropped,
+    netem_commands, setup_commands,
 )
 
 FULL_SHA = "a" * 40
+
+
+def _honest(**kw):
+    row = {
+        "guest_connected": False, "session_state_exchanged": False,
+        "failure_class": "honest_unreachable", "attempt_finished": True,
+    }
+    row.update(kw)
+    return row
+
+
+def _job(ok=False, **kw):
+    return job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=ok, **kw)
 
 
 def _receipt(**kw):
@@ -76,15 +74,12 @@ def test_receipt_omits_invitation_material(tmp_path: Path):
         rendezvous_reachable_from_host=None, rendezvous_reachable_from_guest=None,
         invite_host_routable_from_guest=True,
     )
-    assert receipt["schema"] == SCHEMA
-    assert receipt["git_sha"] == FULL_SHA
-    assert receipt["port_forwarding"] is False
-    assert not contains_secret_keys(receipt)
+    assert receipt["schema"] == SCHEMA and receipt["git_sha"] == FULL_SHA
+    assert receipt["port_forwarding"] is False and not contains_secret_keys(receipt)
     path = write_receipt(tmp_path, receipt)
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload["status"] == "PASS"
-    pass_file = tmp_path / f"{FULL_SHA}-same-lan.PASS"
-    assert pass_file.read_text(encoding="utf-8").strip() == receipt["conductor_line"]
+    assert json.loads(path.read_text(encoding="utf-8"))["status"] == "PASS"
+    assert (tmp_path / f"{FULL_SHA}-same-lan.PASS").read_text(
+        encoding="utf-8").strip() == receipt["conductor_line"]
 
 
 def test_fail_receipt_does_not_write_pass_file(tmp_path: Path):
@@ -97,21 +92,17 @@ def test_fail_receipt_does_not_write_pass_file(tmp_path: Path):
 
 
 def test_later_fail_removes_stale_pass_file(tmp_path: Path):
-    passed = _receipt(
+    write_receipt(tmp_path, _receipt(
         status="PASS",
         profiles=[{"profile": "art", "guest_connected": True,
                    "session_state_exchanged": True, "harness_ok": True}],
         invite_host_routable_from_guest=True,
-    )
-    write_receipt(tmp_path, passed)
+    ))
     pass_file = tmp_path / f"{FULL_SHA}-cross-network.PASS"
     assert pass_file.is_file()
-    failed = _receipt(notes="Later FAIL must drop leftover success evidence.")
-    write_receipt(tmp_path, failed)
+    write_receipt(tmp_path, _receipt(notes="Later FAIL must drop leftover success evidence."))
     assert not pass_file.exists()
-    payload = json.loads(
-        (tmp_path / f"{FULL_SHA}-cross-network.json").read_text(encoding="utf-8")
-    )
+    payload = json.loads((tmp_path / f"{FULL_SHA}-cross-network.json").read_text(encoding="utf-8"))
     assert payload["status"] == "FAIL"
 
 
@@ -141,9 +132,7 @@ def test_cross_network_plan_masquerades_without_port_forward():
     assert "DNAT" not in text and "REDIRECT" not in text
     delay = " ".join(" ".join(item) for item in netem_commands(spec))
     assert f"delay {NETEM_DELAY} {NETEM_JITTER} loss {NETEM_LOSS}" in delay
-    assert "203.0.113.1" in text
-    assert "192.168.110.10" in text
-    assert "192.168.120.10" in text
+    assert "203.0.113.1" in text and "192.168.110.10" in text and "192.168.120.10" in text
 
 
 def test_same_lan_plan_has_no_nat_and_no_netem():
@@ -203,14 +192,18 @@ def test_cone_nat_plan_uses_masquerade_without_static_forward():
     assert expected_behavior("symmetric") == {
         "unsolicited_dropped": True, "punch_admitted": True, "mapping_reused": False,
     }
-    assert check_probe({"nat_mode": "cone", **cone})
+    mapped = {
+        "host_mapped": 41234, "guest_mapped": 42000,
+        "observed_ports": [41234, 41234], "mapped_addr": "203.0.113.10",
+    }
+    assert check_probe({"nat_mode": "cone", **cone, **mapped})
     assert not check_probe({
         "nat_mode": "cone", "unsolicited_dropped": False,
-        "punch_admitted": True, "mapping_reused": True,
+        "punch_admitted": True, "mapping_reused": True, **mapped,
     })
     assert not check_probe({
         "nat_mode": "symmetric", "unsolicited_dropped": True,
-        "punch_admitted": True, "mapping_reused": True,
+        "punch_admitted": True, "mapping_reused": True, **mapped,
     })
     assert "reply-from-contacted-endpoint" in Path(
         "tools/cross_network_acceptance/nat_probe.py"
@@ -222,8 +215,7 @@ def test_cone_nat_drops_unsolicited_inbound_udp_before_outbound():
     commands = setup_commands(spec)
     assert_unsolicited_inbound_udp_dropped(commands)
     text = " ".join(" ".join(item) for item in commands)
-    assert "NETMAP" not in text
-    assert "DNAT" not in text
+    assert "NETMAP" not in text and "DNAT" not in text
     with pytest.raises(TopologyError):
         assert_unsolicited_inbound_udp_dropped([
             ["iptables", "-t", "nat", "-A", "PREROUTING", "-p", "udp", "-j",
@@ -238,33 +230,24 @@ def test_symmetric_nat_plan_randomizes_host_mapping_only():
     assert_no_port_forward(commands)
     assert_unsolicited_inbound_udp_dropped(commands)
     text = " ".join(" ".join(item) for item in commands)
-    assert "--random-fully" in text
-    assert text.count("--random-fully") == 1
-    assert "NETMAP" not in text
-    assert "DNAT" not in text
+    assert text.count("--random-fully") == 1 and "NETMAP" not in text and "DNAT" not in text
     assert RFC4787["symmetric"] == ("endpoint-dependent", "address-and-port-dependent")
 
 
 def test_stun_binding_reports_xor_mapped_source():
     from tools.cross_network_acceptance.stun import binding_success, parse_xor_mapped
 
-    request = (
-        b"\x00\x01\x00\x00\x21\x12\xa4\x42" + b"\x11" * 12
+    request = b"\x00\x01\x00\x00\x21\x12\xa4\x42" + b"\x11" * 12
+    assert parse_xor_mapped(binding_success(request, "203.0.113.10", 41234)) == (
+        "203.0.113.10", 41234,
     )
-    response = binding_success(request, "203.0.113.10", 41234)
-    assert parse_xor_mapped(response) == ("203.0.113.10", 41234)
 
 
 def test_stun_name_override_is_test_only_hosts_mapping():
-    from tools.cross_network_acceptance.topology import (
-        INET_ADDR,
-        stun_override_hosts_text,
-    )
+    from tools.cross_network_acceptance.topology import INET_ADDR, stun_override_hosts_text
 
     body = stun_override_hosts_text()
-    assert INET_ADDR in body
-    assert "stun.cloudflare.com" in body
-    assert "stun.l.google.com" in body
+    assert INET_ADDR in body and "stun.cloudflare.com" in body and "stun.l.google.com" in body
     docs = Path("docs/CROSS-NETWORK-TEST.md").read_text(encoding="utf-8")
     assert "test-only" in docs.lower() or "Test-only" in docs
     assert "never" in docs.lower() and "packaged" in docs.lower()
@@ -281,16 +264,12 @@ def test_job_exit_code_keeps_fail_assertions():
 
 
 def test_completed_guest_result_rejects_crash_after_result_file():
-    after_write = {
-        "guest_connected": False,
-        "session_state_exchanged": False,
-        "failure_class": "honest_unreachable",
-    }
+    after_write = _honest()
     assert completed_guest_result(after_write, timed_out=False, returncode=1) is True
     for crash_code in (-11, -6, 139):
         ok = completed_guest_result(after_write, timed_out=False, returncode=crash_code)
         assert ok is False
-        assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=ok) == 1
+        assert _job(ok) == 1
 
 
 def test_completed_guest_result_rejects_programming_and_startup_failures():
@@ -298,10 +277,7 @@ def test_completed_guest_result_rejects_programming_and_startup_failures():
 
     from tools.cross_network_acceptance.roles import NETWORK_CONNECT_EXCEPTIONS
 
-    honest = {
-        "guest_connected": False, "failure_class": "honest_unreachable",
-        "reason": "unreachable",
-    }
+    honest = _honest(reason="unreachable")
     assert completed_guest_result(honest, timed_out=False, returncode=1) is True
     startup = {
         "guest_connected": False, "reason": "startup_refused",
@@ -325,12 +301,8 @@ def test_completed_guest_result_rejects_programming_and_startup_failures():
     assert isinstance(SessionTransferError("no route"), NETWORK_CONNECT_EXCEPTIONS)
     source = Path("tools/cross_network_acceptance/roles.py").read_text(encoding="utf-8")
     assert "except NETWORK_CONNECT_EXCEPTIONS:" in source
-    assert "ValueError, TypeError" not in source
-    assert ", TypeError):" not in source
-    assert job_exit_code(
-        status="FAIL", expected_status="FAIL",
-        harness_ok=completed_guest_result(startup, timed_out=False, returncode=1),
-    ) == 1
+    assert "ValueError, TypeError" not in source and ", TypeError):" not in source
+    assert _job(completed_guest_result(startup, timed_out=False, returncode=1)) == 1
 
 
 def test_build_sidecar_resolves_relative_output_against_cwd(
@@ -367,8 +339,7 @@ def test_build_sidecar_resolves_relative_output_against_cwd(
     monkeypatch.setattr("tools.cross_network_acceptance.sidecar.subprocess.run", fake_run)
     relative = Path("out/cross-network-acceptance/webjam-fabric")
     built = build_sidecar(product, relative)
-    assert built == (repo_cwd / relative).resolve()
-    assert built.is_file()
+    assert built == (repo_cwd / relative).resolve() and built.is_file()
     assert not (product / "transport" / relative).exists()
 
 
@@ -376,17 +347,13 @@ def test_completed_guest_result_rejects_connected_without_state_exchange():
     partial = {"guest_connected": True, "session_state_exchanged": False}
     ok = completed_guest_result(partial, timed_out=False, returncode=1)
     assert ok is False
-    assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=ok) == 1
+    assert _job(ok) == 1
     unlabeled = {"guest_connected": False, "session_state_exchanged": False}
     assert completed_guest_result(unlabeled, timed_out=False, returncode=1) is False
     success = {"guest_connected": True, "session_state_exchanged": True}
     assert completed_guest_result(success, timed_out=False, returncode=0) is True
     assert completed_guest_result(success, timed_out=False, returncode=1) is False
-    honest = {
-        "guest_connected": False,
-        "session_state_exchanged": False,
-        "failure_class": "honest_unreachable",
-    }
+    honest = _honest()
     assert completed_guest_result(honest, timed_out=False, returncode=1) is True
     roles = Path("tools/cross_network_acceptance/roles.py").read_text(encoding="utf-8")
     assert roles.count('failure_class="" if connected else "honest_unreachable"') == 2
@@ -397,9 +364,7 @@ def test_transport_connected_without_state_exchange_is_not_honest_unreachable():
 
     from services.remote_session_runtime import RemoteSessionPhase
     from tools.cross_network_acceptance.roles import (
-        _native_guest_connected,
-        _native_state_exchanged,
-        classify_native_guest_failure,
+        _native_guest_connected, _native_state_exchanged, classify_native_guest_failure,
     )
 
     app = SimpleNamespace(
@@ -407,8 +372,7 @@ def test_transport_connected_without_state_exchange_is_not_honest_unreachable():
             snapshot=SimpleNamespace(phase=RemoteSessionPhase.CONNECTED)),
         _room_participant=SimpleNamespace(
             state=SimpleNamespace(value="failed"),
-            native_state=SimpleNamespace(creator_profile_key=""),
-            borrowed_start=""),
+            native_state=SimpleNamespace(creator_profile_key=""), borrowed_start=""),
     )
     assert _native_guest_connected(app, "music") is True
     assert _native_state_exchanged(app, "music") is False
@@ -416,15 +380,12 @@ def test_transport_connected_without_state_exchange_is_not_honest_unreachable():
         transport_connected=True, state_exchanged=False,
         failure_text="couldn't reach the host", room_failed=True,
     )
-    assert klass == "state_exchange_failure"
-    assert klass != "honest_unreachable"
-    payload = {
-        "guest_connected": True, "session_state_exchanged": False,
-        "failure_class": klass,
-    }
-    ok = completed_guest_result(payload, timed_out=False, returncode=1)
-    assert ok is False
-    assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=ok) == 1
+    assert klass == "state_exchange_failure" and klass != "honest_unreachable"
+    ok = completed_guest_result(
+        {"guest_connected": True, "session_state_exchanged": False, "failure_class": klass},
+        timed_out=False, returncode=1,
+    )
+    assert ok is False and _job(ok) == 1
 
 
 class _FakeRoleProc:
@@ -450,10 +411,7 @@ class _FakeRoleProc:
 def _run_profile_row(tmp_path, monkeypatch, host, guest, result=None):
     from types import SimpleNamespace
 
-    honest = result or {
-        "guest_connected": False, "session_state_exchanged": False,
-        "failure_class": "honest_unreachable", "transport": "lan",
-    }
+    honest = result or _honest(transport="lan")
     topology = SimpleNamespace(
         host_ns="h", guest_ns="g", spec=SimpleNamespace(nat_mode="masquerade"),
     )
@@ -483,13 +441,13 @@ def test_run_profile_rejects_host_crash_during_guest(
     assert crashed["harness_ok"] is False
     assert crashed["reason"] == "host_crash"
     assert crashed["host_returncode"] == 139
-    assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=False) == 1
+    assert _job(False) == 1
     alive = _run_profile_row(
         tmp_path, monkeypatch, _FakeRoleProc(None), _FakeRoleProc(1, already_exited=True),
     )
     assert alive["harness_ok"] is True
     assert alive["host_returncode"] is None
-    assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=True) == 0
+    assert _job(True) == 0
 
 
 def test_run_profile_rejects_host_crash_after_liveness_snapshot(
@@ -507,27 +465,19 @@ def test_run_profile_rejects_host_crash_after_liveness_snapshot(
     assert row["harness_ok"] is False
     assert row["reason"] == "host_crash"
     assert row["host_returncode"] == 139
-    assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=False) == 1
+    assert _job(False) == 1
 
 
 def test_job_exit_code_rejects_incomplete_or_fake_expected_fail():
-    honest = {
-        "guest_connected": False,
-        "session_state_exchanged": False,
-        "failure_class": "honest_unreachable",
-    }
+    honest = _honest()
     assert completed_guest_result(honest, timed_out=False, returncode=1) is True
     assert completed_guest_result(honest, timed_out=True, returncode=1) is False
     assert completed_guest_result({}, timed_out=False, returncode=1) is False
     assert completed_guest_result(honest, timed_out=False, returncode=None) is False
     assert completed_guest_result({"ok": False}, timed_out=False, returncode=1) is False
-    assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=False) == 1
-    assert job_exit_code(
-        status="FAIL", expected_status="FAIL", harness_ok=True, fake_connect=True,
-    ) == 1
-    assert job_exit_code(
-        status="FAIL", expected_status="FAIL", harness_ok=False, fake_connect=True,
-    ) == 1
+    assert _job(False) == 1
+    assert _job(True, fake_connect=True) == 1
+    assert _job(False, fake_connect=True) == 1
 
 
 def test_stun_server_prefers_coturn(monkeypatch):
@@ -583,8 +533,7 @@ def test_test_net3_notes_do_not_claim_nat_type_proof():
     symmetric = honest_product_fail_notes(case="cross-network", nat_mode="symmetric")
     masquerade = honest_product_fail_notes(case="cross-network", nat_mode="masquerade")
     for notes in (cone, symmetric):
-        assert "does not prove" in notes
-        assert "TEST-NET-3" in notes
+        assert "does not prove" in notes and "TEST-NET-3" in notes
         assert "random port mapping" not in notes
         assert "cannot complete packaged direct-stun without a relay" not in notes
     assert "does not prove" not in masquerade
@@ -610,18 +559,15 @@ def test_uncaught_exception_after_success_is_not_harness_ok(tmp_path: Path):
         "import json,sys\nfrom pathlib import Path\n"
         "Path(sys.argv[1]).write_text(json.dumps({"
         "'guest_connected': True, 'session_state_exchanged': True}))\n"
-        "raise RuntimeError('cleanup')\n",
-        encoding="utf-8",
+        "raise RuntimeError('cleanup')\n", encoding="utf-8",
     )
-    proc = subprocess.run(
-        [sys.executable, str(tmp_path / "guest.py"), str(result)], check=False,
-    )
+    proc = subprocess.run([sys.executable, str(tmp_path / "guest.py"), str(result)], check=False)
     assert proc.returncode == 1
     payload = json.loads(result.read_text(encoding="utf-8"))
     ok = completed_guest_result(payload, timed_out=False, returncode=proc.returncode)
     assert ok is False
     receipt = _receipt(
-        case="same-lan", status="PASS" if ok else "FAIL",
+        case="same-lan", status="FAIL",
         profiles=[{"profile": "art", "guest_connected": True,
                    "session_state_exchanged": True, "harness_ok": ok}],
         rendezvous_reachable_from_host=None, rendezvous_reachable_from_guest=None,
@@ -630,7 +576,7 @@ def test_uncaught_exception_after_success_is_not_harness_ok(tmp_path: Path):
     write_receipt(tmp_path, receipt)
     assert receipt["status"] == "FAIL"
     assert not (tmp_path / f"{FULL_SHA}-same-lan.PASS").exists()
-    assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=ok) == 1
+    assert _job(ok) == 1
 
 
 def test_run_profile_rejects_success_then_exception_exit(
@@ -644,4 +590,84 @@ def test_run_profile_rejects_success_then_exception_exit(
     )
     assert row["harness_ok"] is False and row["reason"] == "guest_crash"
     assert row["guest_connected"] is True
-    assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=False) == 1
+    assert _job(False) == 1
+
+
+def _guest_boom(exc: BaseException):
+    def _raise(*_a, **_k):
+        raise exc
+    return _raise
+
+
+def _load_guest_result(path: Path) -> dict:
+    return json.loads((path / "guest.result").read_text(encoding="utf-8"))
+
+
+def test_guest_startup_and_unfinished_attempts_are_harness_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    from types import SimpleNamespace
+
+    from tools.cross_network_acceptance.roles import (
+        _music_guest, classify_native_guest_failure, run_role,
+    )
+
+    unfinished = _honest(attempt_finished=False)
+    assert completed_guest_result(unfinished, timed_out=False, returncode=1) is False
+    assert _job(False) == 1
+    timeout = classify_native_guest_failure(
+        transport_connected=False, state_exchanged=False,
+        failure_text="Join timed out before opening the room", room_failed=False,
+    )
+    failed_only = classify_native_guest_failure(
+        transport_connected=False, state_exchanged=False, failure_text="", room_failed=True,
+    )
+    assert "honest_unreachable" not in {timeout, failed_only}
+    roles = "tools.cross_network_acceptance.roles"
+    monkeypatch.setattr(f"{roles}.parse_invite_link", lambda _url: SimpleNamespace(session_id="s"))
+    monkeypatch.setattr(f"{roles}._direct_stun_available", lambda: False)
+    (tmp_path / "invite").write_text("webjam://x", encoding="utf-8")
+    monkeypatch.setattr(f"{roles}.GuestPeerSession", _guest_boom(FileNotFoundError("bin")))
+    missing_rc = _music_guest(tmp_path)
+    missing = _load_guest_result(tmp_path)
+    assert missing.get("failure_class") != "honest_unreachable"
+    assert missing.get("attempt_finished") is False
+    assert completed_guest_result(missing, timed_out=False, returncode=missing_rc) is False
+    for exc, folder in ((TypeError("bad args"), "prog"), (ImportError("no Qt"), "imp")):
+        work = tmp_path / folder
+        work.mkdir()
+        (work / "invite").write_text("webjam://x", encoding="utf-8")
+        monkeypatch.setattr(f"{roles}.GuestPeerSession", _guest_boom(exc))
+        rc = run_role("guest", "music", work)
+        payload = _load_guest_result(work)
+        assert payload.get("failure_class") == "programming_error"
+        assert completed_guest_result(payload, timed_out=False, returncode=rc) is False
+
+
+def test_nat_probe_fails_on_subprocess_or_missing_mapping(monkeypatch):
+    import subprocess
+    import sys
+
+    from tools.cross_network_acceptance.nat_probe import ProbeError, _exec, _read, check_probe
+
+    matching = {
+        "nat_mode": "symmetric", "unsolicited_dropped": True,
+        "punch_admitted": True, "mapping_reused": False,
+        "host_mapped": 0, "guest_mapped": 0, "observed_ports": [],
+    }
+    assert check_probe(matching) is False
+    assert check_probe({
+        **matching, "host_mapped": 41234, "guest_mapped": 42000,
+        "observed_ports": [41234], "mapped_addr": "203.0.113.10",
+    }) is False
+    monkeypatch.setattr(
+        "tools.cross_network_acceptance.nat_probe.required_bin", lambda _n: "/bin/false",
+    )
+    with pytest.raises(ProbeError):
+        _exec("ns", "print(1)", [])
+    for script in ("print('not-json')", "import sys; sys.exit(3)"):
+        proc = subprocess.Popen(
+            [sys.executable, "-c", script], stdout=subprocess.PIPE, text=True,
+        )
+        with pytest.raises(ProbeError):
+            _read(proc)

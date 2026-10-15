@@ -24,7 +24,7 @@ class ReceiptError(ValueError):
 def require_full_sha(value: str) -> str:
     sha = str(value or "").strip().lower()
     if _SHA.fullmatch(sha) is None:
-        raise ReceiptError("The conductor receipt needs the full 40-character SHA.")
+        raise ReceiptError("Receipt needs the full 40-character SHA.")
     return sha
 
 
@@ -41,14 +41,19 @@ def contains_secret_keys(payload: Any) -> bool:
     return False
 
 
+def _status_case(status: str, case: str) -> tuple[str, str]:
+    label = str(status or "").strip().upper()
+    name = str(case or "").strip()
+    if label not in {"PASS", "FAIL"}:
+        raise ReceiptError("Status must be PASS or FAIL.")
+    if name not in ALLOWED_CASES:
+        raise ReceiptError("Unknown acceptance case.")
+    return label, name
+
+
 def conductor_line(*, sha: str, status: str, case: str) -> str:
     digest = require_full_sha(sha)
-    label = str(status or "").strip().upper()
-    if label not in {"PASS", "FAIL"}:
-        raise ReceiptError("Conductor status must be PASS or FAIL.")
-    name = str(case or "").strip()
-    if name not in ALLOWED_CASES:
-        raise ReceiptError("Conductor case is not a known acceptance case.")
+    label, name = _status_case(status, case)
     return f"{CONDUCTOR_KIND} sha={digest} status={label} case={name}"
 
 
@@ -69,23 +74,17 @@ def build_receipt(
     stun_reachable_from_guest: bool | None = None,
 ) -> dict[str, Any]:
     digest = require_full_sha(sha)
-    label = str(status or "").strip().upper()
-    if label not in {"PASS", "FAIL"}:
-        raise ReceiptError("Receipt status must be PASS or FAIL.")
-    name = str(case or "").strip()
-    if name not in ALLOWED_CASES:
-        raise ReceiptError("Receipt case is not a known acceptance case.")
+    label, name = _status_case(status, case)
     if port_forwarding:
         raise ReceiptError("This harness never configures port forwarding.")
     payload = {
         "schema": SCHEMA, "git_sha": digest, "status": label, "case": name,
-        "port_forwarding": False, "netem": bool(netem),
+        "port_forwarding": False, "netem": bool(netem), "profiles": profiles,
         "rendezvous_reachable_from_host": rendezvous_reachable_from_host,
         "rendezvous_reachable_from_guest": rendezvous_reachable_from_guest,
         "invite_host_routable_from_guest": invite_host_routable_from_guest,
-        "profiles": profiles, "notes": str(notes or ""),
+        "notes": str(notes or ""), "nat_mode": str(nat_mode or ""),
         "conductor_line": conductor_line(sha=digest, status=label, case=name),
-        "nat_mode": str(nat_mode or ""),
         "stun_reachable_from_host": stun_reachable_from_host,
         "stun_reachable_from_guest": stun_reachable_from_guest,
     }

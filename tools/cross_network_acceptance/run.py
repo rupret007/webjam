@@ -14,17 +14,9 @@ from typing import Any
 from tools.cross_network_acceptance.receipt import build_receipt, write_receipt
 from tools.cross_network_acceptance.stun import python_stun_command, stun_server_commands
 from tools.cross_network_acceptance.topology import (
-    INET_ADDR,
-    RENDEZVOUS_TCP,
-    RENDEZVOUS_UDP,
-    STUN_UDP,
-    STUN_UDP_ALT,
-    AppliedTopology,
-    TopologySpec,
-    apply_netem,
-    apply_topology,
-    cleanup_topology,
-    required_bin,
+    INET_ADDR, RENDEZVOUS_TCP, RENDEZVOUS_UDP, STUN_UDP, STUN_UDP_ALT,
+    AppliedTopology, TopologySpec, apply_netem, apply_topology,
+    cleanup_topology, required_bin,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -69,10 +61,8 @@ def _user_env(
         "QT_QPA_PLATFORM": "offscreen", "LIBGL_ALWAYS_SOFTWARE": "1",
         "WEBJAM_PRODUCT_ROOT": str(product_root),
     })
-    existing = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = (
-        str(REPO_ROOT) if not existing else os.pathsep.join((str(REPO_ROOT), existing))
-    )
+    extra = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(REPO_ROOT), extra)))
     env.pop("WEBJAM_ENABLE_REFERENCE_LOCAL", None)
     if transport_binary:
         env["WEBJAM_TRANSPORT_BINARY"] = transport_binary
@@ -99,33 +89,24 @@ def _non_network_guest_outcome(result: dict[str, Any]) -> bool:
 
 
 def completed_guest_result(
-    result: dict[str, Any],
-    *,
-    timed_out: bool,
-    returncode: int | None = 0,
+    result: dict[str, Any], *, timed_out: bool, returncode: int | None = 0,
 ) -> bool:
-
     if timed_out or returncode is None:
         return False
     if not isinstance(result, dict) or "guest_connected" not in result:
         return False
     if result.get("guest_connected"):
         return returncode == 0 and bool(result.get("session_state_exchanged"))
-    if returncode not in _CLEAN_GUEST_CODES:
+    if returncode not in _CLEAN_GUEST_CODES or _non_network_guest_outcome(result):
         return False
-    if _non_network_guest_outcome(result):
+    if not result.get("attempt_finished"):
         return False
     return str(result.get("failure_class") or "") in _HONEST_NETWORK_CLASSES
 
 
 def job_exit_code(
-    *,
-    status: str,
-    expected_status: str,
-    harness_ok: bool,
-    fake_connect: bool = False,
+    *, status: str, expected_status: str, harness_ok: bool, fake_connect: bool = False,
 ) -> int:
-
     actual = str(status or "").strip().upper()
     expected = str(expected_status or "PASS").strip().upper()
     if actual not in {"PASS", "FAIL"} or expected not in {"PASS", "FAIL"}:
@@ -143,30 +124,27 @@ def honest_product_fail_notes(*, case: str, nat_mode: str) -> str:
     if discarded_test_net3_hides_nat_type(nat_mode):
         return (
             "Guest completed without connecting. Packaged direct-stun discards "
-            "TEST-NET-3 STUN mappings, so this run does not prove "
+            "TEST-NET-3 mappings, so this run does not prove "
             "cone-versus-symmetric product NAT behavior."
         )
     if case == "cross-network":
-        return (
-            "Expected until ordinary Host/Join uses the v3 rendezvous/relay "
-            "in docs/REMOTE-SESSIONS-PLAN.md (usability PR #372)."
-        )
+        return "Expected until v3 rendezvous/relay (docs/REMOTE-SESSIONS-PLAN.md)."
     return "Guest completed without connecting."
 
 
 def _incomplete_guest_notes(profile_rows: list[dict[str, Any]]) -> str:
     reasons = {str(row.get("reason") or "") for row in profile_rows}
     if "guest_timeout" in reasons:
-        return "The guest timed out before writing a completed result."
+        return "Guest timed out before a completed result."
     if reasons & {"guest_crash", "guest_never_started"}:
-        return "The guest crashed or never started; not a network failure."
+        return "Guest crashed or never started; not a network failure."
     if reasons & {"guest_result_missing", "startup_refused"}:
-        return "The guest did not finish a network connect attempt."
+        return "Guest did not finish a network connect attempt."
     if "host_crash" in reasons:
-        return "The host exited during the guest attempt; not a network failure."
+        return "Host exited during the guest attempt; not a network failure."
     if "host_not_ready" in reasons:
-        return "The harness could not start the host on the simulated network."
-    return "The harness did not complete an honest guest result."
+        return "Harness could not start the host."
+    return "Harness did not complete an honest guest result."
 
 
 def _drop_privs(argv: list[str]) -> list[str]:
@@ -301,8 +279,7 @@ def _run_profile(
             row = {
                 "profile": profile, "guest_connected": False,
                 "session_state_exchanged": False, "harness_ok": False,
-                "reason": "host_not_ready",
-                "transport": ready.get("transport", ""),
+                "reason": "host_not_ready", "transport": ready.get("transport", ""),
                 "share_reaches_internet": ready.get("share_reaches_internet"),
                 "share_route": ready.get("share_route", ""),
                 "failure_class": ready.get("failure_class", ""),
@@ -354,8 +331,6 @@ def _run_profile(
             "share_reaches_internet": ready.get("share_reaches_internet"),
             "share_route": ready.get("share_route", ""),
             "failure_class": result.get("failure_class", ""),
-            "failure_text": result.get("failure_text", ""),
-            "error_code": result.get("error_code", ""),
             "fake_connect": connected and topology.spec.nat_mode == "symmetric",
         }
         return row
@@ -450,18 +425,10 @@ def _start_stun(
 
 
 def run_case(
-    *,
-    case: str,
-    profiles: tuple[str, ...],
-    output_dir: Path,
-    netem: bool,
-    sha: str,
-    keep_workdir: bool = False,
-    nat_mode: str = "masquerade",
-    product_root: Path | None = None,
-    transport_binary: str = "",
-    build_id: str = "",
-    expected_status: str = "PASS",
+    *, case: str, profiles: tuple[str, ...], output_dir: Path, netem: bool,
+    sha: str, keep_workdir: bool = False, nat_mode: str = "masquerade",
+    product_root: Path | None = None, transport_binary: str = "",
+    build_id: str = "", expected_status: str = "PASS",
 ) -> int:
     prefix = f"wjx{os.getpid() % 1000:03d}"
     mode = nat_mode if case == "cross-network" else "masquerade"
@@ -478,9 +445,7 @@ def run_case(
     _chown_tree(output_dir)
     uid, _gid = _drop_ids()
     env = _user_env(
-        uid,
-        product_root=product,
-        transport_binary=transport_binary,
+        uid, product_root=product, transport_binary=transport_binary,
         build_id=build_id or sha,
     )
     try:
@@ -490,7 +455,7 @@ def run_case(
             sha=sha, case=receipt_case, status="FAIL", profiles=[],
             rendezvous_reachable_from_host=None, rendezvous_reachable_from_guest=None,
             invite_host_routable_from_guest=None, netem=spec.netem,
-            notes="Could not create the simulated networks.", nat_mode=mode,
+            notes="Could not create simulated networks.", nat_mode=mode,
         )
         return _emit_receipt(
             output_dir, receipt, expected_status=expected_status, harness_ok=False,
@@ -515,12 +480,23 @@ def run_case(
             )
             rendezvous = ns_popen(
                 topology.inet_ns,
-                [
-                    sys.executable, "-m", "tools.cross_network_acceptance.rendezvous",
-                    topology.inet_addr, str(RENDEZVOUS_TCP), str(RENDEZVOUS_UDP),
-                ],
-                cwd=REPO_ROOT,
-                env=env,
+                [sys.executable, "-c",
+                 "import select,socket,sys\nh,t=sys.argv[1],int(sys.argv[2]);s=[]\n"
+                 "tcp=socket.socket();tcp.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)\n"
+                 "tcp.bind((h,t));tcp.listen(8);s.append(tcp)\n"
+                 "for p in sys.argv[3:]:\n"
+                 " u=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);u.bind((h,int(p)));s.append(u)\n"
+                 "while True:\n"
+                 " for i in select.select(s,[],[],1.0)[0]:\n"
+                 "  if i is tcp:\n"
+                 "   c,_=i.accept()\n"
+                 "   try:c.sendall(b'ok\\n')\n"
+                 "   finally:c.close()\n"
+                 "  else:\n"
+                 "   d,a=i.recvfrom(256)\n"
+                 "   if d:i.sendto(d[:8] or b'ok',a)\n",
+                 topology.inet_addr, str(RENDEZVOUS_TCP), str(RENDEZVOUS_UDP)],
+                cwd=REPO_ROOT, env=env,
             )
 
             def _reach(*, stun_only: bool = False) -> bool:
@@ -547,9 +523,9 @@ def run_case(
                 )
                 _until(5.0, lambda: _reach(stun_only=True))
             if not host_reach or not guest_reach:
-                notes = "The simulated internet is not reachable from both homes."
+                notes = "Simulated internet is not reachable from both homes."
             elif not stun_host or not stun_guest:
-                notes = "The public STUN server is not reachable from both homes."
+                notes = "Public STUN is not reachable from both homes."
             else:
                 runnable = True
         else:
@@ -579,8 +555,8 @@ def run_case(
     if fake:
         harness_ok = False
         notes = (
-            "Symmetric NAT produced a connection. That is a fake connect; "
-            "the job must fail even when --expected-status is FAIL."
+            "Symmetric NAT produced a fake connect; the job must fail "
+            "even when --expected-status is FAIL."
         )
     status = (
         "FAIL" if mode == "symmetric"

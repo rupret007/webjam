@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,8 +13,9 @@ from core.network_invite import local_band_address, parse_invite_link
 from core.session_transfer import SessionTransferError
 from core.session_transfer_runtime import GuestPeerSession, HostPeerSession
 
-# Connect-path only. TypeError/ValueError must not become expected FAIL.
 NETWORK_CONNECT_EXCEPTIONS = (SessionTransferError, OSError)
+_PROGRAMMING_EXCEPTIONS = (TypeError, ValueError, ImportError, SyntaxError, AttributeError, NameError)
+_STARTUP_OS_ERRORS = (FileNotFoundError, NotADirectoryError, PermissionError, IsADirectoryError)
 
 ART_START = "paint_along"
 _INVITE_NAME = "invite"
@@ -44,15 +46,40 @@ def _honest_failure(text: str) -> bool:
     return any(snippet in lowered for snippet in _HONEST_FAIL_SNIPPETS)
 
 
+def guest_failure_from_exception(exc: BaseException) -> dict[str, Any]:
+    if isinstance(exc, _PROGRAMMING_EXCEPTIONS):
+        klass = "programming_error"
+    elif isinstance(exc, _STARTUP_OS_ERRORS):
+        klass = "startup_failure"
+    elif isinstance(exc, NETWORK_CONNECT_EXCEPTIONS):
+        return {
+            "reason": "unreachable", "failure_class": "honest_unreachable",
+            "attempt_finished": True,
+        }
+    else:
+        klass = "unknown"
+    return {"reason": klass, "failure_class": klass, "attempt_finished": False}
+
+
 def classify_native_guest_failure(
     *, transport_connected: bool, state_exchanged: bool,
     failure_text: str, room_failed: bool,
+    attempt_finished: bool = False, error_code: str = "",
 ) -> str:
     if state_exchanged:
         return ""
     if transport_connected:
         return "state_exchange_failure"
-    if _honest_failure(failure_text) or room_failed:
+    code = str(error_code or "")
+    if code in {"unavailable", "invitation_unusable", "local_operation_pending"}:
+        return "startup_failure"
+    if code == "peer_protocol_unsupported":
+        return "programming_error"
+    if not attempt_finished:
+        return "unknown"
+    if _honest_failure(failure_text) or room_failed or code in {
+        "transport_failed", "timed_out", "expired", "enrollment_rejected",
+    }:
         return "honest_unreachable"
     return "unknown"
 
@@ -95,6 +122,7 @@ def _guest_result(
     work_dir: Path, profile: str, transport: str, *,
     connected: bool, exchanged: bool, **extra: Any,
 ) -> int:
+    extra.setdefault("attempt_finished", bool(connected and exchanged))
     _write_json(work_dir / _RESULT_NAME, {
         "ok": exchanged, "profile": profile, "guest_connected": connected,
         "session_state_exchanged": exchanged, "transport": transport, **extra,
@@ -106,9 +134,21 @@ def _guest_fail(
     work_dir: Path, profile: str, transport: str, *, reason: str,
     extra: dict[str, Any] | None = None,
 ) -> int:
+    extra = dict(extra or {})
+    extra.setdefault(
+        "attempt_finished",
+        extra.get("failure_class") == "honest_unreachable" and reason == "unreachable",
+    )
     return _guest_result(
         work_dir, profile, transport, connected=False, exchanged=False,
-        reason=reason, **(extra or {}),
+        reason=reason, **extra,
+    )
+
+
+def _guest_connect_fail(work_dir: Path, profile: str, transport: str) -> int:
+    extra = guest_failure_from_exception(sys.exception())
+    return _guest_fail(
+        work_dir, profile, transport, reason=str(extra.pop("reason")), extra=extra,
     )
 
 
@@ -159,11 +199,10 @@ def _music_guest(work_dir: Path) -> int:
             work_dir, "music", "lan", connected=connected, exchanged=exchanged,
             creator_profile_key=state.creator_profile_key,
             failure_class="" if connected else "honest_unreachable",
+            attempt_finished=True,
         )
     except NETWORK_CONNECT_EXCEPTIONS:
-        return _guest_fail(
-            work_dir, "music", "lan", reason="unreachable",
-            extra={"failure_class": "honest_unreachable"})
+        return _guest_connect_fail(work_dir, "music", "lan")
     finally:
         url = ""
 
@@ -190,18 +229,19 @@ def _make_qt_app(*, work_dir: Path, hosting: bool, profile: str, invite=None, re
     from webjam_qt.windows.conductor_window import ConductorWindow
 
     QApplication.instance() or QApplication([])
+    art = profile == "art"
     settings = AppSettings(
         config_file=str(work_dir / "settings.json"),
         takes_directory=str(work_dir / "takes"),
         musician_name="Host artist" if hosting else "Guest artist",
         host_server_enabled=hosting,
-        last_creator_profile_key="art" if profile == "art" else "music",
-        last_creator_start_key=ART_START if profile == "art" else "",
+        last_creator_profile_key="art" if art else "music",
+        last_creator_start_key=ART_START if art else "",
     )
     window = ConductorWindow(
         mode_entries=ApplicationController.mode_entries(),
         initial_mode_key="music_jam",
-        initial_title="Art room" if profile == "art" else "Music room",
+        initial_title="Art room" if art else "Music room",
     )
     kwargs: dict[str, Any] = {"settings": settings}
     if invite is not None:
@@ -333,15 +373,15 @@ def _art_guest(work_dir: Path) -> int:
             )
             room = app._room_participant
             exchanged = connected and room.borrowed_start == ART_START
+            finished = bool(connected or room.state is ArtRoomState.FAILED)
             return _guest_result(
                 work_dir, "art", "lan", connected=connected, exchanged=exchanged,
                 art_start_key=room.borrowed_start, room_state=room.state.value,
                 failure_class="" if connected else "honest_unreachable",
+                attempt_finished=finished,
             )
         except NETWORK_CONNECT_EXCEPTIONS:
-            return _guest_fail(
-                work_dir, "art", "lan", reason="unreachable",
-                extra={"failure_class": "honest_unreachable"})
+            return _guest_connect_fail(work_dir, "art", "lan")
 
 
 def _native_owner_ready(app) -> bool:
@@ -391,6 +431,26 @@ def _native_host(work_dir: Path, profile: str) -> int:
         return 0
 
 
+def _native_connect_attempt_finished(app) -> bool:
+    snap = getattr(getattr(app, "_remote_session", None), "snapshot", None)
+    if snap is None:
+        return False
+    phase = getattr(getattr(snap, "phase", None), "value", "")
+    if phase == "connected":
+        return True
+    if phase != "failed":
+        return False
+    code = getattr(getattr(snap, "error_code", None), "value", "")
+    if code in {"", "unavailable", "invitation_unusable", "local_operation_pending"}:
+        return False
+    if code == "timed_out":
+        return getattr(getattr(snap, "stage", None), "value", "") in {
+            "contacting_host", "securing_connection", "opening_jamulus",
+            "needs_attention",
+        }
+    return True
+
+
 def _native_guest_connected(app, profile: str) -> bool:
     from services.remote_session_runtime import RemoteSessionPhase
 
@@ -437,44 +497,47 @@ def _native_guest(work_dir: Path, profile: str) -> int:
                     work_dir, profile, "direct-stun", reason="startup_refused",
                     extra={"failure_class": "startup_failure",
                            "failure_text": _sanitize_text(_hud_text(app))})
-            _drain(
-                qapp,
-                lambda: _native_guest_connected(app, profile)
-                and _native_state_exchanged(app, profile),
-                50.0,
-            )
+            _drain(qapp, lambda: (
+                _native_guest_connected(app, profile)
+                and _native_state_exchanged(app, profile)
+            ), 50.0)
             connected = _native_guest_connected(app, profile)
             exchanged = connected and _native_state_exchanged(app, profile)
+            finished = _native_connect_attempt_finished(app)
             room = app._room_participant
-            snapshot = getattr(getattr(app, "_remote_session", None), "snapshot", None)
-            error_code = getattr(getattr(snapshot, "error_code", None), "value", "")
+            snap = getattr(getattr(app, "_remote_session", None), "snapshot", None)
+            error_code = getattr(getattr(snap, "error_code", None), "value", "")
             failure_text = _sanitize_text(" ".join(flashes) or _hud_text(app))
             return _guest_result(
                 work_dir, profile, "direct-stun",
                 connected=connected, exchanged=exchanged,
                 art_start_key=room.borrowed_start, room_state=room.state.value,
-                error_code=error_code,
+                error_code=error_code, attempt_finished=finished,
+                failure_text=failure_text,
                 failure_class=classify_native_guest_failure(
                     transport_connected=connected, state_exchanged=exchanged,
                     failure_text=failure_text,
                     room_failed=room.state is ArtRoomState.FAILED,
+                    attempt_finished=finished, error_code=str(error_code or ""),
                 ),
-                failure_text=failure_text,
             )
         except NETWORK_CONNECT_EXCEPTIONS:
-            return _guest_fail(
-                work_dir, profile, "direct-stun", reason="unreachable",
-                extra={"failure_class": "honest_unreachable"},
-            )
+            return _guest_connect_fail(work_dir, profile, "direct-stun")
 
 
 def run_role(role: str, profile: str, work_dir: Path) -> int:
     if profile not in {"art", "music"} or role not in {"host", "guest"}:
         return 2
     work_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    if _direct_stun_available():
-        return _native_host(work_dir, profile) if role == "host" else _native_guest(
-            work_dir, profile)
-    if profile == "music":
-        return _music_host(work_dir) if role == "host" else _music_guest(work_dir)
-    return _art_host(work_dir) if role == "host" else _art_guest(work_dir)
+    try:
+        native = _direct_stun_available()
+        if native:
+            return _native_host(work_dir, profile) if role == "host" else _native_guest(
+                work_dir, profile)
+        if profile == "music":
+            return _music_host(work_dir) if role == "host" else _music_guest(work_dir)
+        return _art_host(work_dir) if role == "host" else _art_guest(work_dir)
+    except Exception:
+        if role != "guest":
+            raise
+        return _guest_connect_fail(work_dir, profile, "lan")
