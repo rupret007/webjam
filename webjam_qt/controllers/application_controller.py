@@ -7979,21 +7979,6 @@ class ApplicationController(QObject):
 
         self._paste_guest_reply()
 
-    def _copy_direct_stun_guest_reply_if_ready(self) -> None:
-        if bool(getattr(self, "_direct_stun_guest_reply_copied", False)):
-            return
-        line = self._guest_reply_delivery_text()
-        if not line:
-            return
-        from PySide6.QtWidgets import QApplication
-
-        QApplication.clipboard().setText(line)
-        self._direct_stun_guest_reply_copied = True
-        self.window.flash_message(
-            "Send this reply to the host. Keep this window open.",
-            ms=7000,
-        )
-
     def _copy_band_invite(self) -> None:
         """Copy one complete invitation; never make a musician parse it."""
         from PySide6.QtWidgets import QApplication
@@ -11195,8 +11180,6 @@ class ApplicationController(QObject):
             self._retry_session()
         elif action == "paste_invite":
             self._paste_new_invitation()
-        elif action == "paste_reply":
-            self._paste_direct_stun_guest_reply()
         elif action == "cancel_startup":
             self._cancel_startup_journey()
         elif action in {"primary", "start_session"}:
