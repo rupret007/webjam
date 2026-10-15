@@ -375,6 +375,8 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
             queue.SimpleQueue()
         )
         self._export_generation = 0
+        self._export_ui_generation = 0
+        self._recording_cancelled_exports: set[int] = set()
         self._export_cancel = threading.Event()
         self._logic_handoff_results: queue.SimpleQueue[
             tuple[Path, object | None, str | None, bool]
@@ -2231,11 +2233,18 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
             return
         self._export_cancel.set()
         self._review_dialog.set_receipt()
-        self._review_dialog.status.setText("Export canceled because recording is starting. No completed receipt.")
+        cancelled_generation = self._export_generation
+        self._recording_cancelled_exports.add(cancelled_generation)
+        # Keep UI ownership with the cancelled request so a completed folder
+        # can still surface recovery. A later export replaces this token.
+        self._export_ui_generation = cancelled_generation
+        self._review_dialog.status.setText(
+            "Stopping export because recording is starting. Checking for a completed folder…"
+        )
         self._export_generation += 1
         self._restore_export_controls()
         self._hint.setText(
-            "Studio stopped the previous export because recording is starting. "
+            "Studio is stopping the previous export because recording is starting. "
             "The original take is unchanged."
         )
         self.export_finished.emit(False)
@@ -3894,6 +3903,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
         cancel_event = self._export_cancel
         self._export_generation += 1
         generation = self._export_generation
+        self._export_ui_generation = generation
         self._exporting = True
         self._review_dialog.set_receipt()
         self._review_dialog.status.setText("Export in progress. No completed receipt yet.")
@@ -3946,8 +3956,13 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
                         take,
                         mix_settings=states,
                         selected_track_ids=selected_track_ids,
+                        cancel_event=cancel_event,
                     )
+                if cancel_event.is_set():
+                    raise ExportReceiptError("Export stopped after folder publication.")
                 receipt = verify_export_receipt(result.folder)
+                if cancel_event.is_set():
+                    raise ExportReceiptError("Export stopped during final verification.")
                 outcome = _ExportWorkerOutcome(
                     generation=generation,
                     take_path=take_path,
@@ -4012,14 +4027,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
             self._review_dialog.status.setText("Export did not complete verification. No verified receipt is available; the recording is unchanged.")
             LOGGER.error("Track export did not complete: %s", error or "unknown error")
             if published_folder is not None:
-                self._reveal_path = published_folder
-                set_labeled_action(self._reveal_btn, "Show Unverified Export")
-                self._reveal_btn.setEnabled(True)
-                self._hint.setText(
-                    "Studio created the export folder, but final verification could "
-                    "not be confirmed. Verify SHA256SUMS.txt (or CHECKSUMS.sha256) before relying on it. "
-                    "The original take is safe."
-                )
+                self._show_unverified_export(published_folder)
                 self.export_finished.emit(False)
                 return
             self._hint.setText(
@@ -4064,13 +4072,46 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
                 )
         self.export_finished.emit(True)
 
+    def _show_unverified_export(self, folder: Path) -> None:
+        self._reveal_path = folder
+        set_labeled_action(self._reveal_btn, "Show Unverified Export")
+        self._reveal_btn.show()
+        self._reveal_btn.setEnabled(True)
+        self._hint.setText(
+            "Studio created the export folder, but final verification could "
+            "not be confirmed. Verify SHA256SUMS.txt (or CHECKSUMS.sha256) before relying on it. "
+            "The original take is safe."
+        )
+
     def _drain_export_results(self) -> None:
         while True:
             try:
                 outcome = self._export_results.get_nowait()
             except queue.Empty:
                 return
-            if self._waveform_shutdown or outcome.generation != self._export_generation:
+            if self._waveform_shutdown:
+                continue
+            if outcome.generation in self._recording_cancelled_exports:
+                self._recording_cancelled_exports.discard(outcome.generation)
+                # Recording has already regained its controls and emitted failure.
+                # Preserve a published folder even if its result was queued before
+                # cancellation; never restore stale take controls or emit twice.
+                # A newer export owns folder/recovery UI via _export_ui_generation.
+                if outcome.generation != self._export_ui_generation:
+                    continue
+                folder = outcome.published_folder
+                if folder is None and outcome.result is not None:
+                    folder = outcome.result.folder
+                if folder is not None:
+                    self._show_unverified_export(folder)
+                self._review_dialog.set_receipt()
+                self._review_dialog.status.setText(
+                    "Export did not complete verification. No verified receipt is available; the recording is unchanged."
+                    if folder is not None else
+                    "Export canceled because recording is starting. No completed receipt."
+                )
+                continue
+            if outcome.generation != self._export_generation:
                 continue
             current_path = (
                 None
