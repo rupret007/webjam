@@ -6,7 +6,7 @@
   public service.
 - Architecture: [ADR 0001](../adr/0001-remote-session-transport.md)
 - Recorder correlation: [ADR 0009](../adr/0009-presence-v2-recorder-correlation.md)
-- Last reviewed: 2026-08-03
+- Last reviewed: 2026-10-15
 
 This document defines the security and privacy boundary for the v3 remote
 session. It is an implementation and release gate, not evidence that a public
@@ -56,10 +56,11 @@ state of:
 - readiness, path selection, reconnect, cleanup, and media-completion truth;
 - the bundled sidecar and dependency/build provenance.
 
-The relay and rendezvous are zero-trust for content and protocol input. They
-may observe metadata and may drop, delay, replay, reorder, or fabricate input,
-but must not be able to decrypt audio/media, enroll a peer, replace a peer key,
-or alter an accepted candidate bundle.
+The relay, rendezvous, and one-invite signaling mailbox are zero-trust for
+content and protocol input. They may observe metadata and may drop, delay,
+replay, reorder, or fabricate input, but must not be able to decrypt
+audio/media, enroll a peer, replace a peer key, or alter an accepted
+candidate bundle.
 
 The endpoint application, signed sidecar, bundled Jamulus, and the user's OS
 account form the trusted endpoint computing base. Administrator/root access,
@@ -171,6 +172,22 @@ bootstrap, acknowledgment, and proof. The reference service receives the
 session-bound derived enrollment token and opaque signaling payloads. It never
 receives the raw capability or proof key, and one derived value cannot be
 reused for another purpose.
+
+The one-invite signaling mailbox lives on the existing
+`webjam-turn-credentials` Worker as one SQLite-backed Durable Object per
+session (`new_sqlite_classes`). Its locator is an HKDF-SHA256 hash of the
+32-byte invite capability; the raw capability is never sent. Offer and
+answer slots are write-once, each at most 4 KB, and hold only AEAD
+ciphertext derived from the same capability. Associated data binds the
+answer to the session nonce and the host SPKI. The Worker never sees the
+AEAD key or plaintext. Existing SPKI pins and exporter proofs still
+authenticate the peer. The mailbox TTL is about 10 minutes and the host
+deletes it after a valid answer. The host waits with a hibernatable
+WebSocket or short polls and never holds a long-running request open.
+Per-IP rate limits and a daily request/row-write/GB-s counter live in DO
+storage and fail closed with 429/503 well below the free-plan 100k
+requests, 13k GB-s, and 100k row writes. Paste remains a hidden fallback
+when the mailbox is missing, expired, or unconfigured.
 
 The guest bootstrap and host acknowledgment are AEAD-confidential from the
 service. Exporter proofs are authenticated but not encrypted: a compromised
@@ -318,6 +335,7 @@ pre-Jamulus help.
 | Replay or cross-session confusion | Invitation-derived service session, role/transcript/generation binding, nonce cache, exact peer pin; fresh invite for reconnect | Endpoint compromise remains decisive |
 | Downgrade | Separate parsers/transports, exact API/ALPN, no v3-to-v2 fallback | Old clients cannot join v3 |
 | Rendezvous candidate injection | Authenticate canonical bundles before ICE; validate address class/count/size | Rendezvous can suppress or delay signaling |
+| Mailbox ciphertext injection | Write-once slots, AEAD bound to session nonce and host SPKI, proof/SPKI still required | An unused mailbox id can be filled with garbage and force the hidden paste fallback |
 | Rendezvous/relay MITM | Host pin from invite, guest key bound to proof, E2E QUIC | Metadata and availability remain exposed |
 | Open relay, SSRF, port scan | Derived short credentials, no destination field, exact paired-address wrapper, fixed profiles, egress policy | The service can still deny service |
 | QUIC handshake or parser flood | Stateless retry, pending limits, deadlines, token buckets, strict lengths, fuzzing | Distributed DDoS cannot be eliminated |

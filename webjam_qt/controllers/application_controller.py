@@ -430,6 +430,10 @@ class ApplicationController(QObject):
         self._remote_invitation_requires_replacement = False
         self._remote_session = None
         self._remote_invite_owner = None
+        self._mailbox_answer_posted = False
+        self._mailbox_wait_started = False
+        self._mailbox_wait_stop = threading.Event()
+        self._mailbox_invitation = None
         self._remote_host_preparing = False
         self._remote_route_base_settings: AppSettings | None = None
         self._remote_route_generation = 0
@@ -7486,6 +7490,7 @@ class ApplicationController(QObject):
         """Revoke v3 invitation state and clear mode after server ownership ends."""
 
         ApplicationController._invalidate_room_help(self)
+        self._stop_mailbox_wait()
         # A constructor may already own a sidecar without having returned it.
         # Keep End/Leave retryable until its worker delivers and retires it.
         if getattr(self, "_remote_host_preparing", False):
@@ -7543,6 +7548,7 @@ class ApplicationController(QObject):
         """Stop v3 only after Jamulus has released its loopback proxy."""
 
         ApplicationController._invalidate_room_help(self)
+        self._stop_mailbox_wait()
         cleanup_ok = True
         runtime = getattr(self, "_remote_session", None)
         runtime_stopped = True
@@ -8173,6 +8179,8 @@ class ApplicationController(QObject):
         self._set_session_meeting_url(meeting_url)
         self._set_session_entry_title("Room", borrowed=True)
         self._remote_invitation = invitation
+        self._mailbox_invitation = invitation
+        self._mailbox_answer_posted = False
         self.window.session_strip.set_invite_available(False)
         self.window.session_strip.set_reset_invite_available(False)
         self.window.session_hud.set_state(
@@ -8883,6 +8891,7 @@ class ApplicationController(QObject):
                             connected=False,
                         )
                 self._update_session_hud()
+                self._start_host_mailbox_wait()
                 if self.creator_profile.key == "art":
                     self._room_participant.tick()
                 else:
@@ -8966,6 +8975,7 @@ class ApplicationController(QObject):
             self._render_room_guidance(override)
             return
         if snapshot.phase is RemoteSessionPhase.CONNECTED:
+            self._publish_guest_reply_if_ready()
             if self._room_participant.connected_native(source, snapshot):
                 return
             if snapshot.role.value == "guest":
@@ -9190,7 +9200,7 @@ class ApplicationController(QObject):
         )
 
     def _guest_reply_delivery_text(self) -> str:
-        """Return the sealed reply in the current delivery form (paste line)."""
+        """Post the sealed reply to the mailbox; return the hidden paste line."""
 
         runtime = getattr(self, "_remote_session", None)
         raw = bytes(getattr(runtime, "guest_reply", b"") or b"")
@@ -9198,29 +9208,94 @@ class ApplicationController(QObject):
             return ""
         from core.direct_stun_invite import publish_guest_reply
 
+        invitation = getattr(self, "_mailbox_invitation", None) or getattr(
+            self, "_remote_invitation", None
+        )
         try:
-            return publish_guest_reply(raw)
+            return publish_guest_reply(raw, invitation)
         except ValueError:
             return ""
 
-    def _apply_guest_reply_paste(self, text: object) -> bool:
-        """Apply a friend's sealed reply from the current delivery (paste)."""
+    def _publish_guest_reply_if_ready(self) -> None:
+        if bool(getattr(self, "_mailbox_answer_posted", False)):
+            return
+        if not self._guest_reply_delivery_text():
+            return
+        self._mailbox_answer_posted = True
 
+    def _stop_mailbox_wait(self) -> None:
+        stop = getattr(self, "_mailbox_wait_stop", None)
+        if stop is not None:
+            stop.set()
+        self._mailbox_wait_started = False
+        self._mailbox_answer_posted = False
+        self._mailbox_invitation = None
+
+    def _start_host_mailbox_wait(self) -> None:
+        """Short-poll the mailbox for the guest answer; never hold a request open."""
+
+        if bool(getattr(self, "_mailbox_wait_started", False)):
+            return
+        owner = getattr(self, "_remote_invite_owner", None)
+        invitation = getattr(owner, "invitation", None)
+        if invitation is None or not self._remote_paste_reply_available(owner):
+            return
+        stop = getattr(self, "_mailbox_wait_stop", None)
+        if stop is None:
+            stop = threading.Event()
+            self._mailbox_wait_stop = stop
+        stop.clear()
+        self._mailbox_wait_started = True
+        signal = bytes(getattr(invitation, "host_signal", b"") or b"")
+
+        def worker() -> None:
+            from core.signaling_mailbox import (
+                MailboxUnavailable,
+                ack_answer,
+                poll_answer,
+                post_offer,
+            )
+
+            if signal:
+                try:
+                    post_offer(invitation, signal)
+                except (MailboxUnavailable, ValueError):
+                    pass
+            try:
+                envelope = poll_answer(
+                    invitation,
+                    should_stop=stop.is_set,
+                    timeout_seconds=90,
+                )
+            except (MailboxUnavailable, ValueError):
+                return
+            if not envelope or stop.is_set():
+                return
+            try:
+                ack_answer(invitation)
+            except MailboxUnavailable:
+                pass
+
+            def deliver() -> None:
+                if stop.is_set():
+                    return
+                self._apply_guest_reply_envelope(envelope)
+
+            try:
+                self._ui_invoker.invoke(deliver)
+            except RuntimeError:
+                return
+
+        threading.Thread(
+            target=worker,
+            daemon=True,
+            name="webjam-mailbox-wait",
+        ).start()
+
+    def _apply_guest_reply_envelope(self, envelope: bytes) -> bool:
         owner = getattr(self, "_remote_invite_owner", None)
         apply_reply = getattr(owner, "apply_guest_reply", None)
-        if owner is None or not callable(apply_reply):
-            return False
-        from core.direct_stun_invite import accept_guest_reply
-
-        try:
-            envelope = accept_guest_reply(text)
-        except ValueError:
-            envelope = b""
-        if not envelope:
-            self.window.flash_message(
-                "That reply could not be used. Ask your friend to copy it again.",
-                ms=7000,
-            )
+        if owner is None or not callable(apply_reply) or not envelope:
             return False
         try:
             apply_reply(envelope)
@@ -9233,8 +9308,25 @@ class ApplicationController(QObject):
         self._update_session_hud()
         return True
 
+    def _apply_guest_reply_paste(self, text: object) -> bool:
+        """Hidden paste fallback when the mailbox is missing or expired."""
+
+        from core.direct_stun_invite import accept_guest_reply
+
+        try:
+            envelope = accept_guest_reply(text)
+        except ValueError:
+            envelope = b""
+        if not envelope:
+            self.window.flash_message(
+                "That reply could not be used. Ask your friend to copy it again.",
+                ms=7000,
+            )
+            return False
+        return self._apply_guest_reply_envelope(envelope)
+
     def _paste_guest_reply(self) -> None:
-        """Read the clipboard first, then a typed paste if needed."""
+        """Hidden fallback: read the clipboard first, then a typed paste."""
 
         if self._shutdown_cleanup_blocks_action():
             return
@@ -10831,6 +10923,7 @@ class ApplicationController(QObject):
     def _update_session_hud(self) -> None:
         """Refresh legacy exceptional copy, then the canonical conductor."""
 
+        self._publish_guest_reply_if_ready()
         if bool(getattr(self, "_shutdown_cleanup_pending", False)):
             self._render_shutdown_cleanup_pending()
             return
