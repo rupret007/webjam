@@ -3,12 +3,16 @@ import test from "node:test";
 
 import {
   DEFAULT_CAP_GB,
+  DEFAULT_TTL_SECONDS,
+  FETCH_TIMEOUT_MS,
   FREE_ALLOWANCE_GB,
   GIGABYTE_BYTES,
   allowRate,
   analyticsBearerToken,
   decideCap,
+  fetchWithTimeout,
   iceServersDocument,
+  missingRequiredSecrets,
   monthlyCapBytes,
   readUsageBytes,
   utcMonthDateRange,
@@ -25,8 +29,9 @@ function env() {
     TURN_KEY_ID: "webjam-relay-key-id",
     TURN_KEY_API_TOKEN: "test-turn-api-token",
     CLOUDFLARE_ACCOUNT_ID: "test-account",
+    CLOUDFLARE_ANALYTICS_API_TOKEN: "test-analytics-token",
     TURN_MONTHLY_CAP_GB: "800",
-    TURN_CREDENTIAL_TTL_SECONDS: "3600",
+    TURN_CREDENTIAL_TTL_SECONDS: "600",
     TURN_RATE_LIMIT_PER_MINUTE: "10",
   };
 }
@@ -89,7 +94,8 @@ function fakeFetch(usage, generate = icePayload(), generateStatus = 201) {
       assert.equal(init.method, "POST");
       assert.match(bearer, /^Bearer /);
       const sent = JSON.parse(init.body);
-      assert.equal(sent.ttl, 3600);
+      assert.equal(sent.ttl, DEFAULT_TTL_SECONDS);
+      assert.equal(sent.ttl, 600);
       return new Response(JSON.stringify(generate), { status: generateStatus });
     }
     return new Response("unexpected", { status: 500 });
@@ -250,6 +256,11 @@ test("analytics token is preferred for GraphQL and unused for iceServers", () =>
   assert.equal(analyticsBearerToken({}), "");
 });
 
+test("default credential TTL is 600 seconds", () => {
+  assert.equal(DEFAULT_TTL_SECONDS, 600);
+  assert.equal(FETCH_TIMEOUT_MS, 5000);
+});
+
 test("worker uses analytics secret only on GraphQL and TURN token on generate", async () => {
   resetWorkerState();
   const fetchImpl = fakeFetch(usagePayload(1, 2));
@@ -263,7 +274,7 @@ test("worker uses analytics secret only on GraphQL and TURN token on generate", 
   assert.equal(fetchImpl.seen.generate, "Bearer test-turn-api-token");
 });
 
-test("worker falls back to TURN token for GraphQL when analytics secret is unset", async () => {
+test("worker GraphQL uses analytics secret from the required four", async () => {
   resetWorkerState();
   const fetchImpl = fakeFetch(usagePayload(1, 2));
   const response = await handleRequest(
@@ -272,7 +283,7 @@ test("worker falls back to TURN token for GraphQL when analytics secret is unset
     { fetch: fetchImpl, nowMs: Date.parse("2026-10-15T00:00:00Z") },
   );
   assert.equal(response.status, 200);
-  assert.equal(fetchImpl.seen.graphql, "Bearer test-turn-api-token");
+  assert.equal(fetchImpl.seen.graphql, "Bearer test-analytics-token");
   assert.equal(fetchImpl.seen.generate, "Bearer test-turn-api-token");
 });
 
@@ -292,6 +303,50 @@ test("TURN key token rejected by GraphQL still fails closed", async () => {
   assert.deepEqual(await denied.json(), { error: "unreadable" });
 });
 
+test("missing any of the four required secrets returns 503 misconfigured", async () => {
+  assert.deepEqual(missingRequiredSecrets(env()), []);
+  for (const name of [
+    "TURN_KEY_ID",
+    "TURN_KEY_API_TOKEN",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_ANALYTICS_API_TOKEN",
+  ]) {
+    resetWorkerState();
+    const broken = { ...env(), [name]: "  " };
+    assert.deepEqual(missingRequiredSecrets(broken), [name]);
+    const response = await handleRequest(
+      post({ session_id: SESSION_UUID, invite_token: INVITE }),
+      broken,
+      { fetch: fakeFetch(usagePayload(0, 0)), nowMs: 1 },
+    );
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: "misconfigured" });
+  }
+});
+
+test("outbound fetch timeout fails closed", async () => {
+  const hung = async (_url, init) =>
+    new Promise((_, reject) => {
+      init.signal.addEventListener("abort", () => {
+        reject(init.signal.reason ?? new Error("aborted"));
+      });
+    });
+  await assert.rejects(() => fetchWithTimeout(hung, "https://example.test", {}, 20));
+
+  resetWorkerState();
+  const timedOut = await handleRequest(
+    post({ session_id: SESSION_UUID, invite_token: INVITE }),
+    env(),
+    {
+      fetch: hung,
+      nowMs: Date.parse("2026-10-15T00:00:00Z"),
+      fetchTimeoutMs: 20,
+    },
+  );
+  assert.equal(timedOut.status, 503);
+  assert.deepEqual(await timedOut.json(), { error: "unreadable" });
+});
+
 test("worker rejects bad token shape and missing secrets", async () => {
   resetWorkerState();
   const bad = await handleRequest(
@@ -306,6 +361,7 @@ test("worker rejects bad token shape and missing secrets", async () => {
     { fetch: fakeFetch(usagePayload(0, 0)), nowMs: 1 },
   );
   assert.equal(missing.status, 503);
+  assert.deepEqual(await missing.json(), { error: "misconfigured" });
   const get = await handleRequest(
     new Request("https://worker.test/turn-credentials"),
     env(),

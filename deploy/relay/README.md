@@ -74,10 +74,11 @@ npx wrangler deploy
 
 `TURN_KEY_API_TOKEN` is the Realtime TURN key token. It can mint
 `generate-ice-servers` and is **rejected** by GraphQL (code 10000).
-`CLOUDFLARE_ANALYTICS_API_TOKEN` is a separate account API token with
+`CLOUDFLARE_ANALYTICS_API_TOKEN` is a required account API token with
 **Account Analytics Read**. The Worker uses it only for the usage query.
-If that secret is unset, GraphQL falls back to `TURN_KEY_API_TOKEN` and
-then fail-closes (503 unreadable) when analytics rejects it.
+If any of the four secrets is missing, the Worker returns 503
+`misconfigured`. GraphQL and `generate-ice-servers` each have a 5-second
+outbound timeout and fail closed.
 
 Required permissions:
 
@@ -85,7 +86,8 @@ Required permissions:
 2. Account token: `POST https://api.cloudflare.com/client/v4/graphql` with
    **Account Analytics Read** (`callsTurnUsageAdaptiveGroups`)
 
-TTL is 3600 seconds. Confirm the deployed URL, then release-build the
+TTL is 600 seconds so a minted credential cannot overshoot the monthly
+cap for long. Confirm the deployed URL, then release-build the
 sidecar with that path only:
 
 ```

@@ -5,6 +5,7 @@
  */
 
 import {
+  FETCH_TIMEOUT_MS,
   MAX_BODY_BYTES,
   USAGE_CACHE_MS,
   allowRate,
@@ -12,7 +13,9 @@ import {
   clientIP,
   credentialTtlSeconds,
   decideCap,
+  fetchWithTimeout,
   iceServersDocument,
+  missingRequiredSecrets,
   monthlyCapBytes,
   rateLimitPerMinute,
   readUsageBytes,
@@ -59,12 +62,13 @@ export async function handleRequest(request, env, deps = {}) {
     return errorResponse(404, "not_found");
   }
 
+  if (missingRequiredSecrets(env).length > 0) {
+    return errorResponse(503, "misconfigured");
+  }
   const keyId = String(env.TURN_KEY_ID ?? "").trim();
   const apiToken = String(env.TURN_KEY_API_TOKEN ?? "").trim();
   const accountId = String(env.CLOUDFLARE_ACCOUNT_ID ?? "").trim();
-  if (!keyId || !apiToken || !accountId) {
-    return errorResponse(503, "unavailable");
-  }
+  const timeoutMs = Number(deps.fetchTimeoutMs ?? FETCH_TIMEOUT_MS);
 
   const ip = clientIP(request.headers);
   if (
@@ -99,6 +103,7 @@ export async function handleRequest(request, env, deps = {}) {
     keyId,
     accountId,
     nowMs,
+    timeoutMs,
   );
   const decision = decideCap(usageBytes, capBytes);
   if (!decision.allow) {
@@ -108,7 +113,13 @@ export async function handleRequest(request, env, deps = {}) {
   const ttl = credentialTtlSeconds(env.TURN_CREDENTIAL_TTL_SECONDS);
   let generated;
   try {
-    generated = await generateIceServers(fetchImpl, keyId, apiToken, ttl);
+    generated = await generateIceServers(
+      fetchImpl,
+      keyId,
+      apiToken,
+      ttl,
+      timeoutMs,
+    );
   } catch {
     return errorResponse(503, "unavailable");
   }
@@ -119,7 +130,14 @@ export async function handleRequest(request, env, deps = {}) {
   return jsonResponse(200, document);
 }
 
-async function monthUsageBytes(fetchImpl, env, keyId, accountId, nowMs) {
+async function monthUsageBytes(
+  fetchImpl,
+  env,
+  keyId,
+  accountId,
+  nowMs,
+  timeoutMs = FETCH_TIMEOUT_MS,
+) {
   const range = utcMonthDateRange(new Date(nowMs));
   if (
     usageCache &&
@@ -140,15 +158,20 @@ async function monthUsageBytes(fetchImpl, env, keyId, accountId, nowMs) {
   );
   let response;
   try {
-    response = await fetchImpl(GRAPHQL_URL, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${analyticsToken}`,
-        "content-type": "application/json",
-        accept: "application/json",
+    response = await fetchWithTimeout(
+      fetchImpl,
+      GRAPHQL_URL,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${analyticsToken}`,
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-    });
+      timeoutMs,
+    );
   } catch {
     return null;
   }
@@ -169,17 +192,28 @@ async function monthUsageBytes(fetchImpl, env, keyId, accountId, nowMs) {
   return bytes;
 }
 
-async function generateIceServers(fetchImpl, keyId, apiToken, ttl) {
+async function generateIceServers(
+  fetchImpl,
+  keyId,
+  apiToken,
+  ttl,
+  timeoutMs = FETCH_TIMEOUT_MS,
+) {
   const url = GENERATE_URL.replace("{key}", encodeURIComponent(keyId));
-  const response = await fetchImpl(url, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${apiToken}`,
-      "content-type": "application/json",
-      accept: "application/json",
+  const response = await fetchWithTimeout(
+    fetchImpl,
+    url,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiToken}`,
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({ ttl }),
     },
-    body: JSON.stringify({ ttl }),
-  });
+    timeoutMs,
+  );
   if (response.status !== 201 && response.status !== 200) {
     throw new Error("generate");
   }

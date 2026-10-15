@@ -8,12 +8,12 @@ compatibility_date = "2026-09-01"
 # 1 GB = 1,000,000,000 bytes (Cloudflare billing unit).
 [vars]
 TURN_MONTHLY_CAP_GB = "800"
-TURN_CREDENTIAL_TTL_SECONDS = "3600"
+TURN_CREDENTIAL_TTL_SECONDS = "600"
 TURN_RATE_LIMIT_PER_MINUTE = "10"
 
 # Required secrets (do not put values here):
 #   wrangler secret put TURN_KEY_ID
 #   wrangler secret put TURN_KEY_API_TOKEN
 #   wrangler secret put CLOUDFLARE_ACCOUNT_ID
-# Optional (GraphQL usage only; TURN key tokens are rejected with code 10000):
 #   wrangler secret put CLOUDFLARE_ANALYTICS_API_TOKEN
+#     (Account Analytics Read; TURN key tokens are rejected with code 10000)

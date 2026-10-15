@@ -19,12 +19,39 @@
 
 export const GIGABYTE_BYTES = 1_000_000_000;
 export const DEFAULT_CAP_GB = 800;
-export const DEFAULT_TTL_SECONDS = 3600;
+export const DEFAULT_TTL_SECONDS = 600;
 export const DEFAULT_RATE_LIMIT = 10;
 export const RATE_WINDOW_MS = 60_000;
 export const USAGE_CACHE_MS = 60_000;
 export const MAX_BODY_BYTES = 4096;
 export const FREE_ALLOWANCE_GB = 1000;
+export const FETCH_TIMEOUT_MS = 5000;
+
+const REQUIRED_SECRETS = [
+  "TURN_KEY_ID",
+  "TURN_KEY_API_TOKEN",
+  "CLOUDFLARE_ACCOUNT_ID",
+  "CLOUDFLARE_ANALYTICS_API_TOKEN",
+];
+
+export function missingRequiredSecrets(env) {
+  return REQUIRED_SECRETS.filter((name) => !String(env?.[name] ?? "").trim());
+}
+
+export async function fetchWithTimeout(
+  fetchImpl,
+  url,
+  init = {},
+  timeoutMs = FETCH_TIMEOUT_MS,
+) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchImpl(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

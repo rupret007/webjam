@@ -131,6 +131,7 @@ def test_worker_source_has_no_turn_secrets_and_readme_names_wrangler() -> None:
     wrangler = (WORKER / "wrangler.toml").read_text(encoding="utf-8")
     assert "TURN_MONTHLY_CAP_GB" in wrangler
     assert 'TURN_MONTHLY_CAP_GB = "800"' in wrangler
+    assert 'TURN_CREDENTIAL_TTL_SECONDS = "600"' in wrangler
     readme = (RELAY / "README.md").read_text(encoding="utf-8")
     assert "npx wrangler secret put TURN_KEY_ID" in readme
     assert "npx wrangler secret put TURN_KEY_API_TOKEN" in readme
