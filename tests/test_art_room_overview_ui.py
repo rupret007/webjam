@@ -300,7 +300,7 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         assert panel._connection_detail.text() == (
             "An artist is here with you."
             if role is SessionRole.HOST else
-            "You’re connected and ready to make."
+            "You’re connected to the host."
         )
         assert "does not yet" not in panel._connection_detail.text()
         assert "does not yet show a full artist list" in panel._connection_detail.accessibleDescription()
