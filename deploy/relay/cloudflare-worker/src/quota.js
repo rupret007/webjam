@@ -4,6 +4,10 @@
  *
  * Caps sit well below the Workers/DO free plan (100k requests/day,
  * 13k GB-s, 100k row writes). Unreadable or missing counters fail closed.
+ *
+ * TURN and mailbox keep separate counters so a host wait cannot 429
+ * credential minting. IPv6 is bucketed by /64. New IPs evict the LRU
+ * bucket instead of locking the Worker out.
  */
 
 export const DEFAULT_DAILY_REQUESTS = 10_000;
@@ -18,12 +22,14 @@ export function utcDayKey(nowMs) {
   return new Date(nowMs).toISOString().slice(0, 10);
 }
 
-export function quotaLimits(env = {}) {
+export function quotaLimits(env = {}, scope = "mailbox") {
+  const rateVar =
+    scope === "turn" ? "TURN_RATE_LIMIT_PER_MINUTE" : "MAILBOX_RATE_LIMIT_PER_MINUTE";
   return {
     dailyRequests: positiveInt(env.MAILBOX_DAILY_REQUESTS, DEFAULT_DAILY_REQUESTS),
     dailyRowWrites: positiveInt(env.MAILBOX_DAILY_ROW_WRITES, DEFAULT_DAILY_ROW_WRITES),
     dailyGbS: positiveInt(env.MAILBOX_DAILY_GB_S, DEFAULT_DAILY_GB_S),
-    perMinute: positiveInt(env.MAILBOX_RATE_LIMIT_PER_MINUTE, DEFAULT_RATE_LIMIT),
+    perMinute: positiveInt(env[rateVar], DEFAULT_RATE_LIMIT),
   };
 }
 
@@ -34,6 +40,46 @@ function positiveInt(raw, fallback) {
 
 export function emptyQuotaState() {
   return { day: "", requests: 0, rowWrites: 0, gbS: 0, ipBuckets: {} };
+}
+
+export function quotaScope(path) {
+  return String(path || "").startsWith("/mailbox") ? "mailbox" : "turn";
+}
+
+export function rateKey(ip) {
+  const value = String(ip || "").trim().toLowerCase();
+  if (!value) {
+    return "";
+  }
+  const mapped = value.match(/^(?:[:a-f0-9]*:)?ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (mapped) {
+    return mapped[1];
+  }
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(value)) {
+    return value;
+  }
+  if (value.includes(":")) {
+    return `${ipv6Groups(value).slice(0, 4).join(":")}::/64`;
+  }
+  return value;
+}
+
+function ipv6Groups(ip) {
+  const bare = String(ip || "").split("%")[0];
+  const [left, right = ""] = bare.split("::");
+  const leftParts = left ? left.split(":").filter(Boolean) : [];
+  const rightParts = right
+    ? right.split(":").filter((part) => part && !part.includes("."))
+    : [];
+  const missing = Math.max(0, 8 - leftParts.length - rightParts.length);
+  const filled = [...leftParts, ...Array.from({ length: missing }, () => "0"), ...rightParts];
+  while (filled.length < 8) {
+    filled.push("0");
+  }
+  return filled.slice(0, 8).map((part) => {
+    const hex = String(part || "0").replace(/^0+/, "");
+    return hex || "0";
+  });
 }
 
 export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits }) {
@@ -51,18 +97,13 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits }) {
     state.gbS = 0;
     state.ipBuckets = {};
   }
-  if (!ip) {
+  const key = rateKey(ip);
+  if (!key) {
     return { allow: false, status: 429, code: "rate" };
   }
   const window = Math.floor(nowMs / RATE_WINDOW_MS);
   pruneIpBuckets(state, window);
-  const ipKey = `${ip}:${window}`;
-  if (
-    !(ipKey in state.ipBuckets)
-    && Object.keys(state.ipBuckets).length >= MAX_IP_BUCKETS
-  ) {
-    return { allow: false, status: 429, code: "rate" };
-  }
+  const ipKey = `${key}:${window}`;
   const nextIp = (Number(state.ipBuckets[ipKey]) || 0) + 1;
   if (nextIp > limits.perMinute) {
     return { allow: false, status: 429, code: "rate" };
@@ -78,7 +119,7 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits }) {
   ) {
     return { allow: false, status: 429, code: "cap" };
   }
-  state.ipBuckets[ipKey] = nextIp;
+  rememberIpBucket(state.ipBuckets, ipKey, nextIp);
   state.requests = nextRequests;
   state.rowWrites = nextWrites;
   state.gbS = nextGbS;
@@ -99,6 +140,17 @@ function pruneIpBuckets(state, window) {
   }
 }
 
+function rememberIpBucket(buckets, ipKey, count) {
+  if (ipKey in buckets) {
+    delete buckets[ipKey];
+  } else {
+    while (Object.keys(buckets).length >= MAX_IP_BUCKETS) {
+      delete buckets[Object.keys(buckets)[0]];
+    }
+  }
+  buckets[ipKey] = count;
+}
+
 export class MailboxQuota {
   constructor(ctx, env) {
     this.ctx = ctx;
@@ -113,17 +165,20 @@ export class MailboxQuota {
       const nowMs = Number(request.headers.get("X-WebJam-Now") ?? Date.now());
       const ip = String(request.headers.get("CF-Connecting-IP") ?? "").trim();
       const writes = Number(request.headers.get("X-WebJam-Row-Writes") ?? 0);
-      const stored = await this.ctx.storage.get("quota");
+      const scope =
+        request.headers.get("X-WebJam-Quota-Scope") === "turn" ? "turn" : "mailbox";
+      const storageKey = `quota:${scope}`;
+      const stored = await this.ctx.storage.get(storageKey);
       const state = stored && typeof stored === "object" ? stored : emptyQuotaState();
       const env = this.env ?? globalThis.WEBJAM_QUOTA_ENV ?? {};
       const decision = applyQuota(state, {
         ip,
         nowMs,
         rowWrites: writes,
-        limits: quotaLimits(env),
+        limits: quotaLimits(env, scope),
       });
       if (decision.allow) {
-        await this.ctx.storage.put("quota", state);
+        await this.ctx.storage.put(storageKey, state);
       }
       return new Response(JSON.stringify({ error: decision.code }), {
         status: decision.status,

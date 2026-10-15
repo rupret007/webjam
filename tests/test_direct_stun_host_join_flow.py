@@ -427,3 +427,15 @@ def test_copy_and_paste_reply_actions_use_the_hud_buttons(qapp, tmp_path, monkey
     host._stop_remote_transport()
     guest.shutdown()
     host.shutdown()
+
+
+def test_session_hud_refresh_does_not_overwrite_clipboard(qapp, tmp_path) -> None:
+    """Copy reply is a HUD click. A refresh must not steal the clipboard."""
+
+    controller = _controller(tmp_path / "guest")
+    QApplication.clipboard().setText("musician-owned clipboard")
+    controller._copy_direct_stun_guest_reply_if_ready()
+    controller._update_session_hud()
+    qapp.processEvents()
+    assert QApplication.clipboard().text() == "musician-owned clipboard"
+    controller.shutdown()

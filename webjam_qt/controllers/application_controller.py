@@ -9270,7 +9270,7 @@ class ApplicationController(QObject):
         self._mailbox_invitation = None
 
     def _start_host_mailbox_wait(self) -> None:
-        """Short-poll the mailbox for the guest answer; never hold a request open."""
+        """Poll the mailbox about every 10s for the guest answer."""
 
         if bool(getattr(self, "_mailbox_wait_started", False)):
             return
@@ -10978,24 +10978,29 @@ class ApplicationController(QObject):
         """Keep Copy reply / Paste reply visible as the mailbox fallback."""
 
         hud = getattr(getattr(self, "window", None), "session_hud", None)
-        if hud is None:
+        overlay = getattr(hud, "overlay_actions", None)
+        if not callable(overlay):
             return
         snapshot = getattr(getattr(self, "_remote_session", None), "snapshot", None)
         connected = getattr(getattr(snapshot, "phase", None), "name", "") == "CONNECTED"
+        updates: dict[str, object] = {}
         if self._remote_paste_reply_available() and not connected:
             copied = bool(getattr(self, "_direct_stun_invite_copied", False))
             label = "Paste reply" if copied else "Copy Invite"
-            hud._action_kind = "paste_reply" if copied else "copy_invite"
-            hud._action.setText(label.replace("&", "&&"))
-            hud._action.setAccessibleName(label)
-            hud._action.setVisible(True)
-            hud._action.setEnabled(True)
+            updates["action_text"] = label
+            updates["action_kind"] = "paste_reply" if copied else "copy_invite"
+            updates["action_visible"] = True
         if self._guest_reply_copy_available():
-            hud._secondary_action_kind = "copy_reply"
-            hud._secondary_action.setText("Copy reply")
-            hud._secondary_action.setAccessibleName("Copy reply")
-            hud._secondary_action.setVisible(True)
-            hud._secondary_action.setEnabled(True)
+            updates["secondary_action_text"] = "Copy reply"
+            updates["secondary_action_kind"] = "copy_reply"
+            updates["secondary_action_visible"] = True
+        if updates:
+            overlay(**updates)
+
+    def _copy_direct_stun_guest_reply_if_ready(self) -> None:
+        """Copy reply is a visible HUD action; never overwrite the clipboard."""
+
+        return
 
     def _update_session_hud(self) -> None:
         """Refresh legacy exceptional copy, then the canonical conductor."""
@@ -11209,8 +11214,6 @@ class ApplicationController(QObject):
             self._skip_startup_webex()
         elif action == "enter_jam":
             self._enter_startup_jam()
-        elif action == "paste_reply":
-            self._paste_guest_reply()
         elif action == "copy_reply":
             self._copy_guest_reply()
         elif action == "cancel_startup":

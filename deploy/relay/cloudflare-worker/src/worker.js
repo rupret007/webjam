@@ -22,18 +22,30 @@ import {
   utcMonthDateRange,
   validSessionInviteShape,
 } from "./policy.js";
-import { MailboxQuota, applyQuota, emptyQuotaState, quotaLimits } from "./quota.js";
+import {
+  MailboxQuota,
+  applyQuota,
+  emptyQuotaState,
+  quotaLimits,
+  quotaScope,
+} from "./quota.js";
 
 const GENERATE_URL =
   "https://rtc.live.cloudflare.com/v1/turn/keys/{key}/credentials/generate-ice-servers";
 const GRAPHQL_URL = "https://api.cloudflare.com/client/v4/graphql";
 const SESSION_QUOTA_BYTES = 256 * 1024 * 1024;
 
-let quotaState = emptyQuotaState();
+let quotaStates = {
+  turn: emptyQuotaState(),
+  mailbox: emptyQuotaState(),
+};
 let usageCache = null;
 
 export function resetWorkerState() {
-  quotaState = emptyQuotaState();
+  quotaStates = {
+    turn: emptyQuotaState(),
+    mailbox: emptyQuotaState(),
+  };
   usageCache = null;
 }
 
@@ -64,8 +76,8 @@ function parseMailboxPath(path) {
 
 function applyQuotaEnv(env) {
   const quotaEnv = {
-    MAILBOX_RATE_LIMIT_PER_MINUTE:
-      env.MAILBOX_RATE_LIMIT_PER_MINUTE ?? env.TURN_RATE_LIMIT_PER_MINUTE,
+    TURN_RATE_LIMIT_PER_MINUTE: env.TURN_RATE_LIMIT_PER_MINUTE,
+    MAILBOX_RATE_LIMIT_PER_MINUTE: env.MAILBOX_RATE_LIMIT_PER_MINUTE,
     MAILBOX_DAILY_REQUESTS: env.MAILBOX_DAILY_REQUESTS,
     MAILBOX_DAILY_ROW_WRITES: env.MAILBOX_DAILY_ROW_WRITES,
     MAILBOX_DAILY_GB_S: env.MAILBOX_DAILY_GB_S,
@@ -90,9 +102,10 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites) {
     return deps.enforceAccess(request, nowMs, rowWrites);
   }
   const ip = clientIP(request.headers);
+  const scope = quotaScope(new URL(request.url).pathname);
   if (env.MAILBOX_QUOTA && typeof env.MAILBOX_QUOTA.idFromName === "function") {
     try {
-      const stub = env.MAILBOX_QUOTA.get(env.MAILBOX_QUOTA.idFromName("quota"));
+      const stub = env.MAILBOX_QUOTA.get(env.MAILBOX_QUOTA.idFromName(scope));
       const response = await stub.fetch(
         new Request("https://quota/check", {
           method: "POST",
@@ -100,6 +113,7 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites) {
             "CF-Connecting-IP": ip,
             "X-WebJam-Now": String(nowMs),
             "X-WebJam-Row-Writes": String(rowWrites),
+            "X-WebJam-Quota-Scope": scope,
           },
         }),
       );
@@ -108,11 +122,11 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites) {
       return errorResponse(503, "unavailable");
     }
   }
-  const decision = applyQuota(quotaState, {
+  const decision = applyQuota(quotaStates[scope], {
     ip,
     nowMs,
     rowWrites,
-    limits: quotaLimits(applyQuotaEnv(env)),
+    limits: quotaLimits(applyQuotaEnv(env), scope),
   });
   if (decision.allow) {
     return null;
