@@ -9,6 +9,14 @@ from typing import Any
 
 from tools.cross_network_acceptance import CONDUCTOR_KIND, SCHEMA
 
+ALLOWED_CASES = frozenset(
+    {
+        "same-lan",
+        "cross-network",
+        "cross-network-cone",
+        "cross-network-symmetric",
+    }
+)
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _SECRET_KEYS = frozenset(
     {
@@ -59,8 +67,8 @@ def conductor_line(*, sha: str, status: str, case: str) -> str:
     if label not in {"PASS", "FAIL"}:
         raise ReceiptError("Conductor status must be PASS or FAIL.")
     name = str(case or "").strip()
-    if name not in {"same-lan", "cross-network"}:
-        raise ReceiptError("Conductor case must be same-lan or cross-network.")
+    if name not in ALLOWED_CASES:
+        raise ReceiptError("Conductor case is not a known acceptance case.")
     return f"{CONDUCTOR_KIND} sha={digest} status={label} case={name}"
 
 
@@ -76,14 +84,17 @@ def build_receipt(
     netem: bool,
     port_forwarding: bool = False,
     notes: str = "",
+    nat_mode: str = "",
+    stun_reachable_from_host: bool | None = None,
+    stun_reachable_from_guest: bool | None = None,
 ) -> dict[str, Any]:
     digest = require_full_sha(sha)
     label = str(status or "").strip().upper()
     if label not in {"PASS", "FAIL"}:
         raise ReceiptError("Receipt status must be PASS or FAIL.")
     name = str(case or "").strip()
-    if name not in {"same-lan", "cross-network"}:
-        raise ReceiptError("Receipt case must be same-lan or cross-network.")
+    if name not in ALLOWED_CASES:
+        raise ReceiptError("Receipt case is not a known acceptance case.")
     if port_forwarding:
         raise ReceiptError("This harness never configures port forwarding.")
     payload = {
@@ -99,6 +110,9 @@ def build_receipt(
         "profiles": profiles,
         "notes": str(notes or ""),
         "conductor_line": conductor_line(sha=digest, status=label, case=name),
+        "nat_mode": str(nat_mode or ""),
+        "stun_reachable_from_host": stun_reachable_from_host,
+        "stun_reachable_from_guest": stun_reachable_from_guest,
     }
     if contains_secret_keys(payload):
         raise ReceiptError("A receipt must not carry invitation material.")

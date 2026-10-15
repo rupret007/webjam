@@ -1,4 +1,4 @@
-"""CLI: python -m tools.cross_network_acceptance {run,role}."""
+"""CLI: python -m tools.cross_network_acceptance {run,role,build-sidecar}."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from pathlib import Path
 
 from tools.cross_network_acceptance.run import git_sha, run_case
 from tools.cross_network_acceptance.roles import run_role
+from tools.cross_network_acceptance.sidecar import SidecarError, build_sidecar, product_sha
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -52,15 +53,53 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--netem", action="store_true", default=None)
     run.add_argument("--no-netem", action="store_true")
     run.add_argument("--keep-workdir", action="store_true")
+    run.add_argument(
+        "--nat",
+        choices=("masquerade", "cone", "symmetric"),
+        default="masquerade",
+        help="Cross-network NAT behaviour (cone/full vs symmetric).",
+    )
+    run.add_argument(
+        "--product-root",
+        type=Path,
+        default=None,
+        help="Product checkout to import (PR #372 worktree). Defaults to this repo.",
+    )
+    run.add_argument(
+        "--transport-binary",
+        default="",
+        help="Path to webjam-fabric. Sets WEBJAM_TRANSPORT_BINARY for source checkouts.",
+    )
+    run.add_argument(
+        "--build-id",
+        default="",
+        help="Sidecar build id (WEBJAM_BUILD_ID). Defaults to --sha.",
+    )
 
     role = sub.add_parser("role", help="Internal host/guest worker.")
     role.add_argument("--role", choices=("host", "guest"), required=True)
     role.add_argument("--profile", choices=("art", "music"), required=True)
     role.add_argument("--work-dir", type=Path, required=True)
 
+    build = sub.add_parser("build-sidecar", help="Compile webjam-fabric from a product tree.")
+    build.add_argument("--product-root", type=Path, required=True)
+    build.add_argument(
+        "--output",
+        type=Path,
+        default=REPO_ROOT / "out" / "cross-network-acceptance" / "webjam-fabric",
+    )
+
     args = parser.parse_args(argv)
     if args.command == "role":
         return run_role(args.role, args.profile, args.work_dir)
+    if args.command == "build-sidecar":
+        try:
+            path = build_sidecar(args.product_root.resolve(), args.output)
+        except SidecarError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(path)
+        return 0
     if args.command != "run":
         parser.print_help()
         return 2
@@ -78,7 +117,9 @@ def main(argv: list[str] | None = None) -> int:
         netem = True
     elif args.case == "same-lan":
         netem = False
-    sha = str(args.sha or git_sha())
+    product = args.product_root.resolve() if args.product_root else REPO_ROOT
+    sha = str(args.sha or git_sha(product if args.product_root else REPO_ROOT))
+    build_id = str(args.build_id or (product_sha(product) if args.transport_binary else sha))
     return run_case(
         case=args.case,
         profiles=profiles,
@@ -86,6 +127,10 @@ def main(argv: list[str] | None = None) -> int:
         netem=netem,
         sha=sha,
         keep_workdir=bool(args.keep_workdir),
+        nat_mode=str(args.nat),
+        product_root=product,
+        transport_binary=str(args.transport_binary or ""),
+        build_id=build_id,
     )
 
 

@@ -135,6 +135,8 @@ def test_cross_network_plan_masquerades_without_port_forward():
     text = " ".join(" ".join(item) for item in commands)
     assert "MASQUERADE" in text
     assert text.count("MASQUERADE") == 2
+    assert "NETMAP" not in text
+    assert "--random-fully" not in text
     assert "DNAT" not in text
     assert "REDIRECT" not in text
     delay = " ".join(
@@ -171,3 +173,82 @@ def test_workflow_is_optional_and_path_filtered():
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "cross-network-acceptance" not in ci
     assert "Cross-network acceptance" not in ci
+
+
+def test_cone_nat_plan_uses_masquerade_and_netmap_without_dport():
+    spec = TopologySpec(case="cross-network", prefix="wjx1", nat_mode="cone")
+    commands = setup_commands(spec)
+    assert_no_port_forward(commands)
+    text = " ".join(" ".join(item) for item in commands)
+    assert text.count("MASQUERADE") == 2
+    assert text.count("NETMAP") == 2
+    assert "--random-fully" not in text
+    assert "DNAT" not in text
+    assert "--dport" not in text
+
+
+def test_symmetric_nat_plan_randomizes_host_mapping_only():
+    spec = TopologySpec(case="cross-network", prefix="wjx1", nat_mode="symmetric")
+    commands = setup_commands(spec)
+    assert_no_port_forward(commands)
+    text = " ".join(" ".join(item) for item in commands)
+    assert "--random-fully" in text
+    assert text.count("--random-fully") == 1
+    assert text.count("NETMAP") == 1
+    assert "DNAT" not in text
+
+
+def test_stun_binding_reports_xor_mapped_source():
+    from tools.cross_network_acceptance.stun import binding_success, parse_xor_mapped
+
+    request = (
+        b"\x00\x01\x00\x00\x21\x12\xa4\x42" + b"\x11" * 12
+    )
+    response = binding_success(request, "203.0.113.10", 41234)
+    assert parse_xor_mapped(response) == ("203.0.113.10", 41234)
+
+
+def test_stun_name_override_is_test_only_hosts_mapping():
+    from tools.cross_network_acceptance.topology import (
+        INET_ADDR,
+        stun_override_hosts_text,
+    )
+
+    body = stun_override_hosts_text()
+    assert INET_ADDR in body
+    assert "stun.cloudflare.com" in body
+    assert "stun.l.google.com" in body
+    docs = Path("docs/CROSS-NETWORK-TEST.md").read_text(encoding="utf-8")
+    assert "test-only" in docs.lower() or "Test-only" in docs
+    assert "never" in docs.lower() and "packaged" in docs.lower()
+
+
+def test_cone_and_symmetric_receipt_cases_are_allowed(tmp_path: Path):
+    for case in ("cross-network-cone", "cross-network-symmetric"):
+        receipt = build_receipt(
+            sha=FULL_SHA,
+            case=case,
+            status="FAIL",
+            profiles=[
+                {
+                    "profile": "art",
+                    "guest_connected": False,
+                    "session_state_exchanged": False,
+                    "harness_ok": True,
+                    "transport": "direct-stun",
+                    "failure_class": "honest_unreachable",
+                    "fake_connect": False,
+                }
+            ],
+            rendezvous_reachable_from_host=True,
+            rendezvous_reachable_from_guest=True,
+            invite_host_routable_from_guest=False,
+            netem=False,
+            nat_mode="cone" if "cone" in case else "symmetric",
+            stun_reachable_from_host=True,
+            stun_reachable_from_guest=True,
+        )
+        assert receipt["case"] == case
+        write_receipt(tmp_path, receipt)
+        assert (tmp_path / f"{FULL_SHA}-{case}.json").is_file()
+        assert not (tmp_path / f"{FULL_SHA}-{case}.PASS").exists()

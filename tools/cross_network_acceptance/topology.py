@@ -4,6 +4,16 @@ Cross-network: host behind NAT-A, guest behind NAT-B, a public internet
 namespace between them. No DNAT, REDIRECT, or port forwarding.
 
 Same-LAN control: host and guest share one L2 with RFC1918 addresses.
+
+NAT modes for the two-home case:
+
+- masquerade: original restricted-cone MASQUERADE (v2 LAN expected FAIL).
+- cone: MASQUERADE plus a port-preserving UDP NETMAP reverse so a STUN
+  mapping is reachable from the other house (full cone / 1:1 for the one
+  LAN host). Not a product port-forward of a service port.
+- symmetric: NAT-A uses MASQUERADE --random-fully (random port mapping);
+  NAT-B stays cone. Guest-originated packets to the host STUN mapping
+  must fail honestly.
 """
 
 from __future__ import annotations
@@ -31,9 +41,12 @@ GUEST_LAN = "192.168.110.11"
 RENDEZVOUS_TCP = 47131
 RENDEZVOUS_UDP = 47132
 STUN_UDP = 3478
+STUN_UDP_ALT = 19302
 NETEM_DELAY = "100ms"
 NETEM_JITTER = "50ms"
 NETEM_LOSS = "1%"
+NAT_MODES = frozenset({"masquerade", "cone", "symmetric"})
+COMPILED_STUN_NAMES = ("stun.cloudflare.com", "stun.l.google.com")
 
 
 class TopologyError(RuntimeError):
@@ -56,6 +69,7 @@ class TopologySpec:
     case: str
     prefix: str
     netem: bool = False
+    nat_mode: str = "masquerade"
 
     def __post_init__(self) -> None:
         if self.case not in {"same-lan", "cross-network"}:
@@ -63,6 +77,11 @@ class TopologySpec:
         token = str(self.prefix or "")
         if not token.isalnum() or not 3 <= len(token) <= 6:
             raise TopologyError("Topology prefix must be a short alphanumeric token.")
+        mode = str(self.nat_mode or "masquerade")
+        if mode not in NAT_MODES:
+            raise TopologyError("NAT mode must be masquerade, cone, or symmetric.")
+        if self.case == "same-lan" and mode != "masquerade":
+            raise TopologyError("Same-LAN does not use a NAT mode.")
 
 
 @dataclass(frozen=True)
@@ -86,6 +105,14 @@ def ns_names(prefix: str) -> dict[str, str]:
         "host": f"{prefix}-host",
         "guest": f"{prefix}-gst",
     }
+
+
+def _full_cone_inbound(spec: TopologySpec, side: str) -> bool:
+    if spec.nat_mode == "cone":
+        return True
+    if spec.nat_mode == "symmetric":
+        return side == "b"
+    return False
 
 
 def setup_commands(spec: TopologySpec) -> list[list[str]]:
@@ -147,106 +174,117 @@ def setup_commands(spec: TopologySpec) -> list[list[str]]:
     ns(names["inet"], ip, "link", "set", f"{p}ib", "up")
     ns(names["inet"], ip, "addr", "add", f"{INET_ADDR}/24", "dev", "br-pub")
 
-    ns(names["nat_a"], ip, "link", "set", "lo", "up")
-    ns(names["nat_a"], ip, "addr", "add", f"{NAT_A_WAN}/24", "dev", f"{p}ai")
-    ns(names["nat_a"], ip, "link", "set", f"{p}ai", "up")
-    ns(names["nat_a"], ip, "addr", "add", f"{NAT_A_LAN}/24", "dev", f"{p}al")
-    ns(names["nat_a"], ip, "link", "set", f"{p}al", "up")
-    ns(names["nat_a"], ip, "route", "add", "default", "via", INET_ADDR)
-    ns(names["nat_a"], sysctl, "-w", "net.ipv4.ip_forward=1")
-    ns(names["nat_a"], sysctl, "-w", "net.ipv4.conf.all.rp_filter=2")
-    ns(
-        names["nat_a"],
-        iptables,
-        "-t",
-        "nat",
-        "-A",
-        "POSTROUTING",
-        "-s",
-        LAN_A,
-        "-o",
-        f"{p}ai",
-        "-j",
-        "MASQUERADE",
-    )
-    ns(
-        names["nat_a"],
-        iptables,
-        "-A",
-        "FORWARD",
-        "-i",
-        f"{p}al",
-        "-o",
-        f"{p}ai",
-        "-j",
-        "ACCEPT",
-    )
-    ns(
-        names["nat_a"],
-        iptables,
-        "-A",
-        "FORWARD",
-        "-i",
-        f"{p}ai",
-        "-o",
-        f"{p}al",
-        "-m",
-        "conntrack",
-        "--ctstate",
-        "ESTABLISHED,RELATED",
-        "-j",
-        "ACCEPT",
-    )
+    def configure_nat(
+        *,
+        ns_name: str,
+        wan_dev: str,
+        wan_addr: str,
+        lan_dev: str,
+        lan_addr: str,
+        lan_net: str,
+        side: str,
+    ) -> None:
+        ns(ns_name, ip, "link", "set", "lo", "up")
+        ns(ns_name, ip, "addr", "add", f"{wan_addr}/24", "dev", wan_dev)
+        ns(ns_name, ip, "link", "set", wan_dev, "up")
+        ns(ns_name, ip, "addr", "add", f"{lan_addr}/24", "dev", lan_dev)
+        ns(ns_name, ip, "link", "set", lan_dev, "up")
+        ns(ns_name, ip, "route", "add", "default", "via", INET_ADDR)
+        ns(ns_name, sysctl, "-w", "net.ipv4.ip_forward=1")
+        ns(ns_name, sysctl, "-w", "net.ipv4.conf.all.rp_filter=2")
+        masquerade = [
+            iptables,
+            "-t",
+            "nat",
+            "-A",
+            "POSTROUTING",
+            "-s",
+            lan_net,
+            "-o",
+            wan_dev,
+            "-j",
+            "MASQUERADE",
+        ]
+        if spec.nat_mode == "symmetric" and side == "a":
+            masquerade.append("--random-fully")
+        ns(ns_name, *masquerade)
+        ns(
+            ns_name,
+            iptables,
+            "-A",
+            "FORWARD",
+            "-i",
+            lan_dev,
+            "-o",
+            wan_dev,
+            "-j",
+            "ACCEPT",
+        )
+        ns(
+            ns_name,
+            iptables,
+            "-A",
+            "FORWARD",
+            "-i",
+            wan_dev,
+            "-o",
+            lan_dev,
+            "-m",
+            "conntrack",
+            "--ctstate",
+            "ESTABLISHED,RELATED",
+            "-j",
+            "ACCEPT",
+        )
+        if _full_cone_inbound(spec, side):
+            ns(
+                ns_name,
+                iptables,
+                "-t",
+                "nat",
+                "-A",
+                "PREROUTING",
+                "-i",
+                wan_dev,
+                "-p",
+                "udp",
+                "-j",
+                "NETMAP",
+                "--to",
+                lan_net,
+            )
+            ns(
+                ns_name,
+                iptables,
+                "-A",
+                "FORWARD",
+                "-i",
+                wan_dev,
+                "-o",
+                lan_dev,
+                "-p",
+                "udp",
+                "-j",
+                "ACCEPT",
+            )
 
-    ns(names["nat_b"], ip, "link", "set", "lo", "up")
-    ns(names["nat_b"], ip, "addr", "add", f"{NAT_B_WAN}/24", "dev", f"{p}bi")
-    ns(names["nat_b"], ip, "link", "set", f"{p}bi", "up")
-    ns(names["nat_b"], ip, "addr", "add", f"{NAT_B_LAN}/24", "dev", f"{p}bl")
-    ns(names["nat_b"], ip, "link", "set", f"{p}bl", "up")
-    ns(names["nat_b"], ip, "route", "add", "default", "via", INET_ADDR)
-    ns(names["nat_b"], sysctl, "-w", "net.ipv4.ip_forward=1")
-    ns(names["nat_b"], sysctl, "-w", "net.ipv4.conf.all.rp_filter=2")
-    ns(
-        names["nat_b"],
-        iptables,
-        "-t",
-        "nat",
-        "-A",
-        "POSTROUTING",
-        "-s",
-        LAN_B,
-        "-o",
-        f"{p}bi",
-        "-j",
-        "MASQUERADE",
+    configure_nat(
+        ns_name=names["nat_a"],
+        wan_dev=f"{p}ai",
+        wan_addr=NAT_A_WAN,
+        lan_dev=f"{p}al",
+        lan_addr=NAT_A_LAN,
+        lan_net=LAN_A,
+        side="a",
     )
-    ns(
-        names["nat_b"],
-        iptables,
-        "-A",
-        "FORWARD",
-        "-i",
-        f"{p}bl",
-        "-o",
-        f"{p}bi",
-        "-j",
-        "ACCEPT",
-    )
-    ns(
-        names["nat_b"],
-        iptables,
-        "-A",
-        "FORWARD",
-        "-i",
-        f"{p}bi",
-        "-o",
-        f"{p}bl",
-        "-m",
-        "conntrack",
-        "--ctstate",
-        "ESTABLISHED,RELATED",
-        "-j",
-        "ACCEPT",
+    configure_nat(
+        ns_name=names["nat_b"],
+        wan_dev=f"{p}bi",
+        wan_addr=NAT_B_WAN,
+        lan_dev=f"{p}bl",
+        lan_addr=NAT_B_LAN,
+        lan_net=LAN_B,
+        side="b",
     )
 
     ns(names["host"], ip, "link", "set", "lo", "up")
@@ -316,6 +354,39 @@ def _resolve(commands: list[list[str]]) -> list[list[str]]:
     return resolved
 
 
+def stun_override_hosts_text() -> str:
+    """Test-only /etc/netns hosts body. Never used by packaged builds."""
+
+    names = " ".join(COMPILED_STUN_NAMES)
+    return f"127.0.0.1 localhost\n{INET_ADDR} {names}\n"
+
+
+def install_stun_name_override(spec: TopologySpec) -> None:
+    """Point #372's compiled STUN names at the public-ns STUN server.
+
+    PR #372 has no STUN env/config hook: stunServers is compiled in
+    transport/internal/directstun/path.go and the sidecar is started with
+    an empty environment. Packaged apps never see these netns hosts files.
+    """
+
+    if spec.case != "cross-network":
+        return
+    body = stun_override_hosts_text()
+    for name in ns_names(spec.prefix).values():
+        folder = Path("/etc/netns") / name
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / "hosts"
+        path.write_text(body, encoding="utf-8")
+        path.chmod(0o644)
+
+
+def remove_stun_name_override(spec: TopologySpec) -> None:
+    for name in ns_names(spec.prefix).values():
+        folder = Path("/etc/netns") / name
+        if folder.is_dir():
+            shutil.rmtree(folder, ignore_errors=True)
+
+
 def apply_topology(spec: TopologySpec) -> AppliedTopology:
     commands = setup_commands(spec)
     assert_no_port_forward(commands)
@@ -323,6 +394,7 @@ def apply_topology(spec: TopologySpec) -> AppliedTopology:
     try:
         for argv in _resolve(commands):
             subprocess.run(argv, check=True, capture_output=True, text=True)
+        install_stun_name_override(spec)
     except subprocess.CalledProcessError:
         cleanup_topology(spec)
         raise TopologyError("Could not create the simulated networks.") from None
@@ -393,3 +465,4 @@ def cleanup_topology(spec: TopologySpec) -> None:
                 capture_output=True,
                 text=True,
             )
+    remove_stun_name_override(spec)

@@ -40,7 +40,8 @@ Cross-network
   NAT-A 192.168.110.1 / 203.0.113.10   MASQUERADE, no DNAT
         │
   public internet 203.0.113.1
-        │  rendezvous TCP 47131, relay UDP 47132, STUN UDP 3478
+        │  rendezvous TCP 47131, relay UDP 47132
+        │  real STUN UDP 3478 (and 19302 for the compiled Google fallback)
         │
   NAT-B 192.168.120.1 / 203.0.113.20   MASQUERADE, no DNAT
         │
@@ -111,7 +112,46 @@ sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
 sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
   --case cross-network --output-dir out/cross-network-acceptance \
   --sha "$(git rev-parse HEAD)" --netem
+
+# PR #372 direct-stun (build sidecar, real STUN, cone vs symmetric)
+PRODUCT=/path/to/pr-372
+SIDECAR=out/cross-network-acceptance/webjam-fabric
+.venv/bin/python -m tools.cross_network_acceptance build-sidecar \
+  --product-root "$PRODUCT" --output "$SIDECAR"
+sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
+  --case cross-network --nat cone --profiles art \
+  --product-root "$PRODUCT" --transport-binary "$SIDECAR" \
+  --output-dir out/cross-network-acceptance --no-netem --keep-workdir
+sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
+  --case cross-network --nat cone --profiles music \
+  --product-root "$PRODUCT" --transport-binary "$SIDECAR" \
+  --output-dir out/cross-network-acceptance --no-netem --keep-workdir
+sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
+  --case cross-network --nat symmetric --profiles art \
+  --product-root "$PRODUCT" --transport-binary "$SIDECAR" \
+  --output-dir out/cross-network-acceptance --no-netem --keep-workdir
 ```
+
+`--nat cone` keeps iptables MASQUERADE and adds a UDP NETMAP reverse (full cone /
+1:1 for the single LAN host). That is not a product `--dport` port-forward.
+`--nat symmetric` uses `MASQUERADE --random-fully` on the host NAT so the STUN
+mapping is destination-dependent; Join must fail honestly, not fake a connect.
+
+## Test-only STUN override (never in packaged builds)
+
+PR #372 compiles STUN servers in `transport/internal/directstun/path.go`
+(`stun.cloudflare.com:3478`, `stun.l.google.com:19302`). There is **no**
+product env/config hook: `webjam-fabric` accepts no argv, and
+`TransportProcess` starts it with an empty environment (`env: {}`).
+
+This harness therefore uses a **test-only** name override: `/etc/netns/<ns>/hosts`
+maps those compiled names to `203.0.113.1`, where a real RFC 5389 Binding
+server listens. The files exist only while the namespaces exist. Packaged
+builds never read them, and the override is inactive unless this privileged
+harness created the netns.
+
+Do not add a packaged STUN URL setting. Pointing Host/Join at a lab STUN
+server is a harness concern only.
 
 macOS and Windows cannot create this topology; use the Ubuntu workflow.
 
