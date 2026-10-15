@@ -1,0 +1,93 @@
+"""CLI: python -m tools.cross_network_acceptance {run,role}."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+from tools.cross_network_acceptance.run import git_sha, run_case
+from tools.cross_network_acceptance.roles import run_role
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _maybe_sudo() -> None:
+    if os.geteuid() == 0:
+        return
+    os.execvp(
+        "sudo",
+        [
+            "sudo",
+            "-n",
+            "-E",
+            sys.executable,
+            "-m",
+            "tools.cross_network_acceptance",
+            *sys.argv[1:],
+        ],
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Same-LAN and two-NAT Host/Join acceptance harness."
+    )
+    sub = parser.add_subparsers(dest="command")
+
+    run = sub.add_parser("run", help="Build topology and drive host/join.")
+    run.add_argument("--case", choices=("same-lan", "cross-network"), required=True)
+    run.add_argument(
+        "--profiles",
+        default="art,music",
+        help="Comma-separated profiles (art, music).",
+    )
+    run.add_argument(
+        "--output-dir",
+        type=Path,
+        default=REPO_ROOT / "out" / "cross-network-acceptance",
+    )
+    run.add_argument("--sha", default="")
+    run.add_argument("--netem", action="store_true", default=None)
+    run.add_argument("--no-netem", action="store_true")
+    run.add_argument("--keep-workdir", action="store_true")
+
+    role = sub.add_parser("role", help="Internal host/guest worker.")
+    role.add_argument("--role", choices=("host", "guest"), required=True)
+    role.add_argument("--profile", choices=("art", "music"), required=True)
+    role.add_argument("--work-dir", type=Path, required=True)
+
+    args = parser.parse_args(argv)
+    if args.command == "role":
+        return run_role(args.role, args.profile, args.work_dir)
+    if args.command != "run":
+        parser.print_help()
+        return 2
+    _maybe_sudo()
+    profiles = tuple(
+        item.strip() for item in str(args.profiles).split(",") if item.strip()
+    )
+    if not profiles or any(item not in {"art", "music"} for item in profiles):
+        print("Profiles must be art and/or music.", file=sys.stderr)
+        return 2
+    netem = True
+    if args.no_netem:
+        netem = False
+    elif args.netem is True:
+        netem = True
+    elif args.case == "same-lan":
+        netem = False
+    sha = str(args.sha or git_sha())
+    return run_case(
+        case=args.case,
+        profiles=profiles,
+        output_dir=args.output_dir,
+        netem=netem,
+        sha=sha,
+        keep_workdir=bool(args.keep_workdir),
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

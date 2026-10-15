@@ -1,0 +1,141 @@
+# Optional Host/Join proof across two simulated home NATs.
+# Not a required check. Do not add this workflow to branch protection.
+# Same-LAN is the control (must PASS). Cross-network is expected to FAIL
+# until ordinary Host/Join uses the v3 rendezvous/relay in
+# docs/REMOTE-SESSIONS-PLAN.md.
+name: Cross-network acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "core/network_invite.py"
+      - "core/jamulus_endpoint.py"
+      - "core/rendezvous_profiles.py"
+      - "core/remote_invitation.py"
+      - "core/session_transfer.py"
+      - "core/session_transfer_runtime.py"
+      - "core/host_share_readiness.py"
+      - "services/lan_room_guest.py"
+      - "services/native_remote_transport.py"
+      - "services/remote_session_runtime.py"
+      - "services/transport_runtime.py"
+      - "services/bridge_service.py"
+      - "transport/**"
+      - "reference_service/**"
+      - "webjam_qt/controllers/room_participant.py"
+      - "webjam_qt/invitation_ingress.py"
+      - "tools/cross_network_acceptance/**"
+      - ".github/workflows/cross-network-acceptance.yml"
+      - "docs/CROSS-NETWORK-TEST.md"
+      - "docs/REMOTE-SESSIONS-PLAN.md"
+      - "docs/adr/0001-remote-session-transport.md"
+      - "docs/plans/webjam-remote-joining-decision.md"
+      - "tests/test_cross_network_acceptance.py"
+      - "tests/test_session_transfer*.py"
+      - "tests/test_native_remote*.py"
+      - "tests/test_lan_*.py"
+      - "tests/test_remote_*.py"
+      - "tests/test_host_share_join_flow.py"
+      - "tests/test_offline_invite_path.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cross-network-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  same-lan:
+    name: Same-LAN control
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+
+      - name: Install Qt, iproute2, and iptables
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            iproute2 iptables \
+            libegl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0 libportaudio2 \
+            libpulse0
+          sudo modprobe sch_netem || true
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip "setuptools>=83.0.0"
+          pip install -r requirements.txt
+          pip install pytest "ruff==0.15.22"
+
+      - name: Lint the harness
+        run: ruff check tools/cross_network_acceptance tests/test_cross_network_acceptance.py
+
+      - name: Run same-LAN control
+        run: |
+          python -m tools.cross_network_acceptance run --case same-lan \
+            --output-dir out/cross-network-acceptance \
+            --sha "$(git rev-parse HEAD)" --no-netem
+
+      - name: Retain receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: webjam-same-lan-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: out/cross-network-acceptance/
+          if-no-files-found: warn
+          retention-days: 14
+
+  cross-network:
+    name: Cross-network (two NATs)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+
+      - name: Install Qt, iproute2, and iptables
+        run: |
+          sudo apt-get update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            iproute2 iptables \
+            libegl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0 libportaudio2 \
+            libpulse0
+          sudo modprobe sch_netem || true
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip "setuptools>=83.0.0"
+          pip install -r requirements.txt
+          pip install pytest "ruff==0.15.22"
+
+      - name: Run two-NAT Host/Join
+        run: |
+          python -m tools.cross_network_acceptance run --case cross-network \
+            --output-dir out/cross-network-acceptance \
+            --sha "$(git rev-parse HEAD)" --netem
+
+      - name: Retain receipts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: webjam-cross-network-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: out/cross-network-acceptance/
+          if-no-files-found: warn
+          retention-days: 14
