@@ -79,6 +79,7 @@ _JOIN_INVITE_FIELD_NAME = "Paste the invite"
 _JOIN_PRIVACY_LINE = (
     "The invite stays on this screen. WebJam does not save it."
 )
+JOIN_INVITE_FAILED_STATUS = "That invite didn't work"
 
 # Single door line when Paint along is the checked Art start (harvest + UX tests).
 # Door next-step matches the empty Paint along orange (PR #320): Watch a
@@ -1773,7 +1774,7 @@ class LaunchDialog(QDialog):
             # Restore controls before showing the error; refreshing invite status
             # would clear the message we are about to present.
             self._restore_submission(refresh_invite_status=False)
-            self._join_status.setText("Needs attention")
+            self._join_status.setText(JOIN_INVITE_FAILED_STATUS)
             self._join_error.setText(str(exc))
             self._join_error.setVisible(True)
             self._announce_error(self._join_error, focus=self._invite_input)
@@ -1832,7 +1833,7 @@ class LaunchDialog(QDialog):
                 "The invitation was cleared. Paste the full invitation again, then choose Join."
             )
             self._join_error.setVisible(True)
-            self._join_status.setText("Needs attention")
+            self._join_status.setText(JOIN_INVITE_FAILED_STATUS)
             self._announce_error(self._join_error, focus=self._invite_input)
             return False
         self.selected_role = "join"
@@ -1870,7 +1871,7 @@ class LaunchDialog(QDialog):
         self._pages.setCurrentWidget(self._join_page)
         self.invitation_meeting_url = ""
         self._invite_input.clear()
-        self._join_status.setText("Needs attention")
+        self._join_status.setText(JOIN_INVITE_FAILED_STATUS)
         self._join_error.setText(
             str(message or "WebJam could not open that invitation.")
         )

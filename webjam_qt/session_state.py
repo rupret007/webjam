@@ -134,7 +134,7 @@ class SessionUiState:
     def remote_session_retry_available(cls) -> SessionUiState:
         return cls(
             SessionPhase.ERROR,
-            "Needs attention",
+            "Try again",
             "Choose Try Again to start the private connection.",
             "Try Again",
             show_primary=False,
@@ -145,7 +145,7 @@ class SessionUiState:
     def remote_session_fresh_invitation_required(cls) -> SessionUiState:
         return cls(
             SessionPhase.ERROR,
-            "Needs attention",
+            "Ask your host for a new invite",
             "This invitation may already be used. Ask the host for a new one, then choose Paste New Invite.",
             "Paste New Invite",
             show_primary=False,
@@ -209,3 +209,6 @@ class SessionUiState:
             False,
             False,
         )
+
+
+USED_ONE_USE_INVITE_HOST = "They need a new invite — press Copy Invite again."

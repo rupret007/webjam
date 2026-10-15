@@ -277,7 +277,8 @@ def parse_invitation_at_ingress(
             ) from None
         raise InvitationIngressError(
             InvitationIngressErrorCode.INVALID,
-            "That invitation is malformed. Copy a new invitation from your host.",
+            "That's not a WebJam invite. Ask your host to press Copy Invite "
+            "and send you the whole message.",
         ) from None
     if isinstance(invitation, RemoteInvitation) and invitation.advisory_expired():
         raise InvitationIngressError(

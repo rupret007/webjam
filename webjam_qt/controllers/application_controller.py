@@ -137,7 +137,11 @@ from webjam_qt.controllers.recording_coordinator import RecordingCoordinator
 from webjam_qt.controllers.session_persistence import SessionPersistence
 from webjam_qt.controllers.ui_thread import UiThreadInvoker
 from webjam_qt.controllers.video_coordinator import VideoCoordinator
-from webjam_qt.session_state import SessionPhase, SessionUiState
+from webjam_qt.session_state import (
+    SessionPhase,
+    SessionUiState,
+    USED_ONE_USE_INVITE_HOST,
+)
 from webjam_qt.widgets.session_hud import INVITE_COPIED_NOTICE, WIFI_NEEDED_NOTICE
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.windows.conductor_window import ConductorWindow
@@ -9123,7 +9127,7 @@ class ApplicationController(QObject):
         """Offer retry only after a proven pre-enrollment failure."""
 
         self.window.session_hud.set_state(
-            "Needs attention",
+            "Try again",
             "Choose Try Again to start the private connection.",
             action_text="Try Again",
             action_visible=True,
@@ -9165,7 +9169,7 @@ class ApplicationController(QObject):
         """Keep a consumed-or-uncertain v3 invite out of generic retry paths."""
 
         self.window.session_hud.set_state(
-            "Needs attention",
+            "Ask your host for a new invite",
             self._remote_fresh_invitation_detail(),
             action_text="Paste New Invite",
             action_visible=True,
@@ -9651,7 +9655,7 @@ class ApplicationController(QObject):
         if self._remote_join_retry_pending():
             self._render_remote_retry_hud()
             return GuidanceDisplayOverride(
-                "Needs attention",
+                "Try again",
                 "Choose Try Again to start the private connection.",
                 SessionPrimaryAction.TRY_RECONNECT,
                 "Try Again",
@@ -9659,7 +9663,7 @@ class ApplicationController(QObject):
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             self._render_remote_fresh_invitation_hud()
             return GuidanceDisplayOverride(
-                "Needs attention",
+                "Ask your host for a new invite",
                 self._remote_fresh_invitation_detail(),
                 SessionPrimaryAction.PASTE_NEW_INVITE,
                 "Paste New Invite",
@@ -9781,25 +9785,19 @@ class ApplicationController(QObject):
                 )
             if not invite_available:
                 if remote_owner is not None:
-                    # Same one-liner on HUD and guidance: name the visible
-                    # Reset Invite button. Do not send hosts into More when
-                    # that button is already the primary recovery action.
-                    detail = (
-                        "Choose Reset Invite to create a fresh invitation, "
-                        "then copy the new link."
-                    )
+                    detail = USED_ONE_USE_INVITE_HOST
                     self.window.session_hud.set_state(
-                        "Create a fresh invitation",
                         detail,
-                        action_text="Reset Invite",
+                        detail,
+                        action_text="Copy Invite",
                         action_visible=True,
                         action_kind="reset_invite",
                     )
                     return GuidanceDisplayOverride(
-                        "Create a fresh invitation",
+                        detail,
                         detail,
                         SessionPrimaryAction.RESET_INVITE,
-                        "Reset Invite",
+                        "Copy Invite",
                     )
                 if share_readiness is not None:
                     self._transition_lifecycle(
@@ -10774,7 +10772,8 @@ class ApplicationController(QObject):
             override = room.guidance()
             if getattr(self, "_remote_invitation_requires_replacement", False):
                 override = GuidanceDisplayOverride(
-                    "Needs attention", self._remote_fresh_invitation_detail(),
+                    "Ask your host for a new invite",
+                    self._remote_fresh_invitation_detail(),
                     SessionPrimaryAction.PASTE_NEW_INVITE,
                 )
             if self.audio.stopping or self.audio.cleanup_retry_required:

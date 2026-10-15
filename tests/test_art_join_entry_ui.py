@@ -152,7 +152,7 @@ def test_join_keyboard_route_keeps_field_action_and_back_reachable(
     assert field.isEnabled()
     assert field.hasFocus()
     assert dialog._invite_input.accessibleDescription() == dialog._join_subtitle.text()
-    assert dialog._join_status.text() == "Needs attention"
+    assert dialog._join_status.text() == "That invite didn't work"
     assert dialog._join_error.isVisibleTo(dialog)
     assert not dialog.showing_choices
     assert dialog._join_error.accessibleDescription() == dialog._join_error.text()
