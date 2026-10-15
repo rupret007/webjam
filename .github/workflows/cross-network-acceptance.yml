@@ -1,4 +1,5 @@
 # Proof-only two-NAT harness. Every job must PASS. Not a required WebJam CI check.
+# jobs: --case same-lan --case cone --case relay
 name: Cross-network acceptance
 
 on:
@@ -27,12 +28,25 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  same-lan:
-    name: Same-LAN control
+  accept:
+    name: ${{ matrix.title }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       QT_QPA_PLATFORM: offscreen
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case: same-lan
+            title: Same-LAN control
+            netem: --no-netem
+          - case: cone
+            title: Two cone NATs (direct)
+            netem: --netem
+          - case: relay
+            title: Symmetric NATs via relay
+            netem: --netem
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -54,63 +68,19 @@ jobs:
           GOTOOLCHAIN: local
         run: python -m tools.cross_network_acceptance build-sidecar --product-root . --output out/cross-network-acceptance/webjam-fabric
       - name: Lint the harness
+        if: matrix.case == 'same-lan'
         run: ruff check tools/cross_network_acceptance deploy/relay tests/test_cross_network_acceptance.py
       - name: Prove RFC 4787 NAT packet behavior
+        if: matrix.case == 'same-lan'
         run: python -m tools.cross_network_acceptance probe-nat
-      - name: Run same-LAN control
+      - name: Run case
         run: >
-          python -m tools.cross_network_acceptance run --case same-lan
+          python -m tools.cross_network_acceptance run --case ${{ matrix.case }}
           --output-dir out/cross-network-acceptance
-          --sha "$(git rev-parse HEAD)" --no-netem
+          --sha "$(git rev-parse HEAD)" ${{ matrix.netem }}
           --transport-binary "$PWD/out/cross-network-acceptance/webjam-fabric"
           --build-id "$(git rev-parse HEAD)"
-          --job-id "${{ github.run_id }}-same-lan-${{ github.run_attempt }}"
-      - name: Chown receipts
-        if: always()
-        run: sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance || true
-      - name: Retain receipts
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: same-lan-${{ github.run_id }}-${{ github.run_attempt }}
-          path: out/cross-network-acceptance/
-          if-no-files-found: warn
-          retention-days: 14
-
-  cone:
-    name: Two cone NATs (direct)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      QT_QPA_PLATFORM: offscreen
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.11"
-      - name: Install netns, sch_netem, coturn, and Qt
-        run: sudo bash tools/cross_network_acceptance/ci_prep.sh
-      - name: Install Python deps
-        run: python -m pip install --upgrade pip "setuptools>=83.0.0" && pip install -r requirements.txt pytest "ruff==0.15.22"
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: "1.26.9"
-          cache-dependency-path: transport/go.sum
-      - name: Build webjam-fabric
-        env:
-          GOTOOLCHAIN: local
-        run: python -m tools.cross_network_acceptance build-sidecar --product-root . --output out/cross-network-acceptance/webjam-fabric
-      - name: Run two-cone direct
-        run: >
-          python -m tools.cross_network_acceptance run --case cone
-          --output-dir out/cross-network-acceptance
-          --sha "$(git rev-parse HEAD)" --netem
-          --transport-binary "$PWD/out/cross-network-acceptance/webjam-fabric"
-          --build-id "$(git rev-parse HEAD)"
-          --job-id "${{ github.run_id }}-cone-${{ github.run_attempt }}"
+          --job-id "${{ github.run_id }}-${{ matrix.case }}-${{ github.run_attempt }}"
       - name: Chown receipts
         if: always()
         run: sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance || true
@@ -118,53 +88,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: cone-${{ github.run_id }}-${{ github.run_attempt }}
-          path: out/cross-network-acceptance/
-          if-no-files-found: warn
-          retention-days: 14
-
-  relay:
-    name: Symmetric NATs via relay
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      QT_QPA_PLATFORM: offscreen
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.11"
-      - name: Install netns, sch_netem, coturn, and Qt
-        run: sudo bash tools/cross_network_acceptance/ci_prep.sh
-      - name: Install Python deps
-        run: python -m pip install --upgrade pip "setuptools>=83.0.0" && pip install -r requirements.txt pytest "ruff==0.15.22"
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: "1.26.9"
-          cache-dependency-path: transport/go.sum
-      - name: Build webjam-fabric
-        env:
-          GOTOOLCHAIN: local
-        run: python -m tools.cross_network_acceptance build-sidecar --product-root . --output out/cross-network-acceptance/webjam-fabric
-      - name: Run symmetric relay
-        run: >
-          python -m tools.cross_network_acceptance run --case relay
-          --output-dir out/cross-network-acceptance
-          --sha "$(git rev-parse HEAD)" --netem
-          --transport-binary "$PWD/out/cross-network-acceptance/webjam-fabric"
-          --build-id "$(git rev-parse HEAD)"
-          --job-id "${{ github.run_id }}-relay-${{ github.run_attempt }}"
-      - name: Chown receipts
-        if: always()
-        run: sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance || true
-      - name: Retain pcap, conntrack, logs
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: relay-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ matrix.case }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: out/cross-network-acceptance/
           if-no-files-found: warn
           retention-days: 14

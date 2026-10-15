@@ -224,6 +224,8 @@ def test_topology_labels_and_shim_counts_are_never_proof():
 
     run_src = Path("tools/cross_network_acceptance/run.py").read_text(encoding="utf-8")
     assert "_read_count" not in run_src
+    assert "stop_turn(" in run_src
+    assert run_src.find("stop_turn(") < run_src.find("relayed_bytes(")
     run_tree = ast.parse(run_src)
     for node in ast.walk(run_tree):
         if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
@@ -473,8 +475,26 @@ def test_turn_credentials_contract_and_relay_byte_logs(monkeypatch):
     assert relayed_bytes("session x usage: rp=2, rb=80, sp=2, sb=40") == 120
     assert relayed_bytes("incoming packet Data from peer") == 0
     assert relayed_bytes("idle") == 0
-    assert "mint_coturn" in Path(
-        "tools/cross_network_acceptance/turn.py").read_text(encoding="utf-8")
+    turn_src = Path("tools/cross_network_acceptance/turn.py").read_text(encoding="utf-8")
+    assert "mint_coturn" in turn_src and "def stop_turn" in turn_src
+    assert "SIGTERM" in turn_src and "pidfile" in turn_src.lower()
+
+
+def test_stop_turn_terms_pidfile_process(tmp_path):
+    import subprocess
+    import sys
+
+    from tools.cross_network_acceptance.turn import stop_turn
+
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    pid_path = tmp_path / "turn.pid"
+    pid_path.write_text(str(proc.pid), encoding="utf-8")
+    try:
+        stop_turn(pid_path, timeout_s=2.0)
+        assert proc.poll() is not None
+    finally:
+        proc.kill()
+        proc.wait(timeout=2)
 
 
 def test_stun_server_prefers_coturn(monkeypatch):
@@ -556,6 +576,10 @@ def test_proof_peers_drive_real_sidecar_not_standalone_ice():
     assert "TurnClient" not in proof and "KIND_MUSIC" not in proof
     assert "host.proof" in proof
     assert "apply_guest_signal" in proof and "types_from_session_path" in proof
+    assert "except TransportProcessError" in proof
+    native = Path("services/native_remote_transport.py").read_text(encoding="utf-8")
+    assert "except TransportProcessError" in native
+    assert "RemoteSessionPhase.CONNECTED" in native
     assert "direct-stun" in proof and "LoopbackShim" not in proof
     assert "webjam_reference" not in run and "mint_coturn" not in proof
     assert "credential_script" in run and "_post_in_ns" in run

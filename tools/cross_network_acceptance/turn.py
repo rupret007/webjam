@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import signal
 import time
 from pathlib import Path
 
@@ -71,6 +72,31 @@ def relayed_bytes(log_text: str) -> int:
     for match in _USAGE.finditer(log_text or ""):
         total += int(match.group(1)) + int(match.group(2))
     return total
+
+
+def stop_turn(pid_path: Path, timeout_s: float = 8.0) -> None:
+    """SIGTERM the pidfile process so session close can flush rb=/sb=."""
+    try:
+        pid = int(pid_path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return
+    if pid <= 1:
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.05)
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
 
 
 def conntrack_dump(ns: str) -> str:

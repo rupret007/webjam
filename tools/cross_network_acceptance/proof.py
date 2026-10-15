@@ -166,7 +166,7 @@ def run_peer(work_dir: Path, role: str) -> int:
         raise ProofError("transport binary missing")
 
     from core.remote_invitation import issue_remote_invitation, parse_remote_invitation_link
-    from services.transport_runtime import TransportProcess
+    from services.transport_runtime import TransportProcess, TransportProcessError
 
     inbox: list[str] = []
 
@@ -208,7 +208,14 @@ def run_peer(work_dir: Path, role: str) -> int:
             reply = _wait_bytes(work_dir / "guest.reply", 25.0)
             if not reply:
                 raise ProofError("missing guest reply")
-            process.apply_guest_signal(reply, generation=1)
+            try:
+                process.apply_guest_signal(reply, generation=1)
+            except TransportProcessError:
+                if not any(
+                    ev.event_type == "peer_connected" and ev.mode == "host"
+                    for ev in process.timeline
+                ):
+                    raise
             connected = _wait_connected(process, "host", 40.0)
             session_path = str(getattr(connected, "session_path", "") or "")
         else:
