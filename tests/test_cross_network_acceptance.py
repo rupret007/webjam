@@ -200,6 +200,75 @@ def test_path_labels_do_not_invent_ice_pairs():
     assert path_label(same_lan=False) == ""
 
 
+def test_topology_labels_and_shim_counts_are_never_proof():
+    import ast
+    import inspect
+    import textwrap
+
+    from tools.cross_network_acceptance.proof import path_label
+    from tools.cross_network_acceptance.turn import relayed_bytes
+
+    invented = {"srflx", "relay", "prflx"}
+    assert path_label(same_lan=True) not in invented
+    assert path_label(same_lan=False) not in invented
+    label_src = textwrap.dedent(inspect.getsource(path_label))
+    assert "srflx" not in label_src and "RELAY_TYPE" not in label_src
+    for node in ast.walk(ast.parse(label_src)):
+        if isinstance(node, ast.Return) and isinstance(node.value, ast.Constant):
+            assert node.value.value in {"host", ""}
+
+    proof = Path("tools/cross_network_acceptance/proof.py").read_text(encoding="utf-8")
+    assert "path_label(path" not in proof
+
+    run_src = Path("tools/cross_network_acceptance/run.py").read_text(encoding="utf-8")
+    assert "_read_count" not in run_src
+    run_tree = ast.parse(run_src)
+    for node in ast.walk(run_tree):
+        if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+            assert node.target.id != "relay_count"
+        if isinstance(node, ast.Assign):
+            names = [
+                t.id for t in node.targets if isinstance(t, ast.Name)
+            ]
+            if "relay_count" not in names:
+                continue
+            value = node.value
+            if isinstance(value, ast.Constant):
+                assert value.value == 0
+            elif isinstance(value, ast.Call):
+                func = value.func
+                name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+                assert name == "relayed_bytes"
+            else:
+                raise AssertionError("relay_count must be 0 or relayed_bytes()")
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id != "evaluate_proof":
+                continue
+            for kw in node.keywords:
+                if kw.arg == "relay_bytes":
+                    assert isinstance(kw.value, ast.Name) and kw.value.id == "relay_count"
+
+    usage = inspect.getsource(relayed_bytes)
+    assert "rb=" in usage and "sb=" in usage
+    assert "findall" not in usage and "loopback" not in usage
+    assert relayed_bytes("session x usage: rp=2, rb=80, sp=2, sb=40") == 120
+    assert relayed_bytes("incoming packet Data from peer") == 0
+    assert relayed_bytes("28808") == 0
+
+    for path in (
+        "tools/cross_network_acceptance/README.md",
+        "docs/CROSS-NETWORK-TEST.md",
+        "changelog.d/cross-network-acceptance.md",
+        "tools/cross_network_acceptance/proof.py",
+        "tools/cross_network_acceptance/run.py",
+    ):
+        text = Path(path).read_text(encoding="utf-8").lower()
+        assert "topology-derived" not in text
+        assert "labels `srflx`" not in text
+        assert "labels `relay`" not in text
+        assert "exact-pair counter when coturn" not in text
+
+
 def test_missing_nonce_or_candidate_fields_fail():
     host, guest = _proof(), _proof()
     assert evaluate_proof(host, guest, expect_path="direct", music_nonce=MUSIC, art_nonce=ART) == ""
