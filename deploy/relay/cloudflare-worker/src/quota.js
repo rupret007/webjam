@@ -12,7 +12,9 @@
  *
  * There is no global new-prefix cap. New prefixes are capped per IPv4
  * /24 and per IPv6 /32. Each prefix also has a daily share so a handful
- * of IPs cannot drain the global cap.
+ * of IPs cannot drain the global cap. Rate-only charges (failed
+ * upgrades) may record a prefix for the new-bucket check, but inserts
+ * are capped per UTC day and already-known prefixes are not rewritten.
  */
 
 export const DEFAULT_DAILY_REQUESTS = 10_000;
@@ -25,6 +27,7 @@ export const DEFAULT_NEW_BUCKETS_PER_MINUTE = 32;
 export const DEFAULT_PREFIX_DAILY_REQUESTS = 200;
 export const DEFAULT_PREFIX_DAILY_ROW_WRITES = 200;
 export const DEFAULT_PREFIX_DAILY_GB_S = 20;
+export const DEFAULT_RATE_PREFIX_DAILY = DEFAULT_DAILY_REQUESTS;
 export const RATE_WINDOW_MS = 60_000;
 export const MAX_IP_BUCKETS = 256;
 
@@ -58,6 +61,10 @@ export function quotaLimits(env = {}, scope = "mailbox") {
       positiveInt(env.MAILBOX_PREFIX_DAILY_GB_S, DEFAULT_PREFIX_DAILY_GB_S),
       positiveInt(env.MAILBOX_DAILY_GB_S, DEFAULT_DAILY_GB_S),
     ),
+    ratePrefixDaily: atMost(
+      positiveInt(env.MAILBOX_RATE_PREFIX_DAILY, DEFAULT_RATE_PREFIX_DAILY),
+      positiveInt(env.MAILBOX_DAILY_REQUESTS, DEFAULT_DAILY_REQUESTS),
+    ),
   };
 }
 
@@ -79,6 +86,7 @@ export function emptyQuotaState() {
     ipBuckets: {},
     newBuckets: {},
     knownPrefixes: {},
+    ratePrefixWrites: 0,
   };
 }
 
@@ -160,6 +168,7 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits, charge = "
     state.ipBuckets = {};
     state.newBuckets = {};
     state.knownPrefixes = {};
+    state.ratePrefixWrites = 0;
   }
   const key = rateKey(ip);
   if (!key) {
@@ -217,6 +226,15 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits, charge = "
       return { allow: false, status: 429, code: "cap" };
     }
   }
+  const rateOnly = countRate && !countDaily;
+  const ratePrefixDaily = limits.ratePrefixDaily ?? DEFAULT_RATE_PREFIX_DAILY;
+  let nextRatePrefixWrites = Number(state.ratePrefixWrites) || 0;
+  if (rateOnly && isNew) {
+    nextRatePrefixWrites += 1;
+    if (nextRatePrefixWrites > ratePrefixDaily) {
+      return { allow: false, status: 429, code: "cap" };
+    }
+  }
   if (countRate && isNew) {
     state.newBuckets[netKey] = (Number(state.newBuckets[netKey]) || 0) + 1;
   }
@@ -227,14 +245,17 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits, charge = "
       rememberIpBucket(state.ipBuckets, ipKey, nextIp);
     }
   }
-  const record = touchKnownPrefix(state.knownPrefixes, prefix, nowMs);
   if (countDaily) {
+    const record = touchKnownPrefix(state.knownPrefixes, prefix, nowMs);
     state.requests = nextRequests;
     state.rowWrites = nextWrites;
     state.gbS = nextGbS;
     record.requests = prefixRequests;
     record.rowWrites = prefixWrites;
     record.gbS = prefixGbS;
+  } else if (rateOnly && isNew) {
+    touchKnownPrefix(state.knownPrefixes, prefix, nowMs);
+    state.ratePrefixWrites = nextRatePrefixWrites;
   }
   return { allow: true, status: 200, code: "ok" };
 }

@@ -541,6 +541,77 @@ test("a denied charge after a 101 closes the accepted socket", async () => {
   assert.equal(closed.reason, "quota");
 });
 
+test("a successful non-101 mailbox operation with an Upgrade header is charged daily", async () => {
+  resetWorkerState();
+  const mailboxFetch = memoryMailbox();
+  const env = { MAILBOX_DAILY_REQUESTS: "1" };
+  const posted = await handleRequest(
+    mailboxRequest("POST", "answer", { payload: PAYLOAD }, {
+      "CF-Connecting-IP": "203.0.113.10",
+      Upgrade: "websocket",
+    }),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(posted.status, 201);
+  const blocked = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(blocked.status, 429);
+  assert.equal((await blocked.json()).error, "cap");
+});
+
+test("failed upgrades cannot grow or rewrite known-prefix state without a daily bound", () => {
+  const state = emptyQuotaState();
+  const limits = {
+    ...LIMITS,
+    perMinute: 100,
+    newBucketsPerMinute: 100,
+    ratePrefixDaily: 2,
+  };
+  const first = applyQuota(state, {
+    ip: "203.0.113.10",
+    nowMs: 1,
+    limits,
+    charge: "rate",
+  });
+  assert.equal(first.allow, true);
+  const storedAt = state.knownPrefixes["203.0.113.10"].at;
+  assert.equal(
+    applyQuota(state, {
+      ip: "203.0.113.11",
+      nowMs: 2,
+      limits,
+      charge: "rate",
+    }).allow,
+    true,
+  );
+  assert.equal(Object.keys(state.knownPrefixes).length, 2);
+  const denied = applyQuota(state, {
+    ip: "198.51.100.1",
+    nowMs: 3,
+    limits,
+    charge: "rate",
+  });
+  assert.equal(denied.allow, false);
+  assert.equal(denied.status, 429);
+  assert.equal(denied.code, "cap");
+  assert.equal(Object.keys(state.knownPrefixes).length, 2);
+  assert.equal("198.51.100.1" in state.knownPrefixes, false);
+
+  const repeat = applyQuota(state, {
+    ip: "203.0.113.10",
+    nowMs: 4,
+    limits,
+    charge: "rate",
+  });
+  assert.equal(repeat.allow, true);
+  assert.equal(state.knownPrefixes["203.0.113.10"].at, storedAt);
+  assert.equal(Object.keys(state.knownPrefixes).length, 2);
+});
+
 test("http mailbox requests are rejected", async () => {
   resetWorkerState();
   const denied = await handleRequest(

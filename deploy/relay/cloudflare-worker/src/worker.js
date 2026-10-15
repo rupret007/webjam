@@ -85,6 +85,7 @@ function applyQuotaEnv(env) {
     MAILBOX_PREFIX_DAILY_REQUESTS: env.MAILBOX_PREFIX_DAILY_REQUESTS,
     MAILBOX_PREFIX_DAILY_ROW_WRITES: env.MAILBOX_PREFIX_DAILY_ROW_WRITES,
     MAILBOX_PREFIX_DAILY_GB_S: env.MAILBOX_PREFIX_DAILY_GB_S,
+    MAILBOX_RATE_PREFIX_DAILY: env.MAILBOX_RATE_PREFIX_DAILY,
   };
   globalThis.WEBJAM_QUOTA_ENV = quotaEnv;
   return quotaEnv;
@@ -144,6 +145,10 @@ function isWebsocketUpgrade(request) {
   return String(request.headers.get("Upgrade") || "").toLowerCase() === "websocket";
 }
 
+function mailboxCountsDaily(status) {
+  return status === 101 || (status >= 200 && status < 300);
+}
+
 function closeAcceptedSocket(response) {
   const socket = response && response.webSocket;
   if (!socket || typeof socket.close !== "function") {
@@ -189,7 +194,7 @@ async function handleMailbox(request, env, deps, mailbox, nowMs) {
       response = errorResponse(503, "unavailable");
     }
   }
-  if (websocket && response.status === 101) {
+  if (websocket && mailboxCountsDaily(response.status)) {
     const charged = await enforceAccess(request, env, deps, nowMs, writes, "daily");
     if (charged) {
       closeAcceptedSocket(response);
