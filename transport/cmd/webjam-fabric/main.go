@@ -14,7 +14,8 @@ var buildID = "dev"
 
 func run() int {
 	// No CLI configuration is accepted. Session material belongs on bounded
-	// stdin IPC, never in argv or the environment.
+	// stdin IPC, never in argv. Frozen builds inherit an empty environment.
+	// Unpackaged WEBJAM_TEST_HARNESS=1 may pass WEBJAM_TEST_STUN_SERVER only.
 	if len(os.Args) != 1 {
 		return 2
 	}

@@ -107,10 +107,8 @@ func TestPunchNominatesLoopbackPair(t *testing.T) {
 	if err != nil || got == nil || got.Port != left.LocalAddr().(*net.UDPAddr).Port {
 		t.Fatalf("guest nominated = %v, %v", got, err)
 	}
-	hostCtx, hostCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer hostCancel()
-	nominated, nomErr := hostMux.WaitNominated(hostCtx)
-	if nomErr != nil || nominated == nil || nominated.Port != right.LocalAddr().(*net.UDPAddr).Port {
-		t.Fatalf("host nominated = %v, %v", nominated, nomErr)
+	hostGot, err := hostMux.WaitNominated(ctx)
+	if err != nil || hostGot == nil || hostGot.Port != right.LocalAddr().(*net.UDPAddr).Port {
+		t.Fatalf("host nominated = %v, %v", hostGot, err)
 	}
 }
