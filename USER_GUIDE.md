@@ -12,6 +12,49 @@
 > macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
 > gates remain **NOT RUN**. A source checkout is not a published package.
 
+This is the one complete creator how-to. Other pages point here instead of
+repeating the same steps.
+
+## Start here
+
+1. **Get the app** from [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
+   Choose the download for your computer.
+2. **Open it.**
+   - **Windows:** if Windows says it protected your PC, choose **More info**,
+     then **Run anyway**. A work PC may still block it; ask IT.
+   - **Mac:** drag WebJam into Applications. If macOS blocks the first launch,
+     open **System Settings → Privacy & Security**, click **Open Anyway** for
+     WebJam, and confirm **Open**.
+   - **Ubuntu:** unzip the folder, keep it together, and start `WebJam`.
+3. **Start or join.** Choose **Art** or **Music**, then **Host** or **Join**.
+   The host uses **Copy Invite** and sends the whole message. The friend
+   pastes it on **Join**. Stay on the **same Wi-Fi or local network**. Keep
+   the host's window open.
+
+**Music Host is Mac-only.** Windows and Linux can Join a Music jam; they
+cannot start one. Any computer can Host or Join Art.
+
+**What Host does:** opens your room (Art) or starts the private band server
+and Jamulus (Music). When the room is ready, **Copy Invite** appears.
+
+**What Join does:** you paste the whole invite. WebJam does not save it.
+**You’re in** (Art) or hearing each other (Music) means the room connected.
+
+**Talking or video** uses your own meeting. Open **Conversation**, add a
+public link, then **Join / Open Meeting**. Drawpile is only for an optional
+shared Art canvas. Art does not record a Music take.
+
+**Where recordings go (Music):** the host chooses **Record Session**. When
+the take says **Ready**, use **More → Recording Setup… → Show Folder**.
+Mac hosts keep takes under
+`Library/Application Support/WebJam/JamulusServer/Recordings`. Windows and
+Linux hosts default to `WebJam Recordings` in the home folder. Guests often
+see `Music/WebJam Takes`.
+
+**Leave:** host **End Session** / **End Room**; guest **Leave Jam** /
+**Leave Room**. The others stay. Your meeting and drawing app stay open.
+**Session library** notes stay on this computer.
+
 ## Install the included music component on Windows
 
 When **Help → Music setup…** is available at launch, choose
@@ -382,10 +425,12 @@ orange action. **Open Paint along** stays available as a quiet button below
 it to choose a local file or lesson link. Guest **Open my copy…** recovery
 keeps its emphasis.
 
-When the room offers a shared canvas or Paint along, its next step still
-includes paper, your usual tools, or just talk. Shared activities
-are optional. You only need Drawpile to use the shared canvas; artists using
-their own tools can keep making together.
+When Paint along is the room's next action, its activity and Open button
+follow the connection status without an extra own-tools paragraph. Make
+together and rooms whose next action is the shared canvas keep the guidance
+that you do not need an art app: use paper, your usual tools, or just talk.
+Shared activities are optional. You only need Drawpile to use the shared
+canvas; artists using their own tools can keep making together.
 
 In **Notes** or Paint along, choose **Back to room** to see the full room and
 its current activities or recovery action. Your notes, selection and undo
@@ -609,7 +654,8 @@ For the existing **silent local-file option**, the host chooses one video file:
    workspace once the room exists. It replaces the conductor surface inside
    the existing WebJam window; it does not create a third window beside WebJam
    and an optional meeting app. If you returned to the room, choose its
-   **Paint along** line to come back.
+   **Paint along** line to come back. The session status banner stays hidden
+   while Paint along is open; **Back to room** restores current room guidance.
 2. The host chooses **Choose process video…** and picks a local video file they
    have the right to play. WebJam does not ship, bundle, download, or fetch any
    video, and it will not open anything from a streaming service.
@@ -794,8 +840,11 @@ separately if that is required.
 
 ## Host a live session
 
-For an Art room, follow [Art](#art) above. For Music, Podcast & Voice, or Review
-& Rehearsal, choose **Host**, **Host Remote Recording**, or **Host Review**.
+For an Art room, follow [Art](#art) above. For Music on a Mac, choose **Host**.
+Windows and Linux cannot Host Music — they show that Hosting is available in
+the macOS app, and **Join** stays available. Podcast & Voice and Review &
+Rehearsal live under **File** and show **Host Remote Recording** or
+**Host Review**.
 That action authorizes the private session—there is no extra Start
 Session click. WebJam starts the server first, then opens a
 visible Jamulus client against it. Set up sound in Jamulus; once WebJam sees
@@ -804,6 +853,8 @@ extra setup, sound-confirmation, or Enter Jam click. Play a note and make sure
 you can hear each other—WebJam never treats a meter or connection as proof of
 that. Use Music's **Band Check**, Podcast's **Sound Check**, or Review's
 **Session Check (Preview)** if you need help.
+Copy Invite sends the whole message to people on the same Wi-Fi. Keep this
+room open.
 
 If setup is interrupted, WebJam keeps only a private, bounded recovery record.
 It reuses progress only when the role and dedicated Jamulus profile fingerprint
@@ -837,9 +888,10 @@ For room invitations, WebJam waits for the host's profile before choosing the
 room or audio path. Older Music invitations start the Music guest journey even
 if you chose Art at the door; your saved Art preference stays unchanged.
 An Art invitation follows the waiting and connection states described in
-[Art](#art), without Jamulus. For a remote Music invitation, the normal visible
+[Art](#art), without Jamulus. For a Music invitation, the normal visible
 sequence is **Checking invite → Contacting host → Securing connection → Opening
-Jamulus → Connected**. A remote attempt has a bounded timeout; Music requires
+Jamulus → Connected**. If the invitation says same network, stay on the host's
+Wi-Fi. A Join attempt has a bounded timeout; Music requires
 fresh authenticated Jamulus evidence. At **Needs attention**, use the single
 action shown:
 
@@ -1258,7 +1310,13 @@ tools are for and WebJam never starts, requests, or requires it.
 
 ## Record Session
 
-The host controls the shared multitrack take. At the first **Record Session**
+The host controls the shared multitrack take. When a take says **Ready**,
+**More → Recording Setup… → Show Folder** opens the saved files. Mac hosts
+keep takes under `Library/Application Support/WebJam/JamulusServer/Recordings`.
+Windows and Linux hosts default to `WebJam Recordings` in the home folder.
+Guests often see `Music/WebJam Takes`.
+
+At the first **Record Session**
 click, choose the profile's shared-only action—**Record Shared Jam Only**,
 **Record Shared Voice Take Only**, or **Record Shared WebJam Audio Only**—or
 choose **Also Keep This Mac’s Inputs**. A shared-only choice begins the take.
@@ -1399,6 +1457,12 @@ does not record a session at all, so it has no take and no Studio.
    destination, and file checksums. A failed or unverified export has no
    completed receipt; keep the original take and retry. Changing takes or
    editing the mix or arrangement clears the previous receipt.
+
+If recording starts during an export, Studio stops the export and checks
+whether its folder already finished. **Show Unverified Export** keeps that
+folder available for inspection; it has no verified receipt. Cancellation
+before completion removes only temporary export files. The original take
+stays unchanged.
 
 The receipt confirms the package bytes at export completion. Listening and
 importing into another editor remain separate checks; WebJam does not open

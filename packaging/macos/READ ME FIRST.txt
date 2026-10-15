@@ -30,6 +30,12 @@ Managed Macs may prevent it. Recent macOS versions can block downloaded
 `.command` files without offering the same Open Anyway approval, so the
 installer helpers below are not the recommended double-click path.
 
+This Mac can Host a Music jam. Friends on Mac, Windows, or Linux Join with
+the copied invite. Stay on the same Wi-Fi. Keep this window open. Art Host
+and Join also work here. Host recordings stay under
+~/Library/Application Support/WebJam/JamulusServer/Recordings. Use
+More > Recording Setup > Show Folder to open that folder.
+
 Optional verified installer helpers
 -----------------------------------
 The two `.command` helpers verify the adjacent app's signature, version, build,

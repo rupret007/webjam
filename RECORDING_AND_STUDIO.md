@@ -48,6 +48,12 @@ Changing a take or mix,
 or a failed/cancelled export, clears the current receipt. Byte verification does
 not prove physical listening or a successful Logic/other-editor import.
 
+If recording starts during an export, Studio stops the export and checks
+whether its folder already finished. **Show Unverified Export** keeps that
+folder available for inspection; it has no verified receipt. Cancellation
+before completion removes only temporary export files. The original take
+stays unchanged.
+
 Workspace **Takes** links reopen the intended recording in Studio. Use
 **Locate take…** when its folder moved; identity must still match. Music
 bookmarks navigate only with current verified recording evidence. Art lesson
@@ -93,7 +99,10 @@ verdict, and checking free storage does not reserve disk space.
 When storage fails during a session, repair free space or write access and
 choose **Try Again**. Host takes stay in WebJam's host folder; Recording Setup
 does not offer a different folder while hosting, and **Show Folder** opens that
-location. When you are not hosting, changing the Takes folder requires ending
+location. On a Mac host that folder is
+`~/Library/Application Support/WebJam/JamulusServer/Recordings`. Windows and
+Linux hosts default to `~/WebJam Recordings`. Guests often see
+`~/Music/WebJam Takes`. See the [creator guide](USER_GUIDE.md#record-session). When you are not hosting, changing the Takes folder requires ending
 the session first, choosing the folder in **Recording Setup**, and starting
 again. A retry
 builds a new take plan from the current participants and inputs before asking
