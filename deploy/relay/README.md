@@ -68,14 +68,22 @@ npx wrangler login
 npx wrangler secret put TURN_KEY_ID
 npx wrangler secret put TURN_KEY_API_TOKEN
 npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
+npx wrangler secret put CLOUDFLARE_ANALYTICS_API_TOKEN
 npx wrangler deploy
 ```
 
-The API token must be able to:
+`TURN_KEY_API_TOKEN` is the Realtime TURN key token. It can mint
+`generate-ice-servers` and is **rejected** by GraphQL (code 10000).
+`CLOUDFLARE_ANALYTICS_API_TOKEN` is a separate account API token with
+**Account Analytics Read**. The Worker uses it only for the usage query.
+If that secret is unset, GraphQL falls back to `TURN_KEY_API_TOKEN` and
+then fail-closes (503 unreadable) when analytics rejects it.
 
-1. `POST https://rtc.live.cloudflare.com/v1/turn/keys/$TURN_KEY_ID/credentials/generate-ice-servers`
-2. Query `https://api.cloudflare.com/client/v4/graphql` with
-   **Account Analytics** (`callsTurnUsageAdaptiveGroups`)
+Required permissions:
+
+1. TURN key token: `POST https://rtc.live.cloudflare.com/v1/turn/keys/$TURN_KEY_ID/credentials/generate-ice-servers`
+2. Account token: `POST https://api.cloudflare.com/client/v4/graphql` with
+   **Account Analytics Read** (`callsTurnUsageAdaptiveGroups`)
 
 TTL is 3600 seconds. Confirm the deployed URL, then release-build the
 sidecar with that path only:
@@ -84,21 +92,25 @@ sidecar with that path only:
 go build -ldflags "-X github.com/rupret007/webjam/transport/internal/directstun.turnCredentialURL=https://webjam-turn-credentials.<account>.workers.dev/turn-credentials" ./cmd/webjam-fabric
 ```
 
-Do not put `TURN_KEY_ID`, `TURN_KEY_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`,
-or `TURN_STATIC_AUTH_SECRET` in ldflags, settings, or the GitHub repo.
+Do not put `TURN_KEY_ID`, `TURN_KEY_API_TOKEN`,
+`CLOUDFLARE_ANALYTICS_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, or
+`TURN_STATIC_AUTH_SECRET` in ldflags, settings, or the GitHub repo.
 
 ### Remaining human steps
 
 1. Confirm the `webjam-relay` TURN key exists in the Cloudflare dashboard
    (Realtime → TURN) and that the account is on the **free** 1,000 GB/month
    allowance with no paid TURN add-on.
-2. Create or reuse an API token with TURN credential generation **and**
-   Account Analytics. Put it with `wrangler secret put` (never in the repo).
-3. Put `TURN_KEY_ID` and `CLOUDFLARE_ACCOUNT_ID` the same way.
-4. `npx wrangler deploy` and copy the `*.workers.dev` (or custom domain)
+2. Put the TURN key ID and TURN key API token with `wrangler secret put`
+   (never in the repo).
+3. Create a **separate** account API token with **Account Analytics Read**
+   and `wrangler secret put CLOUDFLARE_ANALYTICS_API_TOKEN`. A TURN key
+   token cannot query GraphQL (code 10000).
+4. Put `CLOUDFLARE_ACCOUNT_ID` the same way.
+5. `npx wrangler deploy` and copy the `*.workers.dev` (or custom domain)
    URL into the release `turnCredentialURL` ldflag.
-5. Optional: custom hostname in front of the Worker. HTTPS only.
-6. Coturn switchback: point the same ldflag at the Oracle credential
+6. Optional: custom hostname in front of the Worker. HTTPS only.
+7. Coturn switchback: point the same ldflag at the Oracle credential
    URL (`https://turn-creds.example.com/turn-credentials`) instead. The
    sidecar JSON is unchanged.
 

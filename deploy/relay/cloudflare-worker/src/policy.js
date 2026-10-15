@@ -33,6 +33,16 @@ const INVITE_TOKEN_RE = /^[A-Za-z0-9_-]{32,256}$/;
 const IPV4_RE =
   /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/;
 
+// GraphQL Account Analytics rejects TURN key tokens (Cloudflare code 10000).
+// Prefer CLOUDFLARE_ANALYTICS_API_TOKEN; fall back to the TURN token if unset.
+export function analyticsBearerToken(env) {
+  const analytics = String(env?.CLOUDFLARE_ANALYTICS_API_TOKEN ?? "").trim();
+  if (analytics) {
+    return analytics;
+  }
+  return String(env?.TURN_KEY_API_TOKEN ?? "").trim();
+}
+
 export function monthlyCapBytes(capGbRaw) {
   const parsed = Number.parseInt(String(capGbRaw ?? ""), 10);
   const gigabytes =

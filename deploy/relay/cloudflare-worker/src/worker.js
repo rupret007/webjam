@@ -8,6 +8,7 @@ import {
   MAX_BODY_BYTES,
   USAGE_CACHE_MS,
   allowRate,
+  analyticsBearerToken,
   clientIP,
   credentialTtlSeconds,
   decideCap,
@@ -96,7 +97,6 @@ export async function handleRequest(request, env, deps = {}) {
     fetchImpl,
     env,
     keyId,
-    apiToken,
     accountId,
     nowMs,
   );
@@ -119,14 +119,7 @@ export async function handleRequest(request, env, deps = {}) {
   return jsonResponse(200, document);
 }
 
-async function monthUsageBytes(
-  fetchImpl,
-  env,
-  keyId,
-  apiToken,
-  accountId,
-  nowMs,
-) {
+async function monthUsageBytes(fetchImpl, env, keyId, accountId, nowMs) {
   const range = utcMonthDateRange(new Date(nowMs));
   if (
     usageCache &&
@@ -134,6 +127,10 @@ async function monthUsageBytes(
     nowMs - usageCache.fetchedAt < USAGE_CACHE_MS
   ) {
     return usageCache.bytes;
+  }
+  const analyticsToken = analyticsBearerToken(env);
+  if (!analyticsToken) {
+    return null;
   }
   const payload = usageAnalyticsQuery(
     accountId,
@@ -146,7 +143,7 @@ async function monthUsageBytes(
     response = await fetchImpl(GRAPHQL_URL, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${apiToken}`,
+        authorization: `Bearer ${analyticsToken}`,
         "content-type": "application/json",
         accept: "application/json",
       },

@@ -6,6 +6,7 @@ import {
   FREE_ALLOWANCE_GB,
   GIGABYTE_BYTES,
   allowRate,
+  analyticsBearerToken,
   decideCap,
   iceServersDocument,
   monthlyCapBytes,
@@ -68,9 +69,12 @@ function post(body, headers = { "CF-Connecting-IP": "203.0.113.10" }) {
 }
 
 function fakeFetch(usage, generate = icePayload(), generateStatus = 201) {
-  return async (url, init) => {
+  const seen = { graphql: "", generate: "" };
+  const fetchImpl = async (url, init) => {
     const target = String(url);
+    const bearer = String(init?.headers?.authorization ?? "");
     if (target.includes("graphql")) {
+      seen.graphql = bearer;
       if (usage instanceof Error) {
         throw usage;
       }
@@ -80,15 +84,18 @@ function fakeFetch(usage, generate = icePayload(), generateStatus = 201) {
       return new Response(JSON.stringify(usage), { status: 200 });
     }
     if (target.includes("generate-ice-servers")) {
+      seen.generate = bearer;
       assert.match(target, /\/turn\/keys\/webjam-relay-key-id\/credentials\/generate-ice-servers$/);
       assert.equal(init.method, "POST");
-      assert.match(String(init.headers.authorization), /^Bearer /);
+      assert.match(bearer, /^Bearer /);
       const sent = JSON.parse(init.body);
       assert.equal(sent.ttl, 3600);
       return new Response(JSON.stringify(generate), { status: generateStatus });
     }
     return new Response("unexpected", { status: 500 });
   };
+  fetchImpl.seen = seen;
+  return fetchImpl;
 }
 
 test("cap formula uses 800 of 1000 decimal GB and refuses at the bound", () => {
@@ -219,6 +226,70 @@ test("worker fails closed when usage cannot be read", async () => {
     },
   );
   assert.equal(crashed.status, 503);
+});
+
+test("analytics token is preferred for GraphQL and unused for iceServers", () => {
+  assert.equal(
+    analyticsBearerToken({
+      TURN_KEY_API_TOKEN: "turn-token",
+      CLOUDFLARE_ANALYTICS_API_TOKEN: "analytics-token",
+    }),
+    "analytics-token",
+  );
+  assert.equal(
+    analyticsBearerToken({ TURN_KEY_API_TOKEN: "turn-token" }),
+    "turn-token",
+  );
+  assert.equal(
+    analyticsBearerToken({
+      TURN_KEY_API_TOKEN: "turn-token",
+      CLOUDFLARE_ANALYTICS_API_TOKEN: "   ",
+    }),
+    "turn-token",
+  );
+  assert.equal(analyticsBearerToken({}), "");
+});
+
+test("worker uses analytics secret only on GraphQL and TURN token on generate", async () => {
+  resetWorkerState();
+  const fetchImpl = fakeFetch(usagePayload(1, 2));
+  const response = await handleRequest(
+    post({ session_id: SESSION_UUID, invite_token: INVITE }),
+    { ...env(), CLOUDFLARE_ANALYTICS_API_TOKEN: "analytics-account-token" },
+    { fetch: fetchImpl, nowMs: Date.parse("2026-10-15T00:00:00Z") },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(fetchImpl.seen.graphql, "Bearer analytics-account-token");
+  assert.equal(fetchImpl.seen.generate, "Bearer test-turn-api-token");
+});
+
+test("worker falls back to TURN token for GraphQL when analytics secret is unset", async () => {
+  resetWorkerState();
+  const fetchImpl = fakeFetch(usagePayload(1, 2));
+  const response = await handleRequest(
+    post({ session_id: SESSION_UUID, invite_token: INVITE }),
+    env(),
+    { fetch: fetchImpl, nowMs: Date.parse("2026-10-15T00:00:00Z") },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(fetchImpl.seen.graphql, "Bearer test-turn-api-token");
+  assert.equal(fetchImpl.seen.generate, "Bearer test-turn-api-token");
+});
+
+test("TURN key token rejected by GraphQL still fails closed", async () => {
+  resetWorkerState();
+  const denied = await handleRequest(
+    post({ session_id: SESSION_UUID, invite_token: INVITE }),
+    env(),
+    {
+      fetch: fakeFetch({
+        errors: [{ code: 10000, message: "Authentication error" }],
+      }),
+      nowMs: Date.parse("2026-10-15T00:00:00Z"),
+    },
+  );
+  assert.equal(denied.status, 503);
+  assert.deepEqual(await denied.json(), { error: "unreadable" });
 });
 
 test("worker rejects bad token shape and missing secrets", async () => {

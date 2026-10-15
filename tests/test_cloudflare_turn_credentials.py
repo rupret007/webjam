@@ -119,6 +119,7 @@ def test_worker_source_has_no_turn_secrets_and_readme_names_wrangler() -> None:
         "TURN_KEY_API_TOKEN=",
         "TURN_KEY_ID=",
         "CLOUDFLARE_ACCOUNT_ID=",
+        "CLOUDFLARE_ANALYTICS_API_TOKEN=",
     )
     for path in WORKER.rglob("*"):
         if not path.is_file() or "node_modules" in path.parts or ".wrangler" in path.parts:
@@ -134,6 +135,7 @@ def test_worker_source_has_no_turn_secrets_and_readme_names_wrangler() -> None:
     assert "npx wrangler secret put TURN_KEY_ID" in readme
     assert "npx wrangler secret put TURN_KEY_API_TOKEN" in readme
     assert "npx wrangler secret put CLOUDFLARE_ACCOUNT_ID" in readme
+    assert "npx wrangler secret put CLOUDFLARE_ANALYTICS_API_TOKEN" in readme
     assert "npx wrangler deploy" in readme
     assert "usage_bytes = sum(ingressBytes) + sum(egressBytes)" in readme
     assert "800" in readme and "1,000" in readme

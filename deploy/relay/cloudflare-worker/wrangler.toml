@@ -15,3 +15,5 @@ TURN_RATE_LIMIT_PER_MINUTE = "10"
 #   wrangler secret put TURN_KEY_ID
 #   wrangler secret put TURN_KEY_API_TOKEN
 #   wrangler secret put CLOUDFLARE_ACCOUNT_ID
+# Optional (GraphQL usage only; TURN key tokens are rejected with code 10000):
+#   wrangler secret put CLOUDFLARE_ANALYTICS_API_TOKEN
