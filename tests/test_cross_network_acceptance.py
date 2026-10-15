@@ -22,6 +22,7 @@ from tools.cross_network_acceptance.receipt import (
     write_receipt,
 )
 from tools.cross_network_acceptance.run import (
+    _run_profile,
     completed_guest_result,
     discarded_test_net3_hides_nat_type,
     honest_product_fail_notes,
@@ -245,7 +246,8 @@ def test_workflow_is_optional_and_path_filtered():
     assert "--expected-status FAIL" not in same_lan
     assert "--expected-status FAIL" in two_nat
     assert "continue-on-error:" in two_nat
-    assert "completed guest result" in text
+    assert "classified failure-to-connect" in text
+    assert "connected-without-state-exchange" in text
     assert "fake connect" in text
 
 
@@ -336,7 +338,11 @@ def test_job_exit_code_keeps_fail_assertions():
 
 
 def test_completed_guest_result_rejects_crash_after_result_file():
-    after_write = {"guest_connected": False, "session_state_exchanged": False}
+    after_write = {
+        "guest_connected": False,
+        "session_state_exchanged": False,
+        "failure_class": "honest_unreachable",
+    }
     assert completed_guest_result(after_write, timed_out=False, returncode=1) is True
     for crash_code in (-11, -6, 139):
         ok = completed_guest_result(
@@ -433,8 +439,105 @@ def test_build_sidecar_resolves_relative_output_against_cwd(
     assert not (product / "transport" / relative).exists()
 
 
+def test_completed_guest_result_rejects_connected_without_state_exchange():
+    partial = {"guest_connected": True, "session_state_exchanged": False}
+    ok = completed_guest_result(partial, timed_out=False, returncode=1)
+    assert ok is False
+    assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=ok) == 1
+    unlabeled = {"guest_connected": False, "session_state_exchanged": False}
+    assert completed_guest_result(unlabeled, timed_out=False, returncode=1) is False
+    success = {"guest_connected": True, "session_state_exchanged": True}
+    assert completed_guest_result(success, timed_out=False, returncode=0) is True
+    honest = {
+        "guest_connected": False,
+        "session_state_exchanged": False,
+        "failure_class": "honest_unreachable",
+    }
+    assert completed_guest_result(honest, timed_out=False, returncode=1) is True
+    roles = Path("tools/cross_network_acceptance/roles.py").read_text(encoding="utf-8")
+    assert roles.count('"failure_class": "" if connected else "honest_unreachable"') == 2
+
+
+class _FakeRoleProc:
+    def __init__(self, returncode: int | None, *, already_exited: bool = False):
+        self._final_rc = 0 if returncode is None else returncode
+        self.returncode = self._final_rc if already_exited else None
+        self._exited = already_exited
+        self._stderr_handle = None
+
+    def poll(self) -> int | None:
+        return self._final_rc if self._exited else None
+
+    def wait(self, timeout: float | None = None) -> int:
+        self._exited = True
+        self.returncode = self._final_rc
+        return self.returncode
+
+    def kill(self) -> None:
+        self._exited = True
+        self._final_rc = -9
+        self.returncode = -9
+
+
+def test_run_profile_rejects_host_crash_during_guest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from types import SimpleNamespace
+
+    honest = {
+        "guest_connected": False,
+        "session_state_exchanged": False,
+        "failure_class": "honest_unreachable",
+        "transport": "lan",
+    }
+    topology = SimpleNamespace(
+        host_ns="h", guest_ns="g", spec=SimpleNamespace(nat_mode="masquerade"),
+    )
+
+    def run_row(host: _FakeRoleProc, guest: _FakeRoleProc) -> dict:
+        procs = {"host": host, "guest": guest}
+        monkeypatch.setattr(
+            "tools.cross_network_acceptance.run.ns_popen",
+            lambda _ns, argv, **_k: procs[argv[argv.index("--role") + 1]],
+        )
+        monkeypatch.setattr(
+            "tools.cross_network_acceptance.run._wait_json",
+            lambda path, _t: (
+                {"ok": True, "transport": "lan"}
+                if Path(path).name == "host.ready"
+                else dict(honest)
+            ),
+        )
+        monkeypatch.setattr(
+            "tools.cross_network_acceptance.run._invite_host_routable",
+            lambda *_a, **_k: False,
+        )
+        monkeypatch.setattr(
+            "tools.cross_network_acceptance.run._chown_tree", lambda _p: None
+        )
+        return _run_profile(topology, "art", tmp_path / "art", {}, tmp_path)
+
+    crashed = run_row(_FakeRoleProc(139, already_exited=True), _FakeRoleProc(1))
+    assert crashed["harness_ok"] is False
+    assert crashed["reason"] == "host_crash"
+    assert crashed["host_returncode"] == 139
+    assert job_exit_code(
+        status="FAIL", expected_status="FAIL", harness_ok=False,
+    ) == 1
+    alive = run_row(_FakeRoleProc(None), _FakeRoleProc(1, already_exited=True))
+    assert alive["harness_ok"] is True
+    assert alive["host_returncode"] is None
+    assert job_exit_code(
+        status="FAIL", expected_status="FAIL", harness_ok=True,
+    ) == 0
+
+
 def test_job_exit_code_rejects_incomplete_or_fake_expected_fail():
-    honest = {"guest_connected": False, "session_state_exchanged": False}
+    honest = {
+        "guest_connected": False,
+        "session_state_exchanged": False,
+        "failure_class": "honest_unreachable",
+    }
     assert completed_guest_result(honest, timed_out=False, returncode=1) is True
     assert completed_guest_result(honest, timed_out=True, returncode=1) is False
     assert completed_guest_result({}, timed_out=False, returncode=1) is False

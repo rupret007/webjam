@@ -1,7 +1,8 @@
 # Optional two-NAT Host/Join proof. Not a required check.
 # Same-LAN must PASS. Cross-network FAIL is a green job only for an honest
-# completed guest result (no timeout, crash after guest.result, missing
-# result, never-started process, programming/startup failure, or fake connect).
+# classified failure-to-connect (no timeout, crash after guest.result, missing
+# result, never-started process, programming/startup failure, host crash after
+# ready, connected-without-state-exchange, or fake connect).
 # On master the two-NAT job is report-only; networking PRs must match the receipt.
 name: Cross-network acceptance
 
@@ -66,7 +67,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install netns, sch_netem, coturn, and Qt
-        run: |
+        run: &install-netns |
           set -euo pipefail
           sudo apt-get update
           KERNEL="$(uname -r)"
@@ -93,7 +94,7 @@ jobs:
           command -v turnserver
 
       - name: Install Python dependencies
-        run: |
+        run: &install-python |
           python -m pip install --upgrade pip "setuptools>=83.0.0"
           pip install -r requirements.txt
           pip install pytest "ruff==0.15.22"
@@ -109,7 +110,7 @@ jobs:
 
       - name: Make receipts readable by the runner
         if: always()
-        run: |
+        run: &chown-receipts |
           if [ -d out/cross-network-acceptance ]; then
             sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance
           fi
@@ -117,7 +118,7 @@ jobs:
       - name: Retain receipts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
+        with: &receipt-artifact
           name: webjam-same-lan-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
           path: out/cross-network-acceptance/
           if-no-files-found: warn
@@ -141,37 +142,10 @@ jobs:
           python-version: "3.11"
 
       - name: Install netns, sch_netem, coturn, and Qt
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          KERNEL="$(uname -r)"
-          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            iproute2 iptables iputils-ping kmod \
-            coturn \
-            libegl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0 libportaudio2 \
-            libpulse0
-          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            "linux-modules-extra-${KERNEL}" \
-            || sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-              linux-modules-extra-azure \
-            || true
-          sudo systemctl stop coturn || true
-          sudo systemctl disable coturn || true
-          sudo systemctl mask coturn || true
-          sudo modprobe sch_netem
-          lsmod | grep -E '^sch_netem'
-          sudo sysctl -w net.ipv4.ip_forward=1
-          PROBE="wjxci$$"
-          sudo ip netns add "$PROBE"
-          sudo ip netns exec "$PROBE" true
-          sudo ip netns delete "$PROBE"
-          command -v turnserver
+        run: *install-netns
 
       - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip "setuptools>=83.0.0"
-          pip install -r requirements.txt
-          pip install pytest "ruff==0.15.22"
+        run: *install-python
 
       - name: Run two-NAT Host/Join (expected FAIL)
         run: |
@@ -181,16 +155,11 @@ jobs:
 
       - name: Make receipts readable by the runner
         if: always()
-        run: |
-          if [ -d out/cross-network-acceptance ]; then
-            sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance
-          fi
+        run: *chown-receipts
 
       - name: Retain receipts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          <<: *receipt-artifact
           name: webjam-cross-network-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
-          path: out/cross-network-acceptance/
-          if-no-files-found: warn
-          retention-days: 14

@@ -99,6 +99,7 @@ _NON_NETWORK_REASONS = frozenset(
 _NON_NETWORK_CLASSES = frozenset(
     {"programming_error", "startup_failure", "unknown"}
 )
+_HONEST_NETWORK_CLASSES = frozenset({"honest_unreachable"})
 
 
 def _non_network_guest_outcome(result: dict[str, Any]) -> bool:
@@ -113,15 +114,17 @@ def completed_guest_result(
     timed_out: bool,
     returncode: int | None = 0,
 ) -> bool:
-    """True only for a finished connect attempt, not a crash or startup bug."""
+    """True for a full success or an honest failure-to-connect, not a crash."""
 
     if timed_out or returncode not in _CLEAN_GUEST_CODES:
         return False
     if not isinstance(result, dict) or "guest_connected" not in result:
         return False
     if result.get("guest_connected"):
-        return True
-    return not _non_network_guest_outcome(result)
+        return bool(result.get("session_state_exchanged"))
+    if _non_network_guest_outcome(result):
+        return False
+    return str(result.get("failure_class") or "") in _HONEST_NETWORK_CLASSES
 
 
 def job_exit_code(
@@ -171,6 +174,8 @@ def _incomplete_guest_notes(profile_rows: list[dict[str, Any]]) -> str:
         return "The guest crashed or never started; that is not a network failure."
     if "guest_result_missing" in reasons or "startup_refused" in reasons:
         return "The guest did not finish a network connect attempt."
+    if "host_crash" in reasons:
+        return "The host exited during the guest attempt; that is not a network failure."
     if "host_not_ready" in reasons:
         return "The harness could not start the host on the simulated network."
     return "The harness did not complete an honest guest result."
@@ -297,6 +302,17 @@ def _until(timeout_s: float, check) -> None:
         time.sleep(0.1)
 
 
+def _reap(proc: subprocess.Popen[str], timeout_s: float = 10.0) -> int | None:
+    try:
+        return proc.wait(timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            return proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            return proc.poll()
+
+
 def _run_profile(
     topology: AppliedTopology,
     profile: str,
@@ -337,15 +353,17 @@ def _run_profile(
             stderr_path=work_dir / "guest.stderr", env=env,
         )
         timed_out = False
-        try:
-            guest_proc.wait(timeout=60)
-        except subprocess.TimeoutExpired:
-            guest_proc.kill()
-            timed_out = True
-            try:
-                guest_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
+        deadline = time.monotonic() + 60.0
+        while guest_proc.poll() is None and host_proc.poll() is None:
+            if time.monotonic() >= deadline:
+                guest_proc.kill()
+                timed_out = True
+                _reap(guest_proc, 5.0)
+                break
+            time.sleep(0.1)
+        if guest_proc.poll() is None and host_proc.poll() is not None:
+            _reap(guest_proc, 5.0)
+        host_rc = host_proc.poll()
         result = _wait_json(work_dir / "guest.result", 2.0)
         routable = _invite_host_routable(topology.guest_ns, work_dir, env)
         connected = bool(result.get("guest_connected"))
@@ -354,7 +372,10 @@ def _run_profile(
             result, timed_out=timed_out, returncode=rc,
         )
         reason = ""
-        if timed_out:
+        if host_rc is not None:
+            completed = False
+            reason = "host_crash"
+        elif timed_out:
             reason = "guest_timeout"
         elif rc is None:
             reason = "guest_never_started"
@@ -368,6 +389,7 @@ def _run_profile(
             "session_state_exchanged": bool(result.get("session_state_exchanged")),
             "harness_ok": completed,
             "reason": reason,
+            "host_returncode": host_rc,
             "invite_host_routable_from_guest": routable,
             "transport": result.get("transport") or ready.get("transport") or "",
             "share_reaches_internet": ready.get("share_reaches_internet"),
@@ -382,10 +404,9 @@ def _run_profile(
         for proc in (guest_proc, host_proc):
             if proc is None:
                 continue
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+            reaped = _reap(proc)
+            if proc is host_proc and proc.returncode is None:
+                proc.returncode = reaped
             handle = getattr(proc, "_stderr_handle", None)
             if handle is not None:
                 handle.close()

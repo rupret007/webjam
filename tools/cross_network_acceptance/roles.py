@@ -175,6 +175,7 @@ def _music_guest(work_dir: Path) -> int:
                 "session_state_exchanged": exchanged,
                 "creator_profile_key": state.creator_profile_key,
                 "transport": "lan",
+                "failure_class": "" if connected else "honest_unreachable",
             },
         )
         return 0 if exchanged else 1
@@ -380,6 +381,7 @@ def _art_guest(work_dir: Path) -> int:
                     "art_start_key": room.borrowed_start,
                     "room_state": room.state.value,
                     "transport": "lan",
+                    "failure_class": "" if connected else "honest_unreachable",
                 },
             )
             return 0 if exchanged else 1
