@@ -231,6 +231,15 @@ def test_the_invite_stays_short_enough_to_paste_into_a_chat():
     assert len(message.text) < 600
 
 
+def test_ordinary_invites_are_for_another_house_not_same_wifi():
+    public = build_invite_message(join_link=JOIN_LINK)
+    assert "Keep this room open." in public.text
+    assert "Wi-Fi" not in public.text
+    assert "local network" not in public.text
+    lan = build_invite_message(join_link=JOIN_LINK, same_network_required=True)
+    assert "only works on the host's Wi-Fi or local network" in lan.text
+
+
 # ----------------------------------------------------------------------
 # Wiring: the live End/Leave dialog uses this copy
 # ----------------------------------------------------------------------

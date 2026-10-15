@@ -127,4 +127,4 @@ def test_direct_stun_local_only_share_keeps_honest_lan_line() -> None:
         join_link=_direct_link(),
         same_network_required=True,
     )
-    assert "same Wi-Fi or local network" in message.text
+    assert "host's Wi-Fi or local network" in message.text

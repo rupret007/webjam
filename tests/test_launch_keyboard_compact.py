@@ -160,7 +160,7 @@ def test_art_door_helper_sits_with_host_join_at_800x600(qapp, tmp_path: Path, st
         helper_label = dialog._choice_helper
         assert helper_label.isVisibleTo(dialog) is paint_along
         assert helper_label.text() == (
-            "Then choose a file or lesson link." if paint_along else ""
+            "Then watch a shared lesson, or choose a silent file." if paint_along else ""
         )
         join = _rect_in_dialog(dialog._join_button, dialog)
         host = _rect_in_dialog(dialog._host_button, dialog)

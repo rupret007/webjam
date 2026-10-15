@@ -756,8 +756,11 @@ class ConductorWindow(QMainWindow):
                 "<i>Host. Share. Join. Play.</i><br><br>"
                 "<b>1.</b> At launch, choose <b>Music</b> or <b>Art</b> "
                 "(<b>Make together</b> / <b>Paint along</b>), then <b>Host</b> "
-                "or <b>Join</b>.<br>"
-                "<b>2.</b> The host uses <b>Copy Invite</b> and shares the invite.<br>"
+                "or <b>Join</b>. Music Host is Mac-only. Windows: "
+                "<b>More info → Run anyway</b>. Mac: <b>Open Anyway</b>.<br>"
+                "<b>2.</b> The host uses <b>Copy Invite</b> and sends the whole "
+                "message. A friend in another house can Join. Keep this window "
+                "open. If they send a reply, use <b>Paste Reply</b>.<br>"
                 "<b>3.</b> Play in WebJam. Talk in the meeting."
             )
         # Art and live Music open on three door beats; details live in topics.

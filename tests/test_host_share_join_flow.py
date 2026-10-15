@@ -637,7 +637,7 @@ def test_join_door_reports_checking_without_reflecting_private_text(
             dialog.accessibleDescription(),
         )
     )
-    assert dialog._join_status.text() == "Needs attention"
+    assert dialog._join_status.text() == "That invite didn't work"
     assert "incomplete" in dialog._join_error.text().casefold()
     assert dialog._invite_input.text() == ""
     assert "PRIVATE-CAPABILITY-SENTINEL" not in rendered
@@ -661,7 +661,7 @@ def test_join_door_never_reflects_case_varied_private_invite(
 
     assert dialog.accept_invite(secret) is False
 
-    assert dialog._join_status.text() == "Needs attention"
+    assert dialog._join_status.text() == "That invite didn't work"
     assert dialog._invite_input.text() == ""
     assert "PRIVATE-UPPER-SENTINEL" not in dialog.accessibleDescription()
     dialog.close()

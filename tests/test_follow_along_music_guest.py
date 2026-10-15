@@ -80,7 +80,9 @@ def test_stale_practice_cannot_replace_current_audio_setup(copied_room, qapp, mo
         else:
             app.follow_along.panel.generation += 1
         app._update_session_hud()
-        assert app.window.session_hud._status.text() == "Set up your sound in Jamulus"
+        from core.host_startup_checklist import HOST_STARTUP_HEAR_YOURSELF
+
+        assert app.window.session_hud._status.text() == HOST_STARTUP_HEAR_YOURSELF
         assert not app.follow_along.music_practice_visible()
     copied_room(ROOM, inspect)
 

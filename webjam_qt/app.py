@@ -12,7 +12,10 @@ from PySide6.QtCore import QCoreApplication, QEvent, QTimer, Signal
 from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from core.creative_modes import get_creator_profile_by_key_or_default
+from core.creative_modes import (
+    get_creator_profile_by_key_or_default,
+    session_title_for_start,
+)
 from core.logging_config import configure_logging
 from core.network_invite import BandInvite
 from core.settings import load_settings
@@ -271,7 +274,10 @@ def _create_workspace(app, settings, launch, *, operator_mode=False, smoke_autos
     creator_profile = get_creator_profile_by_key_or_default(
         getattr(settings, "last_creator_profile_key", "music")
     )
-    initial_title = creator_profile.default_template
+    initial_title = session_title_for_start(
+        creator_profile,
+        getattr(settings, "last_creator_start_key", ""),
+    )
     if reference_studio_launch and launch is not None:
         initial_title = launch.session_name
     window = ConductorWindow(

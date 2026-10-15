@@ -30,7 +30,7 @@ If Windows says "Windows protected your PC":
 A work PC may still block the app; ask IT. WebJam does not turn SmartScreen
 off.
 
-Stay on the same Wi-Fi as the host. Keep the host's window open. This
+Friends in another house can Join. Keep the host's window open. This
 Windows package can Join a Music jam hosted on a Mac. Hosting a Music jam
 is not supported on Windows. Art Host and Join work on this computer.
 

@@ -78,7 +78,7 @@ def test_idle_conductor_title_has_no_whole_word_ready() -> None:
 def test_music_profile_retains_the_existing_live_vocabulary() -> None:
     idle = derive_session_conductor(SessionConductorFacts())
     assert idle.title == "Start when you are"
-    assert idle.message == "Choose Host or Join to begin a rehearsal."
+    assert idle.message == "Choose Start Session to begin a rehearsal."
 
     live = derive_session_conductor(_live_facts("music"))
     assert live.title == "Band connected"

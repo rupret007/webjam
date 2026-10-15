@@ -40,3 +40,7 @@ htmlcov/
 
 # Local audit evidence dirs (regenerate per release; not source)
 audit-v*/
+
+# Cloudflare Worker local state
+deploy/relay/cloudflare-worker/node_modules/
+deploy/relay/cloudflare-worker/.wrangler/
