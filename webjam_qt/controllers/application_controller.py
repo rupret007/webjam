@@ -430,6 +430,7 @@ class ApplicationController(QObject):
         self._remote_invitation_requires_replacement = False
         self._remote_session = None
         self._remote_invite_owner = None
+        self._direct_stun_invite_copied = False
         self._remote_host_preparing = False
         self._remote_route_base_settings: AppSettings | None = None
         self._remote_route_generation = 0
@@ -6379,13 +6380,17 @@ class ApplicationController(QObject):
                     attempt,
                     self.creator_profile.key,
                 )
+                paste_ready = bool(
+                    self._remote_paste_reply_available()
+                    and getattr(self, "_direct_stun_invite_copied", False)
+                )
                 self.window.session_hud.set_state(
                     guidance.title,
                     checklist["plain"],
                     invite_available=True,
-                    action_text="Copy Invite",
+                    action_text="Paste reply" if paste_ready else "Copy Invite",
                     action_visible=True,
-                    action_kind="copy_invite",
+                    action_kind="paste_reply" if paste_ready else "copy_invite",
                     ready=True,
                     secondary_action_text=enter_label,
                     secondary_action_visible=True,
@@ -6394,6 +6399,7 @@ class ApplicationController(QObject):
                     checklist_detail_rich=checklist["rich"],
                 )
             else:
+                copy_ready = self._guest_reply_copy_available()
                 self.window.session_hud.set_state(
                     creator_copy["guest_ready_title"],
                     creator_copy["guest_ready_detail"],
@@ -6401,6 +6407,9 @@ class ApplicationController(QObject):
                     action_visible=True,
                     action_kind="enter_jam",
                     ready=True,
+                    secondary_action_text="Copy reply" if copy_ready else "",
+                    secondary_action_visible=copy_ready,
+                    secondary_action_kind="copy_reply",
                 )
         elif phase == "cancelling":
             self.window.session_hud.set_state(
@@ -6420,6 +6429,7 @@ class ApplicationController(QObject):
             )
         self._focus_initial_hud_action()
         self._persist_startup_attempt(attempt)
+        self._overlay_direct_stun_reply_actions()
         if not isinstance(snapshot, SessionConductorSnapshot):
             return
         override = practice_override or self._startup_guidance_override(
@@ -7486,6 +7496,7 @@ class ApplicationController(QObject):
         """Revoke v3 invitation state and clear mode after server ownership ends."""
 
         ApplicationController._invalidate_room_help(self)
+        self._direct_stun_invite_copied = False
         # A constructor may already own a sidecar without having returned it.
         # Keep End/Leave retryable until its worker delivers and retires it.
         if getattr(self, "_remote_host_preparing", False):
@@ -7991,6 +8002,8 @@ class ApplicationController(QObject):
             ),
         )
         QApplication.clipboard().setText(invite_message.text)
+        if self._remote_paste_reply_available(owner):
+            self._direct_stun_invite_copied = True
         invite_url = ""
         if owner is None:
             # Mark the address only after the complete link was copied. A
@@ -8025,6 +8038,8 @@ class ApplicationController(QObject):
                 else f"Invite link copied — send it to another {participant}."
             )
         self.window.flash_message(copied_detail, ms=7000)
+        if getattr(self, "_direct_stun_invite_copied", False):
+            self._update_session_hud()
 
     def accept_invite_url(self, value: str) -> bool:
         """Compatibility boundary for an explicit in-app paste.
@@ -8967,6 +8982,7 @@ class ApplicationController(QObject):
             return
         if snapshot.phase is RemoteSessionPhase.CONNECTED:
             if self._room_participant.connected_native(source, snapshot):
+                self._overlay_direct_stun_reply_actions()
                 return
             if snapshot.role.value == "guest":
                 self._activate_remote_guest_route(snapshot, source=source)
@@ -9042,6 +9058,7 @@ class ApplicationController(QObject):
             "Opening Jamulus",
             "The private connection is secure. Jamulus is opening your music connection.",
         )
+        self._overlay_direct_stun_reply_actions()
         self._continue_startup_from_remote(source)
 
     def _show_remote_session_failure(
@@ -9189,6 +9206,10 @@ class ApplicationController(QObject):
             action_kind="paste_invite",
         )
 
+    def _guest_reply_copy_available(self) -> bool:
+        runtime = getattr(self, "_remote_session", None)
+        return bool(bytes(getattr(runtime, "guest_reply", b"") or b""))
+
     def _guest_reply_delivery_text(self) -> str:
         """Return the sealed reply in the current delivery form (paste line)."""
 
@@ -9202,6 +9223,22 @@ class ApplicationController(QObject):
             return publish_guest_reply(raw)
         except ValueError:
             return ""
+
+    def _copy_guest_reply(self) -> None:
+        """Visible guest fallback: copy the sealed reply to the clipboard."""
+
+        if self._shutdown_cleanup_blocks_action():
+            return
+        line = self._guest_reply_delivery_text()
+        if not line:
+            return
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.clipboard().setText(line)
+        self.window.flash_message(
+            "Send this reply to the host. Keep this window open.",
+            ms=7000,
+        )
 
     def _apply_guest_reply_paste(self, text: object) -> bool:
         """Apply a friend's sealed reply from the current delivery (paste)."""
@@ -10669,9 +10706,21 @@ class ApplicationController(QObject):
                 presentation,
                 headline=display_override.title,
             )
+            self._overlay_direct_stun_reply_actions()
             return
 
         action = presentation.primary_action
+        action_text = presentation.action_label
+        action_kind = self._conductor_action_kind(action)
+        paste_ready = bool(
+            self._remote_paste_reply_available()
+            and getattr(self, "_direct_stun_invite_copied", False)
+            and action is SessionPrimaryAction.COPY_INVITE
+        )
+        if paste_ready:
+            action_text = "Paste reply"
+            action_kind = "paste_reply"
+        copy_ready = self._guest_reply_copy_available()
         header_owned = action in {
             SessionPrimaryAction.RECORD,
             SessionPrimaryAction.STOP_RECORDING,
@@ -10721,14 +10770,17 @@ class ApplicationController(QObject):
             presentation.title,
             detail,
             invite_available=action is SessionPrimaryAction.COPY_INVITE,
-            action_text=presentation.action_label,
-            action_visible=action_visible,
-            action_kind=self._conductor_action_kind(action),
+            action_text=action_text,
+            action_visible=action_visible or paste_ready or copy_ready,
+            action_kind=action_kind,
             ready=presentation.phase is SessionConductorPhase.TAKE_READY
             or (
                 presentation.phase is SessionConductorPhase.LIVE
                 and facts.human_two_way_audibility is EvidenceState.VERIFIED
             ),
+            secondary_action_text="Copy reply" if copy_ready else "",
+            secondary_action_visible=copy_ready,
+            secondary_action_kind="copy_reply",
         )
         self._focus_initial_hud_action()
         # The HUD owns the focused action and Music's idle guidance. Hide the
@@ -10756,6 +10808,7 @@ class ApplicationController(QObject):
         # reset command remains under More when a v3 host owns that invite.
         if action is SessionPrimaryAction.COPY_INVITE:
             self.window.session_strip.set_invite_available(False)
+        self._overlay_direct_stun_reply_actions()
 
     def _publish_musician_guidance(
         self,
@@ -10828,6 +10881,29 @@ class ApplicationController(QObject):
 
         QTimer.singleShot(0, deliver)
 
+    def _overlay_direct_stun_reply_actions(self) -> None:
+        """Keep Copy reply / Paste reply visible as the mailbox fallback."""
+
+        hud = getattr(getattr(self, "window", None), "session_hud", None)
+        if hud is None:
+            return
+        snapshot = getattr(getattr(self, "_remote_session", None), "snapshot", None)
+        connected = getattr(getattr(snapshot, "phase", None), "name", "") == "CONNECTED"
+        if self._remote_paste_reply_available() and not connected:
+            copied = bool(getattr(self, "_direct_stun_invite_copied", False))
+            label = "Paste reply" if copied else "Copy Invite"
+            hud._action_kind = "paste_reply" if copied else "copy_invite"
+            hud._action.setText(label.replace("&", "&&"))
+            hud._action.setAccessibleName(label)
+            hud._action.setVisible(True)
+            hud._action.setEnabled(True)
+        if self._guest_reply_copy_available():
+            hud._secondary_action_kind = "copy_reply"
+            hud._secondary_action.setText("Copy reply")
+            hud._secondary_action.setAccessibleName("Copy reply")
+            hud._secondary_action.setVisible(True)
+            hud._secondary_action.setEnabled(True)
+
     def _update_session_hud(self) -> None:
         """Refresh legacy exceptional copy, then the canonical conductor."""
 
@@ -10836,6 +10912,7 @@ class ApplicationController(QObject):
             return
         if getattr(self, "_startup_attempt", None) is not None:
             self._render_startup_journey()
+            self._overlay_direct_stun_reply_actions()
             return
         room = getattr(self, "_room_participant", None)
         if room is not None and (self.creator_profile.key == "art" or self._art_room_active()):
@@ -10917,6 +10994,7 @@ class ApplicationController(QObject):
             secondary_action_visible=replace_lan_invite,
             secondary_action_kind="replace_lan_invite",
         )
+        self._overlay_direct_stun_reply_actions()
 
     def _on_conductor_action_requested(self, action_kind: str) -> None:
         """Route the one visible conductor action to its real owner."""
@@ -10969,6 +11047,10 @@ class ApplicationController(QObject):
             self._enter_startup_jam()
         elif action in {"invite", "copy_invite"}:
             self._copy_band_invite()
+        elif action == "paste_reply":
+            self._paste_guest_reply()
+        elif action == "copy_reply":
+            self._copy_guest_reply()
         elif action == "reset_invite":
             self._reset_remote_invite()
         elif action in {"retry", "try_reconnect", "check_session"}:
@@ -11033,6 +11115,10 @@ class ApplicationController(QObject):
             self._skip_startup_webex()
         elif action == "enter_jam":
             self._enter_startup_jam()
+        elif action == "paste_reply":
+            self._paste_guest_reply()
+        elif action == "copy_reply":
+            self._copy_guest_reply()
         elif action == "cancel_startup":
             self._cancel_startup_journey()
 

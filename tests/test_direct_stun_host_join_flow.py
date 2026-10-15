@@ -185,3 +185,132 @@ def test_host_then_join_then_reply_ends_connected(qapp, tmp_path, monkeypatch) -
     host._stop_remote_transport()
     guest.shutdown()
     host.shutdown()
+
+
+def _hud_button(controller, name: str):
+    hud = controller.window.session_hud
+    for button in (hud._action, hud._secondary_action):
+        if (not button.isHidden()) and button.accessibleName() == name:
+            return button
+    return None
+
+
+def test_copy_and_paste_reply_actions_use_the_hud_buttons(qapp, tmp_path, monkeypatch) -> None:
+    """Guest Copy reply and host Paste reply are HUD buttons, not method calls."""
+
+    monkeypatch.setattr(
+        "services.native_remote_transport.ordinary_native_host_profile",
+        lambda: "direct-stun",
+    )
+    issued = _issued_invite()
+    invitation = issued.invitation.with_host_signal(SIGNAL)
+
+    class HostOwner:
+        invitation_available = True
+        profile_id = "direct-stun"
+        share_reaches_internet = True
+
+        def __init__(self, *, target_port, profile_id="reference-local", on_snapshot=None, **_kwargs):
+            self.profile_id = profile_id
+            self.invitation = invitation
+            self._on_snapshot = on_snapshot
+            self.applied_reply = b""
+            self.snapshot = RemoteSessionSnapshot(
+                phase=RemoteSessionPhase.PREPARING,
+                role=SessionRole.HOST,
+                generation=1,
+                path=TransportPath.INTERNET_DIRECT,
+            )
+
+        def apply_guest_reply(self, envelope: bytes) -> None:
+            self.applied_reply = bytes(envelope)
+            self.snapshot = RemoteSessionSnapshot(
+                phase=RemoteSessionPhase.CONNECTED,
+                role=SessionRole.HOST,
+                generation=1,
+                loopback_port=43123,
+                path=TransportPath.INTERNET_DIRECT,
+                quality=ConnectionQuality.UNKNOWN,
+            )
+            if self._on_snapshot is not None:
+                self._on_snapshot(self.snapshot)
+
+        def copy_for_clipboard(self) -> str:
+            return (
+                f"{issued.private_link.reveal_for_clipboard()}\n"
+                f"{encode_host_signal_line(SIGNAL)}"
+            )
+
+        def stop(self):
+            return None
+
+    class GuestBackend:
+        def __init__(self, **_kwargs):
+            self.connection_available = False
+
+        def start_guest(self, joined, *, generation):
+            self.connection_available = True
+            return RemoteGuestConnection(
+                loopback_port=43124,
+                path=TransportPath.INTERNET_DIRECT,
+                quality=ConnectionQuality.UNKNOWN,
+                generation=generation,
+            )
+
+        @property
+        def guest_reply(self) -> bytes:
+            return SIGNAL
+
+        def stop(self):
+            return None
+
+    host = _controller(tmp_path / "host", hosting=True)
+    host.begin_startup_journey = mock.MagicMock()
+    host.window.show()
+    monkeypatch.setattr(
+        "services.native_remote_transport.NativeHostTransportOwner",
+        HostOwner,
+    )
+    assert ApplicationController.begin_startup_journey(host) is True
+    _drain_until(qapp, lambda: host._remote_invite_owner is not None)
+    host._update_session_hud()
+    _drain_until(qapp, lambda: _hud_button(host, "Copy Invite") is not None)
+    _hud_button(host, "Copy Invite").click()
+    qapp.processEvents()
+    _drain_until(qapp, lambda: _hud_button(host, "Paste reply") is not None)
+    monkeypatch.setattr(
+        "PySide6.QtWidgets.QInputDialog.getMultiLineText",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Paste reply must use the clipboard, not a typed dialog")
+        ),
+    )
+
+    guest = _controller(tmp_path / "guest")
+    guest.window.show()
+    monkeypatch.setattr(
+        "services.native_remote_transport.NativeGuestTransportBackend",
+        GuestBackend,
+    )
+    assert guest.accept_invitation(invitation)
+    _drain_until(
+        qapp,
+        lambda: (
+            guest._remote_session is not None
+            and guest._remote_session.snapshot.phase is RemoteSessionPhase.CONNECTED
+            and _hud_button(guest, "Copy reply") is not None
+        ),
+    )
+    _hud_button(guest, "Copy reply").click()
+    qapp.processEvents()
+    _hud_button(host, "Paste reply").click()
+    qapp.processEvents()
+    _drain_until(
+        qapp,
+        lambda: host._remote_invite_owner.applied_reply == SIGNAL,
+    )
+    assert host._remote_session.snapshot.phase is RemoteSessionPhase.CONNECTED
+
+    guest._stop_remote_transport()
+    host._stop_remote_transport()
+    guest.shutdown()
+    host.shutdown()
