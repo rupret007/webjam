@@ -375,6 +375,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
             queue.SimpleQueue()
         )
         self._export_generation = 0
+        self._export_ui_generation = 0
         self._recording_cancelled_exports: set[int] = set()
         self._export_cancel = threading.Event()
         self._logic_handoff_results: queue.SimpleQueue[
@@ -2232,7 +2233,11 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
             return
         self._export_cancel.set()
         self._review_dialog.set_receipt()
-        self._recording_cancelled_exports.add(self._export_generation)
+        cancelled_generation = self._export_generation
+        self._recording_cancelled_exports.add(cancelled_generation)
+        # Keep UI ownership with the cancelled request so a completed folder
+        # can still surface recovery. A later export replaces this token.
+        self._export_ui_generation = cancelled_generation
         self._review_dialog.status.setText(
             "Stopping export because recording is starting. Checking for a completed folder…"
         )
@@ -3898,6 +3903,7 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
         cancel_event = self._export_cancel
         self._export_generation += 1
         generation = self._export_generation
+        self._export_ui_generation = generation
         self._exporting = True
         self._review_dialog.set_receipt()
         self._review_dialog.status.setText("Export in progress. No completed receipt yet.")
@@ -4086,22 +4092,24 @@ class RecordingStudio(StudioTakeReviewWorkflowMixin, StudioArrangementWorkflowMi
             if self._waveform_shutdown:
                 continue
             if outcome.generation in self._recording_cancelled_exports:
-                self._recording_cancelled_exports.remove(outcome.generation)
-                folder = outcome.published_folder
-                if folder is None and outcome.result is not None:
-                    folder = outcome.result.folder
+                self._recording_cancelled_exports.discard(outcome.generation)
                 # Recording has already regained its controls and emitted failure.
                 # Preserve a published folder even if its result was queued before
                 # cancellation; never restore stale take controls or emit twice.
+                # A newer export owns folder/recovery UI via _export_ui_generation.
+                if outcome.generation != self._export_ui_generation:
+                    continue
+                folder = outcome.published_folder
+                if folder is None and outcome.result is not None:
+                    folder = outcome.result.folder
                 if folder is not None:
                     self._show_unverified_export(folder)
-                if self._export_generation == outcome.generation + 1:
-                    self._review_dialog.set_receipt()
-                    self._review_dialog.status.setText(
-                        "Export did not complete verification. No verified receipt is available; the recording is unchanged."
-                        if folder is not None else
-                        "Export canceled because recording is starting. No completed receipt."
-                    )
+                self._review_dialog.set_receipt()
+                self._review_dialog.status.setText(
+                    "Export did not complete verification. No verified receipt is available; the recording is unchanged."
+                    if folder is not None else
+                    "Export canceled because recording is starting. No completed receipt."
+                )
                 continue
             if outcome.generation != self._export_generation:
                 continue
