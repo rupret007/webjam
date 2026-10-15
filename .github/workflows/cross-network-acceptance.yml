@@ -1,6 +1,6 @@
-# Optional two-NAT proof. Not a required check. Same-LAN must PASS.
-# Two-NAT FAIL is green only for a classified failure-to-connect (no
-# connected-without-state-exchange or fake connect). Report-only on master.
+# Optional two-NAT proof. Not a required check. Same-LAN must PASS. Two-NAT FAIL
+# is green only for a classified failure-to-connect (no connected-without-state-exchange
+# or fake connect). Report-only on master.
 name: Cross-network acceptance
 
 on:
@@ -72,7 +72,6 @@ jobs:
     name: Cross-network (two NATs)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Report-only on master.
     continue-on-error: ${{ github.ref == 'refs/heads/master' }}
     env:
       QT_QPA_PLATFORM: offscreen

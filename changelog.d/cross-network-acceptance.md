@@ -1,6 +1,4 @@
-- Optional Cross-network acceptance harness: same-LAN must PASS; two-NAT
-  stays an honest FAIL until Internet Join. Only a finished
-  network-unreachable connect can exit 0 under `--expected-status FAIL`.
-  `probe-nat` fails on nonzero subprocesses or missing mappings.
-  Cone/masquerade: RFC 4787 endpoint-independent mapping +
-  address-and-port-dependent filtering.
+- Optional Cross-network acceptance: same-LAN PASS; two-NAT honest FAIL until
+  Internet Join. `--expected-status FAIL` exits 0 only for a finished
+  network-unreachable connect. `probe-nat` fails closed. Cone/masquerade: RFC 4787
+  endpoint-independent mapping + address-and-port-dependent filtering.

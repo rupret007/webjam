@@ -1,4 +1,4 @@
-"""Orchestrate topology, STUN, host, and guest."""
+"""Orchestrate topology, STUN, host, guest."""
 
 import json
 import os
@@ -55,8 +55,7 @@ def _user_env(uid: int, *, product_root: Path, transport_binary: str, build_id: 
     env.update({
         "HOME": record.pw_dir, "USER": record.pw_name, "LOGNAME": record.pw_name,
         "QT_QPA_PLATFORM": "offscreen", "LIBGL_ALWAYS_SOFTWARE": "1",
-        "WEBJAM_PRODUCT_ROOT": str(product_root),
-    })
+        "WEBJAM_PRODUCT_ROOT": str(product_root)})
     extra = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(REPO_ROOT), extra)))
     env.pop("WEBJAM_ENABLE_REFERENCE_LOCAL", None)
@@ -111,28 +110,25 @@ def discarded_test_net3_hides_nat_type(nat_mode: str) -> bool:
 
 def honest_product_fail_notes(*, case: str, nat_mode: str) -> str:
     if discarded_test_net3_hides_nat_type(nat_mode):
-        return (
-            "Packaged direct-stun discards TEST-NET-3; does not prove "
-            "cone-versus-symmetric product NAT behavior."
-        )
+        return "Packaged direct-stun discards TEST-NET-3; does not prove cone-versus-symmetric product NAT behavior."
     if case == "cross-network":
         return "Expected until v3 rendezvous/relay (docs/REMOTE-SESSIONS-PLAN.md)."
-    return "Guest completed without connecting."
+    return "Guest completed."
 
 
 def _incomplete_guest_notes(profile_rows: list[dict[str, Any]]) -> str:
     reasons = {str(row.get("reason") or "") for row in profile_rows}
     if "guest_timeout" in reasons:
-        return "Guest timed out before a completed result."
+        return "Guest timed out."
     if reasons & {"guest_crash", "guest_never_started"}:
-        return "Guest crashed or never started."
+        return "Guest crash."
     if reasons & {"guest_result_missing", "startup_refused"}:
         return "Guest did not finish a network connect attempt."
     if "host_crash" in reasons:
-        return "Host exited during the guest attempt."
+        return "Host crash."
     if "host_not_ready" in reasons:
-        return "Harness could not start the host."
-    return "Harness did not complete an honest guest result."
+        return "Host not ready."
+    return "Incomplete honest guest result."
 
 
 def _drop_privs(argv: list[str]) -> list[str]:
@@ -428,7 +424,7 @@ def run_case(
             sha=sha, case=receipt_case, status="FAIL", profiles=[],
             rendezvous_reachable_from_host=None, rendezvous_reachable_from_guest=None,
             invite_host_routable_from_guest=None, netem=spec.netem,
-            notes="Could not create simulated networks.", nat_mode=mode,
+            notes="Could not create networks.", nat_mode=mode,
         )
         return _emit_receipt(
             output_dir, receipt, expected_status=expected_status, harness_ok=False,
@@ -496,9 +492,9 @@ def run_case(
                 )
                 _until(5.0, lambda: _reach(stun_only=True))
             if not host_reach or not guest_reach:
-                notes = "Simulated internet is not reachable from both homes."
+                notes = "Simulated internet unreachable."
             elif not stun_host or not stun_guest:
-                notes = "Public STUN is not reachable from both homes."
+                notes = "Public STUN unreachable."
             else:
                 runnable = True
         else:
@@ -527,7 +523,7 @@ def run_case(
     fake = any(row.get("fake_connect") for row in profile_rows)
     if fake:
         harness_ok = False
-        notes = "Symmetric NAT produced a fake connect; the job must fail."
+        notes = "Symmetric NAT fake connect."
     if spec.netem and not netem_applied:
         harness_ok = False
         notes = "Requested netem missing."

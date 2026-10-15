@@ -1,10 +1,8 @@
 """Two-home netns. No DNAT, NETMAP, REDIRECT, or port forwarding.
-
-RFC 4787: masquerade/cone = endpoint-independent mapping +
+RFC 4787 masquerade/cone: endpoint-independent mapping +
 address-and-port-dependent filtering (not static inbound rewrite / NETMAP).
-symmetric = endpoint-dependent mapping (`--random-fully`). These modes
-do not prove product cone-vs-symmetric NAT behavior while packaged
-direct-stun discards TEST-NET-3 mappings.
+symmetric: endpoint-dependent (`--random-fully`). These modes
+do not prove product cone-vs-symmetric NAT behavior while packaged direct-stun discards TEST-NET-3.
 """
 
 import os
@@ -51,7 +49,7 @@ def required_bin(name: str) -> str:
         candidate = Path(folder) / name
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
-    raise TopologyError(f"Need {name} on PATH or /usr/sbin.")
+    raise TopologyError(f"Need {name}.")
 
 
 @dataclass(frozen=True)
@@ -66,7 +64,7 @@ class TopologySpec:
             raise TopologyError("Case must be same-lan or cross-network.")
         token = str(self.prefix or "")
         if not token.isalnum() or not 3 <= len(token) <= 6:
-            raise TopologyError("Prefix must be a short alphanumeric token.")
+            raise TopologyError("Prefix must be alphanumeric.")
         mode = str(self.nat_mode or "masquerade")
         if mode not in NAT_MODES:
             raise TopologyError("NAT mode must be masquerade, cone, or symmetric.")
@@ -194,8 +192,6 @@ def assert_no_port_forward(commands: list[list[str]]) -> None:
 
 
 def assert_unsolicited_inbound_udp_dropped(commands: list[list[str]]) -> None:
-    """APDF: no static inbound rewrite."""
-
     for argv in commands:
         if "NETMAP" in argv or "DNAT" in argv:
             raise TopologyError("Inbound rewrite is endpoint-independent filtering.")
@@ -256,7 +252,7 @@ def apply_topology(spec: TopologySpec) -> AppliedTopology:
         install_stun_name_override(spec)
     except subprocess.CalledProcessError:
         cleanup_topology(spec)
-        raise TopologyError("Could not create the simulated networks.") from None
+        raise TopologyError("Could not create networks.") from None
     inet_ns = None if spec.case == "same-lan" else names["inet"]
     inet_addr = None if spec.case == "same-lan" else INET_ADDR
     return AppliedTopology(

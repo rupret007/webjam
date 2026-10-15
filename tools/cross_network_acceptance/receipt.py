@@ -1,4 +1,4 @@
-"""Machine-readable receipts (full SHA + PASS)."""
+"""Receipts (full SHA + PASS)."""
 
 import json
 import re

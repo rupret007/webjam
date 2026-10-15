@@ -1,4 +1,4 @@
-"""Host and guest role processes."""
+"""Host/guest role processes."""
 
 import errno
 import json
@@ -29,8 +29,7 @@ _URL_RE = re.compile(r"https?://\S+|webjam://\S+|webjam-signal:\S+", re.IGNORECA
 _HONEST_FAIL_SNIPPETS = (
     "couldn't reach the host", "could not open", "couldn’t open",
     "private room could not open", "private music path could not open",
-    "private music connection", "fresh invitation", "timed out", "incomplete",
-    "unreachable")
+    "private music connection", "fresh invitation", "timed out", "incomplete", "unreachable")
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -39,13 +38,11 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _sanitize_text(value: object) -> str:
-    text = _URL_RE.sub("[redacted]", str(value or ""))
-    return text.replace("\n", " ").strip()[:240]
+    return _URL_RE.sub("[redacted]", str(value or "")).replace("\n", " ").strip()[:240]
 
 
 def _honest_failure(text: str) -> bool:
-    lowered = text.lower()
-    return any(snippet in lowered for snippet in _HONEST_FAIL_SNIPPETS)
+    return any(snippet in text.lower() for snippet in _HONEST_FAIL_SNIPPETS)
 
 
 def guest_failure_from_exception(exc: BaseException) -> dict[str, Any]:
@@ -81,8 +78,7 @@ def classify_native_guest_failure(
     if not attempt_finished:
         return "unknown"
     if _honest_failure(failure_text) or room_failed or code in {
-        "transport_failed", "timed_out", "expired", "enrollment_rejected",
-    }:
+            "transport_failed", "timed_out", "expired", "enrollment_rejected"}:
         return "honest_unreachable"
     return "unknown"
 
@@ -94,7 +90,7 @@ def _read_invite(work_dir: Path) -> str:
         if path.is_file() and path.stat().st_size > 0:
             return path.read_text(encoding="utf-8")
         time.sleep(0.05)
-    raise RuntimeError("Host did not publish an invitation.")
+    raise RuntimeError("Host invitation missing.")
 
 
 def _store_invite(work_dir: Path, url: str) -> None:
@@ -137,9 +133,7 @@ def _guest_fail(
     work_dir: Path, profile: str, transport: str, *, reason: str,
     extra: dict[str, Any] | None = None) -> int:
     extra = dict(extra or {})
-    extra.setdefault(
-        "attempt_finished",
-        extra.get("failure_class") == "honest_unreachable" and reason == "unreachable")
+    extra.setdefault("attempt_finished", extra.get("failure_class") == "honest_unreachable" and reason == "unreachable")
     return _guest_result(
         work_dir, profile, transport, connected=False, exchanged=False,
         reason=reason, **extra)
@@ -147,8 +141,7 @@ def _guest_fail(
 
 def _guest_connect_fail(work_dir: Path, profile: str, transport: str) -> int:
     extra = guest_failure_from_exception(sys.exception())
-    return _guest_fail(
-        work_dir, profile, transport, reason=str(extra.pop("reason")), extra=extra)
+    return _guest_fail(work_dir, profile, transport, reason=str(extra.pop("reason")), extra=extra)
 
 
 def _ready(work_dir: Path, **payload: Any) -> int:
@@ -230,11 +223,9 @@ def _make_qt_app(*, work_dir: Path, hosting: bool, profile: str, invite=None, re
     art = profile == "art"
     settings = AppSettings(
         config_file=str(work_dir / "settings.json"), takes_directory=str(work_dir / "takes"),
-        musician_name="Host artist" if hosting else "Guest artist",
-        host_server_enabled=hosting,
+        musician_name="Host artist" if hosting else "Guest artist", host_server_enabled=hosting,
         last_creator_profile_key="art" if art else "music",
-        last_creator_start_key=ART_START if art else "",
-    )
+        last_creator_start_key=ART_START if art else "")
     window = ConductorWindow(
         mode_entries=ApplicationController.mode_entries(), initial_mode_key="music_jam",
         initial_title="Art room" if art else "Music room",
@@ -260,7 +251,6 @@ def _drain(qapp, predicate, timeout_s: float) -> bool:
 
 def _shutdown_art(app) -> None:
     from PySide6.QtCore import QCoreApplication, QEvent
-
     try:
         app.shutdown()
     except Exception:
@@ -315,9 +305,7 @@ def _prepare_controller(
     work_dir: Path, *, hosting: bool, profile: str, invite=None, remote=None, flashes=None,
 ):
     from PySide6.QtWidgets import QApplication
-    app = _make_qt_app(
-        work_dir=work_dir, hosting=hosting, profile=profile, invite=invite, remote=remote,
-    )
+    app = _make_qt_app(work_dir=work_dir, hosting=hosting, profile=profile, invite=invite, remote=remote)
     app._launch_native_jamulus_for_startup = lambda *a, **k: None
     app._start_hosted_server_for_startup = lambda *a, **k: None
     if flashes is not None:
@@ -333,9 +321,7 @@ def _art_host(work_dir: Path) -> int:
         holder["app"] = app
         if not app.begin_startup_journey():
             return _ready(work_dir, ok=False, reason="startup_refused")
-        ready = _drain(
-            qapp, lambda: bool(app.host_peer.active and app._current_invite_url()), 15.0,
-        )
+        ready = _drain(qapp, lambda: bool(app.host_peer.active and app._current_invite_url()), 15.0)
         url = app._current_invite_url() if ready else ""
         if not url or app._room_participant.state is ArtRoomState.FAILED:
             return _ready(work_dir, ok=False, reason="invite_unavailable")
@@ -344,6 +330,16 @@ def _art_host(work_dir: Path) -> int:
                art_start_key=ART_START, transport="lan")
         _wait_stop(work_dir, 90.0, qapp)
         return 0
+
+
+def _art_connect_attempt_finished(app) -> bool:
+    from core.session_conductor import ArtRoomState
+    from services.lan_room_guest import LanRoomTerminalReason
+    room = getattr(app, "_room_participant", None)
+    if getattr(room, "state", None) is ArtRoomState.CONNECTED:
+        return True
+    guest = getattr(room, "lan_guest", None) or getattr(room, "_lan_terminal_owner", None)
+    return getattr(guest, "terminal_reason", None) is LanRoomTerminalReason.UNAVAILABLE
 
 
 def _art_guest(work_dir: Path) -> int:
@@ -355,19 +351,17 @@ def _art_guest(work_dir: Path) -> int:
             invite = parse_invite_link(url)
             url = ""
             app, qapp = _prepare_controller(
-                work_dir / "guest-qt", hosting=False, profile="art", invite=invite,
-            )
+                work_dir / "guest-qt", hosting=False, profile="art", invite=invite)
             holder["app"] = app
             if not app.begin_startup_journey():
                 return _guest_fail(
                     work_dir, "art", "lan", reason="startup_refused",
                     extra={"failure_class": "startup_failure"})
             connected = _drain(
-                qapp, lambda: app._room_participant.state is ArtRoomState.CONNECTED, 32.0,
-            )
+                qapp, lambda: app._room_participant.state is ArtRoomState.CONNECTED, 32.0)
             room = app._room_participant
             exchanged = connected and room.borrowed_start == ART_START
-            finished = True
+            finished = _art_connect_attempt_finished(app)
             return _guest_result(
                 work_dir, "art", "lan", connected=connected, exchanged=exchanged,
                 art_start_key=room.borrowed_start, room_state=room.state.value,
@@ -392,38 +386,30 @@ def _native_host(work_dir: Path, profile: str) -> int:
     flashes: list[str] = []
     with _art_runtime() as holder:
         app, qapp = _prepare_controller(
-            work_dir / "host-qt", hosting=True, profile=profile, flashes=flashes,
-        )
+            work_dir / "host-qt", hosting=True, profile=profile, flashes=flashes)
         holder["app"] = app
         if not app.begin_startup_journey():
             return _ready(
                 work_dir, ok=False, reason="startup_refused", transport="direct-stun",
-                failure_text=_sanitize_text(_hud_text(app)),
-            )
+                failure_text=_sanitize_text(_hud_text(app)))
         ready = _drain(qapp, lambda: _native_owner_ready(app), 40.0)
         owner = getattr(app, "_remote_invite_owner", None)
         if not ready or owner is None:
             return _ready(
                 work_dir, ok=False, reason="invite_unavailable", transport="direct-stun",
                 host_failed=app._room_participant.state is ArtRoomState.FAILED,
-                failure_text=_sanitize_text(" ".join(flashes) or _hud_text(app)),
-            )
+                failure_text=_sanitize_text(" ".join(flashes) or _hud_text(app)))
         try:
             paste = owner.copy_for_clipboard()
         except Exception:
-            return _ready(
-                work_dir, ok=False, reason="clipboard_unavailable",
-                transport="direct-stun",
-            )
+            return _ready(work_dir, ok=False, reason="clipboard_unavailable", transport="direct-stun")
         _store_invite(work_dir, paste)
         paste = ""
         _ready(
             work_dir, ok=True, profile=profile, peer_bound=True,
-            art_start_key=ART_START if profile == "art" else "",
-            transport="direct-stun",
+            art_start_key=ART_START if profile == "art" else "", transport="direct-stun",
             share_reaches_internet=bool(getattr(owner, "share_reaches_internet", False)),
-            share_route=str(getattr(owner, "_share_route", "") or ""),
-        )
+            share_route=str(getattr(owner, "_share_route", "") or ""))
         _wait_stop(work_dir, 120.0, qapp)
         return 0
 
@@ -442,14 +428,12 @@ def _native_connect_attempt_finished(app) -> bool:
         return False
     if code == "timed_out":
         return getattr(getattr(snap, "stage", None), "value", "") in {
-            "contacting_host", "securing_connection", "opening_jamulus",
-            "needs_attention"}
+            "contacting_host", "securing_connection", "opening_jamulus", "needs_attention"}
     return True
 
 
 def _native_guest_connected(app, profile: str) -> bool:
     from services.remote_session_runtime import RemoteSessionPhase
-
     snapshot = getattr(getattr(app, "_remote_session", None), "snapshot", None)
     return getattr(snapshot, "phase", None) is RemoteSessionPhase.CONNECTED
 
@@ -480,8 +464,7 @@ def _native_guest(work_dir: Path, profile: str) -> int:
                 paste = ""
                 return _guest_fail(
                     work_dir, profile, "direct-stun", reason="ingress_rejected",
-                    extra={"failure_class": "startup_failure",
-                           "failure_text": _sanitize_text(str(exc))})
+                    extra={"failure_class": "startup_failure", "failure_text": _sanitize_text(str(exc))})
             paste = ""
             app, qapp = _prepare_controller(
                 work_dir / "guest-qt", hosting=False, profile=profile,
@@ -490,11 +473,9 @@ def _native_guest(work_dir: Path, profile: str) -> int:
             if not app.begin_startup_journey():
                 return _guest_fail(
                     work_dir, profile, "direct-stun", reason="startup_refused",
-                    extra={"failure_class": "startup_failure",
-                           "failure_text": _sanitize_text(_hud_text(app))})
+                    extra={"failure_class": "startup_failure", "failure_text": _sanitize_text(_hud_text(app))})
             _drain(qapp, lambda: (
-                _native_guest_connected(app, profile)
-                and _native_state_exchanged(app, profile)), 50.0)
+                _native_guest_connected(app, profile) and _native_state_exchanged(app, profile)), 50.0)
             connected = _native_guest_connected(app, profile)
             exchanged = connected and _native_state_exchanged(app, profile)
             finished = _native_connect_attempt_finished(app)
@@ -521,8 +502,7 @@ def run_role(role: str, profile: str, work_dir: Path) -> int:
     try:
         native = _direct_stun_available()
         if native:
-            return _native_host(work_dir, profile) if role == "host" else _native_guest(
-                work_dir, profile)
+            return _native_host(work_dir, profile) if role == "host" else _native_guest(work_dir, profile)
         if profile == "music":
             return _music_host(work_dir) if role == "host" else _music_guest(work_dir)
         return _art_host(work_dir) if role == "host" else _art_guest(work_dir)

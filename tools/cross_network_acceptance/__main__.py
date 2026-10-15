@@ -1,4 +1,4 @@
-"""CLI: python -m tools.cross_network_acceptance {run,role,build-sidecar,probe-nat}."""
+"""CLI."""
 
 import argparse
 import os
@@ -13,24 +13,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _maybe_sudo() -> None:
-    if os.geteuid() == 0:
-        return
-    os.execvp(
-        "sudo",
-        ["sudo", "-n", "-E", sys.executable, "-m", "tools.cross_network_acceptance",
-         *sys.argv[1:]],
-    )
+    if os.geteuid() != 0:
+        os.execvp("sudo", ["sudo", "-n", "-E", sys.executable,
+                           "-m", "tools.cross_network_acceptance", *sys.argv[1:]])
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Same-LAN and two-NAT Host/Join.")
+    parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command")
-
-    run = sub.add_parser("run", help="Drive host/join.")
+    run = sub.add_parser("run")
     run.add_argument("--case", choices=("same-lan", "cross-network"), required=True)
     run.add_argument("--profiles", default="art,music")
-    run.add_argument("--output-dir", type=Path,
-                     default=REPO_ROOT / "out" / "cross-network-acceptance")
+    run.add_argument("--output-dir", type=Path, default=REPO_ROOT / "out" / "cross-network-acceptance")
     run.add_argument("--sha", default="")
     run.add_argument("--netem", action="store_true", default=None)
     run.add_argument("--no-netem", action="store_true")
@@ -40,17 +34,15 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--transport-binary", default="")
     run.add_argument("--build-id", default="")
     run.add_argument("--expected-status", choices=("PASS", "FAIL"), default="PASS")
-    role = sub.add_parser("role", help="Host/guest worker.")
+    role = sub.add_parser("role")
     role.add_argument("--role", choices=("host", "guest"), required=True)
     role.add_argument("--profile", choices=("art", "music"), required=True)
     role.add_argument("--work-dir", type=Path, required=True)
-    build = sub.add_parser("build-sidecar", help="Compile webjam-fabric.")
+    build = sub.add_parser("build-sidecar")
     build.add_argument("--product-root", type=Path, required=True)
-    build.add_argument("--output", type=Path,
-                      default=REPO_ROOT / "out" / "cross-network-acceptance" / "webjam-fabric")
-    probe = sub.add_parser("probe-nat", help="RFC 4787 mapping/filter proof.")
-    probe.add_argument("--nat", action="append", dest="nats",
-                       choices=("masquerade", "cone", "symmetric"))
+    build.add_argument("--output", type=Path, default=REPO_ROOT / "out" / "cross-network-acceptance" / "webjam-fabric")
+    probe = sub.add_parser("probe-nat")
+    probe.add_argument("--nat", action="append", dest="nats", choices=("masquerade", "cone", "symmetric"))
 
     args = parser.parse_args(argv)
     if args.command == "role":
@@ -75,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     _maybe_sudo()
     profiles = tuple(item.strip() for item in str(args.profiles).split(",") if item.strip())
     if not profiles or any(item not in {"art", "music"} for item in profiles):
-        print("Profiles must be art and/or music.", file=sys.stderr)
+        print("Need art/music profiles.", file=sys.stderr)
         return 2
     netem = False if args.no_netem or (args.netem is not True and args.case == "same-lan") else True
     product = args.product_root.resolve() if args.product_root else REPO_ROOT

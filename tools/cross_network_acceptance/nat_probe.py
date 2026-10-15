@@ -1,7 +1,4 @@
-"""Live RFC 4787 UDP probes. Privileged CI runs this fail-closed.
-
-punch_admitted is APDF reply-from-contacted-endpoint, not Linux simultaneous-open.
-"""
+"""Live RFC 4787 UDP probes; punch_admitted is APDF reply-from-contacted-endpoint."""
 
 import json
 import os

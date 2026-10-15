@@ -1,7 +1,8 @@
-"""Receipt, topology, and CLI contracts. Safe without netns; never skip/xfail'd."""
+"""Receipt, topology, and CLI contracts. Never skip/xfail'd."""
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -42,8 +43,7 @@ def _receipt(**kw):
         profiles=[{"profile": "art", "guest_connected": False,
                    "session_state_exchanged": False, "harness_ok": True}],
         rendezvous_reachable_from_host=True, rendezvous_reachable_from_guest=True,
-        invite_host_routable_from_guest=False, netem=False,
-    )
+        invite_host_routable_from_guest=False, netem=False)
     defaults.update(kw)
     return build_receipt(**defaults)
 
@@ -77,9 +77,7 @@ def test_receipt_omits_invitation_material(tmp_path: Path):
 
 
 def test_fail_receipt_does_not_write_pass_file(tmp_path: Path):
-    receipt = _receipt(
-        netem=True, notes="Expected until v3.",
-    )
+    receipt = _receipt(netem=True, notes="Expected until v3.")
     write_receipt(tmp_path, receipt)
     assert not (tmp_path / f"{FULL_SHA}-cross-network.PASS").exists()
     assert (tmp_path / f"{FULL_SHA}-cross-network.json").is_file()
@@ -272,7 +270,6 @@ def test_completed_guest_result_rejects_programming_and_startup_failures():
 
 
 def test_build_sidecar_resolves_relative_output_against_cwd(tmp_path, monkeypatch):
-    from types import SimpleNamespace
     from tools.cross_network_acceptance.sidecar import build_sidecar
     product = tmp_path / "pr-372"
     fabric = product / "transport" / "cmd" / "webjam-fabric"
@@ -320,7 +317,6 @@ def test_completed_guest_result_rejects_connected_without_state_exchange():
 
 
 def test_transport_connected_without_state_exchange_is_not_honest_unreachable():
-    from types import SimpleNamespace
     from services.remote_session_runtime import RemoteSessionPhase
     from tools.cross_network_acceptance.roles import (
         _native_guest_connected, _native_state_exchanged, classify_native_guest_failure,
@@ -367,7 +363,6 @@ class _FakeRoleProc:
 
 
 def _run_profile_row(tmp_path, monkeypatch, host, guest, result=None):
-    from types import SimpleNamespace
     honest = result or _honest(transport="lan")
     topology = SimpleNamespace(
         host_ns="h", guest_ns="g", spec=SimpleNamespace(nat_mode="masquerade"))
@@ -530,10 +525,29 @@ def _load_guest_result(path: Path) -> dict:
     return json.loads((path / "guest.result").read_text(encoding="utf-8"))
 
 
+def _fake_art_guest(tmp_path, monkeypatch, room, name):
+    from contextlib import contextmanager
+    from tools.cross_network_acceptance.roles import _art_guest
+    r = "tools.cross_network_acceptance.roles"
+
+    @contextmanager
+    def runtime():
+        yield {"app": None}
+
+    monkeypatch.setattr(f"{r}._art_runtime", runtime)
+    monkeypatch.setattr(f"{r}.parse_invite_link", lambda _u: object())
+    monkeypatch.setattr(f"{r}._prepare_controller", lambda *_a, **_k: (
+        SimpleNamespace(_room_participant=room, begin_startup_journey=lambda: True), object()))
+    monkeypatch.setattr(f"{r}._drain", lambda *_a, **_k: False)
+    work = tmp_path / name
+    work.mkdir()
+    (work / "invite").write_text("webjam://x", encoding="utf-8")
+    return _art_guest(work), _load_guest_result(work)
+
+
 def test_guest_startup_and_unfinished_attempts_are_harness_errors(tmp_path, monkeypatch):
-    from types import SimpleNamespace
     from tools.cross_network_acceptance.roles import (
-        _art_guest, _music_guest, classify_native_guest_failure, run_role,
+        _music_guest, classify_native_guest_failure, run_role,
     )
 
     unfinished = _honest(attempt_finished=False)
@@ -564,26 +578,31 @@ def test_guest_startup_and_unfinished_attempts_are_harness_errors(tmp_path, monk
         payload = _load_guest_result(work)
         assert payload.get("failure_class") == "programming_error"
         assert completed_guest_result(payload, timed_out=False, returncode=rc) is False
-    from contextlib import contextmanager
     from core.session_conductor import ArtRoomState
 
-    @contextmanager
-    def runtime():
-        yield {"app": None}
+    art_rc, art = _fake_art_guest(
+        tmp_path, monkeypatch, SimpleNamespace(state=ArtRoomState.FAILED, borrowed_start=""),
+        "art-fail")
+    assert art.get("failure_class") != "honest_unreachable"
+    assert not completed_guest_result(art, timed_out=False, returncode=art_rc)
 
-    room = SimpleNamespace(state=ArtRoomState.FAILED, borrowed_start="")
-    monkeypatch.setattr(f"{roles}._art_runtime", runtime)
-    monkeypatch.setattr(f"{roles}.parse_invite_link", lambda _u: object())
-    monkeypatch.setattr(f"{roles}._prepare_controller", lambda *_a, **_k: (
-        SimpleNamespace(_room_participant=room, begin_startup_journey=lambda: True), object()))
-    monkeypatch.setattr(f"{roles}._drain", lambda *_a, **_k: False)
-    art_work = tmp_path / "art-fail"
-    art_work.mkdir()
-    (art_work / "invite").write_text("webjam://x", encoding="utf-8")
-    art_rc = _art_guest(art_work)
-    art = _load_guest_result(art_work)
-    assert art.get("failure_class") == "honest_unreachable"
+
+def test_art_unavailable_terminal_is_honest_unreachable(tmp_path, monkeypatch):
+    from core.session_conductor import ArtRoomState
+    from services.lan_room_guest import LanRoomTerminalReason
+
+    finished = SimpleNamespace(
+        state=ArtRoomState.FAILED, borrowed_start="",
+        lan_guest=SimpleNamespace(terminal_reason=LanRoomTerminalReason.UNAVAILABLE))
+    art_rc, art = _fake_art_guest(tmp_path, monkeypatch, finished, "art-unavail")
+    assert art.get("failure_class") == "honest_unreachable" and art.get("attempt_finished")
     assert completed_guest_result(art, timed_out=False, returncode=art_rc)
+    denied = SimpleNamespace(
+        state=ArtRoomState.FAILED, borrowed_start="",
+        lan_guest=SimpleNamespace(terminal_reason=LanRoomTerminalReason.INVITATION_REJECTED))
+    denied_rc, rejected = _fake_art_guest(tmp_path, monkeypatch, denied, "art-reject")
+    assert rejected.get("failure_class") != "honest_unreachable"
+    assert not completed_guest_result(rejected, timed_out=False, returncode=denied_rc)
 
 
 def test_nat_probe_fails_on_subprocess_or_missing_mapping(monkeypatch):
@@ -608,7 +627,6 @@ def test_nat_probe_fails_on_subprocess_or_missing_mapping(monkeypatch):
 
 def test_sidecar_env_kept_and_requested_netem_fails_closed(tmp_path, monkeypatch):
     import os
-    from types import SimpleNamespace
     from tools.cross_network_acceptance.roles import _direct_stun_available
     from tools.cross_network_acceptance.run import _user_env
     from tools.cross_network_acceptance import run as r
