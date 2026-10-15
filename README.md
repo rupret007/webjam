@@ -12,9 +12,9 @@ WebJam is a desktop app for people who make music or art together.
   follow a silent lesson. Any computer can Host or Join. A shared drawing
   app is optional. Art does not record a multitrack take.
 
-On today's published app, Host and Join work on the **same Wi-Fi or local
-network**. Keep the host's window open. Cross-home Internet sessions are
-not in this download.
+Friends in another house can Host and Join. No extra setup. Keep the host's
+window open. If a Join cannot connect, use home Wi-Fi on both computers,
+not a phone hotspot.
 
 ### Three steps
 
@@ -26,7 +26,8 @@ not in this download.
    **Open Anyway** for WebJam, and confirm **Open**.
 3. **Start or join.** Choose **Art** or **Music**, then **Host** or **Join**.
    The host uses **Copy Invite** and sends the whole message. The friend
-   pastes it on **Join**. Stay on the same Wi-Fi as the host.
+   pastes it on **Join**. If WebJam shows a short reply, they send that
+   back and the host chooses **Paste Reply**. Keep the host's window open.
 
 The [creator guide](USER_GUIDE.md) is the one complete how-to. The
 [simple-language guide](README_SIMPLE.md) is the same story in shorter words.
@@ -254,8 +255,8 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    recording or standalone-project path.
 
 For a first two-person try, use the [short test guide](docs/FOLLOW_ALONG_FIRST_TEST.md)
-and [pilot record](docs/FOLLOW_ALONG_PILOT_RECORD.md). The default Art room
-invitation uses the same Wi-Fi/local network. Physical sound, sharing,
+and [pilot record](docs/FOLLOW_ALONG_PILOT_RECORD.md). Two homes is the
+usual Host/Join story; same-network still works. Physical sound, sharing,
 cameras, reconnects and ensemble latency need separate observations.
 
 ## Creator profiles

@@ -5,10 +5,9 @@ Creators following the product, not this pilot script, should use the
 
 Use the identified draft build and keep its `SOURCE-AND-HASHES.json` with your
 results. Start a copy of [the pilot record](FOLLOW_ALONG_PILOT_RECORD.md).
-You need two people, headphones, a YouTube lesson and a Webex meeting. Start
-on the same Wi-Fi or local network: default Art invitations use a private
-network address. Separate-home reachability needs its own test and a room
-both computers can reach.
+You need two people, headphones, a YouTube lesson and a Webex meeting. They
+can be in different houses. Keep the host's window open. Use home Wi-Fi,
+not a phone hotspot. Same-network still works.
 
 Before following the clicks below, let each person try Host or Join without
 coaching. Record time to the first shared lesson, confusing labels and any

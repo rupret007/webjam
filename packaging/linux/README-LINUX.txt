@@ -35,7 +35,7 @@ continuous trefoil identity in its own windows.
 Physical cross-platform joining remains NOT RUN.
 Music Host remains disabled on this platform; this
 package does not claim to provide the macOS-only managed server.
-Art Host and Join work here. Stay on the same Wi-Fi as the host and keep
+Art Host and Join work here. Friends in another house can Join. Keep
 the host's window open.
 
 Music and Podcast & Voice retain standalone Reference Studio for local

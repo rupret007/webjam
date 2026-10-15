@@ -86,6 +86,7 @@ def test_all_entry_profiles_explain_whole_message_and_conditional_network(
     help_box.assert_called_once()
     help_text = help_box.call_args.args[2]
     assert guidance in help_text
+    assert "A friend in another house can Join" in help_text
     assert "only works on the host's Wi-Fi or local" in help_text
     assert "join from that network" in help_text
     assert dialog._invite_input.accessibleDescription() == guidance

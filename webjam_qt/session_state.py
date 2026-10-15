@@ -104,7 +104,7 @@ class SessionUiState:
         return cls(
             SessionPhase.ERROR,
             "Couldn’t reach the jam",
-            "Make sure you’re on the same Wi-Fi, then try again.",
+            "Use home Wi-Fi on both computers, not a phone hotspot. Then try again.",
             "Try Again",
             show_ready_check=False,
         )

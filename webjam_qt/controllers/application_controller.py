@@ -9765,7 +9765,7 @@ class ApplicationController(QObject):
         if self.audio.connection_timed_out:
             self.window.session_hud.set_state(
                 "Something needs attention",
-                "Make sure you’re on the same Wi-Fi, then use Try Again below.",
+                "Use home Wi-Fi on both computers, not a phone hotspot. Then use Try Again below.",
                 action_visible=False,
             )
             return

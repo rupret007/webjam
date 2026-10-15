@@ -222,8 +222,8 @@ def test_join_title_tracks_visible_profile_and_back_navigation(
                 help_box.assert_called_once()
                 assert help_box.call_args.args[2] == (
                     "Paste the invite or the whole message.\n\n"
-                    "If your invitation says it only works on the host's Wi-Fi or local "
-                    "network, join from that network."
+                    "A friend in another house can Join. If your invitation says it only "
+                    "works on the host's Wi-Fi or local network, join from that network."
                 )
                 assert dialog._join_button_primary.text() == "Join"
                 assert not dialog._join_button_primary.isEnabled()

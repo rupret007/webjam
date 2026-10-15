@@ -68,8 +68,8 @@ def test_music_help_opens_with_only_three_short_beats(app, window, size):
     lines = [line for line in text.splitlines() if line.strip()]
     assert lines[1:] == [
         "Host. Share. Join. Play.",
-        "1. At launch, choose Music or Art (Make together / Paint along), then Host or Join.",
-        "2. The host uses Copy Invite and shares the invite.",
+        "1. At launch, choose Music or Art (Make together / Paint along), then Host or Join. Music Host is Mac-only. Windows: More info → Run anyway. Mac: Open Anyway.",
+        "2. The host uses Copy Invite and sends the whole message. A friend in another house can Join. Keep this window open. If they send a reply, use Paste Reply.",
         "3. Play in WebJam. Talk in the meeting.",
     ]
     for word in ("Jamulus", "Webex", "Drawpile", "Krita", "Moises", "Music AI",

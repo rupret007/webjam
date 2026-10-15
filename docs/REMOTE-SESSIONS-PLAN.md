@@ -85,9 +85,10 @@ and is still unshipped.
 3. Friend's WebJam copies a short `webjam-reply:` line. They send that reply
    back in the same chat. The host presses **Paste Reply**.
 4. Both computers send UDP probes to each other's addresses at the same time,
-   then run QUIC on the pair that works. If STUN mapped a cone-like NAT, they
-   Join. If either home is CGNAT/symmetric/cellular, Join fails with a
-   home-Wi-Fi line.
+   then run QUIC on the pair that works. Cone NAT and same LAN stay direct.
+   If either home is CGNAT/symmetric NAT, WebJam uses the TURN relay. If both
+   paths fail, Join says to use home Wi-Fi on both computers, not a phone
+   hotspot, and ask for a fresh invite.
 5. Source checkouts without a sidecar still mint v2 LAN invites, which
    another house cannot use.
 6. v3 lab (`WEBJAM_ENABLE_REFERENCE_LOCAL=1`) is still loopback
