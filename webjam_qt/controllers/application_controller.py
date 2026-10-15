@@ -9242,17 +9242,31 @@ class ApplicationController(QObject):
             action_kind="paste_invite",
         )
 
+    def _guest_reply_delivery_text(self) -> str:
+        """Return the sealed reply in the current delivery form (paste line)."""
+
+        runtime = getattr(self, "_remote_session", None)
+        raw = bytes(getattr(runtime, "guest_reply", b"") or b"")
+        if not raw:
+            return ""
+        from core.direct_stun_invite import publish_guest_reply
+
+        try:
+            return publish_guest_reply(raw)
+        except ValueError:
+            return ""
+
     def _apply_guest_reply_paste(self, text: object) -> bool:
-        """Apply a friend's sealed reply so Host can punch toward Join."""
+        """Apply a friend's sealed reply from the current delivery (paste)."""
 
         owner = getattr(self, "_remote_invite_owner", None)
         apply_reply = getattr(owner, "apply_guest_reply", None)
         if owner is None or not callable(apply_reply):
             return False
-        from core.direct_stun_invite import parse_guest_reply_from_paste
+        from core.direct_stun_invite import accept_guest_reply
 
         try:
-            envelope = parse_guest_reply_from_paste(text)
+            envelope = accept_guest_reply(text)
         except ValueError:
             envelope = b""
         if not envelope:
@@ -9273,7 +9287,7 @@ class ApplicationController(QObject):
         return True
 
     def _paste_guest_reply(self) -> None:
-        """Read the clipboard first; a second paste is only the punch fallback."""
+        """Read the clipboard first, then a typed paste if needed."""
 
         if self._shutdown_cleanup_blocks_action():
             return

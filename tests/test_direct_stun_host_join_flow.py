@@ -13,7 +13,6 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from core.direct_stun_invite import (  # noqa: E402
     DIRECT_STUN_PROFILE_ID,
-    encode_guest_reply_line,
     encode_host_signal_line,
 )
 from core.remote_invitation import issue_remote_invitation  # noqa: E402
@@ -69,12 +68,10 @@ def _issued_invite():
 
 
 def test_host_then_join_then_reply_ends_connected(qapp, tmp_path, monkeypatch) -> None:
-    """Ordinary Host start, Join paste, then the reply, ends connected.
+    """Ordinary Host start, Join paste, then the paste-reply path, connected.
 
-    The reply cannot travel over rendezvous: direct-stun is stun-only. Host
-    already accepts on direct and relay, so one invite paste is enough when
-    the guest can reach the published candidates. Paste Reply is the punch
-    fallback. This test drives that fallback through the Host UI action.
+    Delivery is clipboard paste today (publish_guest_reply / accept_guest_reply).
+    This test does not invent another exchange.
     """
 
     monkeypatch.setattr(
@@ -174,8 +171,9 @@ def test_host_then_join_then_reply_ends_connected(qapp, tmp_path, monkeypatch) -
         ),
     )
     assert guest._remote_session.guest_reply == SIGNAL
-
-    assert host._apply_guest_reply_paste(encode_guest_reply_line(SIGNAL))
+    delivered = guest._guest_reply_delivery_text()
+    assert delivered
+    assert host._apply_guest_reply_paste(delivered)
     _drain_until(
         qapp,
         lambda: host._remote_session.snapshot.phase is RemoteSessionPhase.CONNECTED,
