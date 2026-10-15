@@ -7,6 +7,7 @@ from pathlib import Path
 
 from tools.cross_network_acceptance.proof import run_peer
 from tools.cross_network_acceptance.run import run_case
+from tools.cross_network_acceptance.shim import main as shim_main
 from tools.cross_network_acceptance.sidecar import SidecarError, build_sidecar, product_sha
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -40,8 +41,15 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--output", type=Path, default=REPO_ROOT / "out" / "cross-network-acceptance" / "webjam-fabric")
     probe = sub.add_parser("probe-nat")
     probe.add_argument("--nat", action="append", dest="nats", choices=("cone", "symmetric"))
+    shim = sub.add_parser("shim")
+    shim.add_argument("--listen", required=True)
+    shim.add_argument("--dest", required=True)
+    shim.add_argument("--count-file", type=Path, default=None)
 
     args = parser.parse_args(argv)
+    if args.command == "shim":
+        return shim_main(["--listen", args.listen, "--dest", args.dest,
+                          *(["--count-file", str(args.count_file)] if args.count_file else [])])
     if args.command == "peer":
         return run_peer(args.work_dir, args.role)
     if args.command == "probe-nat":

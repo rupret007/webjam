@@ -76,7 +76,8 @@ def _user_env(uid: int, *, product_root: Path, transport_binary: str, build_id: 
         "QT_QPA_PLATFORM": "offscreen", "LIBGL_ALWAYS_SOFTWARE": "1",
         "WEBJAM_PRODUCT_ROOT": str(product_root)})
     extra = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(REPO_ROOT), extra)))
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, (
+        str(REPO_ROOT), str(REPO_ROOT / "reference_service"), extra)))
     env.pop("WEBJAM_ENABLE_REFERENCE_LOCAL", None)
     if transport_binary:
         env["WEBJAM_TRANSPORT_BINARY"] = transport_binary
@@ -234,6 +235,34 @@ def _pause(seconds: float) -> None:
     time.sleep(seconds)
 
 
+def _wait_port(ns: str, host: str, port: int, env: dict[str, str], timeout_s: float = 8.0) -> None:
+    script = (
+        "import socket,sys,time\n"
+        "deadline=time.monotonic()+float(sys.argv[3])\n"
+        "while time.monotonic()<deadline:\n"
+        "    try:\n"
+        "        socket.create_connection((sys.argv[1],int(sys.argv[2])),0.2).close()\n"
+        "        raise SystemExit(0)\n"
+        "    except OSError:\n"
+        "        time.sleep(0.05)\n"
+        "raise SystemExit(1)\n"
+    )
+    result = _run_in_ns(
+        ns, [sys.executable, "-c", script, host, str(port), str(timeout_s)], env,
+    )
+    if result.returncode != 0:
+        raise HarnessError("reference control unavailable")
+
+
+def _read_count(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    try:
+        return int(path.read_text(encoding="utf-8").strip() or 0)
+    except ValueError:
+        return 0
+
+
 def _arm_timeout(seconds: float) -> None:
     def handle(_signum: int, _frame: Any) -> None:
         raise TimeoutError("case timeout")
@@ -285,7 +314,10 @@ def run_case(
             stun_procs: list[subprocess.Popen[str]] = []
             pcap_procs: list[subprocess.Popen[str]] = []
             turn_proc: subprocess.Popen[str] | None = None
+            ref_proc: subprocess.Popen[str] | None = None
+            shim_proc: subprocess.Popen[str] | None = None
             turn_log = work_root / "turn.log"
+            count_file = work_root / "shim.count.log"
             asserting = False
             try:
                 topology = apply_topology(spec)
@@ -299,10 +331,11 @@ def run_case(
                             stderr_path=work_root / "stun.stderr",
                         )
                     ]
-                    creds: dict[str, object] = {}
                     if case == "relay":
                         secret = secrets.token_hex(16)
                         creds = mint_credentials(secret, topology.inet_addr, STUN_UDP)
+                        if not creds.get("username") or not creds.get("uris"):
+                            raise HarnessError("turn credentials missing")
                         turn_proc = ns_popen(
                             topology.inet_ns,
                             turn_command(
@@ -316,18 +349,37 @@ def run_case(
                     ports = _mapping_ports(topology, env)
                     verify_mapping_mode(spec.nat_mode, ports[0], ports[1])
                     host_reach = guest_reach = stun_host = stun_guest = True
-                else:
-                    creds = {}
                 if spec.netem:
                     netem_applied = apply_netem(spec)
                     if not netem_applied:
                         raise HarnessError("Requested netem missing.")
                 music_nonce, art_nonce = secrets.token_hex(16), secrets.token_hex(16)
+                service_ns = topology.host_ns if case == "same-lan" else topology.inet_ns
+                public_bind = topology.host_addr if case == "same-lan" else topology.inet_addr
+                if not service_ns or not public_bind:
+                    raise HarnessError("reference bind missing")
+                ref_env = env.copy()
+                ref_env["PYTHONPATH"] = os.pathsep.join(filter(None, (
+                    str(REPO_ROOT / "reference_service"), ref_env.get("PYTHONPATH", ""))))
+                ref_env["PYTHONUNBUFFERED"] = "1"
+                ref_proc = ns_popen(
+                    service_ns, [sys.executable, "-m", "webjam_reference"],
+                    cwd=REPO_ROOT / "reference_service", env=ref_env,
+                    stderr_path=work_root / "reference.stderr",
+                )
+                _wait_port(service_ns, "127.0.0.1", 47131, env)
+                shim_proc = ns_popen(
+                    service_ns,
+                    [sys.executable, "-m", "tools.cross_network_acceptance", "shim",
+                     "--listen", public_bind, "--dest", "127.0.0.1",
+                     "--count-file", str(count_file)],
+                    cwd=REPO_ROOT, env=env, stderr_path=work_root / "shim.stderr",
+                )
+                _pause(0.2)
                 peer_dir = work_root / "peers"
                 if peer_dir.exists():
                     shutil.rmtree(peer_dir)
                 peer_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-                _chown_tree(peer_dir)
                 cfg = {
                     "path": expect_path,
                     "music_nonce": music_nonce, "art_nonce": art_nonce,
@@ -336,15 +388,14 @@ def run_case(
                         [[topology.inet_addr, STUN_UDP], [topology.inet_addr, STUN_UDP_ALT]]
                         if topology.inet_addr else None
                     ),
-                    "turn": {
-                        "host": topology.inet_addr, "port": STUN_UDP,
-                        "username": creds.get("username", ""),
-                        "credential": creds.get("credential", ""),
-                        "realm": creds.get("realm", ""),
-                    } if creds else None,
+                    "shim_dest": {
+                        "host": "" if case == "same-lan" else public_bind,
+                        "guest": public_bind,
+                    },
                 }
                 (peer_dir / "peer-config.json").write_text(json.dumps(cfg), encoding="utf-8")
                 (peer_dir / "peer-config.json").chmod(0o600)
+                _chown_tree(peer_dir)
                 asserting = True
                 host_proc = ns_popen(
                     topology.host_ns,
@@ -358,12 +409,14 @@ def run_case(
                      "--role", "guest", "--work-dir", str(peer_dir)],
                     cwd=REPO_ROOT, env=env, stderr_path=peer_dir / "guest.stderr",
                 )
-                host_rc = _reap(host_proc, 25.0)
-                guest_rc = _reap(guest_proc, 5.0)
+                host_rc = _reap(host_proc, 40.0)
+                guest_rc = _reap(guest_proc, 8.0)
                 host_proof = _wait_json(peer_dir / "host.proof", 1.0)
                 guest_proof = _wait_json(peer_dir / "guest.proof", 1.0)
+                relay_count = _read_count(count_file)
                 if turn_log.is_file():
-                    relay_count = relayed_bytes(turn_log.read_text(encoding="utf-8", errors="replace"))
+                    relay_count += relayed_bytes(
+                        turn_log.read_text(encoding="utf-8", errors="replace"))
                 reason = evaluate_proof(
                     host_proof, guest_proof, expect_path=expect_path,
                     music_nonce=music_nonce, art_nonce=art_nonce, relay_bytes=relay_count,
@@ -391,7 +444,7 @@ def run_case(
                 if asserting:
                     break
             finally:
-                _stop_procs([*pcap_procs, turn_proc, *stun_procs])
+                _stop_procs([*pcap_procs, turn_proc, *stun_procs, ref_proc, shim_proc])
                 if spec is not None:
                     try:
                         _capture_router_state(spec, work_root)

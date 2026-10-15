@@ -182,6 +182,7 @@ def test_workflow_is_optional_and_path_filtered():
         "name: Cross-network acceptance", "workflow_dispatch:", "pull_request:",
         "tools/cross_network_acceptance/**", "deploy/relay/**", "probe-nat",
         "--case same-lan", "--case cone", "--case relay", "pcap", "conntrack",
+        "build-sidecar", "webjam-fabric", "setup-go",
     ):
         assert token in workflow
     assert "--expected-status" not in workflow
@@ -191,6 +192,13 @@ def test_workflow_is_optional_and_path_filtered():
     setup = Path("tools/cross_network_acceptance/ci_prep.sh").read_text(encoding="utf-8")
     assert "coturn" in setup and "tcpdump" in setup and "conntrack" in setup
     assert "modprobe sch_netem || true" not in setup
+
+
+def test_path_labels_are_topology_not_ice_pairs():
+    from tools.cross_network_acceptance.proof import path_label
+    assert path_label("direct", same_lan=True) == "host"
+    assert path_label("direct", same_lan=False) == "srflx"
+    assert path_label("relay", same_lan=False) == "relay"
 
 
 def test_missing_nonce_or_candidate_fields_fail():
@@ -297,6 +305,7 @@ def test_connectivity_assertion_is_not_retried(tmp_path, monkeypatch):
     monkeypatch.setattr(r, "_capture_router_state", lambda *_a, **_k: None)
     monkeypatch.setattr(r, "_pause", lambda _s: None)
     monkeypatch.setattr(r, "ns_popen", lambda *_a, **_k: SimpleNamespace())
+    monkeypatch.setattr(r, "_wait_port", lambda *_a, **_k: None)
     monkeypatch.setattr(r, "_reap", lambda *_a, **_k: 1)
     monkeypatch.setattr(r, "_wait_json", lambda *_a, **_k: {})
     assert r.run_case(case="cone", output_dir=tmp_path, netem=False, sha=FULL_SHA, job_id="once") == 1
@@ -401,3 +410,14 @@ def test_cli_has_no_expected_status_fail():
     assert "honest_unreachable" not in Path("tools/cross_network_acceptance/run.py").read_text(
         encoding="utf-8")
     assert not Path("tools/cross_network_acceptance/roles.py").exists()
+
+
+def test_proof_peers_drive_real_sidecar_not_standalone_ice():
+    proof = Path("tools/cross_network_acceptance/proof.py").read_text(encoding="utf-8")
+    run = Path("tools/cross_network_acceptance/run.py").read_text(encoding="utf-8")
+    readme = Path("tools/cross_network_acceptance/README.md").read_text(encoding="utf-8")
+    assert "TransportProcess" in proof and "issue_remote_invitation" in proof
+    assert "TurnClient" not in proof and "KIND_MUSIC" not in proof
+    assert "webjam_reference" in run
+    assert "transport/internal/ipc" in readme and "POST /turn-credentials" in readme
+    assert "reference-local" in readme and "Pion ICE Agent" in readme
