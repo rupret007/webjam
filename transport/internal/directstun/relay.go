@@ -31,7 +31,8 @@ const (
 	turnRESTUser      = "webjam"
 	turnProofDomain   = "webjam/v1/turn-credential\x00"
 	credentialTTL     = 10 * time.Minute
-	credentialFetch   = 2 * time.Second
+	// Two sequential Worker upstreams at 5s each (GraphQL + generate-ice-servers).
+	credentialFetch   = 10 * time.Second
 	maxCredentialBody = 4096
 	allocateLimit     = 4 * time.Second
 )

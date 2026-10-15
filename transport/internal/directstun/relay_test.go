@@ -181,6 +181,35 @@ func TestFetchCredentialsPostsProofAndSkipsWithoutIt(t *testing.T) {
 	}
 }
 
+func TestCredentialFetchTimeoutCoversWorkerAndSlowBody(t *testing.T) {
+	if credentialFetch != 10*time.Second {
+		t.Fatalf("credentialFetch=%s want 10s (two 5s Worker upstreams)", credentialFetch)
+	}
+	t.Setenv(testHarnessEnv, "1")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusOK)
+		if flusher, ok := writer.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		<-request.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+	var session, capability [32]byte
+	session[0], capability[0] = 1, 2
+	ctx, cancel := context.WithTimeout(
+		WithCredentialProof(context.Background(), session, capability),
+		200*time.Millisecond,
+	)
+	defer cancel()
+	start := time.Now()
+	if _, err := fetchCredentials(ctx, server.URL); err != errNoTURN {
+		t.Fatalf("slow body must fail closed, got %v", err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("timeout must stay in force after headers")
+	}
+}
+
 func TestAllocateUsesTimeLimitedRESTCredentials(t *testing.T) {
 	secret := "relay-test-secret"
 	packet, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
