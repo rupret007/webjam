@@ -219,6 +219,8 @@ def test_topology_labels_and_shim_counts_are_never_proof():
 
     proof = Path("tools/cross_network_acceptance/proof.py").read_text(encoding="utf-8")
     assert "path_label(path" not in proof
+    assert "types_from_session_path(session_path)" in proof
+    assert "path_label(same_lan=" not in proof.split("def run_peer", 1)[-1]
 
     run_src = Path("tools/cross_network_acceptance/run.py").read_text(encoding="utf-8")
     assert "_read_count" not in run_src
@@ -267,6 +269,22 @@ def test_topology_labels_and_shim_counts_are_never_proof():
         assert "labels `srflx`" not in text
         assert "labels `relay`" not in text
         assert "exact-pair counter when coturn" not in text
+
+
+def test_sidecar_session_path_is_the_selected_pair():
+    from tools.cross_network_acceptance.proof import types_from_session_path
+    assert types_from_session_path("direct") == ("direct", "direct")
+    assert types_from_session_path("relay") == ("relay", "relay")
+    assert types_from_session_path("") == ("", "")
+    host = _proof(local_type="direct", remote_type="direct")
+    guest = _proof(local_type="direct", remote_type="direct")
+    assert evaluate_proof(host, guest, expect_path="direct", music_nonce=MUSIC, art_nonce=ART) == ""
+    relay_host = _proof(local_type="relay", remote_type="relay")
+    relay_guest = _proof(local_type="relay", remote_type="relay")
+    assert evaluate_proof(
+        relay_host, relay_guest, expect_path="relay", music_nonce=MUSIC, art_nonce=ART,
+        relay_bytes=12,
+    ) == ""
 
 
 def test_missing_nonce_or_candidate_fields_fail():
@@ -537,11 +555,15 @@ def test_proof_peers_drive_real_sidecar_not_standalone_ice():
     assert "TransportProcess" in proof and "issue_remote_invitation" in proof
     assert "TurnClient" not in proof and "KIND_MUSIC" not in proof
     assert "host.proof" in proof
-    assert "webjam_reference" in run and "mint_coturn" not in proof
+    assert "apply_guest_signal" in proof and "types_from_session_path" in proof
+    assert "direct-stun" in proof and "LoopbackShim" not in proof
+    assert "webjam_reference" not in run and "mint_coturn" not in proof
     assert "credential_script" in run and "_post_in_ns" in run
+    assert "WEBJAM_TEST_HARNESS" in run and "WEBJAM_TEST_TURN_CREDENTIAL_URL" in run
+    assert "WEBJAM_TEST_TURN_SERVER" in run and "WEBJAM_TEST_STUN_SERVER" in run
     assert "inner.connect(" not in shim and "_udp_loop" in shim
     assert "transport/internal/ipc" in readme and "POST /turn-credentials" in readme
     assert "reference-local" in readme and "directstun" in readme
-    assert "loopback_shim_bytes.log" in run and "shim.count.log" not in run
+    assert "loopback_shim_bytes.log" not in run and "shim.count.log" not in run
     assert " + shim" not in run
     assert "loopback_bytes" in shim

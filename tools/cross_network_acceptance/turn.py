@@ -46,7 +46,7 @@ def credential_server_env(secret: str, host: str, port: int) -> dict[str, str]:
         "TURN_STATIC_AUTH_SECRET": secret,
         "TURN_EXTERNAL_IP": host,
         "TURN_LISTEN_PORT": str(int(port)),
-        "TURN_LISTEN_ADDR": "127.0.0.1",
+        "TURN_LISTEN_ADDR": host,
         "TURN_CREDENTIAL_PORT": str(CREDENTIAL_PORT),
     }
 

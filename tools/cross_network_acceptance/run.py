@@ -80,6 +80,7 @@ def _user_env(uid: int, *, product_root: Path, transport_binary: str, build_id: 
     env["PYTHONPATH"] = os.pathsep.join(filter(None, (
         str(REPO_ROOT), str(REPO_ROOT / "reference_service"), extra)))
     env.pop("WEBJAM_ENABLE_REFERENCE_LOCAL", None)
+    env["WEBJAM_TEST_HARNESS"] = "1"
     if transport_binary:
         env["WEBJAM_TRANSPORT_BINARY"] = transport_binary
         env["WEBJAM_BUILD_ID"] = build_id
@@ -330,10 +331,7 @@ def run_case(
             pcap_procs: list[subprocess.Popen[str]] = []
             turn_proc: subprocess.Popen[str] | None = None
             cred_proc: subprocess.Popen[str] | None = None
-            ref_proc: subprocess.Popen[str] | None = None
-            shim_proc: subprocess.Popen[str] | None = None
             turn_log = work_root / "turn.log"
-            count_file = work_root / "loopback_shim_bytes.log"
             asserting = False
             try:
                 topology = apply_topology(spec)
@@ -358,10 +356,10 @@ def run_case(
                             cwd=REPO_ROOT, env=cred_env, drop_privs=False,
                             stderr_path=work_root / "turn-credentials.stderr",
                         )
-                        _wait_port(topology.inet_ns, "127.0.0.1", CREDENTIAL_PORT, env)
+                        _wait_port(topology.inet_ns, topology.inet_addr, CREDENTIAL_PORT, env)
                         posted = _post_in_ns(
                             topology.inet_ns,
-                            f"http://127.0.0.1:{CREDENTIAL_PORT}/turn-credentials",
+                            f"http://{topology.inet_addr}:{CREDENTIAL_PORT}/turn-credentials",
                             env,
                         )
                         if not posted.get("ok"):
@@ -387,28 +385,20 @@ def run_case(
                     if not netem_applied:
                         raise HarnessError("Requested netem missing.")
                 music_nonce, art_nonce = secrets.token_hex(16), secrets.token_hex(16)
-                service_ns = topology.host_ns if case == "same-lan" else topology.inet_ns
-                public_bind = topology.host_addr if case == "same-lan" else topology.inet_addr
-                if not service_ns or not public_bind:
-                    raise HarnessError("reference bind missing")
-                ref_env = env.copy()
-                ref_env["PYTHONPATH"] = os.pathsep.join(filter(None, (
-                    str(REPO_ROOT / "reference_service"), ref_env.get("PYTHONPATH", ""))))
-                ref_env["PYTHONUNBUFFERED"] = "1"
-                ref_proc = ns_popen(
-                    service_ns, [sys.executable, "-m", "webjam_reference"],
-                    cwd=REPO_ROOT / "reference_service", env=ref_env,
-                    stderr_path=work_root / "reference.stderr",
-                )
-                _wait_port(service_ns, "127.0.0.1", 47131, env)
-                shim_proc = ns_popen(
-                    service_ns,
-                    [sys.executable, "-m", "tools.cross_network_acceptance", "shim",
-                     "--listen", public_bind, "--dest", "127.0.0.1",
-                     "--count-file", str(count_file)],
-                    cwd=REPO_ROOT, env=env, stderr_path=work_root / "shim.stderr",
-                )
-                _pause(0.2)
+                env["WEBJAM_TEST_HARNESS"] = "1"
+                if topology.inet_addr:
+                    env["WEBJAM_TEST_STUN_SERVER"] = f"{topology.inet_addr}:{STUN_UDP}"
+                else:
+                    env.pop("WEBJAM_TEST_STUN_SERVER", None)
+                if case == "relay" and topology.inet_addr:
+                    env["WEBJAM_TEST_TURN_SERVER"] = f"{topology.inet_addr}:{STUN_UDP}"
+                    env["WEBJAM_TEST_TURN_CREDENTIAL_URL"] = (
+                        f"http://{topology.inet_addr}:{CREDENTIAL_PORT}/turn-credentials"
+                    )
+                else:
+                    env.pop("WEBJAM_TEST_TURN_SERVER", None)
+                    env.pop("WEBJAM_TEST_TURN_CREDENTIAL_URL", None)
+                    env.pop("WEBJAM_TEST_TURN_SECRET", None)
                 peer_dir = work_root / "peers"
                 if peer_dir.exists():
                     shutil.rmtree(peer_dir)
@@ -417,14 +407,6 @@ def run_case(
                     "path": expect_path,
                     "music_nonce": music_nonce, "art_nonce": art_nonce,
                     "binds": {"host": topology.host_addr, "guest": topology.guest_addr},
-                    "stun": (
-                        [[topology.inet_addr, STUN_UDP], [topology.inet_addr, STUN_UDP_ALT]]
-                        if topology.inet_addr else None
-                    ),
-                    "shim_dest": {
-                        "host": "" if case == "same-lan" else public_bind,
-                        "guest": public_bind,
-                    },
                 }
                 (peer_dir / "peer-config.json").write_text(json.dumps(cfg), encoding="utf-8")
                 (peer_dir / "peer-config.json").chmod(0o600)
@@ -442,8 +424,8 @@ def run_case(
                      "--role", "guest", "--work-dir", str(peer_dir)],
                     cwd=REPO_ROOT, env=env, stderr_path=peer_dir / "guest.stderr",
                 )
-                host_rc = _reap(host_proc, 40.0)
-                guest_rc = _reap(guest_proc, 8.0)
+                host_rc = _reap(host_proc, 55.0)
+                guest_rc = _reap(guest_proc, 20.0)
                 host_proof = _wait_json(peer_dir / "host.proof", 1.0)
                 guest_proof = _wait_json(peer_dir / "guest.proof", 1.0)
                 if turn_proc is not None:
@@ -481,7 +463,7 @@ def run_case(
                     break
             finally:
                 _stop_procs(
-                    [*pcap_procs, turn_proc, cred_proc, *stun_procs, ref_proc, shim_proc],
+                    [*pcap_procs, turn_proc, cred_proc, *stun_procs],
                 )
                 if spec is not None:
                     try:
