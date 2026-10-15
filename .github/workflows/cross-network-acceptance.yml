@@ -1,12 +1,7 @@
-# Optional Host/Join proof across two simulated home NATs.
-# Not a required check. Do not add this workflow to branch protection.
-# Same-LAN is the control (must PASS). Cross-network is expected to FAIL
-# until ordinary Host/Join uses the v3 rendezvous/relay in
-# docs/REMOTE-SESSIONS-PLAN.md. The FAIL receipt is unchanged; the GitHub
-# job is green when that FAIL is an honest completed guest result (no
-# timeout, crash, missing result, or fake connect). On master the two-NAT job is
-# report-only. Pull requests that change networking must match the
-# expected receipt (FAIL today; PASS once Internet Join ships).
+# Optional two-NAT Host/Join proof. Not a required check.
+# Same-LAN must PASS. Cross-network FAIL is a green job only for an honest
+# completed guest result (no timeout, crash, missing result, or fake connect).
+# On master the two-NAT job is report-only; networking PRs must match the receipt.
 name: Cross-network acceptance
 
 on:

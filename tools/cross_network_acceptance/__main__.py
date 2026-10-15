@@ -7,8 +7,8 @@ import os
 import sys
 from pathlib import Path
 
-from tools.cross_network_acceptance.run import git_sha, run_case
 from tools.cross_network_acceptance.roles import run_role
+from tools.cross_network_acceptance.run import run_case
 from tools.cross_network_acceptance.sidecar import SidecarError, build_sidecar, product_sha
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -39,11 +39,7 @@ def main(argv: list[str] | None = None) -> int:
 
     run = sub.add_parser("run", help="Build topology and drive host/join.")
     run.add_argument("--case", choices=("same-lan", "cross-network"), required=True)
-    run.add_argument(
-        "--profiles",
-        default="art,music",
-        help="Comma-separated profiles (art, music).",
-    )
+    run.add_argument("--profiles", default="art,music")
     run.add_argument(
         "--output-dir",
         type=Path,
@@ -53,37 +49,15 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--netem", action="store_true", default=None)
     run.add_argument("--no-netem", action="store_true")
     run.add_argument("--keep-workdir", action="store_true")
-    run.add_argument(
-        "--nat",
-        choices=("masquerade", "cone", "symmetric"),
-        default="masquerade",
-        help="Cross-network NAT behaviour (cone/full vs symmetric).",
-    )
-    run.add_argument(
-        "--product-root",
-        type=Path,
-        default=None,
-        help="Product checkout to import (PR #372 worktree). Defaults to this repo.",
-    )
-    run.add_argument(
-        "--transport-binary",
-        default="",
-        help="Path to webjam-fabric. Sets WEBJAM_TRANSPORT_BINARY for source checkouts.",
-    )
-    run.add_argument(
-        "--build-id",
-        default="",
-        help="Sidecar build id (WEBJAM_BUILD_ID). Defaults to --sha.",
-    )
+    run.add_argument("--nat", choices=("masquerade", "cone", "symmetric"), default="masquerade")
+    run.add_argument("--product-root", type=Path, default=None)
+    run.add_argument("--transport-binary", default="")
+    run.add_argument("--build-id", default="")
     run.add_argument(
         "--expected-status",
         choices=("PASS", "FAIL"),
         default="PASS",
-        help=(
-            "CI exit-code target. FAIL still writes a FAIL receipt; the job "
-            "is green only when that FAIL is an honest completed guest result "
-            "(harness_ok, no timeout/crash/missing result, no fake connect)."
-        ),
+        help="CI exit-code target. FAIL is green only for an honest completed guest FAIL.",
     )
 
     role = sub.add_parser("role", help="Internal host/guest worker.")
@@ -128,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.case == "same-lan":
         netem = False
     product = args.product_root.resolve() if args.product_root else REPO_ROOT
-    sha = str(args.sha or git_sha(product if args.product_root else REPO_ROOT))
+    sha = str(args.sha or product_sha(product if args.product_root else REPO_ROOT))
     build_id = str(args.build_id or (product_sha(product) if args.transport_binary else sha))
     return run_case(
         case=args.case,

@@ -1,9 +1,4 @@
-"""CI acceptance harness for same-LAN vs two-NAT Host/Join.
-
-This package is invoked by the optional ``Cross-network acceptance`` workflow
-and by ``python -m tools.cross_network_acceptance``. It is not collected as
-``tests/test_*.py``, so it cannot weaken or skip the required master suite.
-"""
+"""Optional Cross-network acceptance harness. Not part of tests/test_*.py."""
 
 from __future__ import annotations
 

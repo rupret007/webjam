@@ -1,8 +1,4 @@
-"""Build PR #372's webjam-fabric sidecar for this harness.
-
-The binary is a test artifact. Packaged WebJam builds the sidecar from
-webjam.spec / CI and never reads the harness STUN name override.
-"""
+"""Build PR #372's webjam-fabric sidecar for this harness only."""
 
 from __future__ import annotations
 
@@ -29,8 +25,6 @@ def product_sha(product_root: Path) -> str:
 
 
 def build_sidecar(product_root: Path, output: Path | None = None) -> Path:
-    """Compile webjam-fabric from product_root/transport with the product SHA."""
-
     transport = product_root / "transport"
     if not (transport / "cmd" / "webjam-fabric" / "main.go").is_file():
         raise SidecarError("The product tree has no webjam-fabric sources.")

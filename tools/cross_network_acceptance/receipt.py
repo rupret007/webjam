@@ -45,8 +45,6 @@ def require_full_sha(value: str) -> str:
 
 
 def contains_secret_keys(payload: Any) -> bool:
-    """True when a mapping uses a key that could hold invitation material."""
-
     if isinstance(payload, dict):
         for key, item in payload.items():
             if str(key).lower() in _SECRET_KEYS:
@@ -60,8 +58,6 @@ def contains_secret_keys(payload: Any) -> bool:
 
 
 def conductor_line(*, sha: str, status: str, case: str) -> str:
-    """One-line form: full SHA + PASS/FAIL + case. No endpoints or tokens."""
-
     digest = require_full_sha(sha)
     label = str(status or "").strip().upper()
     if label not in {"PASS", "FAIL"}:
@@ -120,11 +116,7 @@ def build_receipt(
 
 
 def write_receipt(directory: Path, receipt: dict[str, Any]) -> Path:
-    """Write JSON always; write the conductor PASS file only on PASS.
-
-    A later FAIL for the same SHA/case removes any leftover ``.PASS`` so
-    the conductor cannot consume stale success evidence.
-    """
+    """Write JSON always; write ``.PASS`` only on PASS; unlink stale ``.PASS`` on FAIL."""
 
     if contains_secret_keys(receipt):
         raise ReceiptError("A receipt must not carry invitation material.")

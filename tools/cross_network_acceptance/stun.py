@@ -1,8 +1,4 @@
-"""RFC 5389 STUN Binding server for the simulated public internet.
-
-Harness-only. Never shipped in packaged WebJam. The public namespace binds
-this at 203.0.113.1:3478 (and 19302 for the compiled Google STUN fallback).
-"""
+"""RFC 5389 STUN Binding server for the simulated public internet."""
 
 from __future__ import annotations
 
@@ -27,8 +23,6 @@ class StunError(RuntimeError):
 
 
 def xor_mapped_attribute(ip: str, port: int) -> bytes:
-    """Return a STUN XOR-MAPPED-ADDRESS attribute for an IPv4 UDP source."""
-
     address = socket.inet_aton(ip)
     xport = port ^ (MAGIC_COOKIE >> 16)
     xip = bytes(octet ^ cookie for octet, cookie in zip(address, MAGIC_COOKIE.to_bytes(4, "big")))
@@ -37,8 +31,6 @@ def xor_mapped_attribute(ip: str, port: int) -> bytes:
 
 
 def binding_success(request: bytes, src_ip: str, src_port: int) -> bytes:
-    """Build a Binding Success response for one Binding Request datagram."""
-
     if len(request) < HEADER_BYTES:
         raise StunError("STUN request is too short.")
     message_type, length, cookie = struct.unpack_from("!HHI", request, 0)
@@ -53,8 +45,6 @@ def binding_success(request: bytes, src_ip: str, src_port: int) -> bytes:
 
 
 def parse_xor_mapped(response: bytes) -> tuple[str, int]:
-    """Return (ip, port) from a Binding Success XOR-MAPPED-ADDRESS."""
-
     if len(response) < HEADER_BYTES:
         raise StunError("STUN response is too short.")
     message_type, length, cookie = struct.unpack_from("!HHI", response, 0)
@@ -101,6 +91,18 @@ def probe(host: str, port: int, *, timeout_s: float = 2.0) -> tuple[str, int] | 
         sock.close()
 
 
+def python_stun_command(bind_host: str, ports: tuple[int, ...]) -> list[str]:
+    if not bind_host or not ports:
+        raise StunError("STUN server needs a bind address and ports.")
+    return [
+        sys.executable,
+        "-m",
+        "tools.cross_network_acceptance.stun",
+        bind_host,
+        *[str(port) for port in ports],
+    ]
+
+
 def stun_server_commands(bind_host: str, ports: tuple[int, ...]) -> list[list[str]]:
     """Prefer coturn in the public ns; fall back to this Python Binding server."""
 
@@ -114,45 +116,23 @@ def stun_server_commands(bind_host: str, ports: tuple[int, ...]) -> list[list[st
                 turn = str(candidate)
                 break
     if turn:
-        commands: list[list[str]] = []
-        for port in ports:
-            commands.append(
-                [
-                    turn,
-                    "-n",
-                    f"--listening-ip={bind_host}",
-                    f"--listening-port={port}",
-                    "--no-cli",
-                    "--no-tls",
-                    "--no-dtls",
-                    "--stun-only",
-                    f"--pidfile=/tmp/webjam-turn-{port}.pid",
-                    "--log-file=stdout",
-                    "--simple-log",
-                ]
-            )
-        return commands
-    return [
-        [
-            sys.executable,
-            "-m",
-            "tools.cross_network_acceptance.stun",
-            bind_host,
-            *[str(port) for port in ports],
+        return [
+            [
+                turn,
+                "-n",
+                f"--listening-ip={bind_host}",
+                f"--listening-port={port}",
+                "--no-cli",
+                "--no-tls",
+                "--no-dtls",
+                "--stun-only",
+                f"--pidfile=/tmp/webjam-turn-{port}.pid",
+                "--log-file=stdout",
+                "--simple-log",
+            ]
+            for port in ports
         ]
-    ]
-
-
-def python_stun_command(bind_host: str, ports: tuple[int, ...]) -> list[str]:
-    if not bind_host or not ports:
-        raise StunError("STUN server needs a bind address and ports.")
-    return [
-        sys.executable,
-        "-m",
-        "tools.cross_network_acceptance.stun",
-        bind_host,
-        *[str(port) for port in ports],
-    ]
+    return [python_stun_command(bind_host, ports)]
 
 
 def serve(bind_host: str, ports: tuple[int, ...]) -> None:
@@ -181,9 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if len(args) < 2:
         return 2
-    host = args[0]
-    ports = tuple(int(item) for item in args[1:])
-    serve(host, ports)
+    serve(args[0], tuple(int(item) for item in args[1:]))
     return 0
 
 

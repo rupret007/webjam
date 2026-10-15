@@ -26,30 +26,10 @@ from tools.cross_network_acceptance.topology import (
     apply_netem,
     apply_topology,
     cleanup_topology,
+    required_bin,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _bin(name: str) -> str:
-    found = shutil.which(name)
-    if found:
-        return found
-    for folder in ("/usr/sbin", "/sbin", "/usr/bin"):
-        candidate = Path(folder) / name
-        if candidate.is_file():
-            return str(candidate)
-    raise RuntimeError(f"Missing required tool: {name}")
-
-
-def git_sha(root: Path = REPO_ROOT) -> str:
-    return subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=root,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
 
 
 def receipt_case_name(case: str, nat_mode: str) -> str:
@@ -118,18 +98,11 @@ def completed_guest_result(
     timed_out: bool,
     returncode: int | None = 0,
 ) -> bool:
-    """True only when the guest finished and wrote a real result.
-
-    Timeouts, crashes before guest.result, and empty payloads are harness
-    failures. An honest product FAIL still counts when the file records
-    ``guest_connected``.
-    """
+    """True only when the guest finished and wrote a real ``guest_connected`` result."""
 
     if timed_out or returncode is None:
         return False
-    if not isinstance(result, dict) or "guest_connected" not in result:
-        return False
-    return True
+    return isinstance(result, dict) and "guest_connected" in result
 
 
 def job_exit_code(
@@ -139,12 +112,7 @@ def job_exit_code(
     harness_ok: bool,
     fake_connect: bool = False,
 ) -> int:
-    """Map a receipt onto a CI exit code without changing PASS/FAIL assertions.
-
-    Honest expected FAIL is job success only when the guest completed a real
-    result and did not fake a connect. A broken harness, timeout, missing
-    result, fake connect, or unexpected PASS still exits 1.
-    """
+    """Map a receipt onto a CI exit code without changing PASS/FAIL assertions."""
 
     actual = str(status or "").strip().upper()
     expected = str(expected_status or "PASS").strip().upper()
@@ -162,8 +130,6 @@ def discarded_test_net3_hides_nat_type(nat_mode: str) -> bool:
 
 
 def honest_product_fail_notes(*, case: str, nat_mode: str) -> str:
-    """Receipt notes for a completed guest that did not connect."""
-
     if discarded_test_net3_hides_nat_type(nat_mode):
         return (
             "Guest completed without connecting. Packaged direct-stun discards "
@@ -189,19 +155,10 @@ def _incomplete_guest_notes(profile_rows: list[dict[str, Any]]) -> str:
     return "The harness did not complete an honest guest result."
 
 
-def ns_popen(
-    ns: str,
-    argv: list[str],
-    *,
-    cwd: Path,
-    stderr_path: Path | None = None,
-    env: dict[str, str] | None = None,
-    drop_privs: bool = True,
-) -> subprocess.Popen[str]:
+def _drop_privs(argv: list[str]) -> list[str]:
     uid, gid = _drop_ids()
-    inner = list(argv)
-    if drop_privs and os.geteuid() == 0 and uid != 0:
-        inner = [
+    if os.geteuid() == 0 and uid != 0:
+        return [
             "setpriv",
             f"--reuid={uid}",
             f"--regid={gid}",
@@ -209,23 +166,46 @@ def ns_popen(
             "--",
             *argv,
         ]
-    cmd = [_bin("ip"), "netns", "exec", ns, *inner]
-    stderr: Any = subprocess.DEVNULL
+    return list(argv)
+
+
+def ns_popen(
+    ns: str,
+    argv: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    stderr_path: Path | None = None,
+    drop_privs: bool = True,
+) -> subprocess.Popen[str]:
+    inner = _drop_privs(argv) if drop_privs else list(argv)
     handle = None
+    stderr: Any = subprocess.DEVNULL
     if stderr_path is not None:
         stderr_path.parent.mkdir(parents=True, exist_ok=True)
         handle = stderr_path.open("w", encoding="utf-8")
         stderr = handle
     proc = subprocess.Popen(
-        cmd,
+        [required_bin("ip"), "netns", "exec", ns, *inner],
         cwd=cwd,
-        env=env if env is not None else _user_env(uid, product_root=REPO_ROOT, transport_binary="", build_id=""),
+        env=env,
         stdout=subprocess.DEVNULL,
         stderr=stderr,
         text=True,
     )
     proc._stderr_handle = handle  # type: ignore[attr-defined]
     return proc
+
+
+def _run_in_ns(ns: str, argv: list[str], env: dict[str, str]) -> int:
+    result = subprocess.run(
+        [required_bin("ip"), "netns", "exec", ns, *_drop_privs(argv)],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env,
+    )
+    return result.returncode
 
 
 def _wait_json(path: Path, timeout_s: float) -> dict[str, Any]:
@@ -247,7 +227,6 @@ def _invite_host_routable(ns: str, work_dir: Path, env: dict[str, str]) -> bool 
     invite = work_dir / "invite"
     if not invite.is_file():
         return None
-    uid, gid = _drop_ids()
     script = (
         "import socket,sys\n"
         "from pathlib import Path\n"
@@ -264,81 +243,37 @@ def _invite_host_routable(ns: str, work_dir: Path, env: dict[str, str]) -> bool 
         "except Exception:\n"
         " sys.exit(1)\n"
     )
-    inner = [sys.executable, "-c", script, str(invite)]
-    if os.geteuid() == 0 and uid != 0:
-        inner = [
-            "setpriv",
-            f"--reuid={uid}",
-            f"--regid={gid}",
-            "--clear-groups",
-            "--",
-            *inner,
-        ]
-    result = subprocess.run(
-        [_bin("ip"), "netns", "exec", ns, *inner],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=env,
-    )
-    if result.returncode == 2:
+    code = _run_in_ns(ns, [sys.executable, "-c", script, str(invite)], env)
+    if code == 2:
         return None
-    return result.returncode == 0
+    return code == 0
 
 
 def _probe_in_ns(ns: str, host: str, port: int, env: dict[str, str]) -> bool:
-    uid, gid = _drop_ids()
     script = (
         "import socket,sys\n"
         "s=socket.create_connection((sys.argv[1], int(sys.argv[2])), 2)\n"
         "s.close()\n"
     )
-    inner = [sys.executable, "-c", script, host, str(port)]
-    if os.geteuid() == 0 and uid != 0:
-        inner = [
-            "setpriv",
-            f"--reuid={uid}",
-            f"--regid={gid}",
-            "--clear-groups",
-            "--",
-            *inner,
-        ]
-    result = subprocess.run(
-        [_bin("ip"), "netns", "exec", ns, *inner],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=env,
-    )
-    return result.returncode == 0
+    return _run_in_ns(ns, [sys.executable, "-c", script, host, str(port)], env) == 0
 
 
 def _probe_stun_in_ns(ns: str, host: str, port: int, env: dict[str, str]) -> bool:
-    uid, gid = _drop_ids()
     script = (
         "import sys\n"
         "from tools.cross_network_acceptance.stun import probe\n"
         "mapped = probe(sys.argv[1], int(sys.argv[2]))\n"
         "sys.exit(0 if mapped else 1)\n"
     )
-    inner = [sys.executable, "-c", script, host, str(port)]
-    if os.geteuid() == 0 and uid != 0:
-        inner = [
-            "setpriv",
-            f"--reuid={uid}",
-            f"--regid={gid}",
-            "--clear-groups",
-            "--",
-            *inner,
-        ]
-    result = subprocess.run(
-        [_bin("ip"), "netns", "exec", ns, *inner],
-        check=False,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        env=env,
-    )
-    return result.returncode == 0
+    return _run_in_ns(ns, [sys.executable, "-c", script, host, str(port)], env) == 0
+
+
+def _until(timeout_s: float, check) -> None:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if check():
+            return
+        time.sleep(0.1)
 
 
 def _run_profile(
@@ -351,38 +286,15 @@ def _run_profile(
     work_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     _chown_tree(work_dir)
     python = sys.executable
-    host_cmd = [
-        python,
-        "-m",
-        "tools.cross_network_acceptance",
-        "role",
-        "--role",
-        "host",
-        "--profile",
-        profile,
-        "--work-dir",
-        str(work_dir),
-    ]
-    guest_cmd = [
-        python,
-        "-m",
-        "tools.cross_network_acceptance",
-        "role",
-        "--role",
-        "guest",
-        "--profile",
-        profile,
-        "--work-dir",
-        str(work_dir),
-    ]
-    host_err = work_dir / "host.stderr"
-    guest_err = work_dir / "guest.stderr"
+
+    def role_cmd(role: str) -> list[str]:
+        return [
+            python, "-m", "tools.cross_network_acceptance", "role",
+            "--role", role, "--profile", profile, "--work-dir", str(work_dir),
+        ]
+
     host_proc = ns_popen(
-        topology.host_ns,
-        host_cmd,
-        cwd=cwd,
-        stderr_path=host_err,
-        env=env,
+        topology.host_ns, role_cmd("host"), cwd=cwd, stderr_path=work_dir / "host.stderr", env=env,
     )
     guest_proc = None
     try:
@@ -400,11 +312,8 @@ def _run_profile(
                 "failure_class": ready.get("failure_class", ""),
             }
         guest_proc = ns_popen(
-            topology.guest_ns,
-            guest_cmd,
-            cwd=cwd,
-            stderr_path=guest_err,
-            env=env,
+            topology.guest_ns, role_cmd("guest"), cwd=cwd,
+            stderr_path=work_dir / "guest.stderr", env=env,
         )
         timed_out = False
         try:
@@ -420,9 +329,7 @@ def _run_profile(
         routable = _invite_host_routable(topology.guest_ns, work_dir, env)
         connected = bool(result.get("guest_connected"))
         completed = completed_guest_result(
-            result,
-            timed_out=timed_out,
-            returncode=guest_proc.returncode,
+            result, timed_out=timed_out, returncode=guest_proc.returncode,
         )
         reason = ""
         if timed_out:
@@ -442,8 +349,7 @@ def _run_profile(
             "failure_class": result.get("failure_class", ""),
             "failure_text": result.get("failure_text", ""),
             "error_code": result.get("error_code", ""),
-            "fake_connect": connected
-            and topology.spec.nat_mode == "symmetric",
+            "fake_connect": connected and topology.spec.nat_mode == "symmetric",
         }
     finally:
         (work_dir / "host.stop").write_text("1\n", encoding="utf-8")
@@ -467,18 +373,14 @@ def _copy_logs(work_root: Path, output_dir: Path, receipt_case: str) -> None:
     dest = output_dir / "logs" / receipt_case
     dest.mkdir(parents=True, exist_ok=True, mode=0o700)
     for path in work_root.rglob("*"):
-        if path.suffix in {".stderr", ".ready", ".result"} or path.name in {
-            "host.ready",
-            "guest.result",
-            "host.stderr",
-            "guest.stderr",
-        }:
-            target = dest / path.relative_to(work_root)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                shutil.copy2(path, target)
-            except OSError:
-                continue
+        if path.suffix not in {".stderr", ".ready", ".result"}:
+            continue
+        target = dest / path.relative_to(work_root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(path, target)
+        except OSError:
+            continue
     _chown_tree(dest)
 
 
@@ -527,13 +429,8 @@ def _stop_procs(procs: list[subprocess.Popen[str] | None]) -> None:
 def _allow_unprivileged_stun(ns: str) -> None:
     subprocess.run(
         [
-            _bin("ip"),
-            "netns",
-            "exec",
-            ns,
-            _bin("sysctl"),
-            "-w",
-            "net.ipv4.ip_unprivileged_port_start=0",
+            required_bin("ip"), "netns", "exec", ns,
+            required_bin("sysctl"), "-w", "net.ipv4.ip_unprivileged_port_start=0",
         ],
         check=False,
         capture_output=True,
@@ -547,18 +444,10 @@ def _start_stun(
     commands: list[list[str]],
 ) -> list[subprocess.Popen[str]]:
     assert topology.inet_ns is not None
-    procs: list[subprocess.Popen[str]] = []
-    for argv in commands:
-        procs.append(
-            ns_popen(
-                topology.inet_ns,
-                argv,
-                cwd=REPO_ROOT,
-                env=env,
-                drop_privs=False,
-            )
-        )
-    return procs
+    return [
+        ns_popen(topology.inet_ns, argv, cwd=REPO_ROOT, env=env, drop_privs=False)
+        for argv in commands
+    ]
 
 
 def run_case(
@@ -613,10 +502,7 @@ def run_case(
             nat_mode=mode,
         )
         return _emit_receipt(
-            output_dir,
-            receipt,
-            expected_status=expected_status,
-            harness_ok=False,
+            output_dir, receipt, expected_status=expected_status, harness_ok=False,
         )
     rendezvous: subprocess.Popen[str] | None = None
     stun_procs: list[subprocess.Popen[str]] = []
@@ -638,18 +524,15 @@ def run_case(
             rendezvous = ns_popen(
                 topology.inet_ns,
                 [
-                    sys.executable,
-                    "-m",
-                    "tools.cross_network_acceptance.rendezvous",
-                    topology.inet_addr,
-                    str(RENDEZVOUS_TCP),
-                    str(RENDEZVOUS_UDP),
+                    sys.executable, "-m", "tools.cross_network_acceptance.rendezvous",
+                    topology.inet_addr, str(RENDEZVOUS_TCP), str(RENDEZVOUS_UDP),
                 ],
                 cwd=REPO_ROOT,
                 env=env,
             )
-            deadline = time.monotonic() + 5.0
-            while time.monotonic() < deadline:
+
+            def _rendezvous_ok() -> bool:
+                nonlocal host_reach, guest_reach, stun_host, stun_guest
                 host_reach = _probe_in_ns(
                     topology.host_ns, topology.inet_addr, RENDEZVOUS_TCP, env
                 )
@@ -662,27 +545,25 @@ def run_case(
                 stun_guest = _probe_stun_in_ns(
                     topology.guest_ns, INET_ADDR, STUN_UDP, env
                 )
-                if host_reach and guest_reach and stun_host and stun_guest:
-                    break
-                time.sleep(0.1)
+                return bool(host_reach and guest_reach and stun_host and stun_guest)
+
+            def _stun_ok() -> bool:
+                nonlocal stun_host, stun_guest
+                stun_host = _probe_stun_in_ns(
+                    topology.host_ns, topology.inet_addr, STUN_UDP, env
+                )
+                stun_guest = _probe_stun_in_ns(
+                    topology.guest_ns, INET_ADDR, STUN_UDP, env
+                )
+                return bool(stun_host and stun_guest)
+
+            _until(5.0, _rendezvous_ok)
             if (not stun_host or not stun_guest) and stun_procs:
                 _stop_procs(stun_procs)
                 stun_procs = _start_stun(
-                    topology,
-                    env,
-                    [python_stun_command(topology.inet_addr, stun_ports)],
+                    topology, env, [python_stun_command(topology.inet_addr, stun_ports)],
                 )
-                fallback_deadline = time.monotonic() + 5.0
-                while time.monotonic() < fallback_deadline:
-                    stun_host = _probe_stun_in_ns(
-                        topology.host_ns, topology.inet_addr, STUN_UDP, env
-                    )
-                    stun_guest = _probe_stun_in_ns(
-                        topology.guest_ns, INET_ADDR, STUN_UDP, env
-                    )
-                    if stun_host and stun_guest:
-                        break
-                    time.sleep(0.1)
+                _until(5.0, _stun_ok)
             if not host_reach or not guest_reach:
                 notes = "The simulated internet is not reachable from both homes."
             elif not stun_host or not stun_guest:
@@ -690,16 +571,12 @@ def run_case(
             else:
                 for profile in profiles:
                     profile_rows.append(
-                        _run_profile(
-                            topology, profile, work_root / profile, env, REPO_ROOT
-                        )
+                        _run_profile(topology, profile, work_root / profile, env, REPO_ROOT)
                     )
         else:
             for profile in profiles:
                 profile_rows.append(
-                    _run_profile(
-                        topology, profile, work_root / profile, env, REPO_ROOT
-                    )
+                    _run_profile(topology, profile, work_root / profile, env, REPO_ROOT)
                 )
     finally:
         _stop_procs([*stun_procs, rendezvous])
@@ -774,9 +651,6 @@ def run_case(
         stun_reachable_from_guest=stun_guest,
     )
     return _emit_receipt(
-        output_dir,
-        receipt,
-        expected_status=expected_status,
-        harness_ok=harness_ok,
-        fake_connect=fake,
+        output_dir, receipt, expected_status=expected_status,
+        harness_ok=harness_ok, fake_connect=fake,
     )

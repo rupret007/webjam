@@ -1,10 +1,4 @@
-"""Host and guest role processes for the acceptance harness.
-
-Art uses the offscreen Qt conductor (Linux can Host Art). Music uses the
-existing headless HostPeerSession / GuestPeerSession control plane because
-the product door ghosts Music Host on Linux — unless a compiled sidecar is
-present, in which case ordinary Host/Join is PR #372 direct-stun.
-"""
+"""Host and guest role processes for the acceptance harness."""
 
 from __future__ import annotations
 
@@ -12,8 +6,9 @@ import json
 import os
 import re
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from core.network_invite import local_band_address, parse_invite_link
 from core.session_transfer import SessionTransferError
@@ -79,6 +74,14 @@ def _wait_stop(work_dir: Path, timeout_s: float) -> None:
         time.sleep(0.05)
 
 
+def _pump_until_stop(qapp, work_dir: Path, timeout_s: float) -> None:
+    stop = work_dir / _STOP_NAME
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline and not stop.exists():
+        qapp.processEvents()
+        time.sleep(0.05)
+
+
 def _direct_stun_available() -> bool:
     try:
         from services.native_remote_transport import ordinary_native_host_profile
@@ -86,6 +89,28 @@ def _direct_stun_available() -> bool:
         return ordinary_native_host_profile() == "direct-stun"
     except Exception:
         return False
+
+
+def _guest_fail(
+    work_dir: Path,
+    profile: str,
+    transport: str,
+    *,
+    reason: str,
+    extra: dict[str, Any] | None = None,
+) -> int:
+    payload: dict[str, Any] = {
+        "ok": False,
+        "profile": profile,
+        "guest_connected": False,
+        "session_state_exchanged": False,
+        "reason": reason,
+        "transport": transport,
+    }
+    if extra:
+        payload.update(extra)
+    _write_json(work_dir / _RESULT_NAME, payload)
+    return 1
 
 
 def _music_host(work_dir: Path) -> int:
@@ -102,11 +127,7 @@ def _music_host(work_dir: Path) -> int:
         creator_profile_key="music",
     )
     try:
-        url = host.invite_link(
-            host=address,
-            jamulus_port=22124,
-            session_name="Music room",
-        )
+        url = host.invite_link(host=address, jamulus_port=22124, session_name="Music room")
         if not url or not host.active:
             _write_json(work_dir / _READY_NAME, {"ok": False, "reason": "host_inactive"})
             return 1
@@ -155,19 +176,10 @@ def _music_guest(work_dir: Path) -> int:
         )
         return 0 if exchanged else 1
     except (SessionTransferError, OSError, ValueError):
-        _write_json(
-            work_dir / _RESULT_NAME,
-            {
-                "ok": False,
-                "profile": "music",
-                "guest_connected": False,
-                "session_state_exchanged": False,
-                "reason": "unreachable",
-                "failure_class": "honest_unreachable",
-                "transport": "lan",
-            },
+        return _guest_fail(
+            work_dir, "music", "lan", reason="unreachable",
+            extra={"failure_class": "honest_unreachable"},
         )
-        return 1
     finally:
         url = ""
 
@@ -264,33 +276,58 @@ def _hud_text(app) -> str:
     return " ".join(item for item in parts if item)
 
 
-def _art_host(work_dir: Path) -> int:
+@contextmanager
+def _art_runtime() -> Iterator[dict[str, Any]]:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication
-
-    from core.session_conductor import ArtRoomState
-
     started = []
     for item in _art_patches():
         item.start()
         started.append(item)
-    app = None
+    holder: dict[str, Any] = {"app": None}
     try:
-        app = _make_qt_app(work_dir=work_dir / "host-qt", hosting=True, profile="art")
-        app._launch_native_jamulus_for_startup = lambda *a, **k: None
-        app._start_hosted_server_for_startup = lambda *a, **k: None
-        qapp = QApplication.instance()
+        yield holder
+    finally:
+        if holder["app"] is not None:
+            _shutdown_art(holder["app"])
+        for item in reversed(started):
+            item.stop()
+
+
+def _prepare_controller(
+    work_dir: Path,
+    *,
+    hosting: bool,
+    profile: str,
+    invite=None,
+    remote=None,
+    flashes=None,
+):
+    from PySide6.QtWidgets import QApplication
+
+    app = _make_qt_app(
+        work_dir=work_dir, hosting=hosting, profile=profile, invite=invite, remote=remote,
+    )
+    app._launch_native_jamulus_for_startup = lambda *a, **k: None
+    app._start_hosted_server_for_startup = lambda *a, **k: None
+    if flashes is not None:
+        _attach_flash_log(app, flashes)
+    return app, QApplication.instance()
+
+
+def _art_host(work_dir: Path) -> int:
+    from core.session_conductor import ArtRoomState
+
+    with _art_runtime() as holder:
+        app, qapp = _prepare_controller(work_dir / "host-qt", hosting=True, profile="art")
+        holder["app"] = app
         if not app.begin_startup_journey():
             _write_json(work_dir / _READY_NAME, {"ok": False, "reason": "startup_refused"})
             return 1
         ready = _drain(
-            qapp,
-            lambda: bool(app.host_peer.active and app._current_invite_url()),
-            15.0,
+            qapp, lambda: bool(app.host_peer.active and app._current_invite_url()), 15.0,
         )
         url = app._current_invite_url() if ready else ""
-        room = app._room_participant
-        if not url or room.state is ArtRoomState.FAILED:
+        if not url or app._room_participant.state is ArtRoomState.FAILED:
             _write_json(work_dir / _READY_NAME, {"ok": False, "reason": "invite_unavailable"})
             return 1
         _store_invite(work_dir, url)
@@ -304,92 +341,47 @@ def _art_host(work_dir: Path) -> int:
                 "transport": "lan",
             },
         )
-        stop = work_dir / _STOP_NAME
-        deadline = time.monotonic() + 90.0
-        while time.monotonic() < deadline and not stop.exists():
-            qapp.processEvents()
-            time.sleep(0.05)
+        _pump_until_stop(qapp, work_dir, 90.0)
         return 0
-    finally:
-        if app is not None:
-            _shutdown_art(app)
-        for item in reversed(started):
-            item.stop()
 
 
 def _art_guest(work_dir: Path) -> int:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication
-
     from core.session_conductor import ArtRoomState
 
     url = _read_invite(work_dir)
-    started = []
-    for item in _art_patches():
-        item.start()
-        started.append(item)
-    app = None
-    try:
-        invite = parse_invite_link(url)
-        url = ""
-        app = _make_qt_app(
-            work_dir=work_dir / "guest-qt", hosting=False, profile="art", invite=invite
-        )
-        app._launch_native_jamulus_for_startup = lambda *a, **k: None
-        app._start_hosted_server_for_startup = lambda *a, **k: None
-        qapp = QApplication.instance()
-        if not app.begin_startup_journey():
+    with _art_runtime() as holder:
+        try:
+            invite = parse_invite_link(url)
+            url = ""
+            app, qapp = _prepare_controller(
+                work_dir / "guest-qt", hosting=False, profile="art", invite=invite,
+            )
+            holder["app"] = app
+            if not app.begin_startup_journey():
+                return _guest_fail(work_dir, "art", "lan", reason="startup_refused")
+            connected = _drain(
+                qapp, lambda: app._room_participant.state is ArtRoomState.CONNECTED, 32.0,
+            )
+            room = app._room_participant
+            exchanged = connected and room.borrowed_start == ART_START
             _write_json(
                 work_dir / _RESULT_NAME,
                 {
-                    "ok": False,
+                    "ok": exchanged,
                     "profile": "art",
-                    "guest_connected": False,
-                    "session_state_exchanged": False,
-                    "reason": "startup_refused",
+                    "guest_connected": connected,
+                    "session_state_exchanged": exchanged,
+                    "art_start_key": room.borrowed_start,
+                    "room_state": room.state.value,
                     "transport": "lan",
                 },
             )
-            return 1
-        connected = _drain(
-            qapp,
-            lambda: app._room_participant.state is ArtRoomState.CONNECTED,
-            32.0,
-        )
-        room = app._room_participant
-        exchanged = connected and room.borrowed_start == ART_START
-        _write_json(
-            work_dir / _RESULT_NAME,
-            {
-                "ok": exchanged,
-                "profile": "art",
-                "guest_connected": connected,
-                "session_state_exchanged": exchanged,
-                "art_start_key": room.borrowed_start,
-                "room_state": room.state.value,
-                "transport": "lan",
-            },
-        )
-        return 0 if exchanged else 1
-    except (SessionTransferError, OSError, ValueError):
-        _write_json(
-            work_dir / _RESULT_NAME,
-            {
-                "ok": False,
-                "profile": "art",
-                "guest_connected": False,
-                "session_state_exchanged": False,
-                "reason": "unreachable",
-                "failure_class": "honest_unreachable",
-                "transport": "lan",
-            },
-        )
-        return 1
-    finally:
-        if app is not None:
-            _shutdown_art(app)
-        for item in reversed(started):
-            item.stop()
+            return 0 if exchanged else 1
+        except (SessionTransferError, OSError, ValueError):
+            return _guest_fail(
+                work_dir, "art", "lan", reason="unreachable",
+                extra={"failure_class": "honest_unreachable"},
+            )
 
 
 def _native_owner_ready(app) -> bool:
@@ -398,23 +390,14 @@ def _native_owner_ready(app) -> bool:
 
 
 def _native_host(work_dir: Path, profile: str) -> int:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication
-
     from core.session_conductor import ArtRoomState
 
     flashes: list[str] = []
-    started = []
-    for item in _art_patches():
-        item.start()
-        started.append(item)
-    app = None
-    try:
-        app = _make_qt_app(work_dir=work_dir / "host-qt", hosting=True, profile=profile)
-        app._launch_native_jamulus_for_startup = lambda *a, **k: None
-        app._start_hosted_server_for_startup = lambda *a, **k: None
-        _attach_flash_log(app, flashes)
-        qapp = QApplication.instance()
+    with _art_runtime() as holder:
+        app, qapp = _prepare_controller(
+            work_dir / "host-qt", hosting=True, profile=profile, flashes=flashes,
+        )
+        holder["app"] = app
         if not app.begin_startup_journey():
             _write_json(
                 work_dir / _READY_NAME,
@@ -429,15 +412,13 @@ def _native_host(work_dir: Path, profile: str) -> int:
         ready = _drain(qapp, lambda: _native_owner_ready(app), 40.0)
         owner = getattr(app, "_remote_invite_owner", None)
         if not ready or owner is None:
-            room = app._room_participant
-            failed = room.state is ArtRoomState.FAILED
             _write_json(
                 work_dir / _READY_NAME,
                 {
                     "ok": False,
                     "reason": "invite_unavailable",
                     "transport": "direct-stun",
-                    "host_failed": failed,
+                    "host_failed": app._room_participant.state is ArtRoomState.FAILED,
                     "failure_text": _sanitize_text(" ".join(flashes) or _hud_text(app)),
                 },
             )
@@ -447,17 +428,11 @@ def _native_host(work_dir: Path, profile: str) -> int:
         except Exception:
             _write_json(
                 work_dir / _READY_NAME,
-                {
-                    "ok": False,
-                    "reason": "clipboard_unavailable",
-                    "transport": "direct-stun",
-                },
+                {"ok": False, "reason": "clipboard_unavailable", "transport": "direct-stun"},
             )
             return 1
         _store_invite(work_dir, paste)
         paste = ""
-        share = bool(getattr(owner, "share_reaches_internet", False))
-        route = str(getattr(owner, "_share_route", "") or "")
         _write_json(
             work_dir / _READY_NAME,
             {
@@ -466,21 +441,12 @@ def _native_host(work_dir: Path, profile: str) -> int:
                 "peer_bound": True,
                 "art_start_key": ART_START if profile == "art" else "",
                 "transport": "direct-stun",
-                "share_reaches_internet": share,
-                "share_route": route,
+                "share_reaches_internet": bool(getattr(owner, "share_reaches_internet", False)),
+                "share_route": str(getattr(owner, "_share_route", "") or ""),
             },
         )
-        stop = work_dir / _STOP_NAME
-        deadline = time.monotonic() + 120.0
-        while time.monotonic() < deadline and not stop.exists():
-            qapp.processEvents()
-            time.sleep(0.05)
+        _pump_until_stop(qapp, work_dir, 120.0)
         return 0
-    finally:
-        if app is not None:
-            _shutdown_art(app)
-        for item in reversed(started):
-            item.stop()
 
 
 def _native_guest_connected(app, profile: str) -> bool:
@@ -507,9 +473,6 @@ def _native_state_exchanged(app, profile: str) -> bool:
 
 
 def _native_guest(work_dir: Path, profile: str) -> int:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication
-
     from core.session_conductor import ArtRoomState
     from webjam_qt.invitation_ingress import (
         InvitationIngressError,
@@ -519,106 +482,72 @@ def _native_guest(work_dir: Path, profile: str) -> int:
 
     paste = _read_invite(work_dir)
     flashes: list[str] = []
-    started = []
-    for item in _art_patches():
-        item.start()
-        started.append(item)
-    app = None
-    try:
+    with _art_runtime() as holder:
         try:
-            remote = parse_invitation_at_ingress(paste, source=InvitationSource.PASTE)
-        except InvitationIngressError as exc:
+            try:
+                remote = parse_invitation_at_ingress(paste, source=InvitationSource.PASTE)
+            except InvitationIngressError as exc:
+                paste = ""
+                return _guest_fail(
+                    work_dir, profile, "direct-stun", reason="ingress_rejected",
+                    extra={
+                        "failure_class": "honest_unreachable",
+                        "failure_text": _sanitize_text(str(exc)),
+                    },
+                )
             paste = ""
+            app, qapp = _prepare_controller(
+                work_dir / "guest-qt", hosting=False, profile=profile,
+                remote=remote, flashes=flashes,
+            )
+            holder["app"] = app
+            if not app.begin_startup_journey():
+                _write_json(
+                    work_dir / _RESULT_NAME,
+                    {
+                        "ok": False,
+                        "profile": profile,
+                        "guest_connected": False,
+                        "session_state_exchanged": False,
+                        "reason": "startup_refused",
+                        "transport": "direct-stun",
+                        "failure_text": _sanitize_text(_hud_text(app)),
+                    },
+                )
+                return 1
+            connected = _drain(qapp, lambda: _native_guest_connected(app, profile), 50.0)
+            exchanged = connected and _native_state_exchanged(app, profile)
+            room = app._room_participant
+            snapshot = getattr(getattr(app, "_remote_session", None), "snapshot", None)
+            error_code = getattr(getattr(snapshot, "error_code", None), "value", "")
+            failure_text = _sanitize_text(" ".join(flashes) or _hud_text(app))
+            if connected:
+                failure_class = ""
+            elif _honest_failure(failure_text) or room.state is ArtRoomState.FAILED:
+                failure_class = "honest_unreachable"
+            else:
+                failure_class = "unknown"
             _write_json(
                 work_dir / _RESULT_NAME,
                 {
-                    "ok": False,
+                    "ok": exchanged,
                     "profile": profile,
-                    "guest_connected": False,
-                    "session_state_exchanged": False,
-                    "reason": "ingress_rejected",
-                    "failure_class": "honest_unreachable",
-                    "failure_text": _sanitize_text(str(exc)),
+                    "guest_connected": connected,
+                    "session_state_exchanged": exchanged,
+                    "art_start_key": room.borrowed_start,
+                    "room_state": room.state.value,
+                    "error_code": error_code,
+                    "failure_class": failure_class,
+                    "failure_text": failure_text,
                     "transport": "direct-stun",
                 },
             )
-            return 1
-        paste = ""
-        app = _make_qt_app(
-            work_dir=work_dir / "guest-qt",
-            hosting=False,
-            profile=profile,
-            remote=remote,
-        )
-        app._launch_native_jamulus_for_startup = lambda *a, **k: None
-        app._start_hosted_server_for_startup = lambda *a, **k: None
-        _attach_flash_log(app, flashes)
-        qapp = QApplication.instance()
-        if not app.begin_startup_journey():
-            _write_json(
-                work_dir / _RESULT_NAME,
-                {
-                    "ok": False,
-                    "profile": profile,
-                    "guest_connected": False,
-                    "session_state_exchanged": False,
-                    "reason": "startup_refused",
-                    "transport": "direct-stun",
-                    "failure_text": _sanitize_text(_hud_text(app)),
-                },
+            return 0 if exchanged else 1
+        except (SessionTransferError, OSError, ValueError, TypeError):
+            return _guest_fail(
+                work_dir, profile, "direct-stun", reason="unreachable",
+                extra={"failure_class": "honest_unreachable"},
             )
-            return 1
-        connected = _drain(
-            qapp,
-            lambda: _native_guest_connected(app, profile),
-            50.0,
-        )
-        exchanged = connected and _native_state_exchanged(app, profile)
-        room = app._room_participant
-        snapshot = getattr(getattr(app, "_remote_session", None), "snapshot", None)
-        error_code = getattr(getattr(snapshot, "error_code", None), "value", "")
-        failure_text = _sanitize_text(" ".join(flashes) or _hud_text(app))
-        if connected:
-            failure_class = ""
-        elif _honest_failure(failure_text) or room.state is ArtRoomState.FAILED:
-            failure_class = "honest_unreachable"
-        else:
-            failure_class = "unknown"
-        _write_json(
-            work_dir / _RESULT_NAME,
-            {
-                "ok": exchanged,
-                "profile": profile,
-                "guest_connected": connected,
-                "session_state_exchanged": exchanged,
-                "art_start_key": room.borrowed_start,
-                "room_state": room.state.value,
-                "error_code": error_code,
-                "failure_class": failure_class,
-                "failure_text": failure_text,
-                "transport": "direct-stun",
-            },
-        )
-        return 0 if exchanged else 1
-    except (SessionTransferError, OSError, ValueError, TypeError):
-        _write_json(
-            work_dir / _RESULT_NAME,
-            {
-                "ok": False,
-                "profile": profile,
-                "guest_connected": False,
-                "session_state_exchanged": False,
-                "reason": "unreachable",
-                "failure_class": "honest_unreachable",
-                "transport": "direct-stun",
-            },
-        )
-        return 1
-    finally:
-        if app is not None:
-            _shutdown_art(app)
-        for item in reversed(started):
-            item.stop()
 
 
 def run_role(role: str, profile: str, work_dir: Path) -> int:

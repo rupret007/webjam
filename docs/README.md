@@ -93,8 +93,7 @@ and [follow-along first test](FOLLOW_ALONG_FIRST_TEST.md).
   credentialed ledger. **NOT RUN** is not a claim of failure; it means evidence
   has not yet been collected against an exact package.
 - [Cross-network Host/Join acceptance](CROSS-NETWORK-TEST.md) — optional Ubuntu
-  netns/NAT harness: same-LAN control (PASS), two-home Join without port
-  forwarding, and cone vs symmetric NAT against packaged direct-stun. Not a
+  netns/NAT harness (same-LAN PASS, two-home Join without port-forward). Not a
   required check.
 - [Dual-musician and exact multitrack proof lab](../DUAL_MUSICIAN_REHEARSAL_LAB.md)
   — deterministic host/guest, ARM/ACK, mono/stereo, repeat-lane, export, and

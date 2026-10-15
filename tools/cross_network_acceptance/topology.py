@@ -1,22 +1,12 @@
 """Linux netns + iptables MASQUERADE topology for two simulated homes.
 
-Cross-network: host behind NAT-A, guest behind NAT-B, a public internet
-namespace between them. No DNAT, REDIRECT, or port forwarding.
+Cross-network: host behind NAT-A, guest behind NAT-B, public internet
+between them. No DNAT, REDIRECT, or port forwarding.
 
-Same-LAN control: host and guest share one L2 with RFC1918 addresses.
-
-NAT modes for the two-home case:
-
-- masquerade: original restricted-cone MASQUERADE (v2 LAN expected FAIL).
-- cone: MASQUERADE plus a port-preserving UDP NETMAP reverse onto the
-  actual LAN host or guest address (/32). That is full cone / 1:1 for
-  the single endpoint, not a product port-forward of a service port.
-  Inbound guest traffic must land on 192.168.120.10, not a WAN host-bit
-  rewrite to 192.168.120.20.
-- symmetric: NAT-A uses MASQUERADE --random-fully (random port mapping);
-  NAT-B stays cone. A guest connect here is a fake connect and must fail
-  the job. These modes do not prove product cone-vs-symmetric NAT
-  behavior while packaged direct-stun discards TEST-NET-3 mappings.
+NAT modes: masquerade (restricted-cone); cone (MASQUERADE + UDP NETMAP onto
+the real LAN /32, not a WAN host-bit rewrite to 192.168.120.20); symmetric
+(NAT-A MASQUERADE --random-fully). These modes do not prove product cone-vs-symmetric
+NAT behavior while packaged direct-stun discards TEST-NET-3 mappings.
 """
 
 from __future__ import annotations
@@ -27,10 +17,6 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-# TEST-NET-3 documents a fake public internet. RFC1918 stays on the LANs so
-# ordinary v2 invites still mint a private address, which the other house
-# cannot route to.
-INET_NETWORK = "203.0.113.0/24"
 INET_ADDR = "203.0.113.1"
 NAT_A_WAN = "203.0.113.10"
 NAT_B_WAN = "203.0.113.20"
@@ -56,7 +42,7 @@ class TopologyError(RuntimeError):
     """The simulated networks could not be created or cleaned up."""
 
 
-def _bin(name: str) -> str:
+def required_bin(name: str) -> str:
     found = shutil.which(name)
     if found:
         return found
@@ -93,11 +79,7 @@ class AppliedTopology:
     host_ns: str
     guest_ns: str
     inet_ns: str | None
-    host_addr: str
-    guest_addr: str
     inet_addr: str | None
-    rendezvous_tcp: int | None
-    commands: tuple[tuple[str, ...], ...]
 
 
 def ns_names(prefix: str) -> dict[str, str]:
@@ -119,11 +101,7 @@ def _full_cone_inbound(spec: TopologySpec, side: str) -> bool:
 
 
 def cone_inbound_map_to(side: str) -> str:
-    """NETMAP destination for inbound UDP. Preserve the real LAN endpoint.
-
-    Mapping ``203.0.113.20/24`` onto ``192.168.120.0/24`` keeps WAN host
-    bits and delivers to 192.168.120.20, which is not the guest.
-    """
+    """NETMAP destination: real LAN endpoint, not 192.168.120.20."""
 
     if side == "a":
         return f"{HOST_ADDR}/32"
@@ -210,79 +188,25 @@ def setup_commands(spec: TopologySpec) -> list[list[str]]:
         ns(ns_name, sysctl, "-w", "net.ipv4.ip_forward=1")
         ns(ns_name, sysctl, "-w", "net.ipv4.conf.all.rp_filter=2")
         masquerade = [
-            iptables,
-            "-t",
-            "nat",
-            "-A",
-            "POSTROUTING",
-            "-s",
-            lan_net,
-            "-o",
-            wan_dev,
-            "-j",
-            "MASQUERADE",
+            iptables, "-t", "nat", "-A", "POSTROUTING",
+            "-s", lan_net, "-o", wan_dev, "-j", "MASQUERADE",
         ]
         if spec.nat_mode == "symmetric" and side == "a":
             masquerade.append("--random-fully")
         ns(ns_name, *masquerade)
+        ns(ns_name, iptables, "-A", "FORWARD", "-i", lan_dev, "-o", wan_dev, "-j", "ACCEPT")
         ns(
-            ns_name,
-            iptables,
-            "-A",
-            "FORWARD",
-            "-i",
-            lan_dev,
-            "-o",
-            wan_dev,
-            "-j",
-            "ACCEPT",
-        )
-        ns(
-            ns_name,
-            iptables,
-            "-A",
-            "FORWARD",
-            "-i",
-            wan_dev,
-            "-o",
-            lan_dev,
-            "-m",
-            "conntrack",
-            "--ctstate",
-            "ESTABLISHED,RELATED",
-            "-j",
-            "ACCEPT",
+            ns_name, iptables, "-A", "FORWARD", "-i", wan_dev, "-o", lan_dev,
+            "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT",
         )
         if _full_cone_inbound(spec, side):
             ns(
-                ns_name,
-                iptables,
-                "-t",
-                "nat",
-                "-A",
-                "PREROUTING",
-                "-i",
-                wan_dev,
-                "-p",
-                "udp",
-                "-j",
-                "NETMAP",
-                "--to",
-                cone_inbound_map_to(side),
+                ns_name, iptables, "-t", "nat", "-A", "PREROUTING", "-i", wan_dev,
+                "-p", "udp", "-j", "NETMAP", "--to", cone_inbound_map_to(side),
             )
             ns(
-                ns_name,
-                iptables,
-                "-A",
-                "FORWARD",
-                "-i",
-                wan_dev,
-                "-o",
-                lan_dev,
-                "-p",
-                "udp",
-                "-j",
-                "ACCEPT",
+                ns_name, iptables, "-A", "FORWARD", "-i", wan_dev, "-o", lan_dev,
+                "-p", "udp", "-j", "ACCEPT",
             )
 
     configure_nat(
@@ -318,33 +242,15 @@ def setup_commands(spec: TopologySpec) -> list[list[str]]:
 def netem_commands(spec: TopologySpec) -> list[list[str]]:
     if spec.case != "cross-network" or not spec.netem:
         return []
-    ip = "ip"
-    tc = "tc"
     names = ns_names(spec.prefix)
     p = spec.prefix
-    cmds: list[list[str]] = []
-    for nat, wan in ((names["nat_a"], f"{p}ai"), (names["nat_b"], f"{p}bi")):
-        cmds.append(
-            [
-                ip,
-                "netns",
-                "exec",
-                nat,
-                tc,
-                "qdisc",
-                "add",
-                "dev",
-                wan,
-                "root",
-                "netem",
-                "delay",
-                NETEM_DELAY,
-                NETEM_JITTER,
-                "loss",
-                NETEM_LOSS,
-            ]
-        )
-    return cmds
+    return [
+        [
+            "ip", "netns", "exec", nat, "tc", "qdisc", "add", "dev", wan,
+            "root", "netem", "delay", NETEM_DELAY, NETEM_JITTER, "loss", NETEM_LOSS,
+        ]
+        for nat, wan in ((names["nat_a"], f"{p}ai"), (names["nat_b"], f"{p}bi"))
+    ]
 
 
 def assert_no_port_forward(commands: list[list[str]]) -> None:
@@ -356,10 +262,10 @@ def assert_no_port_forward(commands: list[list[str]]) -> None:
 
 def _resolve(commands: list[list[str]]) -> list[list[str]]:
     mapping = {
-        "ip": _bin("ip"),
-        "iptables": _bin("iptables"),
-        "tc": _bin("tc"),
-        "sysctl": _bin("sysctl"),
+        "ip": required_bin("ip"),
+        "iptables": required_bin("iptables"),
+        "tc": required_bin("tc"),
+        "sysctl": required_bin("sysctl"),
     }
     resolved: list[list[str]] = []
     for argv in commands:
@@ -379,13 +285,6 @@ def stun_override_hosts_text() -> str:
 
 
 def install_stun_name_override(spec: TopologySpec) -> None:
-    """Point #372's compiled STUN names at the public-ns STUN server.
-
-    PR #372 has no STUN env/config hook: stunServers is compiled in
-    transport/internal/directstun/path.go and the sidecar is started with
-    an empty environment. Packaged apps never see these netns hosts files.
-    """
-
     if spec.case != "cross-network":
         return
     body = stun_override_hosts_text()
@@ -415,23 +314,15 @@ def apply_topology(spec: TopologySpec) -> AppliedTopology:
     except subprocess.CalledProcessError:
         cleanup_topology(spec)
         raise TopologyError("Could not create the simulated networks.") from None
-    host_addr = HOST_ADDR
-    guest_addr = GUEST_LAN if spec.case == "same-lan" else GUEST_CROSS
     inet_ns = None if spec.case == "same-lan" else names["inet"]
     inet_addr = None if spec.case == "same-lan" else INET_ADDR
-    rendezvous = None if spec.case == "same-lan" else RENDEZVOUS_TCP
-    applied = AppliedTopology(
+    return AppliedTopology(
         spec=spec,
         host_ns=names["host"],
         guest_ns=names["guest"],
         inet_ns=inet_ns,
-        host_addr=host_addr,
-        guest_addr=guest_addr,
         inet_addr=inet_addr,
-        rendezvous_tcp=rendezvous,
-        commands=tuple(tuple(item) for item in commands),
     )
-    return applied
 
 
 def apply_netem(spec: TopologySpec) -> bool:
@@ -439,15 +330,10 @@ def apply_netem(spec: TopologySpec) -> bool:
     if not commands:
         return False
     try:
-        loader = _bin("modprobe")
+        loader = required_bin("modprobe")
     except TopologyError:
         loader = shutil.which("modprobe") or "/usr/sbin/modprobe"
-    subprocess.run(
-        [loader, "sch_netem"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    subprocess.run([loader, "sch_netem"], check=False, capture_output=True, text=True)
     try:
         for argv in _resolve(commands):
             subprocess.run(argv, check=True, capture_output=True, text=True)
@@ -457,7 +343,7 @@ def apply_netem(spec: TopologySpec) -> bool:
 
 
 def cleanup_topology(spec: TopologySpec) -> None:
-    ip = _bin("ip")
+    ip = required_bin("ip")
     names = ns_names(spec.prefix)
     for name in names.values():
         subprocess.run(

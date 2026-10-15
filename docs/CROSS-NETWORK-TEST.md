@@ -1,32 +1,29 @@
 # Cross-network Host/Join acceptance
 
-This is the automated proof that a guest in **another house** can join a
-WebJam host **without port forwarding**. It runs on GitHub-hosted Ubuntu
-runners using Linux network namespaces and iptables MASQUERADE.
+Optional Ubuntu proof that a guest in another house can join a WebJam host
+**without port forwarding**. Uses Linux netns and iptables MASQUERADE.
 
 It is **not** a required check. Do not add `Cross-network acceptance` to
-branch protection. The required `WebJam CI` workflow is unchanged.
+branch protection. `WebJam CI` is unchanged.
 
-## What it proves
+## Cases
 
-Two cases:
+| Case | Topology | Expected today |
+| --- | --- | --- |
+| Same-LAN control | Host and guest on one RFC1918 L2, no NAT | **PASS** |
+| Cross-network | Host NAT-A, guest NAT-B, public internet, **no port forward** | **FAIL** until Internet Join |
 
-| Case | Topology | Expected today | When remote sessions ship |
-| --- | --- | --- | --- |
-| Same-LAN control | Host and guest on one RFC1918 L2, no NAT | **PASS** (ordinary v2 LAN) | Still PASS |
-| Cross-network | Host behind NAT-A, guest behind NAT-B, public internet between them, **no port forward** | **FAIL** | **PASS** |
-
-Both cases drive the existing offscreen/headless Host and Join paths:
+Both drive existing offscreen/headless Host and Join:
 
 - **Art:** Qt conductor (`QT_QPA_PLATFORM=offscreen`) → `start_lan_host` /
-  `start_lan_guest`. The guest must reach `ArtRoomState.CONNECTED` and observe
+  `start_lan_guest`. Guest must reach `ArtRoomState.CONNECTED` and observe
   the host's `paint_along` start.
-- **Music:** headless `HostPeerSession` / `GuestPeerSession` control plane
-  (Linux Music Host stays ghosted at the product door). The guest must enroll
-  and read `creator_profile_key=music`.
+- **Music:** headless `HostPeerSession` / `GuestPeerSession` (Linux Music Host
+  stays ghosted at the product door). Guest must enroll with
+  `creator_profile_key=music`.
 
-Neither case starts Jamulus audio, Webex, Drawpile, or a microphone. Session
-**state** is the assertion, not audibility.
+Neither starts Jamulus audio, Webex, Drawpile, or a microphone. Session
+**state** is the assertion.
 
 ## Topology
 
@@ -48,56 +45,33 @@ Cross-network
   guest 192.168.120.10
 ```
 
-The simulated WAN uses TEST-NET-3 (`203.0.113.0/24`). Home LANs stay RFC1918
-so today's v2 invite still names a private address. Optional `tc netem`
-(`100ms ± 50ms`, `1%` loss) sits on each NAT WAN.
+WAN is TEST-NET-3 (`203.0.113.0/24`); home LANs stay RFC1918 so v2 invites
+still name a private address. Optional `tc netem` (`100ms ± 50ms`, `1%` loss)
+sits on each NAT WAN.
 
 The harness asserts that **both homes can reach the public rendezvous**
 (outbound NAT works) while the guest **cannot** TCP to the host's advertised
-private invite endpoint. That split is how we tell a broken topology from
-the product gap.
+private invite endpoint. That split distinguishes a broken topology from the
+product gap. v2 Host mints a literal RFC1918 `webjam://join?…` and refuses
+public IPs; this harness never adds a port-forward. Until ordinary Host/Join
+uses the public-ns rendezvous/relay (`203.0.113.1:47131/47132`) on master tip,
+cross-network stays FAIL.
 
-## Why it fails today
+## Receipts
 
-Ordinary Host mints a v2 `webjam://join?…` with a **literal RFC1918 IPv4**,
-Jamulus UDP 22124, and plaintext HTTP on an ephemeral peer port. v2 **refuses**
-public IPs so that recording plane never leaves the LAN. Another house cannot
-route to `192.168.110.10`, and this harness never adds a port-forward.
-
-The compiled v3 profile is still **loopback-only** (`reference-local`).
-Changing a Python string cannot turn Internet Join on. See
-[REMOTE-SESSIONS-PLAN.md](REMOTE-SESSIONS-PLAN.md) in usability PR
-[#372](https://github.com/rupret007/webjam/pull/372) (agent `bc-2df62653`),
-[ADR 0001](adr/0001-remote-session-transport.md), and
-[the remote-joining decision](plans/webjam-remote-joining-decision.md).
-
-## What will make cross-network PASS
-
-Finish ordinary Host/Join on the existing v3 sidecar against a reachable
-rendezvous + exact-pair UDP relay, with **no musician port-forward**:
-
-1. An immutable public profile (not `reference-local`) pinning DNS, TLS, and
-   relay host/port. Invites still carry only the profile id.
-2. Native TLS 1.3 control dial and a routable exact-pair UDP relay client.
-   Jamulus stays loopback-bound on each computer.
-3. Ordinary Host uses that profile without `WEBJAM_ENABLE_REFERENCE_LOCAL`.
-   Unavailable service fails honestly; it must not fall back to public v2 HTTP
-   or public Jamulus.
-4. In this harness, run the same rendezvous/relay **in the public internet
-   namespace** (`203.0.113.1:47131/47132`) instead of loopback. Both NATs
-   already allow outbound TCP/UDP. No DNAT is added.
-
-When the guest connects and exchanges session state on **master tip**, the
-harness writes a conductor-consumable PASS file:
+JSON (`<sha>-<case>.json`) is always written. The `.PASS` sidecar is written
+**only** on PASS. A later FAIL for the same SHA/case **removes** any
+stale `.PASS` so the conductor cannot consume leftover success evidence.
+Receipts never contain invitations, tokens, hosts, or peer ports.
 
 ```
 webjam.cross-network-acceptance sha=<40-character-sha> status=PASS case=cross-network
 ```
 
-JSON receipts (`<sha>-<case>.json`) are always written. The `.PASS` sidecar is
-written **only** on PASS. A later FAIL for the same SHA/case **removes** any
-stale `.PASS` so the conductor cannot consume leftover success evidence.
-Receipts never contain invitations, tokens, hosts, or peer ports.
+`--expected-status FAIL` keeps the GitHub job green only when that FAIL is an
+honest completed guest result (`harness_ok`, no timeout/crash/missing result,
+no fake connect). Unexpected PASS, a broken harness, or a fake connect still
+exits 1. Assertions are unchanged: the receipt stays FAIL.
 
 ## Run locally (Linux)
 
@@ -119,18 +93,13 @@ PRODUCT=/path/to/pr-372
 SIDECAR=out/cross-network-acceptance/webjam-fabric
 .venv/bin/python -m tools.cross_network_acceptance build-sidecar \
   --product-root "$PRODUCT" --output "$SIDECAR"
-sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
-  --case cross-network --nat cone --profiles art \
-  --product-root "$PRODUCT" --transport-binary "$SIDECAR" \
-  --output-dir out/cross-network-acceptance --no-netem --keep-workdir
-sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
-  --case cross-network --nat cone --profiles music \
-  --product-root "$PRODUCT" --transport-binary "$SIDECAR" \
-  --output-dir out/cross-network-acceptance --no-netem --keep-workdir
-sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
-  --case cross-network --nat symmetric --profiles art \
-  --product-root "$PRODUCT" --transport-binary "$SIDECAR" \
-  --output-dir out/cross-network-acceptance --no-netem --keep-workdir
+for args in "--nat cone --profiles art" "--nat cone --profiles music" \
+            "--nat symmetric --profiles art"; do
+  sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
+    --case cross-network $args \
+    --product-root "$PRODUCT" --transport-binary "$SIDECAR" \
+    --output-dir out/cross-network-acceptance --no-netem --keep-workdir
+done
 ```
 
 `--nat cone` keeps iptables MASQUERADE and adds a UDP NETMAP reverse onto the
@@ -145,7 +114,7 @@ connect there is a **fake connect** and must fail the job even under
 These modes do **not** prove product cone-versus-symmetric NAT behavior while
 packaged direct-stun discards TEST-NET-3 (`203.0.113.0/24`) STUN mappings.
 Gather then advertises local-only candidates, so cone and symmetric fail for
-the same reason. The harness still records the topology, STUN reachability,
+the same reason. The harness still records topology, STUN reachability,
 completed guest results, and fake-connect detection.
 
 ## Test-only STUN override (never in packaged builds)
@@ -155,18 +124,15 @@ PR #372 compiles STUN servers in `transport/internal/directstun/path.go`
 product env/config hook: `webjam-fabric` accepts no argv, and
 `TransportProcess` starts it with an empty environment (`env: {}`).
 
-This harness therefore uses a **test-only** name override: `/etc/netns/<ns>/hosts`
+This harness uses a **test-only** name override: `/etc/netns/<ns>/hosts`
 maps those compiled names to `203.0.113.1`, where a real RFC 5389 Binding
 server listens. The files exist only while the namespaces exist. Packaged
-builds never read them, and the override is inactive unless this privileged
-harness created the netns.
+builds never read them.
 
-Do not add a packaged STUN URL setting. Pointing Host/Join at a lab STUN
-server is a harness concern only.
+Do not add a packaged STUN URL setting. macOS and Windows cannot create this
+topology; use the Ubuntu workflow.
 
-macOS and Windows cannot create this topology; use the Ubuntu workflow.
-
-Unit tests that do **not** need privileges (receipt format, no-DNAT plan):
+Unit tests (no privileges):
 
 ```bash
 QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest \
@@ -176,30 +142,19 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest \
 ## Workflow
 
 `.github/workflows/cross-network-acceptance.yml` on GitHub-hosted
-`ubuntu-latest`:
+`ubuntu-latest`: `workflow_dispatch`, every push to `master`, and pull
+requests that touch networking paths. Two jobs: **Same-LAN control** (must
+PASS) and **Cross-network (two NATs)** (receipt **FAIL** until remote
+sessions work). The two-NAT job uses `--expected-status FAIL` so an honest
+FAIL is a green step. On `master` that job is report-only
+(`continue-on-error`). Networking PRs must keep it green (honest FAIL today;
+flip `--expected-status` to PASS when Internet Join actually connects).
 
-- `workflow_dispatch`
-- every push to `master`
-- pull requests that touch networking paths (invite, session transfer,
-  rendezvous, LAN guest, transport, this harness)
-- two jobs: **Same-LAN control** (must PASS; the job is red if it does not)
-  and **Cross-network (two NATs)** (receipt is **FAIL** until remote sessions
-  work)
-- the two-NAT GitHub job uses `--expected-status FAIL` so an honest FAIL
-  (`harness_ok` from a completed guest result, no timeout/crash/missing
-  result, no fake connect) is a green step. Unexpected PASS, a broken
-  harness, or a fake connect still exits 1. Assertions are unchanged: the
-  receipt stays FAIL and no `.PASS` file is written (a later FAIL also
-  deletes a stale `.PASS` for that SHA/case)
-- on `master` the two-NAT job is report-only (`continue-on-error`). Pull
-  requests that change networking must keep the job green (honest FAIL today;
-  flip `--expected-status` to PASS when Internet Join actually connects)
-- runner setup: netns probe (`ip netns add`), `linux-modules-extra-$(uname -r)`
-  plus `modprobe sch_netem`, and `coturn` (host systemd unit stopped/masked;
-  `turnserver` runs inside the public namespace, with the Python Binding
-  server as fallback). Receipts are chowned back to the runner so artifact
-  upload can read the 0600 files
-- not part of `WebJam CI`; not a required check
+Runner setup: netns probe (`ip netns add`), `linux-modules-extra-$(uname -r)`
+plus `modprobe sch_netem`, and `coturn` (host unit stopped/masked; `turnserver`
+in the public namespace, Python Binding fallback). Receipts are chowned back
+to the runner so artifact upload can read the 0600 files. Not part of
+`WebJam CI`.
 
 To record a conductor PASS against master tip after Internet Host/Join lands,
 run **Cross-network acceptance** with `workflow_dispatch` on that SHA and
@@ -212,4 +167,4 @@ receipt.
 - Invitations stay in a 0600 file on the shared disk, never in argv, env, logs,
   or receipts.
 - Physical two-home Internet Join remains **NOT RUN** until observed on real
-  ISPs. This harness is the automated stand-in, not that row.
+  ISPs.

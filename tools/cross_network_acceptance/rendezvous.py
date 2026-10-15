@@ -1,8 +1,7 @@
-"""Placeholder rendezvous / relay / STUN listeners in the public namespace.
+"""Placeholder rendezvous / relay listeners in the public namespace.
 
 Ordinary Host/Join does not use these endpoints today. They exist so the
-harness can prove both homes can reach the simulated internet, and so a
-future v3 profile can bind here without changing the topology.
+harness can prove both homes can reach the simulated internet.
 """
 
 from __future__ import annotations
@@ -10,7 +9,6 @@ from __future__ import annotations
 import select
 import socket
 import sys
-import time
 
 
 def serve(bind_host: str, tcp_port: int, udp_ports: tuple[int, ...]) -> None:
@@ -40,38 +38,6 @@ def serve(bind_host: str, tcp_port: int, udp_ports: tuple[int, ...]) -> None:
     finally:
         for item in sockets:
             item.close()
-
-
-def probe_tcp(host: str, port: int, *, timeout_s: float = 2.0) -> bool:
-    try:
-        with socket.create_connection((host, port), timeout=timeout_s) as conn:
-            conn.settimeout(timeout_s)
-            conn.recv(8)
-        return True
-    except OSError:
-        return False
-
-
-def probe_udp(host: str, port: int, *, timeout_s: float = 2.0) -> bool:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(timeout_s)
-    try:
-        sock.sendto(b"hi", (host, port))
-        sock.recvfrom(16)
-        return True
-    except OSError:
-        return False
-    finally:
-        sock.close()
-
-
-def wait_tcp(host: str, port: int, *, timeout_s: float = 5.0) -> bool:
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        if probe_tcp(host, port, timeout_s=0.4):
-            return True
-        time.sleep(0.1)
-    return False
 
 
 def main(argv: list[str] | None = None) -> int:
