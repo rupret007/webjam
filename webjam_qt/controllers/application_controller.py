@@ -7964,18 +7964,12 @@ class ApplicationController(QObject):
     def _copy_direct_stun_guest_reply_if_ready(self) -> None:
         if bool(getattr(self, "_direct_stun_guest_reply_copied", False)):
             return
-        runtime = getattr(self, "_remote_session", None)
-        raw = bytes(getattr(runtime, "guest_reply", b"") or b"")
-        if not raw:
+        line = self._guest_reply_delivery_text()
+        if not line:
             return
         from PySide6.QtWidgets import QApplication
 
-        from core.direct_stun_invite import encode_guest_reply_line
-
-        try:
-            QApplication.clipboard().setText(encode_guest_reply_line(raw))
-        except ValueError:
-            return
+        QApplication.clipboard().setText(line)
         self._direct_stun_guest_reply_copied = True
         self.window.flash_message(
             "Send this reply to the host. Keep this window open.",
