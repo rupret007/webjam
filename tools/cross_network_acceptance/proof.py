@@ -146,7 +146,9 @@ def run_peer(work_dir: Path, role: str) -> int:
 
     dests = cfg.get("shim_dest")
     dest = str((dests.get(role) if isinstance(dests, dict) else dests) or "")
-    shim = LoopbackShim("127.0.0.1", dest) if dest else None
+    binds = cfg.get("binds") if isinstance(cfg.get("binds"), dict) else {}
+    lan = str(binds.get(role) or "")
+    shim = LoopbackShim("127.0.0.1", dest, source_host=lan) if dest else None
     inbox: list[str] = []
 
     def on_event(event: Any) -> None:

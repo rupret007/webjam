@@ -25,13 +25,16 @@ _UDP_MAX = 2048
 class LoopbackShim:
     def __init__(
         self, listen_host: str, dest_host: str, count_path: Path | None = None,
+        source_host: str = "",
     ) -> None:
         self.listen_host = listen_host
         self.dest_host = dest_host
+        self.source_host = source_host
         self.count_path = count_path
         self.bytes = 0
         self._stop = threading.Event()
         self._lock = threading.Lock()
+        self._udp_lock = threading.Lock()
         self._socks: list[socket.socket] = []
         self._threads: list[threading.Thread] = []
 
@@ -43,8 +46,9 @@ class LoopbackShim:
         tcp.settimeout(0.5)
         udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        udp.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256 * 1024)
+        udp.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 256 * 1024)
         udp.bind((self.listen_host, RENDEZVOUS_UDP))
-        udp.settimeout(0.5)
         self._socks.extend((tcp, udp))
         self._spawn(self._accept_tcp, tcp)
         self._spawn(self._udp_outer, udp)
@@ -127,27 +131,32 @@ class LoopbackShim:
                 pass
 
     def _udp_outer(self, outer: socket.socket) -> None:
-        inner_host = "127.0.0.1" if self.dest_host == "127.0.0.1" else "0.0.0.0"
+        if self.dest_host == "127.0.0.1":
+            inner_host = "127.0.0.1"
+        else:
+            inner_host = self.source_host or "0.0.0.0"
         dest = (self.dest_host, RENDEZVOUS_UDP)
         table: dict[tuple[str, int], socket.socket] = {}
         while not self._stop.is_set():
+            ready, _, _ = select.select([outer], [], [], 0.5)
+            if not ready:
+                continue
             try:
                 payload, remote = outer.recvfrom(_UDP_MAX)
-            except TimeoutError:
-                continue
             except OSError:
                 return
             self._add(len(payload))
             inner = table.get(remote)
             if inner is None:
                 inner = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                inner.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256 * 1024)
                 inner.bind((inner_host, 0))
-                inner.settimeout(0.5)
+                inner.connect(dest)
                 self._socks.append(inner)
                 table[remote] = inner
                 self._spawn(self._udp_inner, inner, outer, remote)
             try:
-                inner.sendto(payload, dest)
+                inner.send(payload)
             except OSError:
                 continue
 
@@ -155,17 +164,21 @@ class LoopbackShim:
         self, inner: socket.socket, outer: socket.socket, remote: tuple[str, int],
     ) -> None:
         while not self._stop.is_set():
-            try:
-                payload, _addr = inner.recvfrom(_UDP_MAX)
-            except TimeoutError:
+            ready, _, _ = select.select([inner], [], [], 0.5)
+            if not ready:
                 continue
+            try:
+                payload = inner.recv(_UDP_MAX)
             except OSError:
+                return
+            if not payload:
                 return
             self._add(len(payload))
             try:
-                outer.sendto(payload, remote)
+                with self._udp_lock:
+                    outer.sendto(payload, remote)
             except OSError:
-                return
+                continue
 
 
 def serve(listen_host: str, dest_host: str, count_path: Path | None) -> int:

@@ -10,7 +10,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from tools.cross_network_acceptance import PROOF_PORT, HarnessError
+from tools.cross_network_acceptance import HarnessError
 
 COMPILED_STUN_NAMES = ("stun.cloudflare.com", "stun.l.google.com")
 NAT_MODES = frozenset({"cone", "symmetric"})
@@ -155,7 +155,7 @@ def setup_commands(spec: TopologySpec) -> list[list[str]]:
 
     def configure_nat(
         ns_name: str, wan_dev: str, wan_addr: str, lan_dev: str, lan_addr: str,
-        lan_net: str, inside: str,
+        lan_net: str,
     ) -> None:
         ns(ns_name, ip, "link", "set", "lo", "up")
         ns(ns_name, ip, "addr", "add", f"{wan_addr}/24", "dev", wan_dev)
@@ -175,9 +175,6 @@ def setup_commands(spec: TopologySpec) -> list[list[str]]:
            "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT")
         ns(ns_name, iptables, "-A", "FORWARD", "-i", lan_dev, "-o", wan_dev, "-j", "ACCEPT")
         if spec.nat_mode == "cone":
-            ns(ns_name, iptables, "-t", "nat", "-A", "POSTROUTING", "-s", inside,
-               "-p", "udp", "--sport", str(PROOF_PORT), "-o", wan_dev, "-j", "SNAT",
-               "--to-source", f"{wan_addr}:{PROOF_PORT}")
             ns(ns_name, iptables, "-t", "nat", "-A", "POSTROUTING", "-s", lan_net,
                "-o", wan_dev, "-j", "SNAT", "--to-source", wan_addr)
         else:
@@ -185,9 +182,9 @@ def setup_commands(spec: TopologySpec) -> list[list[str]]:
                "-o", wan_dev, "-j", "SNAT", "--to-source", wan_addr, "--random-fully")
 
     configure_nat(names["nat_a"], f"{p}ai", a["nat_a_wan"], f"{p}al", a["nat_a_lan"],
-                  a["lan_a"], a["host"])
+                  a["lan_a"])
     configure_nat(names["nat_b"], f"{p}bi", a["nat_b_wan"], f"{p}bl", a["nat_b_lan"],
-                  a["lan_b"], a["guest_cross"])
+                  a["lan_b"])
     addr_up(names["host"], f"{p}ha", f"{a['host']}/24", a["nat_a_lan"])
     addr_up(names["guest"], f"{p}hb", f"{a['guest_cross']}/24", a["nat_b_lan"])
     return cmds
