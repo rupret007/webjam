@@ -32,7 +32,8 @@ application-menu entry, .desktop launcher, or system icon. Start the included
 WebJam executable from this folder; the running application uses WebJam's
 continuous trefoil identity in its own windows.
 
-Physical cross-platform joining remains NOT RUN.
+The released v0.27.2 Linux and Windows packages can join a jam hosted from
+the macOS build; physical cross-platform joining remains NOT RUN.
 Music Host remains disabled on this platform; this
 package does not claim to provide the macOS-only managed server.
 Art Host and Join work here. Friends in another house can Join. Keep
