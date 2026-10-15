@@ -1,5 +1,8 @@
 # First hands-on test
 
+Creators following the product, not this pilot script, should use the
+[creator guide](../USER_GUIDE.md).
+
 Use the identified draft build and keep its `SOURCE-AND-HASHES.json` with your
 results. Start a copy of [the pilot record](FOLLOW_ALONG_PILOT_RECORD.md).
 You need two people, headphones, a YouTube lesson and a Webex meeting. Start

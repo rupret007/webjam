@@ -99,7 +99,10 @@ verdict, and checking free storage does not reserve disk space.
 When storage fails during a session, repair free space or write access and
 choose **Try Again**. Host takes stay in WebJam's host folder; Recording Setup
 does not offer a different folder while hosting, and **Show Folder** opens that
-location. When you are not hosting, changing the Takes folder requires ending
+location. On a Mac host that folder is
+`~/Library/Application Support/WebJam/JamulusServer/Recordings`. Windows and
+Linux hosts default to `~/WebJam Recordings`. Guests often see
+`~/Music/WebJam Takes`. See the [creator guide](USER_GUIDE.md#record-session). When you are not hosting, changing the Takes folder requires ending
 the session first, choosing the folder in **Recording Setup**, and starting
 again. A retry
 builds a new take plan from the current participants and inputs before asking
