@@ -15,6 +15,8 @@
  * of IPs cannot drain the global cap. Rate-only charges (failed
  * upgrades) may record a prefix for the new-bucket check, but inserts
  * are capped per UTC day and already-known prefixes are not rewritten.
+ * Each rate-only allow still rewrites ipBuckets and counts as one daily
+ * row write so rotating failed upgrades cannot persist unboundedly.
  */
 
 export const DEFAULT_DAILY_REQUESTS = 10_000;
@@ -235,6 +237,12 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits, charge = "
       return { allow: false, status: 429, code: "cap" };
     }
   }
+  if (rateOnly) {
+    nextWrites += 1;
+    if (nextWrites > limits.dailyRowWrites) {
+      return { allow: false, status: 429, code: "cap" };
+    }
+  }
   if (countRate && isNew) {
     state.newBuckets[netKey] = (Number(state.newBuckets[netKey]) || 0) + 1;
   }
@@ -253,9 +261,12 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits, charge = "
     record.requests = prefixRequests;
     record.rowWrites = prefixWrites;
     record.gbS = prefixGbS;
-  } else if (rateOnly && isNew) {
-    touchKnownPrefix(state.knownPrefixes, prefix, nowMs);
-    state.ratePrefixWrites = nextRatePrefixWrites;
+  } else if (rateOnly) {
+    if (isNew) {
+      touchKnownPrefix(state.knownPrefixes, prefix, nowMs);
+      state.ratePrefixWrites = nextRatePrefixWrites;
+    }
+    state.rowWrites = nextWrites;
   }
   return { allow: true, status: 200, code: "ok" };
 }
@@ -333,14 +344,21 @@ export class MailboxQuota {
       const stored = await this.ctx.storage.get(storageKey);
       const state = stored && typeof stored === "object" ? stored : emptyQuotaState();
       const env = this.env ?? globalThis.WEBJAM_QUOTA_ENV ?? {};
+      const limits = quotaLimits(env, scope);
       const decision = applyQuota(state, {
         ip,
         nowMs,
         rowWrites: writes,
-        limits: quotaLimits(env, scope),
+        limits,
         charge,
       });
       if (decision.allow) {
+        if (charge === "rate" && (Number(state.rowWrites) || 0) > limits.dailyRowWrites) {
+          return new Response(JSON.stringify({ error: "cap" }), {
+            status: 429,
+            headers: { "content-type": "application/json", "cache-control": "no-store" },
+          });
+        }
         await this.ctx.storage.put(storageKey, state);
       }
       return new Response(JSON.stringify({ error: decision.code }), {

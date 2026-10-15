@@ -22,6 +22,7 @@ import {
   DEFAULT_RATE_LIMIT,
   emptyQuotaState,
   ESTIMATED_GB_S_PER_REQUEST,
+  MailboxQuota,
   MAX_IP_BUCKETS,
   prefix48,
   prefixNet,
@@ -563,6 +564,86 @@ test("a successful non-101 mailbox operation with an Upgrade header is charged d
   assert.equal((await blocked.json()).error, "cap");
 });
 
+test("Upgrade plus POST or DELETE cannot mutate after the daily cap is exhausted", async () => {
+  resetWorkerState();
+  let forwarded = 0;
+  const inner = memoryMailbox();
+  const mailboxFetch = async (request, mailbox, nowMs) => {
+    forwarded += 1;
+    return inner(request, mailbox, nowMs);
+  };
+  const env = { MAILBOX_DAILY_REQUESTS: "1" };
+  const drained = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(drained.status, 204);
+  assert.equal(forwarded, 1);
+
+  const posted = await handleRequest(
+    mailboxRequest("POST", "answer", { payload: PAYLOAD }, {
+      "CF-Connecting-IP": "203.0.113.10",
+      Upgrade: "websocket",
+    }),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(posted.status, 429);
+  assert.equal((await posted.json()).error, "cap");
+  assert.equal(forwarded, 1);
+
+  resetWorkerState();
+  const leaked = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs: 2 },
+  );
+  assert.equal(leaked.status, 204);
+
+  const seeded = memoryMailbox();
+  resetWorkerState();
+  forwarded = 0;
+  const seedFetch = async (request, mailbox, nowMs) => {
+    forwarded += 1;
+    return seeded(request, mailbox, nowMs);
+  };
+  const roomy = { MAILBOX_DAILY_REQUESTS: "2" };
+  const stored = await handleRequest(
+    mailboxRequest("POST", "answer", { payload: PAYLOAD }),
+    roomy,
+    { mailboxFetch: seedFetch, nowMs: 3 },
+  );
+  assert.equal(stored.status, 201);
+  const filled = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    roomy,
+    { mailboxFetch: seedFetch, nowMs: 3 },
+  );
+  assert.equal(filled.status, 200);
+  assert.equal(forwarded, 2);
+  const deleted = await handleRequest(
+    mailboxRequest("DELETE", "answer", undefined, {
+      "CF-Connecting-IP": "203.0.113.10",
+      Upgrade: "websocket",
+    }),
+    roomy,
+    { mailboxFetch: seedFetch, nowMs: 3 },
+  );
+  assert.equal(deleted.status, 429);
+  assert.equal((await deleted.json()).error, "cap");
+  assert.equal(forwarded, 2);
+
+  resetWorkerState();
+  const remaining = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    roomy,
+    { mailboxFetch: seedFetch, nowMs: 4 },
+  );
+  assert.equal(remaining.status, 200);
+  assert.deepEqual(await remaining.json(), { payload: PAYLOAD });
+});
+
 test("failed upgrades cannot grow or rewrite known-prefix state without a daily bound", () => {
   const state = emptyQuotaState();
   const limits = {
@@ -610,6 +691,78 @@ test("failed upgrades cannot grow or rewrite known-prefix state without a daily 
   assert.equal(repeat.allow, true);
   assert.equal(state.knownPrefixes["203.0.113.10"].at, storedAt);
   assert.equal(Object.keys(state.knownPrefixes).length, 2);
+});
+
+test("rate-only allows count toward the daily row-write cap", () => {
+  const state = emptyQuotaState();
+  const limits = {
+    ...LIMITS,
+    dailyRowWrites: 2,
+    perMinute: 100,
+    newBucketsPerMinute: 100,
+  };
+  assert.equal(
+    applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits, charge: "rate" }).allow,
+    true,
+  );
+  assert.equal(
+    applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits, charge: "rate" }).allow,
+    true,
+  );
+  const denied = applyQuota(state, {
+    ip: "203.0.113.10",
+    nowMs: 1,
+    limits,
+    charge: "rate",
+  });
+  assert.equal(denied.allow, false);
+  assert.equal(denied.status, 429);
+  assert.equal(denied.code, "cap");
+  assert.equal(state.rowWrites, 2);
+});
+
+test("MailboxQuota fails closed before a rate-only storage put that would exceed daily row writes", async () => {
+  let puts = 0;
+  const data = new Map();
+  const quota = new MailboxQuota(
+    {
+      storage: {
+        async get(key) {
+          return data.get(key);
+        },
+        async put(key, value) {
+          puts += 1;
+          data.set(key, value);
+        },
+      },
+    },
+    {
+      MAILBOX_DAILY_ROW_WRITES: "2",
+      MAILBOX_RATE_LIMIT_PER_MINUTE: "100",
+      MAILBOX_NEW_BUCKETS_PER_MINUTE: "100",
+    },
+  );
+  const check = (nowMs) =>
+    quota.fetch(
+      new Request("https://quota/check", {
+        method: "POST",
+        headers: {
+          "CF-Connecting-IP": "203.0.113.10",
+          "X-WebJam-Now": String(nowMs),
+          "X-WebJam-Row-Writes": "0",
+          "X-WebJam-Quota-Scope": "mailbox",
+          "X-WebJam-Quota-Charge": "rate",
+        },
+      }),
+    );
+  const first = await check(1);
+  const second = await check(1);
+  const third = await check(1);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(third.status, 429);
+  assert.equal((await third.json()).error, "cap");
+  assert.equal(puts, 2);
 });
 
 test("http mailbox requests are rejected", async () => {

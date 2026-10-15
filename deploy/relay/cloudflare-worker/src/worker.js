@@ -167,7 +167,9 @@ async function handleMailbox(request, env, deps, mailbox, nowMs) {
   }
   const writes =
     request.method === "POST" || request.method === "DELETE" ? 1 : 0;
-  const websocket = isWebsocketUpgrade(request);
+  // Only a non-mutating handshake must accept before the daily charge.
+  // POST/DELETE that merely carry Upgrade still mutate if they run first.
+  const websocket = isWebsocketUpgrade(request) && writes === 0;
   const denied = await enforceAccess(
     request,
     env,
