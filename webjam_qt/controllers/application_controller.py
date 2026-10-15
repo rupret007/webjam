@@ -8002,7 +8002,8 @@ class ApplicationController(QObject):
             ),
         )
         QApplication.clipboard().setText(invite_message.text)
-        if self._remote_paste_reply_available(owner):
+        paste_available = getattr(self, "_remote_paste_reply_available", None)
+        if callable(paste_available) and paste_available(owner):
             self._direct_stun_invite_copied = True
         invite_url = ""
         if owner is None:
