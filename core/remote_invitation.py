@@ -187,6 +187,7 @@ class RemoteInvitation:
         "_profile_id",
         "_sealed",
         "_session_reference",
+        "_host_signal",
     )
 
     def __init__(
@@ -200,6 +201,7 @@ class RemoteInvitation:
         invite_reference: bytes,
         enrollment_capability: bytes,
         host_spki_sha256: bytes,
+        host_signal: bytes = b"",
     ) -> None:
         object.__setattr__(self, "_sealed", False)
         object.__setattr__(self, "_profile_id", _canonical_profile(profile_id))
@@ -239,6 +241,13 @@ class RemoteInvitation:
                 "host_spki_sha256",
             ),
         )
+        if host_signal:
+            raw = bytes(host_signal)
+            if len(raw) < 8 or len(raw) > 16 * 1024 or raw[:4] != b"WJSE":
+                raise ValueError("host signal is not valid")
+            object.__setattr__(self, "_host_signal", raw)
+        else:
+            object.__setattr__(self, "_host_signal", b"")
         object.__setattr__(self, "_sealed", True)
 
     def __setattr__(self, _name: str, _value: object) -> None:
@@ -281,6 +290,25 @@ class RemoteInvitation:
     @property
     def host_spki_sha256(self) -> bytes:
         return self._host_spki_sha256
+
+    @property
+    def host_signal(self) -> bytes:
+        return self._host_signal
+
+    def with_host_signal(self, envelope: bytes) -> RemoteInvitation:
+        """Attach the sealed clipboard bundle without changing the v3 URL."""
+
+        return RemoteInvitation(
+            profile_id=self.profile_id,
+            issued_at_unix=self.issued_at_unix,
+            expires_at_unix=self.expires_at_unix,
+            participant_limit=self.participant_limit,
+            session_reference=self.session_reference,
+            invite_reference=self.invite_reference,
+            enrollment_capability=self.capability_for_enrollment(),
+            host_spki_sha256=self.host_spki_sha256,
+            host_signal=envelope,
+        )
 
     def capability_for_enrollment(self) -> bytes:
         """Reveal the bearer only to the authenticated enrollment protocol."""

@@ -13,7 +13,15 @@ func TestLookupIsExactAndCompiled(t *testing.T) {
 		resolved.RelayAddress != "127.0.0.1:47132" {
 		t.Fatalf("profile = %+v", resolved)
 	}
-	for _, rejected := range []string{"", "REFERENCE-LOCAL", "reference-local ", "rеference-local", "http://127.0.0.1"} {
+	direct, ok := Lookup(DirectStunID)
+	if !ok || direct.ID != DirectStunID || direct.LabOnly ||
+		direct.ControlAddress != "" || direct.RelayAddress != "" {
+		t.Fatalf("direct-stun profile = %+v", direct)
+	}
+	if _, accepted := direct.ControlConnector(); accepted {
+		t.Fatal("direct-stun must not expose a control connector")
+	}
+	for _, rejected := range []string{"", "REFERENCE-LOCAL", "reference-local ", "rеference-local", "http://127.0.0.1", "DIRECT-STUN"} {
 		if _, accepted := Lookup(rejected); accepted {
 			t.Fatalf("accepted profile %q", rejected)
 		}
