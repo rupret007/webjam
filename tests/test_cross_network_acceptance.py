@@ -173,6 +173,22 @@ def test_workflow_is_optional_and_path_filtered():
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "cross-network-acceptance" not in ci
     assert "Cross-network acceptance" not in ci
+    assert "push:" in text
+    assert "coturn" in text
+    assert "linux-modules-extra" in text
+    assert "sudo modprobe sch_netem" in text
+    assert "modprobe sch_netem || true" not in text
+    assert "ip netns add" in text
+    assert "chown -R" in text
+    assert "--expected-status PASS" in text
+    assert "--expected-status FAIL" in text
+    assert "continue-on-error:" in text
+    assert "github.ref == 'refs/heads/master'" in text
+    same_lan, two_nat = text.split("cross-network:", 1)
+    assert "continue-on-error" not in same_lan
+    assert "--expected-status FAIL" not in same_lan
+    assert "--expected-status FAIL" in two_nat
+    assert "continue-on-error:" in two_nat
 
 
 def test_cone_nat_plan_uses_masquerade_and_netmap_without_dport():
@@ -221,6 +237,66 @@ def test_stun_name_override_is_test_only_hosts_mapping():
     docs = Path("docs/CROSS-NETWORK-TEST.md").read_text(encoding="utf-8")
     assert "test-only" in docs.lower() or "Test-only" in docs
     assert "never" in docs.lower() and "packaged" in docs.lower()
+
+
+def test_job_exit_code_keeps_fail_assertions():
+    from tools.cross_network_acceptance.run import job_exit_code
+
+    assert (
+        job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=True) == 0
+    )
+    assert (
+        job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=False) == 1
+    )
+    assert (
+        job_exit_code(status="PASS", expected_status="FAIL", harness_ok=True) == 1
+    )
+    assert (
+        job_exit_code(status="PASS", expected_status="PASS", harness_ok=True) == 0
+    )
+    assert (
+        job_exit_code(status="FAIL", expected_status="PASS", harness_ok=True) == 1
+    )
+    assert (
+        job_exit_code(status="PASS", expected_status="PASS", harness_ok=False) == 1
+    )
+
+
+def test_stun_server_prefers_coturn(monkeypatch):
+    from tools.cross_network_acceptance.stun import (
+        python_stun_command,
+        stun_server_commands,
+    )
+
+    monkeypatch.setattr(
+        "tools.cross_network_acceptance.stun.shutil.which",
+        lambda name: "/usr/bin/turnserver" if name == "turnserver" else None,
+    )
+    commands = stun_server_commands("203.0.113.1", (3478, 19302))
+    assert len(commands) == 2
+    assert commands[0][0] == "/usr/bin/turnserver"
+    assert "--stun-only" in commands[0]
+    assert "--listening-port=3478" in commands[0]
+    assert "--listening-port=19302" in commands[1]
+    fallback = python_stun_command("203.0.113.1", (3478, 19302))
+    assert fallback[-2:] == ["3478", "19302"]
+    assert "tools.cross_network_acceptance.stun" in fallback
+
+
+def test_stun_server_falls_back_to_python_binding(monkeypatch):
+    from tools.cross_network_acceptance.stun import stun_server_commands
+
+    monkeypatch.setattr(
+        "tools.cross_network_acceptance.stun.shutil.which",
+        lambda _name: None,
+    )
+    monkeypatch.setattr(
+        "tools.cross_network_acceptance.stun.Path.is_file",
+        lambda _self: False,
+    )
+    commands = stun_server_commands("203.0.113.1", (3478, 19302))
+    assert len(commands) == 1
+    assert "tools.cross_network_acceptance.stun" in commands[0]
 
 
 def test_cone_and_symmetric_receipt_cases_are_allowed(tmp_path: Path):

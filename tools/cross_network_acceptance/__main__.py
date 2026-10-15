@@ -75,6 +75,15 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Sidecar build id (WEBJAM_BUILD_ID). Defaults to --sha.",
     )
+    run.add_argument(
+        "--expected-status",
+        choices=("PASS", "FAIL"),
+        default="PASS",
+        help=(
+            "CI exit-code target. FAIL still writes a FAIL receipt; the job "
+            "is green only when that FAIL is honest (harness_ok)."
+        ),
+    )
 
     role = sub.add_parser("role", help="Internal host/guest worker.")
     role.add_argument("--role", choices=("host", "guest"), required=True)
@@ -131,6 +140,7 @@ def main(argv: list[str] | None = None) -> int:
         product_root=product,
         transport_binary=str(args.transport_binary or ""),
         build_id=build_id,
+        expected_status=str(args.expected_status),
     )
 
 

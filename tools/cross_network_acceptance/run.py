@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from tools.cross_network_acceptance.receipt import build_receipt, write_receipt
+from tools.cross_network_acceptance.stun import python_stun_command, stun_server_commands
 from tools.cross_network_acceptance.topology import (
     INET_ADDR,
     RENDEZVOUS_TCP,
@@ -111,6 +112,27 @@ def _user_env(
     return env
 
 
+def job_exit_code(
+    *,
+    status: str,
+    expected_status: str,
+    harness_ok: bool,
+) -> int:
+    """Map a receipt onto a CI exit code without changing PASS/FAIL assertions.
+
+    Honest expected FAIL (harness ran; product did not connect) is job success.
+    A broken harness or an unexpected PASS still exits 1.
+    """
+
+    actual = str(status or "").strip().upper()
+    expected = str(expected_status or "PASS").strip().upper()
+    if actual not in {"PASS", "FAIL"} or expected not in {"PASS", "FAIL"}:
+        return 1
+    if not harness_ok:
+        return 1
+    return 0 if actual == expected else 1
+
+
 def ns_popen(
     ns: str,
     argv: list[str],
@@ -118,10 +140,11 @@ def ns_popen(
     cwd: Path,
     stderr_path: Path | None = None,
     env: dict[str, str] | None = None,
+    drop_privs: bool = True,
 ) -> subprocess.Popen[str]:
     uid, gid = _drop_ids()
     inner = list(argv)
-    if os.geteuid() == 0 and uid != 0:
+    if drop_privs and os.geteuid() == 0 and uid != 0:
         inner = [
             "setpriv",
             f"--reuid={uid}",
@@ -386,6 +409,83 @@ def _copy_logs(work_root: Path, output_dir: Path, receipt_case: str) -> None:
     _chown_tree(dest)
 
 
+def _emit_receipt(
+    output_dir: Path,
+    receipt: dict[str, Any],
+    *,
+    expected_status: str,
+    harness_ok: bool,
+) -> int:
+    write_receipt(output_dir, receipt)
+    _chown_tree(output_dir)
+    print(receipt["conductor_line"])
+    code = job_exit_code(
+        status=str(receipt["status"]),
+        expected_status=expected_status,
+        harness_ok=harness_ok,
+    )
+    if code == 0 and str(receipt["status"]).upper() == "FAIL":
+        print("job=ok expected=FAIL (honest two-NAT result; assertions unchanged)")
+    return code
+
+
+def _stop_procs(procs: list[subprocess.Popen[str] | None]) -> None:
+    for proc in procs:
+        if proc is None:
+            continue
+        try:
+            proc.send_signal(signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            pass
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        except (ProcessLookupError, OSError):
+            pass
+        handle = getattr(proc, "_stderr_handle", None)
+        if handle is not None:
+            handle.close()
+            proc._stderr_handle = None  # type: ignore[attr-defined]
+
+
+def _allow_unprivileged_stun(ns: str) -> None:
+    subprocess.run(
+        [
+            _bin("ip"),
+            "netns",
+            "exec",
+            ns,
+            _bin("sysctl"),
+            "-w",
+            "net.ipv4.ip_unprivileged_port_start=0",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _start_stun(
+    topology: AppliedTopology,
+    env: dict[str, str],
+    commands: list[list[str]],
+) -> list[subprocess.Popen[str]]:
+    assert topology.inet_ns is not None
+    procs: list[subprocess.Popen[str]] = []
+    for argv in commands:
+        procs.append(
+            ns_popen(
+                topology.inet_ns,
+                argv,
+                cwd=REPO_ROOT,
+                env=env,
+                drop_privs=False,
+            )
+        )
+    return procs
+
+
 def run_case(
     *,
     case: str,
@@ -398,6 +498,7 @@ def run_case(
     product_root: Path | None = None,
     transport_binary: str = "",
     build_id: str = "",
+    expected_status: str = "PASS",
 ) -> int:
     prefix = f"wjx{os.getpid() % 1000:03d}"
     mode = nat_mode if case == "cross-network" else "masquerade"
@@ -436,11 +537,14 @@ def run_case(
             notes="Could not create the simulated networks.",
             nat_mode=mode,
         )
-        write_receipt(output_dir, receipt)
-        print(receipt["conductor_line"])
-        return 1
+        return _emit_receipt(
+            output_dir,
+            receipt,
+            expected_status=expected_status,
+            harness_ok=False,
+        )
     rendezvous: subprocess.Popen[str] | None = None
-    stun_proc: subprocess.Popen[str] | None = None
+    stun_procs: list[subprocess.Popen[str]] = []
     host_reach = guest_reach = None
     stun_host = stun_guest = None
     profile_rows: list[dict[str, Any]] = []
@@ -451,18 +555,10 @@ def run_case(
         netem_applied = False
     try:
         if topology.inet_ns and topology.inet_addr:
-            stun_proc = ns_popen(
-                topology.inet_ns,
-                [
-                    sys.executable,
-                    "-m",
-                    "tools.cross_network_acceptance.stun",
-                    topology.inet_addr,
-                    str(STUN_UDP),
-                    str(STUN_UDP_ALT),
-                ],
-                cwd=REPO_ROOT,
-                env=env,
+            _allow_unprivileged_stun(topology.inet_ns)
+            stun_ports = (STUN_UDP, STUN_UDP_ALT)
+            stun_procs = _start_stun(
+                topology, env, stun_server_commands(topology.inet_addr, stun_ports)
             )
             rendezvous = ns_popen(
                 topology.inet_ns,
@@ -494,6 +590,24 @@ def run_case(
                 if host_reach and guest_reach and stun_host and stun_guest:
                     break
                 time.sleep(0.1)
+            if (not stun_host or not stun_guest) and stun_procs:
+                _stop_procs(stun_procs)
+                stun_procs = _start_stun(
+                    topology,
+                    env,
+                    [python_stun_command(topology.inet_addr, stun_ports)],
+                )
+                fallback_deadline = time.monotonic() + 5.0
+                while time.monotonic() < fallback_deadline:
+                    stun_host = _probe_stun_in_ns(
+                        topology.host_ns, topology.inet_addr, STUN_UDP, env
+                    )
+                    stun_guest = _probe_stun_in_ns(
+                        topology.guest_ns, INET_ADDR, STUN_UDP, env
+                    )
+                    if stun_host and stun_guest:
+                        break
+                    time.sleep(0.1)
             if not host_reach or not guest_reach:
                 notes = "The simulated internet is not reachable from both homes."
             elif not stun_host or not stun_guest:
@@ -513,14 +627,7 @@ def run_case(
                     )
                 )
     finally:
-        for proc in (stun_proc, rendezvous):
-            if proc is None:
-                continue
-            proc.send_signal(signal.SIGTERM)
-            try:
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+        _stop_procs([*stun_procs, rendezvous])
         _copy_logs(work_root, output_dir, receipt_case)
         cleanup_topology(spec)
         if not keep_workdir:
@@ -611,6 +718,9 @@ def run_case(
         stun_reachable_from_host=stun_host,
         stun_reachable_from_guest=stun_guest,
     )
-    write_receipt(output_dir, receipt)
-    print(receipt["conductor_line"])
-    return 0 if status == "PASS" else 1
+    return _emit_receipt(
+        output_dir,
+        receipt,
+        expected_status=expected_status,
+        harness_ok=harness_ok,
+    )

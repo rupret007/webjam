@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import os
 import select
+import shutil
 import socket
 import struct
 import sys
+from pathlib import Path
 
 MAGIC_COOKIE = 0x2112A442
 BINDING_REQUEST = 0x0001
@@ -97,6 +99,60 @@ def probe(host: str, port: int, *, timeout_s: float = 2.0) -> tuple[str, int] | 
         return None
     finally:
         sock.close()
+
+
+def stun_server_commands(bind_host: str, ports: tuple[int, ...]) -> list[list[str]]:
+    """Prefer coturn in the public ns; fall back to this Python Binding server."""
+
+    if not bind_host or not ports:
+        raise StunError("STUN server needs a bind address and ports.")
+    turn = shutil.which("turnserver")
+    if turn is None:
+        for folder in ("/usr/sbin", "/usr/bin"):
+            candidate = Path(folder) / "turnserver"
+            if candidate.is_file():
+                turn = str(candidate)
+                break
+    if turn:
+        commands: list[list[str]] = []
+        for port in ports:
+            commands.append(
+                [
+                    turn,
+                    "-n",
+                    f"--listening-ip={bind_host}",
+                    f"--listening-port={port}",
+                    "--no-cli",
+                    "--no-tls",
+                    "--no-dtls",
+                    "--stun-only",
+                    f"--pidfile=/tmp/webjam-turn-{port}.pid",
+                    "--log-file=stdout",
+                    "--simple-log",
+                ]
+            )
+        return commands
+    return [
+        [
+            sys.executable,
+            "-m",
+            "tools.cross_network_acceptance.stun",
+            bind_host,
+            *[str(port) for port in ports],
+        ]
+    ]
+
+
+def python_stun_command(bind_host: str, ports: tuple[int, ...]) -> list[str]:
+    if not bind_host or not ports:
+        raise StunError("STUN server needs a bind address and ports.")
+    return [
+        sys.executable,
+        "-m",
+        "tools.cross_network_acceptance.stun",
+        bind_host,
+        *[str(port) for port in ports],
+    ]
 
 
 def serve(bind_host: str, ports: tuple[int, ...]) -> None:

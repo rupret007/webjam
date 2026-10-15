@@ -164,18 +164,34 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest \
 
 ## Workflow
 
-`.github/workflows/cross-network-acceptance.yml`:
+`.github/workflows/cross-network-acceptance.yml` on GitHub-hosted
+`ubuntu-latest`:
 
 - `workflow_dispatch`
+- every push to `master`
 - pull requests that touch networking paths (invite, session transfer,
   rendezvous, LAN guest, transport, this harness)
-- two jobs: **Same-LAN control** (must be green) and **Cross-network (two NATs)**
-  (red until remote sessions work)
+- two jobs: **Same-LAN control** (must PASS; the job is red if it does not)
+  and **Cross-network (two NATs)** (receipt is **FAIL** until remote sessions
+  work)
+- the two-NAT GitHub job uses `--expected-status FAIL` so an honest FAIL
+  (`harness_ok`, no fake connect) is a green step. Unexpected PASS or a
+  broken harness still exits 1. Assertions are unchanged: the receipt stays
+  FAIL and no `.PASS` file is written
+- on `master` the two-NAT job is report-only (`continue-on-error`). Pull
+  requests that change networking must keep the job green (honest FAIL today;
+  flip `--expected-status` to PASS when Internet Join actually connects)
+- runner setup: netns probe (`ip netns add`), `linux-modules-extra-$(uname -r)`
+  plus `modprobe sch_netem`, and `coturn` (host systemd unit stopped/masked;
+  `turnserver` runs inside the public namespace, with the Python Binding
+  server as fallback). Receipts are chowned back to the runner so artifact
+  upload can read the 0600 files
 - not part of `WebJam CI`; not a required check
 
 To record a conductor PASS against master tip after Internet Host/Join lands,
-run **Cross-network acceptance** with `workflow_dispatch` on that SHA. The
-`<sha>-cross-network.PASS` artifact is the receipt.
+run **Cross-network acceptance** with `workflow_dispatch` on that SHA and
+`--expected-status PASS`. The `<sha>-cross-network.PASS` artifact is the
+receipt.
 
 ## Safety
 
