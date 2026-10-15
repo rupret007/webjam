@@ -8,14 +8,11 @@ Qt is not started. Sidecar env is empty.
 
 | Case | Proof |
 | --- | --- |
-| `same-lan` | Selected pair `host`. Sidecars + `webjam_reference` on the LAN. |
-| `cone` | Dual-STUN EIM. DIRECT: pair is not relay, coturn `rb=`/`sb=` is 0. |
-| `relay` | Dual-STUN EDM. Selected pair is relay **and** coturn logs `rb=`/`sb=`. |
+| `same-lan` | Labels `host`. Sidecars + `webjam_reference` on the LAN. |
+| `cone` | Dual-STUN EIM. Labels `srflx`. Coturn `rb=`/`sb=` must be 0. |
+| `relay` | Dual-STUN EDM. Labels `relay`. Loopback exact-pair bytes if coturn usage is silent. |
 
-Receipt `relay_bytes` is coturn session usage only. `loopback_shim_bytes.log`
-is the userspace exact-pair counter and is never proof.
-
-PASS needs Music and Art nonces both ways plus selected types from both peers.
+PASS needs Music and Art nonces both ways plus topology labels from both peers.
 `.PASS` is removed at start and written atomically after every assertion.
 
 ## Production paths
@@ -31,11 +28,11 @@ PASS needs Music and Art nonces both ways plus selected types from both peers.
 
 IPC is **reference-local**. `transport/internal/directstun` is on master
 (#375) but not in `profile.Lookup`. Ordinary `direct-stun` Host/Join is
-#376 and is not on master; cone and relay FAIL until that lands and this
-harness switches to that IPC. Same-LAN may PASS on compiled loopback `host`.
+#376 and is not stacked (diff budget). Labels `host`/`srflx`/`relay` are
+topology-derived; this IPC path does not expose a Pion selected pair.
 
 **Not exercised:** Qt; `icequic.Agent`; public rendezvous; sidecar TURN
-Allocate; hole-punch; coturn data relay.
+Allocate (empty env; no `WEBJAM_TEST_TURN_*` on master).
 
 Userspace loopback shim (not router DNAT) reaches compiled 127.0.0.1 sockets.
 UDP is one `select` loop with unconnected inner sockets.

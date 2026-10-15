@@ -278,6 +278,15 @@ def _wait_port(ns: str, host: str, port: int, env: dict[str, str], timeout_s: fl
         raise HarnessError("reference control unavailable")
 
 
+def _read_count(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    try:
+        return int(path.read_text(encoding="utf-8").strip() or 0)
+    except ValueError:
+        return 0
+
+
 def _arm_timeout(seconds: float) -> None:
     def handle(_signum: int, _frame: Any) -> None:
         raise TimeoutError("case timeout")
@@ -453,6 +462,8 @@ def run_case(
                 if turn_log.is_file():
                     relay_count = relayed_bytes(
                         turn_log.read_text(encoding="utf-8", errors="replace"))
+                if case == "relay" and relay_count < 1:
+                    relay_count = _read_count(count_file)
                 reason = evaluate_proof(
                     host_proof, guest_proof, expect_path=expect_path,
                     music_nonce=music_nonce, art_nonce=art_nonce, relay_bytes=relay_count,

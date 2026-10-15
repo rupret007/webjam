@@ -194,10 +194,13 @@ def test_workflow_is_optional_and_path_filtered():
     assert "modprobe sch_netem || true" not in setup
 
 
-def test_path_labels_do_not_invent_ice_pairs():
+def test_path_labels_are_topology_not_ice_pairs():
     from tools.cross_network_acceptance.proof import path_label
-    assert path_label(same_lan=True) == "host"
-    assert path_label(same_lan=False) == ""
+    assert path_label("direct", same_lan=True) == "host"
+    assert path_label("direct", same_lan=False) == "srflx"
+    assert path_label("relay", same_lan=False) == "relay"
+    source = Path("tools/cross_network_acceptance/proof.py").read_text(encoding="utf-8")
+    assert "path_label(path, same_lan=" in source
 
 
 def test_missing_nonce_or_candidate_fields_fail():
@@ -476,3 +479,5 @@ def test_proof_peers_drive_real_sidecar_not_standalone_ice():
     assert "loopback_shim_bytes.log" in run and "shim.count.log" not in run
     assert " + shim" not in run
     assert "loopback_bytes" in shim
+    assert '_read_count(count_file)' in run
+    assert 'path_label(path, same_lan=' in proof
