@@ -166,6 +166,7 @@ class RoomParticipantController:
         self.probe_failed = False
         self.music_invite = None
         self.borrowed_start = ""
+        self._host_start_published = False
         self.native_source = None
         self.native_generation = 0
         self.native_state = None
@@ -301,6 +302,7 @@ class RoomParticipantController:
         self.state = ArtRoomState.STARTING
         self.probing = True
         self.probe_failed = False
+        self._host_start_published = False
         self._lan_terminal_owner = None
         self.stopping = False
         self.app._conductor_setup_requested = True
@@ -416,6 +418,8 @@ class RoomParticipantController:
         self.probe_failed = False
         self.state = ArtRoomState.CONNECTED
         self.borrowed_start = state.art_start_key
+        if state.art_start_key:
+            self._host_start_published = True
         self.observe_creative_state(state)
         self.app._refresh_readiness()
 
@@ -687,6 +691,7 @@ class RoomParticipantController:
         self.generation += 1
         self.role = role
         self.stopping = False
+        self._host_start_published = False
         self.native_source = None
         self.native_state = None
         self.native_applied = None
@@ -756,7 +761,7 @@ class RoomParticipantController:
                 guest_enrollment=True, error_code=error,
             )
 
-    def apply_native(self, source, snapshot):
+    def apply_native(self, source, snapshot, *, retry_deadline=None):
         state = self.native_state
         if (state is None or snapshot.generation != self.native_generation
                 or source is not self.app._remote_session or self.blocked
@@ -765,19 +770,25 @@ class RoomParticipantController:
         key = (source, snapshot.generation, state.revision)
         if key == self.native_applied:
             return
-        if time.monotonic() - self.native_received_at >= 5.0:
+        if retry_deadline is not None and time.monotonic() >= retry_deadline:
             return
         if not self.app._apply_creator_profile_key(state.creator_profile_key, host_owned=True):
             self.native_profile_deferred = True
             # A Library media operation is still pending. Retry shortly
-            # without declaring admission complete; the 5s deadline above
-            # bounds how long these retries can run.
+            # without declaring admission complete. Bound retries from the
+            # first apply attempt, not receipt: state may predate CONNECTED.
+            if retry_deadline is None:
+                retry_deadline = time.monotonic() + 5.0
             generation = self.generation
-            QTimer.singleShot(200, lambda: self._retry_apply_native(source, key, generation))
+            QTimer.singleShot(200, lambda: self._retry_apply_native(
+                source, key, generation, retry_deadline,
+            ))
             return
         self.native_applied = key
         self.probing = False
         self.borrowed_start = state.art_start_key
+        if state.art_start_key:
+            self._host_start_published = True
         if state.creator_profile_key == "art":
             self.state = ArtRoomState.CONNECTED
             self.app._remote_invitation = None
@@ -787,7 +798,7 @@ class RoomParticipantController:
             self.state = ArtRoomState.NONE
             self.app._activate_remote_guest_route(snapshot, source=source)
 
-    def _retry_apply_native(self, source, key, generation):
+    def _retry_apply_native(self, source, key, generation, retry_deadline):
         state = self.native_state
         if (state is None or self.blocked or generation != self.generation
                 or source is not self.app._remote_session
@@ -796,7 +807,7 @@ class RoomParticipantController:
         snapshot = getattr(source, "snapshot", None)
         if snapshot is None or snapshot.generation != self.native_generation:
             return
-        self.apply_native(source, snapshot)
+        self.apply_native(source, snapshot, retry_deadline=retry_deadline)
 
     def observe_creative_state(self, state):
         for method, field in (("_reference_video_coordinator", "reference_video"),
@@ -1183,6 +1194,7 @@ class RoomParticipantController:
         self.native_source = None
         self.publisher = None
         self.borrowed_start = ""
+        self._host_start_published = False
         self.state = ArtRoomState.NONE
         self.role = ""
         return True
