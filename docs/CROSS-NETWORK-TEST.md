@@ -22,30 +22,14 @@ assertion.
 
 ## Topology
 
-```
-Same-LAN control
-  host 192.168.110.10 ── veth ── guest 192.168.110.11
-
-Cross-network
-  host 192.168.110.10
-        │
-  NAT-A 192.168.110.1 / 203.0.113.10   MASQUERADE, no DNAT
-        │
-  public internet 203.0.113.1
-        │  rendezvous TCP 47131, relay UDP 47132; STUN UDP 3478/19302
-        │
-  NAT-B 192.168.120.1 / 203.0.113.20   MASQUERADE, no DNAT
-        │
-  guest 192.168.120.10
-```
-
-WAN is TEST-NET-3 (`203.0.113.0/24`); home LANs stay RFC1918 so v2 invites
-still name a private address. Optional `tc netem` (`100ms ± 50ms`, `1%` loss)
-sits on each NAT WAN. Both homes must reach the public rendezvous while the
-guest cannot TCP to the advertised private invite endpoint. v2 Host mints a
-literal RFC1918 `webjam://join?…` and refuses public IPs; this harness never
-adds a port-forward. Until ordinary Host/Join uses the public-ns
-rendezvous/relay (`203.0.113.1:47131/47132`), cross-network stays FAIL.
+Same-LAN: `192.168.110.10` ── veth ── `192.168.110.11`. Cross-network: host
+`192.168.110.10` — NAT-A `203.0.113.10` — inet `203.0.113.1` (rendezvous
+TCP 47131 / STUN 3478, 19302) — NAT-B `203.0.113.20` — guest `192.168.120.10`.
+MASQUERADE only; no DNAT. WAN is TEST-NET-3 so v2 invites stay RFC1918.
+Optional `tc netem` (`100ms ± 50ms`, `1%` loss) sits on each NAT WAN. Both
+homes must reach rendezvous; the guest cannot TCP to the private invite
+endpoint. Until ordinary Host/Join uses `203.0.113.1:47131/47132`, this
+stays FAIL.
 
 ## Receipts
 
@@ -66,25 +50,17 @@ connect still exits 1. Assertions are unchanged: the receipt stays FAIL.
 
 ## Run locally (Linux)
 
-Needs `ip`, `iptables`, passwordless `sudo` for netns, and the repo venv.
-
 ```bash
-# Control (must PASS today)
 sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
   --case same-lan --output-dir out/cross-network-acceptance \
   --sha "$(git rev-parse HEAD)" --no-netem
-
-# Two NATs (FAIL today; PASS once v3 Internet Host/Join ships)
 sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
   --case cross-network --output-dir out/cross-network-acceptance \
   --sha "$(git rev-parse HEAD)" --netem
-
-# PR #372 direct-stun (build sidecar, real STUN, cone vs symmetric)
 PRODUCT=/path/to/pr-372
 SIDECAR=out/cross-network-acceptance/webjam-fabric
 .venv/bin/python -m tools.cross_network_acceptance build-sidecar \
   --product-root "$PRODUCT" --output "$SIDECAR"
-# --output is resolved from the current directory, not from transport/.
 for args in "--nat cone --profiles art" "--nat cone --profiles music" \
             "--nat symmetric --profiles art"; do
   sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
@@ -93,6 +69,7 @@ for args in "--nat cone --profiles art" "--nat cone --profiles music" \
     --output-dir out/cross-network-acceptance --no-netem --keep-workdir
 done
 ```
+`--output` is resolved from the current directory, not from `transport/`.
 
 `--nat cone` adds UDP NETMAP onto the real LAN endpoint
 (`192.168.110.10/32`, `192.168.120.10/32`), not a /24 rewrite to
@@ -103,36 +80,21 @@ connect there is a **fake connect** and must fail the job even under
 
 These modes do **not** prove product cone-versus-symmetric NAT behavior while
 packaged direct-stun discards TEST-NET-3 (`203.0.113.0/24`) STUN mappings.
-Gather then advertises local-only candidates, so cone and symmetric fail for
-the same reason. The harness still records topology, STUN reachability,
-completed guest results, and fake-connect detection.
 
 ## Test-only STUN override (never in packaged builds)
 
 PR #372 compiles `stun.cloudflare.com:3478` / `stun.l.google.com:19302` with
-no env/config hook (`webjam-fabric` argv empty, `TransportProcess` `env: {}`).
-This harness uses a **test-only** `/etc/netns/<ns>/hosts` map of those names
-to `203.0.113.1` (RFC 5389 Binding) only while namespaces exist. Packaged
-builds never read them. Do not add a packaged STUN URL setting.
-
-Unit tests (no privileges):
-
-```bash
-QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest \
-  tests/test_cross_network_acceptance.py -q
-```
+no env/config hook. A **test-only** `/etc/netns/<ns>/hosts` map points those
+names at `203.0.113.1` only while namespaces exist. Packaged builds never
+read them.
 
 ## Workflow
 
-`.github/workflows/cross-network-acceptance.yml` on `ubuntu-latest`:
-`workflow_dispatch`, every push to `master`, and networking-path PRs. Same-LAN
-must PASS. Two-NAT uses `--expected-status FAIL` (receipt FAIL until remote
-sessions work; report-only `continue-on-error` on `master`). Runner setup:
-netns probe (`ip netns add`), `linux-modules-extra-$(uname -r)` plus
-`modprobe sch_netem`, and `coturn` (host unit stopped/masked). Receipts are
-chowned for artifact upload. Not part of `WebJam CI`. After Internet Host/Join
-lands, `workflow_dispatch` with `--expected-status PASS` records the
-`<sha>-cross-network.PASS` artifact.
+`.github/workflows/cross-network-acceptance.yml` on `ubuntu-latest`
+(`workflow_dispatch`, `master` push, networking PRs). Same-LAN must PASS.
+Two-NAT uses `--expected-status FAIL` (`continue-on-error` on `master`).
+Not part of `WebJam CI`. After Internet Host/Join, `workflow_dispatch` with
+`--expected-status PASS` records `<sha>-cross-network.PASS`.
 
 ## Safety
 

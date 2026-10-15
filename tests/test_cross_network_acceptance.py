@@ -465,18 +465,17 @@ class _FakeRoleProc:
         self._exited = already_exited
         self._stderr_handle = None
 
-    def poll(self) -> int | None:
+    def poll(self):
         return self._final_rc if self._exited else None
 
-    def wait(self, timeout: float | None = None) -> int:
+    def wait(self, timeout=None):
         self._exited = True
         self.returncode = self._final_rc
         return self.returncode
 
-    def kill(self) -> None:
+    def kill(self):
         self._exited = True
-        self._final_rc = -9
-        self.returncode = -9
+        self._final_rc = self.returncode = -9
 
 
 def test_run_profile_rejects_host_crash_during_guest(
