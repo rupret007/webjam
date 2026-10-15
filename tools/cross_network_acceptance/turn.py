@@ -74,6 +74,28 @@ def relayed_bytes(log_text: str) -> int:
     return total
 
 
+def wait_turn_usage(log_path: Path, timeout_s: float = 8.0) -> str:
+    """Re-read the coturn log until rb=/sb= appear or timeout.
+
+    Coturn dumps usage on allocation timeout one timer tick after REFRESH
+    lifetime=0. Harvesting immediately after peer reap races that tick.
+    Returns the last log text; never invents byte counts.
+    """
+    deadline = time.monotonic() + max(0.0, timeout_s)
+    text = ""
+    while True:
+        if log_path.is_file():
+            try:
+                text = log_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                text = ""
+            if relayed_bytes(text) >= 1:
+                return text
+        if time.monotonic() >= deadline:
+            return text
+        time.sleep(0.05)
+
+
 def stop_turn(pid_path: Path, timeout_s: float = 8.0) -> None:
     """SIGTERM the pidfile process so session close can flush rb=/sb=."""
     try:

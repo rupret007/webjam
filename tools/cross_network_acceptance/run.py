@@ -29,7 +29,7 @@ from tools.cross_network_acceptance.topology import (
 )
 from tools.cross_network_acceptance.turn import (
     CREDENTIAL_PORT, conntrack_dump, credential_script, credential_server_env,
-    mint_credentials, relayed_bytes, stop_turn, turn_command,
+    mint_credentials, relayed_bytes, stop_turn, turn_command, wait_turn_usage,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -429,7 +429,7 @@ def run_case(
                 host_proof = _wait_json(peer_dir / "host.proof", 1.0)
                 guest_proof = _wait_json(peer_dir / "guest.proof", 1.0)
                 if turn_proc is not None:
-                    _pause(1.0)
+                    wait_turn_usage(turn_log)
                     stop_turn(work_root / "turn.pid")
                     _stop_procs([turn_proc])
                     turn_proc = None
