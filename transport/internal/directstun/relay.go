@@ -31,10 +31,13 @@ const (
 	turnRESTUser      = "webjam"
 	turnProofDomain   = "webjam/v1/turn-credential\x00"
 	credentialTTL     = 10 * time.Minute
-	// Two sequential Worker upstreams at 5s each (GraphQL + generate-ice-servers).
-	credentialFetch   = 10 * time.Second
-	maxCredentialBody = 4096
-	allocateLimit     = 4 * time.Second
+	// Worker worst case is two sequential 5s upstreams. The client keeps
+	// headroom so a slow body after those upstreams still fails closed here.
+	workerWorstCase    = 10 * time.Second
+	credentialHeadroom = 2 * time.Second
+	credentialFetch    = workerWorstCase + credentialHeadroom
+	maxCredentialBody  = 4096
+	allocateLimit      = 4 * time.Second
 )
 
 type credentialProof struct {

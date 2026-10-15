@@ -37,6 +37,23 @@ func TestParseRelayTargetPinsCredentialedServer(t *testing.T) {
 	}
 }
 
+func TestParseRelayTargetAllowsHarnessLoopback(t *testing.T) {
+	t.Setenv(testHarnessEnv, "1")
+	loopback := netip.MustParseAddr("127.0.0.1")
+	encoded, err := relayCandidate(netip.MustParseAddrPort("127.0.0.1:49152"), 4000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := ParseRelayTarget(encoded, loopback)
+	if err != nil || target.IP.String() != "127.0.0.1" || target.Port != 49152 {
+		t.Fatalf("harness loopback relay = %v, %v", target, err)
+	}
+	t.Setenv(testHarnessEnv, "")
+	if _, err = ParseRelayTarget(encoded, loopback); err == nil {
+		t.Fatal("loopback relay must stay rejected outside the harness")
+	}
+}
+
 func TestCredentialJSONAcceptsCoturnAndCloudflareShapes(t *testing.T) {
 	t.Parallel()
 	coturn, err := parseCredentialJSON([]byte(`{
@@ -182,8 +199,9 @@ func TestFetchCredentialsPostsProofAndSkipsWithoutIt(t *testing.T) {
 }
 
 func TestCredentialFetchTimeoutCoversWorkerAndSlowBody(t *testing.T) {
-	if credentialFetch != 10*time.Second {
-		t.Fatalf("credentialFetch=%s want 10s (two 5s Worker upstreams)", credentialFetch)
+	if credentialFetch <= workerWorstCase || credentialFetch != workerWorstCase+credentialHeadroom {
+		t.Fatalf("credentialFetch=%s want Worker worst case %s plus headroom %s",
+			credentialFetch, workerWorstCase, credentialHeadroom)
 	}
 	t.Setenv(testHarnessEnv, "1")
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

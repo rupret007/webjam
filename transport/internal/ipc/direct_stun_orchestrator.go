@@ -27,8 +27,9 @@ import (
 const (
 	directStunProofDomain = "webjam/v3/direct-stun/proof-nonce"
 	directStunDialAttempt = 4 * time.Second
-	directPathTimeout     = 8 * time.Second
 )
+
+var directPathTimeout = 8 * time.Second
 
 var (
 	gatherListenCandidates = directstun.Gather
@@ -164,21 +165,11 @@ func (o *directStunOperation) runHost() error {
 	o.packetConn = conn
 	o.resourceMu.Unlock()
 
-	candidates, public, err := gatherListenCandidates(o.enrollmentCtx, conn)
-	if err != nil || len(candidates) == 0 {
-		return ErrOpenFailedWrap(err)
+	candidates, public, allocation, err := o.gatherAndMaybeRelay(conn, true)
+	if err != nil {
+		return err
 	}
-	drainUDP(conn)
-	allocation := tryAllocateRelay(directstun.WithCredentialProof(
-		o.enrollmentCtx,
-		[32]byte(o.configuration.SessionID),
-		[32]byte(o.configuration.EnrollmentCapability),
-	))
 	if allocation != nil {
-		if encoded, candErr := allocation.Candidate(); candErr == nil && encoded != "" &&
-			len(candidates) < limits.MaxCandidateCount {
-			candidates = append(candidates, encoded)
-		}
 		o.resourceMu.Lock()
 		o.allocation = allocation
 		o.resourceMu.Unlock()
@@ -209,6 +200,8 @@ func (o *directStunOperation) runHost() error {
 		return o.enrollmentCtx.Err()
 	}
 
+	// Accept on direct and relay together. Join tries the nominated
+	// direct path first and falls back to the host's relay candidate.
 	accepted := make(chan acceptResult, 2)
 	go acceptOn(o.enrollmentCtx, listener, "direct", accepted)
 	if allocation != nil {
@@ -268,21 +261,11 @@ func (o *directStunOperation) runGuest() error {
 	o.resourceMu.Lock()
 	o.packetConn = conn
 	o.resourceMu.Unlock()
-	localCandidates, _, err := gatherListenCandidates(o.enrollmentCtx, conn)
-	if err != nil || len(localCandidates) == 0 {
-		return ErrOpenFailedWrap(err)
+	localCandidates, _, allocation, err := o.gatherAndMaybeRelay(conn, false)
+	if err != nil {
+		return err
 	}
-	drainUDP(conn)
-	allocation := tryAllocateRelay(directstun.WithCredentialProof(
-		o.enrollmentCtx,
-		[32]byte(o.configuration.SessionID),
-		[32]byte(o.configuration.EnrollmentCapability),
-	))
 	if allocation != nil {
-		if encoded, candErr := allocation.Candidate(); candErr == nil && encoded != "" &&
-			len(localCandidates) < limits.MaxCandidateCount {
-			localCandidates = append(localCandidates, encoded)
-		}
 		o.resourceMu.Lock()
 		o.allocation = allocation
 		o.resourceMu.Unlock()
@@ -346,6 +329,54 @@ func (o *directStunOperation) runGuest() error {
 		return err
 	}
 	return o.runPeer(peer.ModeGuest)
+}
+
+// gatherAndMaybeRelay starts TURN in parallel with STUN gather. A LAN host
+// (no public mapping) does not wait for credentials — that fetch is discarded.
+// Join always waits: the host may have published a relay candidate.
+func (o *directStunOperation) gatherAndMaybeRelay(
+	conn *net.UDPConn,
+	discardOnLAN bool,
+) ([]string, bool, *directstun.Allocation, error) {
+	allocCh := make(chan *directstun.Allocation, 1)
+	go func() {
+		allocCh <- tryAllocateRelay(directstun.WithCredentialProof(
+			o.enrollmentCtx,
+			[32]byte(o.configuration.SessionID),
+			[32]byte(o.configuration.EnrollmentCapability),
+		))
+	}()
+	candidates, public, err := gatherListenCandidates(o.enrollmentCtx, conn)
+	if err != nil || len(candidates) == 0 {
+		go discardRelayAllocation(allocCh)
+		return nil, false, nil, ErrOpenFailedWrap(err)
+	}
+	drainUDP(conn)
+	waitForRelay := public || !discardOnLAN
+	var allocation *directstun.Allocation
+	if waitForRelay {
+		select {
+		case allocation = <-allocCh:
+		case <-o.enrollmentCtx.Done():
+			go discardRelayAllocation(allocCh)
+			return nil, public, nil, ErrUnreachable
+		}
+	} else {
+		go discardRelayAllocation(allocCh)
+	}
+	if allocation != nil {
+		if encoded, candErr := allocation.Candidate(); candErr == nil && encoded != "" &&
+			len(candidates) < limits.MaxCandidateCount {
+			candidates = append(candidates, encoded)
+		}
+	}
+	return candidates, public, allocation, nil
+}
+
+func discardRelayAllocation(allocCh <-chan *directstun.Allocation) {
+	if allocation := <-allocCh; allocation != nil {
+		_ = allocation.Close()
+	}
 }
 
 func acceptOn(ctx context.Context, listener *icequic.Listener, path string, accepted chan<- acceptResult) {

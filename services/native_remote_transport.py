@@ -613,6 +613,10 @@ class NativeHostTransportOwner:
             raise
 
     @property
+    def profile_id(self) -> str:
+        return self._profile_id
+
+    @property
     def invitation_available(self) -> bool:
         owner = self._owner
         with self._lock:
