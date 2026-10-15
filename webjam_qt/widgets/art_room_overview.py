@@ -183,7 +183,11 @@ class ArtRoomOverviewWidget(QScrollArea):
         label.setTextFormat(Qt.TextFormat.PlainText)
         label.setWordWrap(True)
         label.setMinimumWidth(0)
-        label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        # Wrapped text needs the height for its actual width, not the taller
+        # natural size hint as a minimum that can force needless scrolling.
+        policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        policy.setHeightForWidth(True)
+        label.setSizePolicy(policy)
         return label
 
     def clear_room_connections(self) -> None:
@@ -440,16 +444,17 @@ class ArtRoomOverviewWidget(QScrollArea):
         ):
             layout.setDirection(direction)
         if self._overview is not None:
-            if self._overview.making_detail:
-                # The actionable own-tools sentence replaces this display
-                # heading, keeping both optional actions on compact screens.
+            has_activity = bool(self._overview.activity_actions)
+            if self._overview.making_detail or has_activity:
+                # The activity is the next step; removing its own-tools
+                # preamble must not bring back an extra display heading.
                 self._title.hide()
             # The connection heading still names the confirmed room fact.
             # Its longer explanation remains in the accessible description;
             # compact rooms keep the making step and activity actions visible.
             self._connection_detail.setVisible(bool(
                 self._overview.connection_detail
-                and not (compact and self._overview.making_detail)
+                and not (compact and (self._overview.making_detail or has_activity))
             ))
         # Resizing for Conversation may move a button that already owns
         # focus, so it will not receive another FocusIn event. Wait until

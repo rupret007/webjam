@@ -382,10 +382,12 @@ orange action. **Open Paint along** stays available as a quiet button below
 it to choose a local file or lesson link. Guest **Open my copy…** recovery
 keeps its emphasis.
 
-When the room offers a shared canvas or Paint along, its next step still
-includes paper, your usual tools, or just talk. Shared activities
-are optional. You only need Drawpile to use the shared canvas; artists using
-their own tools can keep making together.
+When Paint along is the room's next action, its activity and Open button
+follow the connection status without an extra own-tools paragraph. Make
+together and rooms whose next action is the shared canvas keep the guidance
+that you do not need an art app: use paper, your usual tools, or just talk.
+Shared activities are optional. You only need Drawpile to use the shared
+canvas; artists using their own tools can keep making together.
 
 In **Notes** or Paint along, choose **Back to room** to see the full room and
 its current activities or recovery action. Your notes, selection and undo
