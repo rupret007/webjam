@@ -22,6 +22,79 @@ qapp = _qapp_fixture
 controllers = _controllers_fixture
 
 
+@pytest.mark.parametrize("retry_elapsed", [4.9, 5.0])
+def test_aged_first_state_can_defer_adoption_with_a_bounded_retry_deadline(
+    qapp, controllers, monkeypatch, retry_elapsed,
+):
+    monkeypatch.setattr(
+        "services.native_remote_transport.NativeGuestTransportBackend", RoomBackend,
+    )
+    app = controllers()
+    app._activate_remote_guest_route = mock.Mock()
+    assert app.accept_invitation(remote())
+    drain(qapp, lambda: app._remote_session.snapshot.phase is RemoteSessionPhase.CONNECTED)
+    room = app._room_participant
+    source = app._remote_session
+    now = time.monotonic()
+    started = now
+    room.native_source = source
+    room.native_generation = source.snapshot.generation
+    room.native_state = RoomState(1, "art", "paint_along")
+    room.native_received_at = now - 6.0
+    room.native_wait_started = 0
+    scheduled = []
+    monkeypatch.setattr(
+        "webjam_qt.controllers.room_participant.time",
+        SimpleNamespace(monotonic=lambda: now),
+    )
+    monkeypatch.setattr(
+        "webjam_qt.controllers.room_participant.QTimer",
+        SimpleNamespace(singleShot=lambda delay, callback: scheduled.append((delay, callback))),
+    )
+    app.window.recording_studio._workspace_review_active = True
+    try:
+        room.connected_native(source, source.snapshot)
+        assert room.probing
+        assert room.native_applied is None
+        assert app.creator_profile.key == "music"
+        assert [delay for delay, _ in scheduled] == [200, 5000]
+
+        # A retry while media work is pending must retain the original deadline.
+        now = started + 1.0
+        scheduled.pop(0)[1]()
+        assert [delay for delay, _ in scheduled] == [5000, 200]
+        assert room.probing
+        assert room.native_applied is None
+        app.window.recording_studio._workspace_review_active = False
+        now = started + retry_elapsed
+        scheduled.pop()[1]()
+
+        if retry_elapsed < 5.0:
+            assert app.creator_profile.key == "art"
+            assert app.creator_start.key == "paint_along"
+            assert room.state is ArtRoomState.CONNECTED
+            assert not room.probing
+            assert app._remote_invitation is None
+            scheduled.pop()[1]()
+            assert not app._remote_invitation_requires_replacement
+        else:
+            assert app.creator_profile.key == "music"
+            assert room.state is not ArtRoomState.CONNECTED
+            assert room.probing
+            assert room.native_applied is None
+            scheduled.pop()[1]()
+            assert app._remote_invitation_requires_replacement
+            assert source.snapshot.phase is RemoteSessionPhase.FAILED
+            assert source.snapshot.error_code is RemoteSessionErrorCode.LOCAL_OPERATION_PENDING
+            assert not source.snapshot.invitation_retry_safe
+            assert "Local media work" in app._remote_fresh_invitation_detail()
+            assert "Update WebJam" not in app._remote_fresh_invitation_detail()
+        assert scheduled == []
+        app._activate_remote_guest_route.assert_not_called()
+    finally:
+        app.window.recording_studio._workspace_review_active = False
+
+
 @pytest.mark.parametrize("owner", ["library", "studio"])
 @pytest.mark.parametrize("entry", ["accept", "startup", "enroll"])
 def test_pending_media_keeps_native_invitation_unconsumed(
@@ -80,7 +153,7 @@ def test_pending_media_keeps_native_invitation_unconsumed(
     app._activate_remote_guest_route.assert_not_called()
 
 
-@pytest.mark.parametrize("received", ["deferred", "absent", "stale"])
+@pytest.mark.parametrize("received", ["deferred", "absent", "stale_generation"])
 def test_native_deadline_fail_closes_without_blaming_local_work(
     qapp, controllers, monkeypatch, received,
 ):
@@ -99,9 +172,11 @@ def test_native_deadline_fail_closes_without_blaming_local_work(
         if received == "deferred":
             RoomBackend.instances[-1].emit(RoomState(1, "art", "paint_along"))
             drain(qapp, lambda: room.native_state is not None)
-        elif received == "stale":
+        elif received == "stale_generation":
             room.native_source = source
-            room.native_generation = generation
+            # An old connection's state cannot admit this connection. Age
+            # alone is valid: the first state can predate CONNECTED (above).
+            room.native_generation = generation - 1
             room.native_state = RoomState(1, "art", "paint_along")
         # Advance only the room clock; retain real Qt/runtime scheduling.
         room.native_received_at = 100.0
@@ -110,10 +185,10 @@ def test_native_deadline_fail_closes_without_blaming_local_work(
         room.apply_native(source, source.snapshot)
         room.check_native_timeout(source, generation, room.generation)
         assert source.snapshot.phase is RemoteSessionPhase.FAILED
-        if received in {"absent", "stale"}:
+        if received in {"absent", "stale_generation"}:
             assert source.snapshot.error_code is RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED
         else:
-            assert source.snapshot.error_code is not RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED
+            assert source.snapshot.error_code is RemoteSessionErrorCode.LOCAL_OPERATION_PENDING
             assert "Update WebJam" not in app._remote_fresh_invitation_detail()
         if received == "deferred":
             assert "Local media work" in app._remote_fresh_invitation_detail()

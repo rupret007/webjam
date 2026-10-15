@@ -1,0 +1,333 @@
+W23 final gate: exit 1; 102 complete test modules plus focused selection.
+Observed elapsed time from log creation to final write: 257.04s.
+Module totals (excluding repeated focused selection): {'passed': 3387, 'skipped': 14, 'failed': 5, 'errors': 30}
+
+.venv/bin/python -m pytest tests/test_art_room_controller.py -q -k guest_creator_start
+  5 passed, 17 deselected in 1.39s; PASS
+
+.venv/bin/ruff check webjam_qt/ core/ ui/ services/ api/
+  PASS; PASS
+
+.venv/bin/ruff check tests/test_art_room_controller.py
+  PASS; PASS
+
+.venv/bin/python -m compileall -q core webjam_qt ui services api tests
+  PASS; PASS
+
+.venv/bin/python -m pip check
+  PASS; PASS
+
+.venv/bin/python tools/runtime_dependency_policy.py --check
+  PASS; PASS
+
+.venv/bin/python ux_smoke_test.py
+  PASS; PASS
+
+git diff --check HEAD
+  PASS; PASS
+
+.venv/bin/python -m pytest tests/test_application_controller_band_check_gate.py -q
+  38 passed in 0.91s; PASS
+
+.venv/bin/python -m pytest tests/test_application_controller_component_integrations.py -q
+  30 passed in 1.52s; PASS
+
+.venv/bin/python -m pytest tests/test_application_controller_creator_copy.py -q
+  35 passed in 0.44s; PASS
+
+.venv/bin/python -m pytest tests/test_application_controller_demo_to_real_transition.py -q
+  7 passed in 0.75s; PASS
+
+.venv/bin/python -m pytest tests/test_application_controller_rpc_hang.py -q
+  9 passed, 4 subtests passed in 0.72s; PASS
+
+.venv/bin/python -m pytest tests/test_application_controller_session_pulse.py -q
+  6 passed in 0.95s; PASS
+
+.venv/bin/python -m pytest tests/test_application_controller_signal_wiring.py -q
+  2 passed in 0.69s; PASS
+
+.venv/bin/python -m pytest tests/test_application_controller_toggle.py -q
+  22 passed in 0.91s; PASS
+
+.venv/bin/python -m pytest tests/test_application_controller_video_audio_paths.py -q
+  52 passed, 7 subtests passed in 1.49s; PASS
+
+.venv/bin/python -m pytest tests/test_art_activity_guest_journey.py -q
+  10 passed in 3.06s; PASS
+
+.venv/bin/python -m pytest tests/test_art_audio_cleanup.py -q
+  15 passed in 0.49s; PASS
+
+.venv/bin/python -m pytest tests/test_art_canvas_connection_journey.py -q
+  15 passed in 2.26s; PASS
+
+.venv/bin/python -m pytest tests/test_art_cold_invitation_context.py -q
+  23 passed in 3.18s; PASS
+
+.venv/bin/python -m pytest tests/test_art_companion.py -q
+  72 passed in 0.11s; PASS
+
+.venv/bin/python -m pytest tests/test_art_companion_fallback.py -q
+  40 passed in 0.66s; PASS
+
+.venv/bin/python -m pytest tests/test_art_companion_http_policy.py -q
+  11 skipped in 0.06s; PASS
+
+.venv/bin/python -m pytest tests/test_art_companion_projection.py -q
+  43 passed in 0.46s; PASS
+
+.venv/bin/python -m pytest tests/test_art_companion_simulator_check.py -q
+  3 passed in 0.08s; PASS
+
+.venv/bin/python -m pytest tests/test_art_companion_swift_integration.py -q
+  3 skipped in 0.08s; PASS
+
+.venv/bin/python -m pytest tests/test_art_conversation_layout.py -q
+  32 passed in 2.63s; PASS
+
+.venv/bin/python -m pytest tests/test_art_conversation_link_journey.py -q
+  18 passed in 4.70s; PASS
+
+.venv/bin/python -m pytest tests/test_art_conversation_next_action.py -q
+  32 passed in 3.50s; PASS
+
+.venv/bin/python -m pytest tests/test_art_exit_guidance.py -q
+  14 passed in 0.07s; PASS
+
+.venv/bin/python -m pytest tests/test_art_exit_next_action.py -q
+  27 passed in 10.41s; PASS
+
+.venv/bin/python -m pytest tests/test_art_host_platforms.py -q
+  33 passed in 1.33s; PASS
+
+.venv/bin/python -m pytest tests/test_art_invitation_entry.py -q
+  33 passed in 0.09s; PASS
+
+.venv/bin/python -m pytest tests/test_art_invitation_flow.py -q
+  30 passed in 2.52s; PASS
+
+.venv/bin/python -m pytest tests/test_art_join_entry_ui.py -q
+  56 passed in 1.54s; PASS
+
+.venv/bin/python -m pytest tests/test_art_lan_host_portable.py -q
+  4 failed in 1.02s; FAIL (1)
+
+.venv/bin/python -m pytest tests/test_art_lan_host_recovery.py -q
+  22 passed in 5.27s; PASS
+
+.venv/bin/python -m pytest tests/test_art_lan_retry.py -q
+  35 passed in 4.34s; PASS
+
+.venv/bin/python -m pytest tests/test_art_left_out_rules.py -q
+  76 passed in 0.86s; PASS
+
+.venv/bin/python -m pytest tests/test_art_lesson_request_journey.py -q
+  17 errors in 9.10s; FAIL (1)
+
+.venv/bin/python -m pytest tests/test_art_lesson_request_widgets.py -q
+  23 passed in 2.97s; PASS
+
+.venv/bin/python -m pytest tests/test_art_meeting_coexistence.py -q
+  59 passed in 0.84s; PASS
+
+.venv/bin/python -m pytest tests/test_art_native_retry.py -q
+  3 passed in 0.87s; PASS
+
+.venv/bin/python -m pytest tests/test_art_notes_communication.py -q
+  48 passed in 1.61s; PASS
+
+.venv/bin/python -m pytest tests/test_art_notes_conversation_journey.py -q
+  18 passed in 5.17s; PASS
+
+.venv/bin/python -m pytest tests/test_art_paint_along_connection_journey.py -q
+  21 passed in 2.73s; PASS
+
+.venv/bin/python -m pytest tests/test_art_participant_door.py -q
+  33 passed in 1.10s; PASS
+
+.venv/bin/python -m pytest tests/test_art_pending_profile_facts.py -q
+  17 passed in 2.67s; PASS
+
+.venv/bin/python -m pytest tests/test_art_profile.py -q
+  47 passed in 0.48s; PASS
+
+.venv/bin/python -m pytest tests/test_art_profile_guidance_journey.py -q
+  14 passed in 3.32s; PASS
+
+.venv/bin/python -m pytest tests/test_art_room_activities.py -q
+  628 passed in 0.73s; PASS
+
+.venv/bin/python -m pytest tests/test_art_room_activities_ui.py -q
+  90 passed in 8.04s; PASS
+
+.venv/bin/python -m pytest tests/test_art_room_connection_facts.py -q
+  1 failed, 25 passed in 0.30s; FAIL (1)
+
+.venv/bin/python -m pytest tests/test_art_room_connection_names.py -q
+  6 passed, 13 errors in 1.32s; FAIL (1)
+
+.venv/bin/python -m pytest tests/test_art_room_connection_names_journey.py -q
+  33 passed in 8.04s; PASS
+
+.venv/bin/python -m pytest tests/test_art_room_contract.py -q
+  14 passed in 0.12s; PASS
+
+.venv/bin/python -m pytest tests/test_art_room_controller.py -q
+  22 passed in 2.10s; PASS
+
+.venv/bin/python -m pytest tests/test_art_room_overview.py -q
+  29 passed in 0.11s; PASS
+
+.venv/bin/python -m pytest tests/test_art_room_overview_controller.py -q
+  6 passed in 1.10s; PASS
+
+.venv/bin/python -m pytest tests/test_art_room_overview_lifetime.py -q
+  3 passed in 0.51s; PASS
+
+.venv/bin/python -m pytest tests/test_art_room_overview_ui.py -q
+  55 passed in 4.64s; PASS
+
+.venv/bin/python -m pytest tests/test_art_room_presence.py -q
+  52 passed in 0.55s; PASS
+
+.venv/bin/python -m pytest tests/test_art_room_recovery.py -q
+  6 passed in 0.98s; PASS
+
+.venv/bin/python -m pytest tests/test_art_room_return_journey.py -q
+  24 passed in 6.76s; PASS
+
+.venv/bin/python -m pytest tests/test_art_room_return_ui.py -q
+  17 passed in 1.15s; PASS
+
+.venv/bin/python -m pytest tests/test_art_session_strip.py -q
+  6 passed in 0.55s; PASS
+
+.venv/bin/python -m pytest tests/test_art_shared_lesson_journey.py -q
+  54 passed in 12.61s; PASS
+
+.venv/bin/python -m pytest tests/test_art_shared_lesson_native_host.py -q
+  6 passed in 1.40s; PASS
+
+.venv/bin/python -m pytest tests/test_art_shared_lesson_widgets.py -q
+  35 passed in 2.19s; PASS
+
+.venv/bin/python -m pytest tests/test_art_start_ux.py -q
+  55 passed in 1.02s; PASS
+
+.venv/bin/python -m pytest tests/test_art_video_offer_navigation.py -q
+  25 passed in 7.27s; PASS
+
+.venv/bin/python -m pytest tests/test_art_workspace.py -q
+  19 passed in 0.59s; PASS
+
+.venv/bin/python -m pytest tests/test_controller_remote_transport.py -q
+  31 passed in 2.42s; PASS
+
+.venv/bin/python -m pytest tests/test_creative_modes_edge.py -q
+  39 passed in 0.10s; PASS
+
+.venv/bin/python -m pytest tests/test_creator_live_presentation.py -q
+  11 passed in 0.54s; PASS
+
+.venv/bin/python -m pytest tests/test_creator_profile_guidance.py -q
+  17 passed in 1.46s; PASS
+
+.venv/bin/python -m pytest tests/test_native_art_activities.py -q
+  12 passed in 1.93s; PASS
+
+.venv/bin/python -m pytest tests/test_native_art_notes_layout.py -q
+  97 passed in 26.05s; PASS
+
+.venv/bin/python -m pytest tests/test_native_art_room_return.py -q
+  11 passed in 3.71s; PASS
+
+.venv/bin/python -m pytest tests/test_native_canvas_publication.py -q
+  44 passed in 0.47s; PASS
+
+.venv/bin/python -m pytest tests/test_paint_along_copy_recovery.py -q
+  34 passed in 0.49s; PASS
+
+.venv/bin/python -m pytest tests/test_paint_along_copy_recovery_ui.py -q
+  41 passed in 6.46s; PASS
+
+.venv/bin/python -m pytest tests/test_paint_along_guest_journey.py -q
+  8 passed in 1.31s; PASS
+
+.venv/bin/python -m pytest tests/test_paint_along_guest_opening_ui.py -q
+  22 passed in 5.84s; PASS
+
+.venv/bin/python -m pytest tests/test_paint_along_host_opening.py -q
+  22 passed in 0.44s; PASS
+
+.venv/bin/python -m pytest tests/test_paint_along_host_opening_ui.py -q
+  19 passed in 3.42s; PASS
+
+.venv/bin/python -m pytest tests/test_paint_along_player_health.py -q
+  29 passed in 0.38s; PASS
+
+.venv/bin/python -m pytest tests/test_paint_along_prepared_copy.py -q
+  24 passed in 6.76s; PASS
+
+.venv/bin/python -m pytest tests/test_paint_along_seek_input.py -q
+  21 passed in 1.48s; PASS
+
+.venv/bin/python -m pytest tests/test_paint_along_youtube_journey.py -q
+  1 passed in 0.84s; PASS
+
+.venv/bin/python -m pytest tests/test_paint_along_youtube_ui.py -q
+  4 passed in 0.68s; PASS
+
+.venv/bin/python -m pytest tests/test_reference_video.py -q
+  73 passed in 0.25s; PASS
+
+.venv/bin/python -m pytest tests/test_reference_video_application_integration.py -q
+  37 passed in 0.71s; PASS
+
+.venv/bin/python -m pytest tests/test_reference_video_coordinator.py -q
+  25 passed in 0.44s; PASS
+
+.venv/bin/python -m pytest tests/test_reference_video_ui.py -q
+  32 passed in 0.82s; PASS
+
+.venv/bin/python -m pytest tests/test_reference_video_youtube.py -q
+  24 passed in 0.50s; PASS
+
+.venv/bin/python -m pytest tests/test_room_clock.py -q
+  72 passed in 0.20s; PASS
+
+.venv/bin/python -m pytest tests/test_room_clock_coordinator.py -q
+  27 passed in 0.45s; PASS
+
+.venv/bin/python -m pytest tests/test_room_clock_ui.py -q
+  29 passed in 0.80s; PASS
+
+.venv/bin/python -m pytest tests/test_room_help_controller.py -q
+  51 passed in 0.56s; PASS
+
+.venv/bin/python -m pytest tests/test_room_help_layout.py -q
+  11 passed in 2.89s; PASS
+
+.venv/bin/python -m pytest tests/test_room_help_widget.py -q
+  8 passed in 0.49s; PASS
+
+.venv/bin/python -m pytest tests/test_room_readiness_presentation.py -q
+  10 passed in 0.64s; PASS
+
+.venv/bin/python -m pytest tests/test_room_state.py -q
+  30 passed in 0.13s; PASS
+
+.venv/bin/python -m pytest tests/test_shared_canvas.py -q
+  64 passed in 0.15s; PASS
+
+.venv/bin/python -m pytest tests/test_shared_canvas_coordinator.py -q
+  25 passed in 0.41s; PASS
+
+.venv/bin/python -m pytest tests/test_shared_canvas_ui.py -q
+  49 passed in 0.66s; PASS
+
+.venv/bin/python -m pytest tests/test_two_session_art_host_recovery.py -q
+  6 passed in 1.64s; PASS
+
+.venv/bin/python -m pytest tests/test_two_session_art_integration.py -q
+  4 passed in 1.34s; PASS

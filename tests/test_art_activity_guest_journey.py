@@ -79,7 +79,10 @@ def _private_and_local(app, caplog):
     assert app.creator_profile.key == "art"
     assert app.settings.last_creator_profile_key == "music"
     overview = app.window.art_room_overview._overview
-    if overview.activity_actions:
+    if overview.activity_action == "video":
+        assert overview.making_detail == ""
+        assert not app.window.art_room_overview._making_detail.isVisibleTo(app.window)
+    elif overview.activity_actions:
         assert "Shared activities are optional." in overview.making_detail
 
 

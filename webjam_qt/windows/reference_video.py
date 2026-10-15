@@ -39,7 +39,7 @@ from core.youtube_lesson import YouTubeLesson, parse_youtube_lesson_url
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.scrollable_content import ScrollableContent
 
-_HOST_EMPTY_HEADLINE = "Or choose a silent reference"
+_HOST_EMPTY_HEADLINE = "Choose a silent reference"
 _GUEST_EMPTY_HEADLINE = "Optional silent reference"
 _STANDALONE_SURFACE_FLOOR = 360
 _COMPACT_SURFACE_FLOOR = 40
@@ -694,7 +694,9 @@ class ReferenceVideoDialog(QDialog):
             "Opening your silent process video" if loading else
             "Video unavailable" if snapshot.error else _EMPTY_SURFACE
         )
-        if loading:
+        if snapshot.publication_warning:
+            self._status.setText(snapshot.publication_warning)
+        elif loading:
             self._status.setText(
                 "Loading the silent lesson. Stay here while it opens, or go back to cancel."
                 if youtube else "Checking the video. You can go back to the room while it opens."

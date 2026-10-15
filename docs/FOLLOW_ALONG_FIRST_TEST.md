@@ -51,6 +51,11 @@ retries the connection; **Paste new invite** replaces a rejected invitation.
 Keep your saved workspace. A later meeting-link change uses **Copy Link** and
 **Add Link / Change Link** rather than a new room invitation.
 
+During a brief LAN interruption, lesson requests recover with the same room
+without **Restart requests**. Controls wait for a fresh connection and names
+may disappear temporarily. Request expiry still applies; ask again if your
+request expired. Ending or leaving the room retires its requests.
+
 ## Music video practice
 
 After the Art test, end or leave that room and use **File → Return to launch…**.

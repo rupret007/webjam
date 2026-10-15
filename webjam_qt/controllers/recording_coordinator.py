@@ -6128,13 +6128,19 @@ class RecordingCoordinator:
         self._set_phase(
             RecorderPhase.STOP_FAILED if still_armed else RecorderPhase.ERROR
         )
+        # Explain the attempted start, not the possibly-armed recovery latch.
+        start_unconfirmed = ambiguous_start or not self._c._recorder_armed
         self._c._show_actionable_error(
-            "Recording Could Not Start"
-            if not self._c._recorder_armed
-            else "Recording Could Not Stop",
+            "Recording Start Unconfirmed"
+            if ambiguous_start
+            else (
+                "Recording Could Not Start"
+                if start_unconfirmed
+                else "Recording Could Not Stop"
+            ),
             what_failed=(
                 "WebJam couldn't confirm that recording started."
-                if not self._c._recorder_armed
+                if start_unconfirmed
                 else "WebJam couldn't confirm that recording stopped."
             ),
             likely_cause=(
@@ -6945,6 +6951,9 @@ class RecordingCoordinator:
         )
         self.last_validation = result
         self.last_completed_take = refreshed.path
+        library = getattr(self._c, "session_library", None)
+        if library is not None:
+            library.recording_completed(refreshed, validated=not needs_attention)
         if needs_attention != previous_attention:
             self._set_phase(
                 RecorderPhase.NEEDS_ATTENTION

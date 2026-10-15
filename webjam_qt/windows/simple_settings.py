@@ -119,7 +119,9 @@ class SimpleSettingsDialog(QDialog):
         name_label = self._field_label("Your name")
         self._name = QLineEdit(default_musician_name(settings))
         self._name.setPlaceholderText("Your name")
-        self._name.setAccessibleName("Your musician name")
+        self._name.setAccessibleName(
+            "Your name" if self._creator_profile_key == "art" else "Your musician name"
+        )
         identity.layout().addWidget(name_label)
         identity.layout().addWidget(self._name)
         # The "You" section is identity, not engine setup: it must read the
@@ -257,7 +259,7 @@ class SimpleSettingsDialog(QDialog):
         root.addStretch(1)
 
         footer = QHBoxLayout()
-        if show_band_check_action:
+        if show_band_check_action and self._creator_profile_key != "art":
             band_check = QPushButton("Verify Sound")
             band_check.setObjectName("GhostButton")
             band_check.setAccessibleName("Save these settings and verify sound")

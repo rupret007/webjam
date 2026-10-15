@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import sys
@@ -348,7 +349,9 @@ def test_windows_clean_install_exposes_the_bundled_jamulus_installer(
         shell=False,
     )
     assert not dialog._install_jamulus_button.isEnabled()
-    assert "Finish the Jamulus installer" in dialog._installer_status.text()
+    assert dialog._installer_status.text() == (
+        "Finish the music component installer, then choose Back to continue."
+    )
     dialog.close()
 
 
@@ -392,7 +395,9 @@ def test_windows_installer_launch_failure_is_actionable(qapp, tmp_path):
     ):
         dialog = LaunchDialog(settings)
         dialog._install_jamulus_button.click()
-    assert "couldn’t open" in dialog._installer_error.text()
+    assert dialog._installer_error.text() == (
+        "The installer couldn’t open. Re-extract WebJam and try Install the music component again."
+    )
     assert dialog._install_jamulus_button.isEnabled()
 
 
@@ -414,7 +419,10 @@ def test_windows_installer_replacement_is_rejected_before_launch(qapp, tmp_path)
         dialog._install_jamulus_button.click()
 
     popen.assert_not_called()
-    assert "failed its integrity check" in dialog._installer_error.text()
+    assert dialog._installer_error.text() == (
+        "The included music component installer failed its integrity check. "
+        "Re-extract an official WebJam download and try again."
+    )
     assert not dialog._install_jamulus_button.isEnabled()
 
 
@@ -521,6 +529,7 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     assert dialog._join_button_primary.text() == "Join"
     assert dialog._join_button_primary.isEnabled() is False
     assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+    assert dialog._join_status.text() == "Paste an invite to continue"
     assert dialog._join_privacy.text() == (
         "The invite stays on this screen. WebJam does not save it."
     )
@@ -537,6 +546,76 @@ def test_join_asks_for_one_link_then_starts_the_native_journey(qapp, tmp_path):
     assert data["jamulus_server"] == "192.168.1.42"
     assert data["jamulus_port"] == 22124
     assert data["musician_name"] == "Drummer"
+
+
+def _private_v2_lan_invite() -> str:
+    return create_invite_link(
+        "192.168.1.42",
+        session_name="Keep Paste",
+        session_id="11111111-1111-4111-8111-111111111111",
+        peer_port=43121,
+        invite_token="a" * 43,
+    )
+
+
+def _invite_field_matches(dialog, expected: str) -> bool:
+    held = dialog._invite_input.text()
+    if len(held) != len(expected):
+        return False
+    return hmac.compare_digest(held, expected)
+
+
+@pytest.mark.parametrize(
+    "invite_factory",
+    (
+        lambda: create_invite_link("192.168.1.42", session_name="Keep Paste"),
+        _private_v2_lan_invite,
+    ),
+    ids=("lan-v1", "private-v2"),
+)
+def test_invalid_name_keeps_pasted_invite_for_one_retry(
+    qapp, tmp_path, invite_factory
+):
+    """An empty name must not burn the paste; fixing the name submits once."""
+
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    dialog = LaunchDialog(settings)
+    dialog.show_join()
+    dialog.show()
+    qapp.processEvents()
+    pasted = invite_factory()
+    dialog._name_input.setText("")
+    dialog._invite_input.setText(pasted)
+    qapp.processEvents()
+
+    assert dialog._join_button_primary.isEnabled() is True
+    dialog._join()
+    qapp.processEvents()
+
+    assert dialog.selected_role == ""
+    assert dialog.result() != dialog.DialogCode.Accepted
+    kept_paste = _invite_field_matches(dialog, pasted)
+    pasted = ""
+    assert kept_paste is True
+    assert dialog._join_button_primary.isEnabled() is True
+    assert dialog._join_status.text() == "Invitation pasted — choose Join"
+    assert dialog._name_error.isVisibleTo(dialog)
+    assert dialog._name_error.text() == "Enter a musician name."
+    assert dialog._name_input.isVisibleTo(dialog)
+    assert dialog._name_input.hasFocus()
+
+    dialog._name_input.setText("Artist")
+    dialog._join()
+    qapp.processEvents()
+
+    assert dialog.selected_role == "join"
+    assert dialog._invite_input.text() == ""
+    persisted = Path(settings.config_file).read_text(encoding="utf-8")
+    data = json.loads(persisted)
+    assert data["musician_name"] == "Artist"
+    assert data["jamulus_server"] == "192.168.1.42"
+    assert "a" * 43 not in persisted
+    dialog.close()
 
 
 def test_join_door_reports_checking_without_reflecting_private_text(
