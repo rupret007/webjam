@@ -146,12 +146,28 @@ def test_non_macos_music_shows_host_reason_on_choice_page(
     qapp.processEvents()
     try:
         assert dialog.selected_creator_profile_key == "music"
-        assert not dialog._host_button.isEnabled()
+        assert dialog._can_host() is False
+        # Ghost Host stays enabled so a click can explain; Join is the orange.
+        assert dialog._host_button.isEnabled() is True
+        assert dialog._host_button.objectName() == "LaunchSecondary"
+        assert dialog._host_button.isDefault() is False
         assert dialog._join_button.isEnabled() is True
+        assert dialog._join_button.objectName() == "LaunchPrimary"
+        assert dialog._join_button.isDefault() is True
         reason = dialog._host_reason
         assert reason.isVisibleTo(dialog._choice_page)
         assert reason.text() == WIN32_MUSIC_HOST_REASON
+        assert reason.text() == "A Mac starts the band. Join with their invite."
         harvested = harvest_first_screen(dialog)
+        assert "a mac starts the band" in harvested
         assert_no_banned_first_screen_words(harvested)
+
+        with patch.object(dialog, "accept") as accept:
+            dialog._host_button.click()
+        accept.assert_not_called()
+        assert dialog.selected_role == ""
+        assert reason.isVisibleTo(dialog._choice_page)
+        assert reason.accessibleDescription() == WIN32_MUSIC_HOST_REASON
+        assert dialog._join_button.hasFocus()
     finally:
         dialog.close()

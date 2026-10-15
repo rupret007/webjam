@@ -187,6 +187,18 @@ class _InvitationInput(QLineEdit):
             event.accept()
 
 
+def _restyle_launch_button(button: QPushButton, object_name: str) -> None:
+    """Swap Host/Join orange vs ghost without leaving a stale QSS object name."""
+
+    if button.objectName() == object_name:
+        return
+    button.setObjectName(object_name)
+    style = button.style()
+    style.unpolish(button)
+    style.polish(button)
+    button.update()
+
+
 class _JoinPrimaryButton(QPushButton):
     """Join primary that stays keyboard-reachable before an invite is pasted."""
 
@@ -879,7 +891,6 @@ class LaunchDialog(QDialog):
         self._host_button = QPushButton()
         self._host_button.setObjectName("LaunchPrimary")
         self._host_button.setMinimumHeight(52)
-        self._host_button.setDefault(True)
         self._join_button = QPushButton()
         self._join_button.setObjectName("LaunchSecondary")
         self._join_button.setMinimumHeight(52)
@@ -1255,12 +1266,32 @@ class LaunchDialog(QDialog):
         elif music_reason:
             host_description += f" {music_reason}"
         self._host_button.setAccessibleDescription(host_description)
-        self._host_button.setEnabled(host_available and not self._submitting)
+        # Music on a non-Mac keeps Host clickable so a grey control never
+        # silently swallows the click. Join becomes the one orange primary.
+        if music_reason:
+            self._host_button.setEnabled(not self._submitting)
+            _restyle_launch_button(self._host_button, "LaunchSecondary")
+            _restyle_launch_button(self._join_button, "LaunchPrimary")
+            self._host_button.setAutoDefault(False)
+            self._join_button.setAutoDefault(True)
+            self._join_button.setDefault(True)
+            self._host_button.setDefault(False)
+        else:
+            _restyle_launch_button(self._host_button, "LaunchPrimary")
+            _restyle_launch_button(self._join_button, "LaunchSecondary")
+            self._join_button.setAutoDefault(False)
+            self._host_button.setAutoDefault(True)
+            self._host_button.setDefault(True)
+            self._join_button.setDefault(False)
+            self._host_button.setEnabled(host_available and not self._submitting)
         self._refresh_host_reason()
 
         self._join_button.setText(copy.join)
         self._join_button.setAccessibleName(copy.join)
-        self._join_button.setAccessibleDescription(copy.join_description)
+        join_description = copy.join_description
+        if music_reason:
+            join_description = f"{join_description} {music_reason}"
+        self._join_button.setAccessibleDescription(join_description)
         self._join_button.setEnabled(not self._submitting)
 
         # Music's live door is Host / Join only. Local studio stays a
@@ -1642,6 +1673,10 @@ class LaunchDialog(QDialog):
         if not self._can_host():
             if not self._submitting:
                 self._apply_creator_profile_presentation()
+                reason = self._host_reason
+                if reason.text():
+                    reason.setVisible(True)
+                    self._announce_error(reason, focus=self._join_button)
             return
         musician_name = self._validated_musician_name()
         if musician_name is None:

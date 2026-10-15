@@ -1149,7 +1149,13 @@ def test_windows_door_with_missing_music_component_stays_compact(qapp, tmp_path,
         qapp.processEvents()
         assert dialog.height() + 40 <= 600
         assert dialog.width() <= 760
-        assert dialog._host_button.isEnabled() is (profile == "art")
+        assert dialog._can_host() is (profile == "art")
+        if profile == "music":
+            assert dialog._host_button.isEnabled()
+            assert dialog._host_button.objectName() == "LaunchSecondary"
+            assert dialog._join_button.objectName() == "LaunchPrimary"
+        else:
+            assert dialog._host_button.isEnabled() is True
         assert dialog._join_button.isEnabled()
         assert not dialog._install_jamulus_button.isVisibleTo(dialog)
         assert_no_banned_first_screen_words(harvest_first_screen(dialog))

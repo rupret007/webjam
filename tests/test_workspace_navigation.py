@@ -82,7 +82,9 @@ def navigation(tmp_path, monkeypatch):
         # navigation must not depend on the Music/Podcast hosting capability.
         launch._host_available = False
         launch._apply_creator_profile_presentation()
-        assert not launch._host_button.isEnabled()
+        assert not launch._can_host()
+        assert launch._host_button.objectName() == "LaunchSecondary"
+        assert launch._join_button.objectName() == "LaunchPrimary"
         return launch
 
     navigator = WorkspaceNavigator(
@@ -108,7 +110,7 @@ def navigation(tmp_path, monkeypatch):
 
 def _join_live(navigator, qapp):
     launch = navigator.launch
-    assert not launch._host_button.isEnabled()
+    assert not launch._can_host()
     launch.show_join()
     launch._invite_input.setText(create_invite_link(
         "192.0.2.10", session_name="Navigation test",

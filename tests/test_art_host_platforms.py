@@ -124,9 +124,17 @@ def test_art_host_click_selects_only_the_chosen_room_without_a_music_install(doo
 @pytest.mark.parametrize("profile", ["music", "podcast_voice", "review_rehearsal"])
 def test_other_profiles_remain_denied_even_when_host_is_called_directly(door, platform, profile):
     rig = door(platform, profile)
-    assert not rig.dialog._host_button.isEnabled()
+    assert not rig.dialog._can_host()
     assert rig.dialog._join_button.isEnabled()
-    rig.dialog._host()
+    if profile == "music":
+        # Ghost Host stays clickable so it can explain; it still cannot host.
+        assert rig.dialog._host_button.isEnabled()
+        assert rig.dialog._host_button.objectName() == "LaunchSecondary"
+        assert rig.dialog._join_button.objectName() == "LaunchPrimary"
+        rig.dialog._host_button.click()
+    else:
+        assert not rig.dialog._host_button.isEnabled()
+        rig.dialog._host()
     _assert_no_host_submission(rig)
 
 
@@ -178,11 +186,16 @@ def test_profile_start_and_back_changes_keep_current_art_next_action(door, platf
     assert dialog._host_button.isEnabled()
     assert "Start Paint along as the host" in dialog._host_button.accessibleDescription()
     _select_profile(dialog, "music")
-    assert not dialog._host_button.isEnabled()
-    assert "macOS" in dialog._host_reason.text()
+    assert not dialog._can_host()
+    assert dialog._host_button.isEnabled()
+    assert dialog._host_button.objectName() == "LaunchSecondary"
+    assert dialog._join_button.objectName() == "LaunchPrimary"
+    assert "A Mac starts the band" in dialog._host_reason.text()
     dialog.show_join()
     dialog.show_choices()
-    assert not dialog._host_button.isEnabled()
+    assert not dialog._can_host()
+    assert dialog._host_button.isEnabled()
+    assert dialog._join_button.objectName() == "LaunchPrimary"
     _select_profile(dialog, "art")
     _select_start(dialog, "talk_and_make")
     assert dialog._host_button.isEnabled()

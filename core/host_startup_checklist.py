@@ -20,7 +20,7 @@ HOST_STARTUP_PROFILE_NOTE = (
 )
 
 WIN32_MUSIC_HOST_REASON = (
-    "Hosting needs the macOS app. You can still Join."
+    "A Mac starts the band. Join with their invite."
 )
 
 
