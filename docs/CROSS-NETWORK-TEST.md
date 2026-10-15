@@ -2,7 +2,8 @@
 
 Proof-only Ubuntu netns Host/Join without port forwarding. Not a required
 check. Peers run real `webjam-fabric` over compiled `reference-local` IPC.
-Same-LAN, two cone NATs, and two symmetric NATs plus live
+Same-LAN, two cone NATs (DIRECT: zero TURN and zero compiled-relay shim
+bytes), and two symmetric NATs plus live
 `POST /turn-credentials` must **PASS**. `probe-nat` fails closed. Cone SNAT
 is explicit; dual-STUN is verified. Routers default-DROP. No DNAT/REJECT/ICMP.
 Userspace shim reaches compiled loopback sockets. `directstun` is on master

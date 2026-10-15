@@ -9,7 +9,7 @@ Qt is not started. Sidecar env is empty.
 | Case | Proof |
 | --- | --- |
 | `same-lan` | Labels `host`. Sidecars + `webjam_reference` on the LAN. |
-| `cone` | Dual-STUN EIM. Labels `srflx`. No TURN. |
+| `cone` | Dual-STUN EIM. Labels `srflx`. DIRECT fails if TURN or the compiled exact-pair shim carried any bytes (that is not a hole-punch). |
 | `relay` | Dual-STUN EDM. Labels `relay`. Coturn on the public net. Harness POSTs `/turn-credentials` to `deploy/relay/turn_credentials.py` (`mint_coturn`). Relayed-byte proof is shim/coturn counters. |
 
 PASS needs Music and Art nonces both ways plus path labels from both peers.

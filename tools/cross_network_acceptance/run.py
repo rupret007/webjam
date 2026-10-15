@@ -455,10 +455,19 @@ def run_case(
                 guest_rc = _reap(guest_proc, 8.0)
                 host_proof = _wait_json(peer_dir / "host.proof", 1.0)
                 guest_proof = _wait_json(peer_dir / "guest.proof", 1.0)
-                relay_count = _read_count(count_file)
+                shim_bytes = _read_count(count_file)
+                turn_bytes = 0
                 if turn_log.is_file():
-                    relay_count += relayed_bytes(
+                    turn_bytes = relayed_bytes(
                         turn_log.read_text(encoding="utf-8", errors="replace"))
+                # TURN/coturn only, except cone: the compiled exact-pair shim is
+                # not a hole-punch, so those bytes fail the DIRECT assertion.
+                if case == "cone":
+                    relay_count = turn_bytes + shim_bytes
+                elif expect_path == "relay":
+                    relay_count = turn_bytes + shim_bytes
+                else:
+                    relay_count = turn_bytes
                 reason = evaluate_proof(
                     host_proof, guest_proof, expect_path=expect_path,
                     music_nonce=music_nonce, art_nonce=art_nonce, relay_bytes=relay_count,

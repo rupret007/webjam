@@ -69,7 +69,7 @@ def evaluate_proof(
     guest_relay = pair_has_relay(str(guest["local_type"]), str(guest["remote_type"]))
     want = str(expect_path or "").strip().lower()
     if want == "direct":
-        if host_relay or guest_relay:
+        if host_relay or guest_relay or int(relay_bytes or 0) > 0:
             return "direct path used relay"
         return ""
     if want == "relay":

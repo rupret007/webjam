@@ -223,6 +223,12 @@ def test_relay_pair_on_direct_job_fails_and_vice_versa():
         relay_host, relay_guest, expect_path="direct", music_nonce=MUSIC, art_nonce=ART,
     ) == "direct path used relay"
     assert evaluate_proof(
+        host, guest, expect_path="direct", music_nonce=MUSIC, art_nonce=ART, relay_bytes=1,
+    ) == "direct path used relay"
+    assert evaluate_proof(
+        host, guest, expect_path="direct", music_nonce=MUSIC, art_nonce=ART, relay_bytes=0,
+    ) == ""
+    assert evaluate_proof(
         host, guest, expect_path="relay", music_nonce=MUSIC, art_nonce=ART, relay_bytes=40,
     ) == "relay path used direct"
     assert evaluate_proof(
