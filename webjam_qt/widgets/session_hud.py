@@ -76,9 +76,42 @@ class SessionHud(QFrame):
             "Copies the complete invitation link to your clipboard."
         )
         self._action_kind = "invite"
+        self._last_state: dict[str, object] | None = None
         self._action.clicked.connect(self._emit_action)
         self._action.setVisible(False)
         layout.addWidget(self._action)
+
+    def overlay_actions(
+        self,
+        *,
+        action_text: str | None = None,
+        action_kind: str | None = None,
+        action_visible: bool | None = None,
+        secondary_action_text: str | None = None,
+        secondary_action_visible: bool | None = None,
+        secondary_action_kind: str | None = None,
+    ) -> None:
+        """Re-issue set_state with only the visible action fields changed."""
+
+        last = self._last_state
+        if last is None:
+            return
+        updates = dict(last)
+        if action_text is not None:
+            updates["action_text"] = action_text
+        if action_kind is not None:
+            updates["action_kind"] = action_kind
+        if action_visible is not None:
+            updates["action_visible"] = action_visible
+        if secondary_action_text is not None:
+            updates["secondary_action_text"] = secondary_action_text
+        if secondary_action_visible is not None:
+            updates["secondary_action_visible"] = secondary_action_visible
+        if secondary_action_kind is not None:
+            updates["secondary_action_kind"] = secondary_action_kind
+        status = str(updates.pop("status", ""))
+        detail = str(updates.pop("detail", ""))
+        self.set_state(status, detail, **updates)
 
     def set_state(
         self,
@@ -101,6 +134,25 @@ class SessionHud(QFrame):
         checklist_detail_rich: str = "",
         checklist_note: str = "",
     ) -> None:
+        self._last_state = {
+            "status": str(status),
+            "detail": str(detail),
+            "invite_available": invite_available,
+            "action_text": action_text,
+            "action_visible": action_visible,
+            "action_kind": action_kind,
+            "ready": ready,
+            "secondary_action_text": secondary_action_text,
+            "secondary_action_visible": secondary_action_visible,
+            "secondary_action_kind": secondary_action_kind,
+            "input_visible": input_visible,
+            "input_placeholder": input_placeholder,
+            "input_value": input_value,
+            "input_accessible_name": input_accessible_name,
+            "checklist_current_step": checklist_current_step,
+            "checklist_detail_rich": checklist_detail_rich,
+            "checklist_note": checklist_note,
+        }
         retry_was_available = self._action_kind == "retry" and not self._action.isHidden()
         self._status.setText(str(status))
         plain_detail = str(detail)

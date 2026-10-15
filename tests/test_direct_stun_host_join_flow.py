@@ -67,6 +67,10 @@ def _issued_invite():
     )
 
 
+def _paste_fallback_only(monkeypatch) -> None:
+    monkeypatch.setattr("core.signaling_mailbox.mailbox_origin", lambda: "")
+
+
 def test_host_then_join_then_reply_ends_connected(qapp, tmp_path, monkeypatch) -> None:
     """Ordinary Host start, Join paste, then the paste-reply path, connected.
 
@@ -74,6 +78,7 @@ def test_host_then_join_then_reply_ends_connected(qapp, tmp_path, monkeypatch) -
     This test does not invent another exchange.
     """
 
+    _paste_fallback_only(monkeypatch)
     monkeypatch.setattr(
         "services.native_remote_transport.ordinary_native_host_profile",
         lambda: "direct-stun",
@@ -187,6 +192,113 @@ def test_host_then_join_then_reply_ends_connected(qapp, tmp_path, monkeypatch) -
     host.shutdown()
 
 
+def test_host_then_join_single_paste_uses_mailbox(qapp, tmp_path, monkeypatch) -> None:
+    """Guest pastes one invite; the mailbox carries the reply automatically."""
+
+    from core.signaling_mailbox import bind_transport
+    from tests.test_signaling_mailbox import MemoryMailbox
+
+    store = MemoryMailbox()
+    bind_transport(store)
+    monkeypatch.setattr(
+        "services.native_remote_transport.ordinary_native_host_profile",
+        lambda: "direct-stun",
+    )
+    issued = _issued_invite()
+    invitation = issued.invitation.with_host_signal(SIGNAL)
+    constructed: list[str] = []
+
+    class HostOwner:
+        invitation_available = True
+        profile_id = "direct-stun"
+
+        def __init__(self, *, target_port, profile_id="reference-local", on_snapshot=None, **_kwargs):
+            assert profile_id == "direct-stun"
+            constructed.append(profile_id)
+            self.profile_id = profile_id
+            self.invitation = invitation
+            self._on_snapshot = on_snapshot
+            self.applied_reply = b""
+            self.snapshot = RemoteSessionSnapshot(
+                phase=RemoteSessionPhase.PREPARING,
+                role=SessionRole.HOST,
+                generation=1,
+                path=TransportPath.INTERNET_DIRECT,
+            )
+
+        def apply_guest_reply(self, envelope: bytes) -> None:
+            self.applied_reply = bytes(envelope)
+            self.snapshot = RemoteSessionSnapshot(
+                phase=RemoteSessionPhase.CONNECTED,
+                role=SessionRole.HOST,
+                generation=1,
+                loopback_port=43123,
+                path=TransportPath.INTERNET_DIRECT,
+                quality=ConnectionQuality.UNKNOWN,
+            )
+            if self._on_snapshot is not None:
+                self._on_snapshot(self.snapshot)
+
+        def copy_for_clipboard(self) -> str:
+            return issued.private_link.reveal_for_clipboard()
+
+        def stop(self):
+            return None
+
+    class GuestBackend:
+        def __init__(self, **_kwargs):
+            self.connection_available = False
+
+        def start_guest(self, joined, *, generation):
+            self.connection_available = True
+            return RemoteGuestConnection(
+                loopback_port=43124,
+                path=TransportPath.INTERNET_DIRECT,
+                quality=ConnectionQuality.UNKNOWN,
+                generation=generation,
+            )
+
+        @property
+        def guest_reply(self) -> bytes:
+            return SIGNAL
+
+        def stop(self):
+            return None
+
+    host = _controller(tmp_path / "host", hosting=True)
+    host.begin_startup_journey = mock.MagicMock()
+    monkeypatch.setattr(
+        "services.native_remote_transport.NativeHostTransportOwner",
+        HostOwner,
+    )
+    assert ApplicationController.begin_startup_journey(host) is True
+    _drain_until(qapp, lambda: host._remote_invite_owner is not None)
+    assert constructed == ["direct-stun"]
+
+    guest = _controller(tmp_path / "guest")
+    monkeypatch.setattr(
+        "services.native_remote_transport.NativeGuestTransportBackend",
+        GuestBackend,
+    )
+    assert guest.accept_invitation(invitation)
+    _drain_until(
+        qapp,
+        lambda: (
+            guest._remote_session is not None
+            and guest._remote_session.snapshot.phase is RemoteSessionPhase.CONNECTED
+            and host._remote_invite_owner.applied_reply == SIGNAL
+        ),
+        timeout=3.0,
+    )
+    assert host._remote_session.snapshot.phase is RemoteSessionPhase.CONNECTED
+    assert any(hit.startswith("POST ") and hit.endswith("/answer") for hit in store.hits)
+    guest._stop_remote_transport()
+    host._stop_remote_transport()
+    guest.shutdown()
+    host.shutdown()
+    bind_transport(None)
+
+
 def _hud_button(controller, name: str):
     hud = controller.window.session_hud
     for button in (hud._action, hud._secondary_action):
@@ -198,6 +310,7 @@ def _hud_button(controller, name: str):
 def test_copy_and_paste_reply_actions_use_the_hud_buttons(qapp, tmp_path, monkeypatch) -> None:
     """Guest Copy reply and host Paste reply are HUD buttons, not method calls."""
 
+    _paste_fallback_only(monkeypatch)
     monkeypatch.setattr(
         "services.native_remote_transport.ordinary_native_host_profile",
         lambda: "direct-stun",
@@ -314,3 +427,15 @@ def test_copy_and_paste_reply_actions_use_the_hud_buttons(qapp, tmp_path, monkey
     host._stop_remote_transport()
     guest.shutdown()
     host.shutdown()
+
+
+def test_session_hud_refresh_does_not_overwrite_clipboard(qapp, tmp_path) -> None:
+    """Copy reply is a HUD click. A refresh must not steal the clipboard."""
+
+    controller = _controller(tmp_path / "guest")
+    QApplication.clipboard().setText("musician-owned clipboard")
+    controller._copy_direct_stun_guest_reply_if_ready()
+    controller._update_session_hud()
+    qapp.processEvents()
+    assert QApplication.clipboard().text() == "musician-owned clipboard"
+    controller.shutdown()
