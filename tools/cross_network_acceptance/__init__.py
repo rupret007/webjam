@@ -1,7 +1,5 @@
 """Optional Cross-network acceptance harness."""
 
-from __future__ import annotations
-
 import os
 import sys
 

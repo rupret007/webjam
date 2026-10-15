@@ -1,7 +1,5 @@
 """Machine-readable receipts the conductor can consume (full SHA + PASS)."""
 
-from __future__ import annotations
-
 import json
 import re
 from pathlib import Path
@@ -20,7 +18,7 @@ _SECRET_KEYS = frozenset({
 
 
 class ReceiptError(ValueError):
-    """Raised when a receipt would be unsafe or incomplete."""
+    pass
 
 
 def require_full_sha(value: str) -> str:
@@ -80,17 +78,12 @@ def build_receipt(
     if port_forwarding:
         raise ReceiptError("This harness never configures port forwarding.")
     payload = {
-        "schema": SCHEMA,
-        "git_sha": digest,
-        "status": label,
-        "case": name,
-        "port_forwarding": False,
-        "netem": bool(netem),
+        "schema": SCHEMA, "git_sha": digest, "status": label, "case": name,
+        "port_forwarding": False, "netem": bool(netem),
         "rendezvous_reachable_from_host": rendezvous_reachable_from_host,
         "rendezvous_reachable_from_guest": rendezvous_reachable_from_guest,
         "invite_host_routable_from_guest": invite_host_routable_from_guest,
-        "profiles": profiles,
-        "notes": str(notes or ""),
+        "profiles": profiles, "notes": str(notes or ""),
         "conductor_line": conductor_line(sha=digest, status=label, case=name),
         "nat_mode": str(nat_mode or ""),
         "stun_reachable_from_host": stun_reachable_from_host,
@@ -102,8 +95,6 @@ def build_receipt(
 
 
 def write_receipt(directory: Path, receipt: dict[str, Any]) -> Path:
-    """Write JSON always; ``.PASS`` only on PASS; unlink stale ``.PASS`` on FAIL."""
-
     if contains_secret_keys(receipt):
         raise ReceiptError("A receipt must not carry invitation material.")
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)

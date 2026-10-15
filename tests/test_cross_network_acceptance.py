@@ -1,9 +1,4 @@
-"""Receipt, topology plan, and CLI contracts for the optional NAT harness.
-
-Safe in the required master suite (no netns). Never skip/xfail'd here.
-"""
-
-from __future__ import annotations
+"""Receipt, topology plan, and CLI contracts. Safe without netns; never skip/xfail'd."""
 
 import json
 from pathlib import Path
@@ -27,21 +22,35 @@ from tools.cross_network_acceptance.run import (
     job_exit_code,
 )
 from tools.cross_network_acceptance.topology import (
-    GUEST_CROSS,
     HOST_ADDR,
     NETEM_DELAY,
     NETEM_JITTER,
     NETEM_LOSS,
+    RFC4787,
     TopologyError,
     TopologySpec,
     assert_no_port_forward,
     assert_unsolicited_inbound_udp_dropped,
-    cone_inbound_map_to,
     netem_commands,
     setup_commands,
 )
 
 FULL_SHA = "a" * 40
+
+
+def _receipt(**kw):
+    return build_receipt(
+        sha=kw.pop("sha", FULL_SHA),
+        case=kw.pop("case", "cross-network"),
+        status=kw.pop("status", "FAIL"),
+        profiles=kw.pop("profiles", [{"profile": "art", "guest_connected": False,
+                   "session_state_exchanged": False, "harness_ok": True}]),
+        rendezvous_reachable_from_host=kw.pop("rendezvous_reachable_from_host", True),
+        rendezvous_reachable_from_guest=kw.pop("rendezvous_reachable_from_guest", True),
+        invite_host_routable_from_guest=kw.pop("invite_host_routable_from_guest", False),
+        netem=kw.pop("netem", False),
+        **kw,
+    )
 
 
 def test_require_full_sha_rejects_short_and_dirty_values():
@@ -60,12 +69,12 @@ def test_conductor_line_is_full_sha_and_pass():
 
 
 def test_receipt_omits_invitation_material(tmp_path: Path):
-    receipt = build_receipt(
-        sha=FULL_SHA, case="same-lan", status="PASS",
+    receipt = _receipt(
+        case="same-lan", status="PASS",
         profiles=[{"profile": "art", "guest_connected": True,
                    "session_state_exchanged": True, "harness_ok": True}],
         rendezvous_reachable_from_host=None, rendezvous_reachable_from_guest=None,
-        invite_host_routable_from_guest=True, netem=False,
+        invite_host_routable_from_guest=True,
     )
     assert receipt["schema"] == SCHEMA
     assert receipt["git_sha"] == FULL_SHA
@@ -79,13 +88,8 @@ def test_receipt_omits_invitation_material(tmp_path: Path):
 
 
 def test_fail_receipt_does_not_write_pass_file(tmp_path: Path):
-    receipt = build_receipt(
-        sha=FULL_SHA, case="cross-network", status="FAIL",
-        profiles=[{"profile": "art", "guest_connected": False,
-                   "session_state_exchanged": False, "harness_ok": True}],
-        rendezvous_reachable_from_host=True, rendezvous_reachable_from_guest=True,
-        invite_host_routable_from_guest=False, netem=True,
-        notes="Expected until v3 Internet Host/Join ships.",
+    receipt = _receipt(
+        netem=True, notes="Expected until v3 Internet Host/Join ships.",
     )
     write_receipt(tmp_path, receipt)
     assert not (tmp_path / f"{FULL_SHA}-cross-network.PASS").exists()
@@ -93,24 +97,16 @@ def test_fail_receipt_does_not_write_pass_file(tmp_path: Path):
 
 
 def test_later_fail_removes_stale_pass_file(tmp_path: Path):
-    passed = build_receipt(
-        sha=FULL_SHA, case="cross-network", status="PASS",
+    passed = _receipt(
+        status="PASS",
         profiles=[{"profile": "art", "guest_connected": True,
                    "session_state_exchanged": True, "harness_ok": True}],
-        rendezvous_reachable_from_host=True, rendezvous_reachable_from_guest=True,
-        invite_host_routable_from_guest=True, netem=False,
+        invite_host_routable_from_guest=True,
     )
     write_receipt(tmp_path, passed)
     pass_file = tmp_path / f"{FULL_SHA}-cross-network.PASS"
     assert pass_file.is_file()
-    failed = build_receipt(
-        sha=FULL_SHA, case="cross-network", status="FAIL",
-        profiles=[{"profile": "art", "guest_connected": False,
-                   "session_state_exchanged": False, "harness_ok": True}],
-        rendezvous_reachable_from_host=True, rendezvous_reachable_from_guest=True,
-        invite_host_routable_from_guest=False, netem=False,
-        notes="Later FAIL must drop leftover success evidence.",
-    )
+    failed = _receipt(notes="Later FAIL must drop leftover success evidence.")
     write_receipt(tmp_path, failed)
     assert not pass_file.exists()
     payload = json.loads(
@@ -121,17 +117,17 @@ def test_later_fail_removes_stale_pass_file(tmp_path: Path):
 
 def test_receipt_rejects_secret_keys_and_port_forwarding():
     with pytest.raises(ReceiptError):
-        build_receipt(
-            sha=FULL_SHA, case="same-lan", status="PASS",
+        _receipt(
+            case="same-lan", status="PASS",
             profiles=[{"profile": "art", "invite_token": "secret"}],
             rendezvous_reachable_from_host=None, rendezvous_reachable_from_guest=None,
-            invite_host_routable_from_guest=True, netem=False,
+            invite_host_routable_from_guest=True,
         )
     with pytest.raises(ReceiptError):
-        build_receipt(
-            sha=FULL_SHA, case="same-lan", status="PASS", profiles=[],
+        _receipt(
+            case="same-lan", status="PASS", profiles=[],
             rendezvous_reachable_from_host=None, rendezvous_reachable_from_guest=None,
-            invite_host_routable_from_guest=True, netem=False, port_forwarding=True,
+            invite_host_routable_from_guest=True, port_forwarding=True,
         )
 
 
@@ -140,12 +136,9 @@ def test_cross_network_plan_masquerades_without_port_forward():
     commands = setup_commands(spec)
     assert_no_port_forward(commands)
     text = " ".join(" ".join(item) for item in commands)
-    assert "MASQUERADE" in text
     assert text.count("MASQUERADE") == 2
-    assert "NETMAP" not in text
-    assert "--random-fully" not in text
-    assert "DNAT" not in text
-    assert "REDIRECT" not in text
+    assert "NETMAP" not in text and "--random-fully" not in text
+    assert "DNAT" not in text and "REDIRECT" not in text
     delay = " ".join(" ".join(item) for item in netem_commands(spec))
     assert f"delay {NETEM_DELAY} {NETEM_JITTER} loss {NETEM_LOSS}" in delay
     assert "203.0.113.1" in text
@@ -158,82 +151,79 @@ def test_same_lan_plan_has_no_nat_and_no_netem():
     commands = setup_commands(spec)
     assert_no_port_forward(commands)
     text = " ".join(" ".join(item) for item in commands)
-    assert "MASQUERADE" not in text
-    assert "netem" not in text
-    assert "192.168.110.10" in text
-    assert "192.168.110.11" in text
+    assert "MASQUERADE" not in text and "netem" not in text
+    assert "192.168.110.10" in text and "192.168.110.11" in text
     assert "203.0.113" not in text
 
 
 def test_workflow_is_optional_and_path_filtered():
     workflow = Path(".github/workflows/cross-network-acceptance.yml")
     text = workflow.read_text(encoding="utf-8")
-    assert "name: Cross-network acceptance" in text
-    assert "workflow_dispatch:" in text
-    assert "pull_request:" in text
-    assert "core/network_invite.py" in text
-    assert "core/session_transfer.py" in text
-    assert "services/lan_room_guest.py" in text
-    assert "transport/" in text
+    for token in (
+        "name: Cross-network acceptance", "workflow_dispatch:", "pull_request:",
+        "core/network_invite.py", "core/session_transfer.py",
+        "services/lan_room_guest.py", "transport/", "push:", "ci_prep.sh",
+        "chown -R", "--expected-status PASS", "--expected-status FAIL",
+        "continue-on-error:", "github.ref == 'refs/heads/master'",
+        "classified failure-to-connect", "connected-without-state-exchange",
+        "fake connect", "Prove RFC 4787 NAT packet behavior",
+    ):
+        assert token in text
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "cross-network-acceptance" not in ci
     assert "Cross-network acceptance" not in ci
-    assert "push:" in text
-    assert "coturn" in text
-    assert "linux-modules-extra" in text
-    assert "sudo modprobe sch_netem" in text
-    assert "modprobe sch_netem || true" not in text
-    assert "ip netns add" in text
-    assert "chown -R" in text
-    assert "--expected-status PASS" in text
-    assert "--expected-status FAIL" in text
-    assert "continue-on-error:" in text
-    assert "github.ref == 'refs/heads/master'" in text
+    setup = Path("tools/cross_network_acceptance/ci_prep.sh").read_text(encoding="utf-8")
+    assert "coturn" in setup and "linux-modules-extra" in setup
+    assert "modprobe sch_netem" in setup and "ip netns add" in setup
+    assert "modprobe sch_netem || true" not in setup
     same_lan, two_nat = text.split("cross-network:", 1)
     assert "continue-on-error" not in same_lan
     assert "--expected-status FAIL" not in same_lan
+    assert "probe-nat" in same_lan
     assert "--expected-status FAIL" in two_nat
     assert "continue-on-error:" in two_nat
-    assert "classified failure-to-connect" in text
-    assert "connected-without-state-exchange" in text
-    assert "fake connect" in text
 
 
-def _netmap_targets(commands: list[list[str]]) -> list[str]:
-    targets: list[str] = []
-    for argv in commands:
-        if "NETMAP" not in argv:
-            continue
-        targets.append(argv[argv.index("--to") + 1])
-    return targets
-
-
-def test_cone_nat_plan_uses_masquerade_and_netmap_without_dport():
+def test_cone_nat_plan_uses_masquerade_without_static_forward():
     spec = TopologySpec(case="cross-network", prefix="wjx1", nat_mode="cone")
     commands = setup_commands(spec)
     assert_no_port_forward(commands)
+    assert_unsolicited_inbound_udp_dropped(commands)
     text = " ".join(" ".join(item) for item in commands)
     assert text.count("MASQUERADE") == 2
-    assert text.count("NETMAP") == 2
-    assert "--random-fully" not in text
-    assert "DNAT" not in text
-    assert "--dport" not in text
-    targets = _netmap_targets(commands)
-    assert cone_inbound_map_to("a") == f"{HOST_ADDR}/32"
-    assert cone_inbound_map_to("b") == f"{GUEST_CROSS}/32"
-    assert sorted(targets) == [f"{HOST_ADDR}/32", f"{GUEST_CROSS}/32"]
-    assert f"{GUEST_CROSS}" == "192.168.120.10"
-    assert "192.168.120.0/24" not in targets
-    assert "192.168.120.20" not in text.split()
+    assert "NETMAP" not in text and "--random-fully" not in text
+    assert "DNAT" not in text and "--dport" not in text
+    assert text.count("ESTABLISHED,RELATED") == 2
+    assert RFC4787["cone"] == ("endpoint-independent", "address-and-port-dependent")
+    assert RFC4787["masquerade"] == RFC4787["cone"]
+    from tools.cross_network_acceptance.nat_probe import check_probe, expected_behavior
+    cone = {"unsolicited_dropped": True, "punch_admitted": True, "mapping_reused": True}
+    assert expected_behavior("cone") == cone
+    assert expected_behavior("masquerade") == cone
+    assert expected_behavior("symmetric") == {
+        "unsolicited_dropped": True, "punch_admitted": True, "mapping_reused": False,
+    }
+    assert check_probe({"nat_mode": "cone", **cone})
+    assert not check_probe({
+        "nat_mode": "cone", "unsolicited_dropped": False,
+        "punch_admitted": True, "mapping_reused": True,
+    })
+    assert not check_probe({
+        "nat_mode": "symmetric", "unsolicited_dropped": True,
+        "punch_admitted": True, "mapping_reused": True,
+    })
+    assert "reply-from-contacted-endpoint" in Path(
+        "tools/cross_network_acceptance/nat_probe.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_cone_nat_drops_unsolicited_inbound_udp_before_outbound():
     spec = TopologySpec(case="cross-network", prefix="wjx1", nat_mode="cone")
     commands = setup_commands(spec)
     assert_unsolicited_inbound_udp_dropped(commands)
-    for argv in commands:
-        if "NETMAP" in argv:
-            assert "conntrack" in argv and "ESTABLISHED,RELATED" in argv
+    text = " ".join(" ".join(item) for item in commands)
+    assert "NETMAP" not in text
+    assert "DNAT" not in text
     with pytest.raises(TopologyError):
         assert_unsolicited_inbound_udp_dropped([
             ["iptables", "-t", "nat", "-A", "PREROUTING", "-p", "udp", "-j",
@@ -246,12 +236,13 @@ def test_symmetric_nat_plan_randomizes_host_mapping_only():
     spec = TopologySpec(case="cross-network", prefix="wjx1", nat_mode="symmetric")
     commands = setup_commands(spec)
     assert_no_port_forward(commands)
+    assert_unsolicited_inbound_udp_dropped(commands)
     text = " ".join(" ".join(item) for item in commands)
     assert "--random-fully" in text
     assert text.count("--random-fully") == 1
-    assert text.count("NETMAP") == 1
+    assert "NETMAP" not in text
     assert "DNAT" not in text
-    assert _netmap_targets(commands) == [f"{GUEST_CROSS}/32"]
+    assert RFC4787["symmetric"] == ("endpoint-dependent", "address-and-port-dependent")
 
 
 def test_stun_binding_reports_xor_mapped_source():
@@ -280,8 +271,9 @@ def test_stun_name_override_is_test_only_hosts_mapping():
 
 
 def test_job_exit_code_keeps_fail_assertions():
-    assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=True) == 0
-    assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=False) == 1
+    ok = dict(status="FAIL", expected_status="FAIL", harness_ok=True)
+    assert job_exit_code(**ok) == 0
+    assert job_exit_code(**{**ok, "harness_ok": False}) == 1
     assert job_exit_code(status="PASS", expected_status="FAIL", harness_ok=True) == 1
     assert job_exit_code(status="PASS", expected_status="PASS", harness_ok=True) == 0
     assert job_exit_code(status="FAIL", expected_status="PASS", harness_ok=True) == 1
@@ -307,21 +299,18 @@ def test_completed_guest_result_rejects_programming_and_startup_failures():
     from tools.cross_network_acceptance.roles import NETWORK_CONNECT_EXCEPTIONS
 
     honest = {
-        "guest_connected": False,
-        "failure_class": "honest_unreachable",
+        "guest_connected": False, "failure_class": "honest_unreachable",
         "reason": "unreachable",
     }
     assert completed_guest_result(honest, timed_out=False, returncode=1) is True
     startup = {
-        "guest_connected": False,
-        "reason": "startup_refused",
+        "guest_connected": False, "reason": "startup_refused",
         "failure_class": "startup_failure",
     }
     assert completed_guest_result(startup, timed_out=False, returncode=1) is False
     assert completed_guest_result(
         {"guest_connected": False, "reason": "ingress_rejected",
-         "failure_class": "startup_failure"},
-        timed_out=False, returncode=1,
+         "failure_class": "startup_failure"}, timed_out=False, returncode=1,
     ) is False
     assert completed_guest_result(
         {"guest_connected": False, "failure_class": "unknown"},
@@ -369,8 +358,7 @@ def test_build_sidecar_resolves_relative_output_against_cwd(
         if argv and argv[0] == "go":
             assert Path(kwargs.get("cwd")) == product / "transport"
             out = Path(argv[argv.index("-o") + 1])
-            assert out.is_absolute()
-            assert product / "transport" not in out.parents
+            assert out.is_absolute() and product / "transport" not in out.parents
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(b"ok")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
@@ -393,6 +381,7 @@ def test_completed_guest_result_rejects_connected_without_state_exchange():
     assert completed_guest_result(unlabeled, timed_out=False, returncode=1) is False
     success = {"guest_connected": True, "session_state_exchanged": True}
     assert completed_guest_result(success, timed_out=False, returncode=0) is True
+    assert completed_guest_result(success, timed_out=False, returncode=1) is False
     honest = {
         "guest_connected": False,
         "session_state_exchanged": False,
@@ -400,7 +389,7 @@ def test_completed_guest_result_rejects_connected_without_state_exchange():
     }
     assert completed_guest_result(honest, timed_out=False, returncode=1) is True
     roles = Path("tools/cross_network_acceptance/roles.py").read_text(encoding="utf-8")
-    assert roles.count('"failure_class": "" if connected else "honest_unreachable"') == 2
+    assert roles.count('failure_class="" if connected else "honest_unreachable"') == 2
 
 
 def test_transport_connected_without_state_exchange_is_not_honest_unreachable():
@@ -458,10 +447,10 @@ class _FakeRoleProc:
         self._final_rc = self.returncode = -9
 
 
-def _run_profile_row(tmp_path, monkeypatch, host, guest):
+def _run_profile_row(tmp_path, monkeypatch, host, guest, result=None):
     from types import SimpleNamespace
 
-    honest = {
+    honest = result or {
         "guest_connected": False, "session_state_exchanged": False,
         "failure_class": "honest_unreachable", "transport": "lan",
     }
@@ -469,24 +458,19 @@ def _run_profile_row(tmp_path, monkeypatch, host, guest):
         host_ns="h", guest_ns="g", spec=SimpleNamespace(nat_mode="masquerade"),
     )
     procs = {"host": host, "guest": guest}
+    run = "tools.cross_network_acceptance.run"
     monkeypatch.setattr(
-        "tools.cross_network_acceptance.run.ns_popen",
-        lambda _ns, argv, **_k: procs[argv[argv.index("--role") + 1]],
+        f"{run}.ns_popen", lambda _ns, argv, **_k: procs[argv[argv.index("--role") + 1]],
     )
     monkeypatch.setattr(
-        "tools.cross_network_acceptance.run._wait_json",
+        f"{run}._wait_json",
         lambda path, _t: (
             {"ok": True, "transport": "lan"} if Path(path).name == "host.ready"
             else dict(honest)
         ),
     )
-    monkeypatch.setattr(
-        "tools.cross_network_acceptance.run._invite_host_routable",
-        lambda *_a, **_k: False,
-    )
-    monkeypatch.setattr(
-        "tools.cross_network_acceptance.run._chown_tree", lambda _p: None
-    )
+    monkeypatch.setattr(f"{run}._invite_host_routable", lambda *_a, **_k: False)
+    monkeypatch.setattr(f"{run}._chown_tree", lambda _p: None)
     return _run_profile(topology, "art", tmp_path / "art", {}, tmp_path)
 
 
@@ -576,14 +560,12 @@ def test_stun_server_falls_back_to_python_binding(monkeypatch):
 
 def test_cone_and_symmetric_receipt_cases_are_allowed(tmp_path: Path):
     for case in ("cross-network-cone", "cross-network-symmetric"):
-        receipt = build_receipt(
-            sha=FULL_SHA, case=case, status="FAIL",
+        receipt = _receipt(
+            case=case,
             profiles=[{"profile": "art", "guest_connected": False,
                        "session_state_exchanged": False, "harness_ok": True,
                        "transport": "direct-stun",
                        "failure_class": "honest_unreachable", "fake_connect": False}],
-            rendezvous_reachable_from_host=True, rendezvous_reachable_from_guest=True,
-            invite_host_routable_from_guest=False, netem=False,
             nat_mode="cone" if "cone" in case else "symmetric",
             stun_reachable_from_host=True, stun_reachable_from_guest=True,
         )
@@ -607,10 +589,59 @@ def test_test_net3_notes_do_not_claim_nat_type_proof():
         assert "cannot complete packaged direct-stun without a relay" not in notes
     assert "does not prove" not in masquerade
     docs = Path("docs/CROSS-NETWORK-TEST.md").read_text(encoding="utf-8")
-    assert "do **not** prove product cone-versus-symmetric" in docs
-    assert "192.168.120.10/32" in docs
-    assert "192.168.120.20" in docs
-    assert "stale `.PASS`" in docs
+    for token in (
+        "do **not** prove product cone-versus-symmetric", "endpoint-independent",
+        "address-and-port-dependent", "probe-nat", "stale `.PASS`",
+    ):
+        assert token in docs
     topology = Path("tools/cross_network_acceptance/topology.py").read_text(encoding="utf-8")
     assert "do not prove product cone-vs-symmetric" in topology
-    assert "192.168.120.20" in topology
+    assert "endpoint-independent mapping" in topology
+    assert "address-and-port-dependent" in topology
+    assert "NETMAP" in topology and "static inbound rewrite" in topology
+
+
+def test_uncaught_exception_after_success_is_not_harness_ok(tmp_path: Path):
+    import subprocess
+    import sys
+
+    result = tmp_path / "guest.result"
+    (tmp_path / "guest.py").write_text(
+        "import json,sys\nfrom pathlib import Path\n"
+        "Path(sys.argv[1]).write_text(json.dumps({"
+        "'guest_connected': True, 'session_state_exchanged': True}))\n"
+        "raise RuntimeError('cleanup')\n",
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [sys.executable, str(tmp_path / "guest.py"), str(result)], check=False,
+    )
+    assert proc.returncode == 1
+    payload = json.loads(result.read_text(encoding="utf-8"))
+    ok = completed_guest_result(payload, timed_out=False, returncode=proc.returncode)
+    assert ok is False
+    receipt = _receipt(
+        case="same-lan", status="PASS" if ok else "FAIL",
+        profiles=[{"profile": "art", "guest_connected": True,
+                   "session_state_exchanged": True, "harness_ok": ok}],
+        rendezvous_reachable_from_host=None, rendezvous_reachable_from_guest=None,
+        invite_host_routable_from_guest=True,
+    )
+    write_receipt(tmp_path, receipt)
+    assert receipt["status"] == "FAIL"
+    assert not (tmp_path / f"{FULL_SHA}-same-lan.PASS").exists()
+    assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=ok) == 1
+
+
+def test_run_profile_rejects_success_then_exception_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    row = _run_profile_row(
+        tmp_path, monkeypatch, _FakeRoleProc(None),
+        _FakeRoleProc(1, already_exited=True),
+        result={"guest_connected": True, "session_state_exchanged": True,
+                "transport": "lan"},
+    )
+    assert row["harness_ok"] is False and row["reason"] == "guest_crash"
+    assert row["guest_connected"] is True
+    assert job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=False) == 1

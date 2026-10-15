@@ -1,7 +1,5 @@
 """Host and guest role processes for the acceptance harness."""
 
-from __future__ import annotations
-
 import json
 import os
 import re
@@ -14,7 +12,7 @@ from core.network_invite import local_band_address, parse_invite_link
 from core.session_transfer import SessionTransferError
 from core.session_transfer_runtime import GuestPeerSession, HostPeerSession
 
-# Connect-path only. TypeError/ValueError must fail the harness, not expected FAIL.
+# Connect-path only. TypeError/ValueError must not become expected FAIL.
 NETWORK_CONNECT_EXCEPTIONS = (SessionTransferError, OSError)
 
 ART_START = "paint_along"
@@ -24,16 +22,10 @@ _STOP_NAME = "host.stop"
 _RESULT_NAME = "guest.result"
 _URL_RE = re.compile(r"https?://\S+|webjam://\S+|webjam-signal:\S+", re.IGNORECASE)
 _HONEST_FAIL_SNIPPETS = (
-    "couldn't reach the host",
-    "could not open",
-    "couldn’t open",
-    "private room could not open",
-    "private music path could not open",
-    "private music connection",
-    "fresh invitation",
-    "timed out",
-    "incomplete",
-    "unreachable",
+    "couldn't reach the host", "could not open", "couldn’t open",
+    "private room could not open", "private music path could not open",
+    "private music connection", "fresh invitation", "timed out",
+    "incomplete", "unreachable",
 )
 
 
@@ -56,8 +48,6 @@ def classify_native_guest_failure(
     *, transport_connected: bool, state_exchanged: bool,
     failure_text: str, room_failed: bool,
 ) -> str:
-    """Connected-without-state is never honest_unreachable."""
-
     if state_exchanged:
         return ""
     if transport_connected:
@@ -83,20 +73,12 @@ def _store_invite(work_dir: Path, url: str) -> None:
     path.chmod(0o600)
 
 
-def _wait_stop(work_dir: Path, timeout_s: float) -> None:
-    stop = work_dir / _STOP_NAME
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        if stop.exists():
-            return
-        time.sleep(0.05)
-
-
-def _pump_until_stop(qapp, work_dir: Path, timeout_s: float) -> None:
+def _wait_stop(work_dir: Path, timeout_s: float, qapp=None) -> None:
     stop = work_dir / _STOP_NAME
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline and not stop.exists():
-        qapp.processEvents()
+        if qapp is not None:
+            qapp.processEvents()
         time.sleep(0.05)
 
 
@@ -109,57 +91,49 @@ def _direct_stun_available() -> bool:
         return False
 
 
+def _guest_result(
+    work_dir: Path, profile: str, transport: str, *,
+    connected: bool, exchanged: bool, **extra: Any,
+) -> int:
+    _write_json(work_dir / _RESULT_NAME, {
+        "ok": exchanged, "profile": profile, "guest_connected": connected,
+        "session_state_exchanged": exchanged, "transport": transport, **extra,
+    })
+    return 0 if exchanged else 1
+
+
 def _guest_fail(
-    work_dir: Path,
-    profile: str,
-    transport: str,
-    *,
-    reason: str,
+    work_dir: Path, profile: str, transport: str, *, reason: str,
     extra: dict[str, Any] | None = None,
 ) -> int:
-    payload: dict[str, Any] = {
-        "ok": False,
-        "profile": profile,
-        "guest_connected": False,
-        "session_state_exchanged": False,
-        "reason": reason,
-        "transport": transport,
-    }
-    if extra:
-        payload.update(extra)
-    _write_json(work_dir / _RESULT_NAME, payload)
-    return 1
+    return _guest_result(
+        work_dir, profile, transport, connected=False, exchanged=False,
+        reason=reason, **(extra or {}),
+    )
+
+
+def _ready(work_dir: Path, **payload: Any) -> int:
+    _write_json(work_dir / _READY_NAME, payload)
+    return 0 if payload.get("ok") else 1
 
 
 def _music_host(work_dir: Path) -> int:
     address = local_band_address()
     if not address:
-        _write_json(work_dir / _READY_NAME, {"ok": False, "reason": "no_private_address"})
-        return 1
+        return _ready(work_dir, ok=False, reason="no_private_address")
     host = HostPeerSession()
     host.start(
-        address,
-        takes_root=work_dir / "host-takes",
+        address, takes_root=work_dir / "host-takes",
         installation_path=work_dir / "host-installation.json",
-        display_name="Host musician",
-        creator_profile_key="music",
+        display_name="Host musician", creator_profile_key="music",
     )
     try:
         url = host.invite_link(host=address, jamulus_port=22124, session_name="Music room")
         if not url or not host.active:
-            _write_json(work_dir / _READY_NAME, {"ok": False, "reason": "host_inactive"})
-            return 1
+            return _ready(work_dir, ok=False, reason="host_inactive")
         _store_invite(work_dir, url)
-        _write_json(
-            work_dir / _READY_NAME,
-            {
-                "ok": True,
-                "profile": "music",
-                "peer_bound": True,
-                "creator_profile_key": "music",
-                "transport": "lan",
-            },
-        )
+        _ready(work_dir, ok=True, profile="music", peer_bound=True,
+               creator_profile_key="music", transport="lan")
         _wait_stop(work_dir, 90.0)
         return 0
     finally:
@@ -181,24 +155,15 @@ def _music_guest(work_dir: Path) -> int:
         state = guest.poll_once()
         connected = state.session_id == invite.session_id
         exchanged = connected and state.creator_profile_key == "music"
-        _write_json(
-            work_dir / _RESULT_NAME,
-            {
-                "ok": exchanged,
-                "profile": "music",
-                "guest_connected": connected,
-                "session_state_exchanged": exchanged,
-                "creator_profile_key": state.creator_profile_key,
-                "transport": "lan",
-                "failure_class": "" if connected else "honest_unreachable",
-            },
+        return _guest_result(
+            work_dir, "music", "lan", connected=connected, exchanged=exchanged,
+            creator_profile_key=state.creator_profile_key,
+            failure_class="" if connected else "honest_unreachable",
         )
-        return 0 if exchanged else 1
     except NETWORK_CONNECT_EXCEPTIONS:
         return _guest_fail(
             work_dir, "music", "lan", reason="unreachable",
-            extra={"failure_class": "honest_unreachable"},
-        )
+            extra={"failure_class": "honest_unreachable"})
     finally:
         url = ""
 
@@ -207,10 +172,8 @@ def _art_patches():
     from unittest.mock import Mock, patch
 
     return (
-        patch(
-            "webjam_qt.platform_permissions.microphone_permission_status",
-            return_value="authorized",
-        ),
+        patch("webjam_qt.platform_permissions.microphone_permission_status",
+              return_value="authorized"),
         patch("webex_integration.open_webex_meeting", Mock()),
         patch("PySide6.QtGui.QDesktopServices.openUrl", Mock()),
         patch("services.drawpile_service.DrawpileLauncher.open_canvas", Mock()),
@@ -313,12 +276,7 @@ def _art_runtime() -> Iterator[dict[str, Any]]:
 
 
 def _prepare_controller(
-    work_dir: Path,
-    *,
-    hosting: bool,
-    profile: str,
-    invite=None,
-    remote=None,
+    work_dir: Path, *, hosting: bool, profile: str, invite=None, remote=None,
     flashes=None,
 ):
     from PySide6.QtWidgets import QApplication
@@ -340,27 +298,17 @@ def _art_host(work_dir: Path) -> int:
         app, qapp = _prepare_controller(work_dir / "host-qt", hosting=True, profile="art")
         holder["app"] = app
         if not app.begin_startup_journey():
-            _write_json(work_dir / _READY_NAME, {"ok": False, "reason": "startup_refused"})
-            return 1
+            return _ready(work_dir, ok=False, reason="startup_refused")
         ready = _drain(
             qapp, lambda: bool(app.host_peer.active and app._current_invite_url()), 15.0,
         )
         url = app._current_invite_url() if ready else ""
         if not url or app._room_participant.state is ArtRoomState.FAILED:
-            _write_json(work_dir / _READY_NAME, {"ok": False, "reason": "invite_unavailable"})
-            return 1
+            return _ready(work_dir, ok=False, reason="invite_unavailable")
         _store_invite(work_dir, url)
-        _write_json(
-            work_dir / _READY_NAME,
-            {
-                "ok": True,
-                "profile": "art",
-                "peer_bound": True,
-                "art_start_key": ART_START,
-                "transport": "lan",
-            },
-        )
-        _pump_until_stop(qapp, work_dir, 90.0)
+        _ready(work_dir, ok=True, profile="art", peer_bound=True,
+               art_start_key=ART_START, transport="lan")
+        _wait_stop(work_dir, 90.0, qapp)
         return 0
 
 
@@ -379,32 +327,21 @@ def _art_guest(work_dir: Path) -> int:
             if not app.begin_startup_journey():
                 return _guest_fail(
                     work_dir, "art", "lan", reason="startup_refused",
-                    extra={"failure_class": "startup_failure"},
-                )
+                    extra={"failure_class": "startup_failure"})
             connected = _drain(
                 qapp, lambda: app._room_participant.state is ArtRoomState.CONNECTED, 32.0,
             )
             room = app._room_participant
             exchanged = connected and room.borrowed_start == ART_START
-            _write_json(
-                work_dir / _RESULT_NAME,
-                {
-                    "ok": exchanged,
-                    "profile": "art",
-                    "guest_connected": connected,
-                    "session_state_exchanged": exchanged,
-                    "art_start_key": room.borrowed_start,
-                    "room_state": room.state.value,
-                    "transport": "lan",
-                    "failure_class": "" if connected else "honest_unreachable",
-                },
+            return _guest_result(
+                work_dir, "art", "lan", connected=connected, exchanged=exchanged,
+                art_start_key=room.borrowed_start, room_state=room.state.value,
+                failure_class="" if connected else "honest_unreachable",
             )
-            return 0 if exchanged else 1
         except NETWORK_CONNECT_EXCEPTIONS:
             return _guest_fail(
                 work_dir, "art", "lan", reason="unreachable",
-                extra={"failure_class": "honest_unreachable"},
-            )
+                extra={"failure_class": "honest_unreachable"})
 
 
 def _native_owner_ready(app) -> bool:
@@ -422,53 +359,35 @@ def _native_host(work_dir: Path, profile: str) -> int:
         )
         holder["app"] = app
         if not app.begin_startup_journey():
-            _write_json(
-                work_dir / _READY_NAME,
-                {
-                    "ok": False,
-                    "reason": "startup_refused",
-                    "transport": "direct-stun",
-                    "failure_text": _sanitize_text(_hud_text(app)),
-                },
+            return _ready(
+                work_dir, ok=False, reason="startup_refused", transport="direct-stun",
+                failure_text=_sanitize_text(_hud_text(app)),
             )
-            return 1
         ready = _drain(qapp, lambda: _native_owner_ready(app), 40.0)
         owner = getattr(app, "_remote_invite_owner", None)
         if not ready or owner is None:
-            _write_json(
-                work_dir / _READY_NAME,
-                {
-                    "ok": False,
-                    "reason": "invite_unavailable",
-                    "transport": "direct-stun",
-                    "host_failed": app._room_participant.state is ArtRoomState.FAILED,
-                    "failure_text": _sanitize_text(" ".join(flashes) or _hud_text(app)),
-                },
+            return _ready(
+                work_dir, ok=False, reason="invite_unavailable", transport="direct-stun",
+                host_failed=app._room_participant.state is ArtRoomState.FAILED,
+                failure_text=_sanitize_text(" ".join(flashes) or _hud_text(app)),
             )
-            return 1
         try:
             paste = owner.copy_for_clipboard()
         except Exception:
-            _write_json(
-                work_dir / _READY_NAME,
-                {"ok": False, "reason": "clipboard_unavailable", "transport": "direct-stun"},
+            return _ready(
+                work_dir, ok=False, reason="clipboard_unavailable",
+                transport="direct-stun",
             )
-            return 1
         _store_invite(work_dir, paste)
         paste = ""
-        _write_json(
-            work_dir / _READY_NAME,
-            {
-                "ok": True,
-                "profile": profile,
-                "peer_bound": True,
-                "art_start_key": ART_START if profile == "art" else "",
-                "transport": "direct-stun",
-                "share_reaches_internet": bool(getattr(owner, "share_reaches_internet", False)),
-                "share_route": str(getattr(owner, "_share_route", "") or ""),
-            },
+        _ready(
+            work_dir, ok=True, profile=profile, peer_bound=True,
+            art_start_key=ART_START if profile == "art" else "",
+            transport="direct-stun",
+            share_reaches_internet=bool(getattr(owner, "share_reaches_internet", False)),
+            share_route=str(getattr(owner, "_share_route", "") or ""),
         )
-        _pump_until_stop(qapp, work_dir, 120.0)
+        _wait_stop(work_dir, 120.0, qapp)
         return 0
 
 
@@ -505,11 +424,8 @@ def _native_guest(work_dir: Path, profile: str) -> int:
                 paste = ""
                 return _guest_fail(
                     work_dir, profile, "direct-stun", reason="ingress_rejected",
-                    extra={
-                        "failure_class": "startup_failure",
-                        "failure_text": _sanitize_text(str(exc)),
-                    },
-                )
+                    extra={"failure_class": "startup_failure",
+                           "failure_text": _sanitize_text(str(exc))})
             paste = ""
             app, qapp = _prepare_controller(
                 work_dir / "guest-qt", hosting=False, profile=profile,
@@ -517,20 +433,10 @@ def _native_guest(work_dir: Path, profile: str) -> int:
             )
             holder["app"] = app
             if not app.begin_startup_journey():
-                _write_json(
-                    work_dir / _RESULT_NAME,
-                    {
-                        "ok": False,
-                        "profile": profile,
-                        "guest_connected": False,
-                        "session_state_exchanged": False,
-                        "reason": "startup_refused",
-                        "transport": "direct-stun",
-                        "failure_class": "startup_failure",
-                        "failure_text": _sanitize_text(_hud_text(app)),
-                    },
-                )
-                return 1
+                return _guest_fail(
+                    work_dir, profile, "direct-stun", reason="startup_refused",
+                    extra={"failure_class": "startup_failure",
+                           "failure_text": _sanitize_text(_hud_text(app))})
             _drain(
                 qapp,
                 lambda: _native_guest_connected(app, profile)
@@ -543,27 +449,18 @@ def _native_guest(work_dir: Path, profile: str) -> int:
             snapshot = getattr(getattr(app, "_remote_session", None), "snapshot", None)
             error_code = getattr(getattr(snapshot, "error_code", None), "value", "")
             failure_text = _sanitize_text(" ".join(flashes) or _hud_text(app))
-            failure_class = classify_native_guest_failure(
-                transport_connected=connected, state_exchanged=exchanged,
+            return _guest_result(
+                work_dir, profile, "direct-stun",
+                connected=connected, exchanged=exchanged,
+                art_start_key=room.borrowed_start, room_state=room.state.value,
+                error_code=error_code,
+                failure_class=classify_native_guest_failure(
+                    transport_connected=connected, state_exchanged=exchanged,
+                    failure_text=failure_text,
+                    room_failed=room.state is ArtRoomState.FAILED,
+                ),
                 failure_text=failure_text,
-                room_failed=room.state is ArtRoomState.FAILED,
             )
-            _write_json(
-                work_dir / _RESULT_NAME,
-                {
-                    "ok": exchanged,
-                    "profile": profile,
-                    "guest_connected": connected,
-                    "session_state_exchanged": exchanged,
-                    "art_start_key": room.borrowed_start,
-                    "room_state": room.state.value,
-                    "error_code": error_code,
-                    "failure_class": failure_class,
-                    "failure_text": failure_text,
-                    "transport": "direct-stun",
-                },
-            )
-            return 0 if exchanged else 1
         except NETWORK_CONNECT_EXCEPTIONS:
             return _guest_fail(
                 work_dir, profile, "direct-stun", reason="unreachable",
@@ -576,11 +473,8 @@ def run_role(role: str, profile: str, work_dir: Path) -> int:
         return 2
     work_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     if _direct_stun_available():
-        return (
-            _native_host(work_dir, profile)
-            if role == "host"
-            else _native_guest(work_dir, profile)
-        )
+        return _native_host(work_dir, profile) if role == "host" else _native_guest(
+            work_dir, profile)
     if profile == "music":
         return _music_host(work_dir) if role == "host" else _music_guest(work_dir)
     return _art_host(work_dir) if role == "host" else _art_guest(work_dir)

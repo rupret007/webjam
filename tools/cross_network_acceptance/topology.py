@@ -1,16 +1,14 @@
-"""Linux netns + iptables MASQUERADE topology for two simulated homes.
+"""Two-home netns topology. No DNAT, NETMAP, REDIRECT, or port forwarding.
 
-Cross-network: host behind NAT-A, guest behind NAT-B, public internet
-between them. No DNAT, REDIRECT, or port forwarding.
-
-NAT modes: masquerade (restricted-cone); cone (MASQUERADE + conntrack-gated
-UDP NETMAP onto the real LAN /32, not a WAN host-bit rewrite to 192.168.120.20);
-symmetric (NAT-A MASQUERADE --random-fully). Unsolicited inbound UDP is dropped
-until outbound creates a mapping. These modes do not prove product cone-vs-symmetric
-NAT behavior while packaged direct-stun discards TEST-NET-3 mappings.
+RFC 4787: masquerade/cone = endpoint-independent mapping +
+address-and-port-dependent filtering (port-restricted cone). A peer is
+admitted only after the inside host sent to that address:port
+(`probe-nat` reply-from-contacted-endpoint). Unsolicited UDP is dropped.
+Not endpoint-independent filtering (that is a static inbound rewrite /
+NETMAP). symmetric = endpoint-dependent mapping on NAT-A (`--random-fully`).
+These modes do not prove product cone-vs-symmetric NAT behavior while
+packaged direct-stun discards TEST-NET-3 mappings.
 """
-
-from __future__ import annotations
 
 import os
 import shutil
@@ -37,10 +35,16 @@ NETEM_JITTER = "50ms"
 NETEM_LOSS = "1%"
 NAT_MODES = frozenset({"masquerade", "cone", "symmetric"})
 COMPILED_STUN_NAMES = ("stun.cloudflare.com", "stun.l.google.com")
+# RFC 4787: (mapping behavior, filtering behavior)
+RFC4787 = {
+    "masquerade": ("endpoint-independent", "address-and-port-dependent"),
+    "cone": ("endpoint-independent", "address-and-port-dependent"),
+    "symmetric": ("endpoint-dependent", "address-and-port-dependent"),
+}
 
 
 class TopologyError(RuntimeError):
-    """The simulated networks could not be created or cleaned up."""
+    pass
 
 
 def required_bin(name: str) -> str:
@@ -85,34 +89,12 @@ class AppliedTopology:
 
 def ns_names(prefix: str) -> dict[str, str]:
     return {
-        "inet": f"{prefix}-inet",
-        "nat_a": f"{prefix}-na",
-        "nat_b": f"{prefix}-nb",
-        "host": f"{prefix}-host",
-        "guest": f"{prefix}-gst",
+        "inet": f"{prefix}-inet", "nat_a": f"{prefix}-na", "nat_b": f"{prefix}-nb",
+        "host": f"{prefix}-host", "guest": f"{prefix}-gst",
     }
 
 
-def _full_cone_inbound(spec: TopologySpec, side: str) -> bool:
-    if spec.nat_mode == "cone":
-        return True
-    if spec.nat_mode == "symmetric":
-        return side == "b"
-    return False
-
-
-def cone_inbound_map_to(side: str) -> str:
-    """NETMAP dest: real LAN endpoint, not 192.168.120.20."""
-
-    if side == "a":
-        return f"{HOST_ADDR}/32"
-    if side == "b":
-        return f"{GUEST_CROSS}/32"
-    raise TopologyError("Cone inbound side must be a or b.")
-
-
 def setup_commands(spec: TopologySpec) -> list[list[str]]:
-    """ip/iptables/tc argv lists. Tests assert these; they are not run."""
 
     ip = "ip"
     iptables = "iptables"
@@ -127,59 +109,45 @@ def setup_commands(spec: TopologySpec) -> list[list[str]]:
     def ns(name: str, *parts: str) -> None:
         add(ip, "netns", "exec", name, *parts)
 
+    def veth(left: str, right: str, left_ns: str, right_ns: str) -> None:
+        add(ip, "link", "add", left, "type", "veth", "peer", "name", right)
+        add(ip, "link", "set", left, "netns", left_ns)
+        add(ip, "link", "set", right, "netns", right_ns)
+
+    def addr_up(name: str, dev: str, addr: str, via: str = "") -> None:
+        ns(name, ip, "link", "set", "lo", "up")
+        ns(name, ip, "addr", "add", addr, "dev", dev)
+        ns(name, ip, "link", "set", dev, "up")
+        if via:
+            ns(name, ip, "route", "add", "default", "via", via)
+        else:
+            ns(name, ip, "route", "add", "default", "dev", dev)
+
     if spec.case == "same-lan":
         add(ip, "netns", "add", names["host"])
         add(ip, "netns", "add", names["guest"])
-        add(ip, "link", "add", f"{p}hg", "type", "veth", "peer", "name", f"{p}gh")
-        add(ip, "link", "set", f"{p}hg", "netns", names["host"])
-        add(ip, "link", "set", f"{p}gh", "netns", names["guest"])
-        for target, dev, addr in (
-            (names["host"], f"{p}hg", f"{HOST_ADDR}/24"),
-            (names["guest"], f"{p}gh", f"{GUEST_LAN}/24"),
-        ):
-            ns(target, ip, "link", "set", "lo", "up")
-            ns(target, ip, "addr", "add", addr, "dev", dev)
-            ns(target, ip, "link", "set", dev, "up")
-            ns(target, ip, "route", "add", "default", "dev", dev)
+        veth(f"{p}hg", f"{p}gh", names["host"], names["guest"])
+        addr_up(names["host"], f"{p}hg", f"{HOST_ADDR}/24")
+        addr_up(names["guest"], f"{p}gh", f"{GUEST_LAN}/24")
         return cmds
 
-    add(ip, "netns", "add", names["inet"])
-    add(ip, "netns", "add", names["nat_a"])
-    add(ip, "netns", "add", names["nat_b"])
-    add(ip, "netns", "add", names["host"])
-    add(ip, "netns", "add", names["guest"])
-    add(ip, "link", "add", f"{p}ia", "type", "veth", "peer", "name", f"{p}ai")
-    add(ip, "link", "add", f"{p}ib", "type", "veth", "peer", "name", f"{p}bi")
-    add(ip, "link", "add", f"{p}al", "type", "veth", "peer", "name", f"{p}ha")
-    add(ip, "link", "add", f"{p}bl", "type", "veth", "peer", "name", f"{p}hb")
-    add(ip, "link", "set", f"{p}ia", "netns", names["inet"])
-    add(ip, "link", "set", f"{p}ib", "netns", names["inet"])
-    add(ip, "link", "set", f"{p}ai", "netns", names["nat_a"])
-    add(ip, "link", "set", f"{p}bi", "netns", names["nat_b"])
-    add(ip, "link", "set", f"{p}al", "netns", names["nat_a"])
-    add(ip, "link", "set", f"{p}ha", "netns", names["host"])
-    add(ip, "link", "set", f"{p}bl", "netns", names["nat_b"])
-    add(ip, "link", "set", f"{p}hb", "netns", names["guest"])
+    for key in ("inet", "nat_a", "nat_b", "host", "guest"):
+        add(ip, "netns", "add", names[key])
+    veth(f"{p}ia", f"{p}ai", names["inet"], names["nat_a"])
+    veth(f"{p}ib", f"{p}bi", names["inet"], names["nat_b"])
+    veth(f"{p}al", f"{p}ha", names["nat_a"], names["host"])
+    veth(f"{p}bl", f"{p}hb", names["nat_b"], names["guest"])
+    inet = names["inet"]
+    ns(inet, ip, "link", "add", "br-pub", "type", "bridge")
+    ns(inet, ip, "link", "set", "lo", "up")
+    ns(inet, ip, "link", "set", "br-pub", "up")
+    for dev in (f"{p}ia", f"{p}ib"):
+        ns(inet, ip, "link", "set", dev, "master", "br-pub")
+        ns(inet, ip, "link", "set", dev, "up")
+    ns(inet, ip, "addr", "add", f"{INET_ADDR}/24", "dev", "br-pub")
 
-    ns(names["inet"], ip, "link", "add", "br-pub", "type", "bridge")
-    ns(names["inet"], ip, "link", "set", "lo", "up")
-    ns(names["inet"], ip, "link", "set", "br-pub", "up")
-    ns(names["inet"], ip, "link", "set", f"{p}ia", "master", "br-pub")
-    ns(names["inet"], ip, "link", "set", f"{p}ib", "master", "br-pub")
-    ns(names["inet"], ip, "link", "set", f"{p}ia", "up")
-    ns(names["inet"], ip, "link", "set", f"{p}ib", "up")
-    ns(names["inet"], ip, "addr", "add", f"{INET_ADDR}/24", "dev", "br-pub")
-
-    def configure_nat(
-        *,
-        ns_name: str,
-        wan_dev: str,
-        wan_addr: str,
-        lan_dev: str,
-        lan_addr: str,
-        lan_net: str,
-        side: str,
-    ) -> None:
+    def configure_nat(ns_name: str, wan_dev: str, wan_addr: str,
+                      lan_dev: str, lan_addr: str, lan_net: str, side: str) -> None:
         ns(ns_name, ip, "link", "set", "lo", "up")
         ns(ns_name, ip, "addr", "add", f"{wan_addr}/24", "dev", wan_dev)
         ns(ns_name, ip, "link", "set", wan_dev, "up")
@@ -200,44 +168,12 @@ def setup_commands(spec: TopologySpec) -> list[list[str]]:
             ns_name, iptables, "-A", "FORWARD", "-i", wan_dev, "-o", lan_dev,
             "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED", "-j", "ACCEPT",
         )
-        if _full_cone_inbound(spec, side):
-            ns(
-                ns_name, iptables, "-t", "nat", "-A", "PREROUTING", "-i", wan_dev,
-                "-p", "udp", "-m", "conntrack", "--ctstate", "ESTABLISHED,RELATED",
-                "-j", "NETMAP", "--to", cone_inbound_map_to(side),
-            )
-        ns(
-            ns_name, iptables, "-A", "FORWARD", "-i", wan_dev, "-o", lan_dev,
-            "-j", "DROP",
-        )
+        ns(ns_name, iptables, "-A", "FORWARD", "-i", wan_dev, "-o", lan_dev, "-j", "DROP")
 
-    configure_nat(
-        ns_name=names["nat_a"],
-        wan_dev=f"{p}ai",
-        wan_addr=NAT_A_WAN,
-        lan_dev=f"{p}al",
-        lan_addr=NAT_A_LAN,
-        lan_net=LAN_A,
-        side="a",
-    )
-    configure_nat(
-        ns_name=names["nat_b"],
-        wan_dev=f"{p}bi",
-        wan_addr=NAT_B_WAN,
-        lan_dev=f"{p}bl",
-        lan_addr=NAT_B_LAN,
-        lan_net=LAN_B,
-        side="b",
-    )
-
-    ns(names["host"], ip, "link", "set", "lo", "up")
-    ns(names["host"], ip, "addr", "add", f"{HOST_ADDR}/24", "dev", f"{p}ha")
-    ns(names["host"], ip, "link", "set", f"{p}ha", "up")
-    ns(names["host"], ip, "route", "add", "default", "via", NAT_A_LAN)
-    ns(names["guest"], ip, "link", "set", "lo", "up")
-    ns(names["guest"], ip, "addr", "add", f"{GUEST_CROSS}/24", "dev", f"{p}hb")
-    ns(names["guest"], ip, "link", "set", f"{p}hb", "up")
-    ns(names["guest"], ip, "route", "add", "default", "via", NAT_B_LAN)
+    configure_nat(names["nat_a"], f"{p}ai", NAT_A_WAN, f"{p}al", NAT_A_LAN, LAN_A, "a")
+    configure_nat(names["nat_b"], f"{p}bi", NAT_B_WAN, f"{p}bl", NAT_B_LAN, LAN_B, "b")
+    addr_up(names["host"], f"{p}ha", f"{HOST_ADDR}/24", NAT_A_LAN)
+    addr_up(names["guest"], f"{p}hb", f"{GUEST_CROSS}/24", NAT_B_LAN)
     return cmds
 
 
@@ -263,13 +199,11 @@ def assert_no_port_forward(commands: list[list[str]]) -> None:
 
 
 def assert_unsolicited_inbound_udp_dropped(commands: list[list[str]]) -> None:
-    """Inbound UDP needs an outbound mapping; no static forward."""
+    """APDF: no static inbound rewrite; NEW UDP is not forwarded."""
 
     for argv in commands:
-        if "NETMAP" in argv and (
-            "conntrack" not in argv or "ESTABLISHED,RELATED" not in argv
-        ):
-            raise TopologyError("Cone NETMAP must require an outbound mapping.")
+        if "NETMAP" in argv or "DNAT" in argv:
+            raise TopologyError("Inbound rewrite is endpoint-independent filtering.")
         if (
             "FORWARD" in argv and "ACCEPT" in argv and "udp" in argv
             and "conntrack" not in argv
@@ -279,10 +213,8 @@ def assert_unsolicited_inbound_udp_dropped(commands: list[list[str]]) -> None:
 
 def _resolve(commands: list[list[str]]) -> list[list[str]]:
     mapping = {
-        "ip": required_bin("ip"),
-        "iptables": required_bin("iptables"),
-        "tc": required_bin("tc"),
-        "sysctl": required_bin("sysctl"),
+        "ip": required_bin("ip"), "iptables": required_bin("iptables"),
+        "tc": required_bin("tc"), "sysctl": required_bin("sysctl"),
     }
     resolved: list[list[str]] = []
     for argv in commands:
@@ -295,7 +227,6 @@ def _resolve(commands: list[list[str]]) -> list[list[str]]:
 
 
 def stun_override_hosts_text() -> str:
-    """Test-only /etc/netns hosts body. Never used by packaged builds."""
 
     names = " ".join(COMPILED_STUN_NAMES)
     return f"127.0.0.1 localhost\n{INET_ADDR} {names}\n"
@@ -335,11 +266,8 @@ def apply_topology(spec: TopologySpec) -> AppliedTopology:
     inet_ns = None if spec.case == "same-lan" else names["inet"]
     inet_addr = None if spec.case == "same-lan" else INET_ADDR
     return AppliedTopology(
-        spec=spec,
-        host_ns=names["host"],
-        guest_ns=names["guest"],
-        inet_ns=inet_ns,
-        inet_addr=inet_addr,
+        spec=spec, host_ns=names["host"], guest_ns=names["guest"],
+        inet_ns=inet_ns, inet_addr=inet_addr,
     )
 
 
@@ -371,19 +299,13 @@ def cleanup_topology(spec: TopologySpec) -> None:
             text=True,
         )
     leftover = subprocess.run(
-        [ip, "link", "show"],
-        check=False,
-        capture_output=True,
-        text=True,
+        [ip, "link", "show"], check=False, capture_output=True, text=True,
     ).stdout
     prefix = spec.prefix
     for token in leftover.split():
         if token.startswith(prefix) and ":" in token:
             iface = token.split("@", 1)[0].rstrip(":")
             subprocess.run(
-                [ip, "link", "del", iface],
-                check=False,
-                capture_output=True,
-                text=True,
+                [ip, "link", "del", iface], check=False, capture_output=True, text=True,
             )
     remove_stun_name_override(spec)

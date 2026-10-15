@@ -1,7 +1,5 @@
 """Placeholder rendezvous listeners so both homes can reach the simulated internet."""
 
-from __future__ import annotations
-
 import select
 import socket
 import sys

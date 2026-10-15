@@ -1,7 +1,5 @@
 """RFC 5389 STUN Binding server for the simulated public internet."""
 
-from __future__ import annotations
-
 import os
 import select
 import shutil
@@ -19,7 +17,7 @@ IPV4_FAMILY = 0x01
 
 
 class StunError(RuntimeError):
-    """The Binding request could not be answered."""
+    pass
 
 
 def xor_mapped_attribute(ip: str, port: int) -> bytes:
@@ -100,7 +98,6 @@ def python_stun_command(bind_host: str, ports: tuple[int, ...]) -> list[str]:
 
 def stun_server_commands(bind_host: str, ports: tuple[int, ...]) -> list[list[str]]:
     """Prefer coturn; fall back to this Python Binding server."""
-
     if not bind_host or not ports:
         raise StunError("STUN server needs a bind address and ports.")
     turn = shutil.which("turnserver")
@@ -111,22 +108,11 @@ def stun_server_commands(bind_host: str, ports: tuple[int, ...]) -> list[list[st
                 turn = str(candidate)
                 break
     if turn:
-        return [
-            [
-                turn,
-                "-n",
-                f"--listening-ip={bind_host}",
-                f"--listening-port={port}",
-                "--no-cli",
-                "--no-tls",
-                "--no-dtls",
-                "--stun-only",
-                f"--pidfile=/tmp/webjam-turn-{port}.pid",
-                "--log-file=stdout",
-                "--simple-log",
-            ]
-            for port in ports
-        ]
+        return [[
+            turn, "-n", f"--listening-ip={bind_host}", f"--listening-port={port}",
+            "--no-cli", "--no-tls", "--no-dtls", "--stun-only",
+            f"--pidfile=/tmp/webjam-turn-{port}.pid", "--log-file=stdout", "--simple-log",
+        ] for port in ports]
     return [python_stun_command(bind_host, ports)]
 
 

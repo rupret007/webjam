@@ -1,6 +1,4 @@
-"""CLI: python -m tools.cross_network_acceptance {run,role,build-sidecar}."""
-
-from __future__ import annotations
+"""CLI: python -m tools.cross_network_acceptance {run,role,build-sidecar,probe-nat}."""
 
 import argparse
 import os
@@ -43,8 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--product-root", type=Path, default=None)
     run.add_argument("--transport-binary", default="")
     run.add_argument("--build-id", default="")
-    run.add_argument("--expected-status", choices=("PASS", "FAIL"), default="PASS",
-                     help="CI exit-code target. FAIL is green only for an honest guest FAIL.")
+    run.add_argument("--expected-status", choices=("PASS", "FAIL"), default="PASS")
 
     role = sub.add_parser("role", help="Internal host/guest worker.")
     role.add_argument("--role", choices=("host", "guest"), required=True)
@@ -55,10 +52,21 @@ def main(argv: list[str] | None = None) -> int:
     build.add_argument("--product-root", type=Path, required=True)
     build.add_argument("--output", type=Path,
                       default=REPO_ROOT / "out" / "cross-network-acceptance" / "webjam-fabric")
+    probe = sub.add_parser("probe-nat", help="Prove RFC 4787 mapping and filtering.")
+    probe.add_argument(
+        "--nat", action="append", dest="nats",
+        choices=("masquerade", "cone", "symmetric"),
+    )
 
     args = parser.parse_args(argv)
     if args.command == "role":
         return run_role(args.role, args.profile, args.work_dir)
+    if args.command == "probe-nat":
+        from tools.cross_network_acceptance.nat_probe import run_probes
+
+        _maybe_sudo()
+        modes = tuple(args.nats) if args.nats else ("masquerade", "cone", "symmetric")
+        return run_probes(modes)
     if args.command == "build-sidecar":
         try:
             path = build_sidecar(args.product_root.resolve(), args.output)
