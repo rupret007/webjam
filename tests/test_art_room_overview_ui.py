@@ -147,6 +147,55 @@ def test_own_tools_guidance_has_one_heading_and_keeps_recovery_context(window, q
     assert not panel._title.isVisibleTo(window)
 
 
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+@pytest.mark.parametrize("state,hosting,named_connections", [
+    (ArtRoomState.WAITING, True, False),
+    (ArtRoomState.CONNECTED, True, False),
+    (ArtRoomState.CONNECTED, False, False),
+    (ArtRoomState.CONNECTED, True, True),
+])
+@pytest.mark.parametrize("activity", ["video", "canvas"])
+def test_presence_action_fits_without_scrolling_below_short_connection_copy(
+    window, qapp, size, state, hosting, named_connections, activity,
+):
+    presence = art_room_presence(
+        ArtCompanionProjection(
+            in_room=True,
+            canvas=(CanvasCompanionState.MISSING_APP if activity == "canvas"
+                    else CanvasCompanionState.NONE),
+        ),
+        hosting=hosting, intended_video=activity == "video",
+        paint_along_room=activity == "video",
+    )
+    current = art_room_overview(
+        state=state, hosting=hosting, named_connections=named_connections,
+        presence=presence,
+    )
+    window.set_art_room_overview(current)
+    window.resize(*size)
+    _settle(qapp)
+    assert window.size() == QSize(*size)
+    panel = window.art_room_overview
+    detail = panel._connection_detail
+    assert len(detail.text()) <= 55
+    if detail.isVisibleTo(window):
+        assert detail.fontMetrics().horizontalAdvance(detail.text()) <= detail.contentsRect().width()
+    assert panel.verticalScrollBar().value() == 0
+    assert panel.verticalScrollBar().maximum() == 0
+    button = panel.activity_button()
+    assert button.isVisibleTo(window) and button.isEnabled()
+    # Check before focusing: focus must not scroll a hidden action into view.
+    assert panel.viewport().rect().contains(
+        QRect(button.mapTo(panel.viewport(), QPoint()), button.size())
+    )
+    assert window.rect().contains(QRect(button.mapTo(window, QPoint()), button.size()))
+    actions = []
+    panel.activity_requested.connect(actions.append)
+    button.setFocus(Qt.FocusReason.TabFocusReason)
+    QTest.keyClick(button, Qt.Key.Key_Space)
+    assert actions == [activity]
+
+
 def test_waiting_host_copy_invite_is_the_one_hud_primary_at_800x600(window, qapp):
     """Compact waiting room: HUD Copy Invite owns the next click.
 
@@ -249,10 +298,12 @@ def test_connected_room_owns_making_guidance_once(window, qapp, role, size):
         assert "Choose Set Up Conversation" in panel._activity_detail.text()
         assert panel._activity_detail.isVisibleTo(window)
         assert panel._connection_detail.text() == (
-            "An artist has connected to this room. WebJam does not yet show a full artist list."
+            "An artist is here with you."
             if role is SessionRole.HOST else
-            "This room connection is confirmed. WebJam does not yet show a full artist list."
+            "You’re connected and ready to make."
         )
+        assert "does not yet" not in panel._connection_detail.text()
+        assert "does not yet show a full artist list" in panel._connection_detail.accessibleDescription()
         assert panel.conversation_button().text() == "Set Up Conversation"
         assert panel.conversation_button().isVisibleTo(window)
         assert panel.conversation_button().isEnabled()
@@ -734,8 +785,8 @@ def test_guest_missing_file_open_my_copy_owns_emphasis_when_canvas_needs_attenti
     footer_conversation = window.session_strip._video_button
     assert current.open_my_copy_recovery
     assert current.activity_actions == ("video", "canvas")
-    assert panel._making_detail.isVisibleTo(window)
-    assert "Start making with paper" in panel._making_detail.text()
+    assert panel._making_detail.isHidden()
+    assert panel._making_detail.text() == ""
     assert panel._activity.text() == "Open my copy…"
     assert panel._activity_detail.text() == (
         "Open your own copy of the same video to follow along."
@@ -758,8 +809,7 @@ def test_guest_missing_file_open_my_copy_owns_emphasis_when_canvas_needs_attenti
     assert emphasized == ["Open my copy…"]
     recovery_top = panel._activity.mapTo(panel._content, QPoint()).y()
     canvas_top = panel._secondary_activity.mapTo(panel._content, QPoint()).y()
-    making_top = panel._making_detail.mapTo(panel._content, QPoint()).y()
-    assert making_top < recovery_top < canvas_top
+    assert recovery_top < canvas_top
     recovery.setFocus(Qt.FocusReason.TabFocusReason)
     QTest.keyClick(recovery, Qt.Key.Key_Tab)
     _settle(qapp)
