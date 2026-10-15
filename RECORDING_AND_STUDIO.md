@@ -48,6 +48,12 @@ Changing a take or mix,
 or a failed/cancelled export, clears the current receipt. Byte verification does
 not prove physical listening or a successful Logic/other-editor import.
 
+If recording starts during an export, Studio stops the export and checks
+whether its folder already finished. **Show Unverified Export** keeps that
+folder available for inspection; it has no verified receipt. Cancellation
+before completion removes only temporary export files. The original take
+stays unchanged.
+
 Workspace **Takes** links reopen the intended recording in Studio. Use
 **Locate take…** when its folder moved; identity must still match. Music
 bookmarks navigate only with current verified recording evidence. Art lesson
