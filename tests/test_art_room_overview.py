@@ -236,8 +236,8 @@ def test_guest_paint_along_needs_file_names_open_my_copy_button():
     assert overview.conversation_enabled
 
 
-def test_guest_needs_file_keeps_making_detail_when_a_canvas_is_also_offered():
-    """W08 omits making-detail only when Open my copy… is the one next line."""
+def test_guest_needs_file_omits_making_detail_when_a_canvas_is_also_offered():
+    """Paint along as the primary action still omits stacked own-tools copy."""
 
     overview = art_room_overview(
         state=ArtRoomState.CONNECTED, hosting=False,
@@ -245,9 +245,7 @@ def test_guest_needs_file_keeps_making_detail_when_a_canvas_is_also_offered():
     )
     assert overview.open_my_copy_recovery
     assert overview.activity_actions == ("video", "canvas")
-    assert overview.making_detail.startswith("You do not need an art app")
-    assert "your usual tools, or just talk" in overview.making_detail
-    assert "Shared activities are optional." in overview.making_detail
+    assert not overview.making_detail
 
 
 @pytest.mark.parametrize("canvas_state", [
@@ -276,8 +274,7 @@ def test_guest_needs_file_owns_emphasis_when_canvas_is_also_offered(canvas_state
     assert overview.secondary_activity_action == "canvas"
     assert overview.secondary_activity_action_label == "Open workspace"
     assert overview.activity_actions == ("video", "canvas")
-    assert overview.making_detail.startswith("You do not need an art app")
-    assert "your usual tools, or just talk" in overview.making_detail
+    assert not overview.making_detail
     assert overview.conversation_enabled
 
 
@@ -291,8 +288,7 @@ def test_mismatched_copy_is_not_the_needs_file_open_my_copy_emphasis():
     assert not overview.open_my_copy_recovery
     assert overview.activity_action_label == "Open my copy…"
     assert overview.activity_label == "Paint along needs a look"
-    assert overview.making_detail.startswith("You do not need an art app")
-    assert "your usual tools, or just talk" in overview.making_detail
+    assert not overview.making_detail
 
 
 @pytest.mark.parametrize("hosting", [False, True])
@@ -394,14 +390,14 @@ def test_both_offered_panels_keep_their_status_and_action(primary, secondary):
 
 
 @pytest.mark.parametrize("hosting", [False, True])
-@pytest.mark.parametrize("canvas_state,video_state,expect_making_detail", [
-    (CanvasCompanionState.READY, VideoCompanionState.NONE, True),
-    (CanvasCompanionState.MISSING_APP, VideoCompanionState.NONE, True),
-    (CanvasCompanionState.NONE, VideoCompanionState.NEEDS_FILE, False),
-    (CanvasCompanionState.NONE, VideoCompanionState.PLAYING, True),
+@pytest.mark.parametrize("canvas_state,video_state", [
+    (CanvasCompanionState.READY, VideoCompanionState.NONE),
+    (CanvasCompanionState.MISSING_APP, VideoCompanionState.NONE),
+    (CanvasCompanionState.NONE, VideoCompanionState.NEEDS_FILE),
+    (CanvasCompanionState.NONE, VideoCompanionState.PLAYING),
 ])
 def test_optional_activity_keeps_an_any_artist_next_step(
-    hosting, canvas_state, video_state, expect_making_detail,
+    hosting, canvas_state, video_state,
 ):
     presence = art_room_presence(ArtCompanionProjection(
         in_room=True, transport_allowed=hosting, canvas=canvas_state, video=video_state,
@@ -411,12 +407,16 @@ def test_optional_activity_keeps_an_any_artist_next_step(
         if state is ArtRoomState.WAITING and not hosting:
             assert not overview.making_detail
             continue
-        if expect_making_detail:
+        assert overview.making_detail == (
+            "" if presence.target is ArtPresenceTarget.VIDEO else
+            "You do not need an art app. Start making with paper, your usual tools, "
+            "or just talk. Shared activities are optional."
+        )
+        if presence.target is not ArtPresenceTarget.VIDEO:
             assert overview.making_detail.startswith("You do not need an art app")
             assert "your usual tools, or just talk" in overview.making_detail
             assert "Shared activities are optional." in overview.making_detail
-        else:
-            assert not overview.making_detail
+        elif video_state is VideoCompanionState.NEEDS_FILE:
             assert overview.open_my_copy_recovery
         assert overview.activity_actions == (presence.target.value,)
         assert overview.activity_detail == presence.description
