@@ -120,7 +120,11 @@ def build_receipt(
 
 
 def write_receipt(directory: Path, receipt: dict[str, Any]) -> Path:
-    """Write JSON always; write the conductor PASS file only on PASS."""
+    """Write JSON always; write the conductor PASS file only on PASS.
+
+    A later FAIL for the same SHA/case removes any leftover ``.PASS`` so
+    the conductor cannot consume stale success evidence.
+    """
 
     if contains_secret_keys(receipt):
         raise ReceiptError("A receipt must not carry invitation material.")
@@ -133,8 +137,10 @@ def write_receipt(directory: Path, receipt: dict[str, Any]) -> Path:
         encoding="utf-8",
     )
     json_path.chmod(0o600)
+    pass_path = directory / f"{digest}-{case}.PASS"
     if str(receipt["status"]).upper() == "PASS":
-        pass_path = directory / f"{digest}-{case}.PASS"
         pass_path.write_text(str(receipt["conductor_line"]) + "\n", encoding="utf-8")
         pass_path.chmod(0o600)
+    else:
+        pass_path.unlink(missing_ok=True)
     return json_path

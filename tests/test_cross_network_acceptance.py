@@ -21,12 +21,21 @@ from tools.cross_network_acceptance.receipt import (
     require_full_sha,
     write_receipt,
 )
+from tools.cross_network_acceptance.run import (
+    completed_guest_result,
+    discarded_test_net3_hides_nat_type,
+    honest_product_fail_notes,
+    job_exit_code,
+)
 from tools.cross_network_acceptance.topology import (
+    GUEST_CROSS,
+    HOST_ADDR,
     NETEM_DELAY,
     NETEM_JITTER,
     NETEM_LOSS,
     TopologySpec,
     assert_no_port_forward,
+    cone_inbound_map_to,
     netem_commands,
     setup_commands,
 )
@@ -100,6 +109,53 @@ def test_fail_receipt_does_not_write_pass_file(tmp_path: Path):
     write_receipt(tmp_path, receipt)
     assert not (tmp_path / f"{FULL_SHA}-cross-network.PASS").exists()
     assert (tmp_path / f"{FULL_SHA}-cross-network.json").is_file()
+
+
+def test_later_fail_removes_stale_pass_file(tmp_path: Path):
+    passed = build_receipt(
+        sha=FULL_SHA,
+        case="cross-network",
+        status="PASS",
+        profiles=[
+            {
+                "profile": "art",
+                "guest_connected": True,
+                "session_state_exchanged": True,
+                "harness_ok": True,
+            }
+        ],
+        rendezvous_reachable_from_host=True,
+        rendezvous_reachable_from_guest=True,
+        invite_host_routable_from_guest=True,
+        netem=False,
+    )
+    write_receipt(tmp_path, passed)
+    pass_file = tmp_path / f"{FULL_SHA}-cross-network.PASS"
+    assert pass_file.is_file()
+    failed = build_receipt(
+        sha=FULL_SHA,
+        case="cross-network",
+        status="FAIL",
+        profiles=[
+            {
+                "profile": "art",
+                "guest_connected": False,
+                "session_state_exchanged": False,
+                "harness_ok": True,
+            }
+        ],
+        rendezvous_reachable_from_host=True,
+        rendezvous_reachable_from_guest=True,
+        invite_host_routable_from_guest=False,
+        netem=False,
+        notes="Later FAIL must drop leftover success evidence.",
+    )
+    write_receipt(tmp_path, failed)
+    assert not pass_file.exists()
+    payload = json.loads(
+        (tmp_path / f"{FULL_SHA}-cross-network.json").read_text(encoding="utf-8")
+    )
+    assert payload["status"] == "FAIL"
 
 
 def test_receipt_rejects_secret_keys_and_port_forwarding():
@@ -189,6 +245,17 @@ def test_workflow_is_optional_and_path_filtered():
     assert "--expected-status FAIL" not in same_lan
     assert "--expected-status FAIL" in two_nat
     assert "continue-on-error:" in two_nat
+    assert "completed guest result" in text
+    assert "fake connect" in text
+
+
+def _netmap_targets(commands: list[list[str]]) -> list[str]:
+    targets: list[str] = []
+    for argv in commands:
+        if "NETMAP" not in argv:
+            continue
+        targets.append(argv[argv.index("--to") + 1])
+    return targets
 
 
 def test_cone_nat_plan_uses_masquerade_and_netmap_without_dport():
@@ -201,6 +268,13 @@ def test_cone_nat_plan_uses_masquerade_and_netmap_without_dport():
     assert "--random-fully" not in text
     assert "DNAT" not in text
     assert "--dport" not in text
+    targets = _netmap_targets(commands)
+    assert cone_inbound_map_to("a") == f"{HOST_ADDR}/32"
+    assert cone_inbound_map_to("b") == f"{GUEST_CROSS}/32"
+    assert sorted(targets) == [f"{HOST_ADDR}/32", f"{GUEST_CROSS}/32"]
+    assert f"{GUEST_CROSS}" == "192.168.120.10"
+    assert "192.168.120.0/24" not in targets
+    assert "192.168.120.20" not in text.split()
 
 
 def test_symmetric_nat_plan_randomizes_host_mapping_only():
@@ -212,6 +286,7 @@ def test_symmetric_nat_plan_randomizes_host_mapping_only():
     assert text.count("--random-fully") == 1
     assert text.count("NETMAP") == 1
     assert "DNAT" not in text
+    assert _netmap_targets(commands) == [f"{GUEST_CROSS}/32"]
 
 
 def test_stun_binding_reports_xor_mapped_source():
@@ -240,8 +315,6 @@ def test_stun_name_override_is_test_only_hosts_mapping():
 
 
 def test_job_exit_code_keeps_fail_assertions():
-    from tools.cross_network_acceptance.run import job_exit_code
-
     assert (
         job_exit_code(status="FAIL", expected_status="FAIL", harness_ok=True) == 0
     )
@@ -259,6 +332,41 @@ def test_job_exit_code_keeps_fail_assertions():
     )
     assert (
         job_exit_code(status="PASS", expected_status="PASS", harness_ok=False) == 1
+    )
+
+
+def test_job_exit_code_rejects_incomplete_or_fake_expected_fail():
+    honest = {"guest_connected": False, "session_state_exchanged": False}
+    assert completed_guest_result(honest, timed_out=False, returncode=1) is True
+    assert completed_guest_result(honest, timed_out=True, returncode=1) is False
+    assert completed_guest_result({}, timed_out=False, returncode=1) is False
+    assert completed_guest_result(honest, timed_out=False, returncode=None) is False
+    assert completed_guest_result({"ok": False}, timed_out=False, returncode=1) is False
+    assert (
+        job_exit_code(
+            status="FAIL",
+            expected_status="FAIL",
+            harness_ok=False,
+        )
+        == 1
+    )
+    assert (
+        job_exit_code(
+            status="FAIL",
+            expected_status="FAIL",
+            harness_ok=True,
+            fake_connect=True,
+        )
+        == 1
+    )
+    assert (
+        job_exit_code(
+            status="FAIL",
+            expected_status="FAIL",
+            harness_ok=False,
+            fake_connect=True,
+        )
+        == 1
     )
 
 
@@ -328,3 +436,28 @@ def test_cone_and_symmetric_receipt_cases_are_allowed(tmp_path: Path):
         write_receipt(tmp_path, receipt)
         assert (tmp_path / f"{FULL_SHA}-{case}.json").is_file()
         assert not (tmp_path / f"{FULL_SHA}-{case}.PASS").exists()
+
+
+def test_test_net3_notes_do_not_claim_nat_type_proof():
+    assert discarded_test_net3_hides_nat_type("cone") is True
+    assert discarded_test_net3_hides_nat_type("symmetric") is True
+    assert discarded_test_net3_hides_nat_type("masquerade") is False
+    cone = honest_product_fail_notes(case="cross-network", nat_mode="cone")
+    symmetric = honest_product_fail_notes(case="cross-network", nat_mode="symmetric")
+    masquerade = honest_product_fail_notes(case="cross-network", nat_mode="masquerade")
+    for notes in (cone, symmetric):
+        assert "does not prove" in notes
+        assert "TEST-NET-3" in notes
+        assert "random port mapping" not in notes
+        assert "cannot complete packaged direct-stun without a relay" not in notes
+    assert "does not prove" not in masquerade
+    docs = Path("docs/CROSS-NETWORK-TEST.md").read_text(encoding="utf-8")
+    assert "do **not** prove product cone-versus-symmetric" in docs
+    assert "192.168.120.10/32" in docs
+    assert "192.168.120.20" in docs
+    assert "stale `.PASS`" in docs
+    topology = Path("tools/cross_network_acceptance/topology.py").read_text(
+        encoding="utf-8"
+    )
+    assert "do not prove product cone-vs-symmetric" in topology
+    assert "192.168.120.20" in topology

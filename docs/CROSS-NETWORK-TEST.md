@@ -95,8 +95,9 @@ webjam.cross-network-acceptance sha=<40-character-sha> status=PASS case=cross-ne
 ```
 
 JSON receipts (`<sha>-<case>.json`) are always written. The `.PASS` sidecar is
-written **only** on PASS. Receipts never contain invitations, tokens, hosts, or
-peer ports.
+written **only** on PASS. A later FAIL for the same SHA/case **removes** any
+stale `.PASS` so the conductor cannot consume leftover success evidence.
+Receipts never contain invitations, tokens, hosts, or peer ports.
 
 ## Run locally (Linux)
 
@@ -132,10 +133,20 @@ sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
   --output-dir out/cross-network-acceptance --no-netem --keep-workdir
 ```
 
-`--nat cone` keeps iptables MASQUERADE and adds a UDP NETMAP reverse (full cone /
-1:1 for the single LAN host). That is not a product `--dport` port-forward.
-`--nat symmetric` uses `MASQUERADE --random-fully` on the host NAT so the STUN
-mapping is destination-dependent; Join must fail honestly, not fake a connect.
+`--nat cone` keeps iptables MASQUERADE and adds a UDP NETMAP reverse onto the
+**actual** LAN endpoint (`192.168.110.10/32` on NAT-A, `192.168.120.10/32` on
+NAT-B). Mapping the /24 while preserving WAN host bits would send inbound
+guest traffic to `192.168.120.20`, which is not the guest. That NETMAP is
+full cone / 1:1 for the single endpoint, not a product `--dport` port-forward.
+`--nat symmetric` uses `MASQUERADE --random-fully` on the host NAT. A guest
+connect there is a **fake connect** and must fail the job even under
+`--expected-status FAIL`.
+
+These modes do **not** prove product cone-versus-symmetric NAT behavior while
+packaged direct-stun discards TEST-NET-3 (`203.0.113.0/24`) STUN mappings.
+Gather then advertises local-only candidates, so cone and symmetric fail for
+the same reason. The harness still records the topology, STUN reachability,
+completed guest results, and fake-connect detection.
 
 ## Test-only STUN override (never in packaged builds)
 
@@ -175,9 +186,11 @@ QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest \
   and **Cross-network (two NATs)** (receipt is **FAIL** until remote sessions
   work)
 - the two-NAT GitHub job uses `--expected-status FAIL` so an honest FAIL
-  (`harness_ok`, no fake connect) is a green step. Unexpected PASS or a
-  broken harness still exits 1. Assertions are unchanged: the receipt stays
-  FAIL and no `.PASS` file is written
+  (`harness_ok` from a completed guest result, no timeout/crash/missing
+  result, no fake connect) is a green step. Unexpected PASS, a broken
+  harness, or a fake connect still exits 1. Assertions are unchanged: the
+  receipt stays FAIL and no `.PASS` file is written (a later FAIL also
+  deletes a stale `.PASS` for that SHA/case)
 - on `master` the two-NAT job is report-only (`continue-on-error`). Pull
   requests that change networking must keep the job green (honest FAIL today;
   flip `--expected-status` to PASS when Internet Join actually connects)

@@ -8,12 +8,15 @@ Same-LAN control: host and guest share one L2 with RFC1918 addresses.
 NAT modes for the two-home case:
 
 - masquerade: original restricted-cone MASQUERADE (v2 LAN expected FAIL).
-- cone: MASQUERADE plus a port-preserving UDP NETMAP reverse so a STUN
-  mapping is reachable from the other house (full cone / 1:1 for the one
-  LAN host). Not a product port-forward of a service port.
+- cone: MASQUERADE plus a port-preserving UDP NETMAP reverse onto the
+  actual LAN host or guest address (/32). That is full cone / 1:1 for
+  the single endpoint, not a product port-forward of a service port.
+  Inbound guest traffic must land on 192.168.120.10, not a WAN host-bit
+  rewrite to 192.168.120.20.
 - symmetric: NAT-A uses MASQUERADE --random-fully (random port mapping);
-  NAT-B stays cone. Guest-originated packets to the host STUN mapping
-  must fail honestly.
+  NAT-B stays cone. A guest connect here is a fake connect and must fail
+  the job. These modes do not prove product cone-vs-symmetric NAT
+  behavior while packaged direct-stun discards TEST-NET-3 mappings.
 """
 
 from __future__ import annotations
@@ -113,6 +116,20 @@ def _full_cone_inbound(spec: TopologySpec, side: str) -> bool:
     if spec.nat_mode == "symmetric":
         return side == "b"
     return False
+
+
+def cone_inbound_map_to(side: str) -> str:
+    """NETMAP destination for inbound UDP. Preserve the real LAN endpoint.
+
+    Mapping ``203.0.113.20/24`` onto ``192.168.120.0/24`` keeps WAN host
+    bits and delivers to 192.168.120.20, which is not the guest.
+    """
+
+    if side == "a":
+        return f"{HOST_ADDR}/32"
+    if side == "b":
+        return f"{GUEST_CROSS}/32"
+    raise TopologyError("Cone inbound side must be a or b.")
 
 
 def setup_commands(spec: TopologySpec) -> list[list[str]]:
@@ -251,7 +268,7 @@ def setup_commands(spec: TopologySpec) -> list[list[str]]:
                 "-j",
                 "NETMAP",
                 "--to",
-                lan_net,
+                cone_inbound_map_to(side),
             )
             ns(
                 ns_name,

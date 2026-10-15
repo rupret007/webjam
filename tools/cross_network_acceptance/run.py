@@ -112,25 +112,81 @@ def _user_env(
     return env
 
 
+def completed_guest_result(
+    result: dict[str, Any],
+    *,
+    timed_out: bool,
+    returncode: int | None = 0,
+) -> bool:
+    """True only when the guest finished and wrote a real result.
+
+    Timeouts, crashes before guest.result, and empty payloads are harness
+    failures. An honest product FAIL still counts when the file records
+    ``guest_connected``.
+    """
+
+    if timed_out or returncode is None:
+        return False
+    if not isinstance(result, dict) or "guest_connected" not in result:
+        return False
+    return True
+
+
 def job_exit_code(
     *,
     status: str,
     expected_status: str,
     harness_ok: bool,
+    fake_connect: bool = False,
 ) -> int:
     """Map a receipt onto a CI exit code without changing PASS/FAIL assertions.
 
-    Honest expected FAIL (harness ran; product did not connect) is job success.
-    A broken harness or an unexpected PASS still exits 1.
+    Honest expected FAIL is job success only when the guest completed a real
+    result and did not fake a connect. A broken harness, timeout, missing
+    result, fake connect, or unexpected PASS still exits 1.
     """
 
     actual = str(status or "").strip().upper()
     expected = str(expected_status or "PASS").strip().upper()
     if actual not in {"PASS", "FAIL"} or expected not in {"PASS", "FAIL"}:
         return 1
-    if not harness_ok:
+    if not harness_ok or fake_connect:
         return 1
     return 0 if actual == expected else 1
+
+
+def discarded_test_net3_hides_nat_type(nat_mode: str) -> bool:
+    """Cone/symmetric TEST-NET-3 runs do not prove product NAT-type behavior."""
+
+    return nat_mode in {"cone", "symmetric"}
+
+
+def honest_product_fail_notes(*, case: str, nat_mode: str) -> str:
+    """Receipt notes for a completed guest that did not connect."""
+
+    if discarded_test_net3_hides_nat_type(nat_mode):
+        return (
+            "Guest completed without connecting. Packaged direct-stun discards "
+            "TEST-NET-3 STUN mappings, so this run does not prove "
+            "cone-versus-symmetric product NAT behavior."
+        )
+    if case == "cross-network":
+        return (
+            "Expected until ordinary Host/Join uses the v3 rendezvous/relay "
+            "described in docs/REMOTE-SESSIONS-PLAN.md (usability PR #372)."
+        )
+    return "Guest completed without connecting."
+
+
+def _incomplete_guest_notes(profile_rows: list[dict[str, Any]]) -> str:
+    reasons = [str(row.get("reason") or "") for row in profile_rows]
+    if "guest_timeout" in reasons:
+        return "The guest timed out before writing a completed result."
+    if "guest_result_missing" in reasons:
+        return "The guest did not write a completed result."
+    if "host_not_ready" in reasons:
+        return "The harness could not start the host on the simulated network."
+    return "The harness did not complete an honest guest result."
 
 
 def ns_popen(
@@ -350,18 +406,35 @@ def _run_profile(
             stderr_path=guest_err,
             env=env,
         )
+        timed_out = False
         try:
             guest_proc.wait(timeout=60)
         except subprocess.TimeoutExpired:
             guest_proc.kill()
+            timed_out = True
+            try:
+                guest_proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
         result = _wait_json(work_dir / "guest.result", 2.0)
         routable = _invite_host_routable(topology.guest_ns, work_dir, env)
         connected = bool(result.get("guest_connected"))
+        completed = completed_guest_result(
+            result,
+            timed_out=timed_out,
+            returncode=guest_proc.returncode,
+        )
+        reason = ""
+        if timed_out:
+            reason = "guest_timeout"
+        elif not completed:
+            reason = "guest_result_missing"
         return {
             "profile": profile,
             "guest_connected": connected,
             "session_state_exchanged": bool(result.get("session_state_exchanged")),
-            "harness_ok": True,
+            "harness_ok": completed,
+            "reason": reason,
             "invite_host_routable_from_guest": routable,
             "transport": result.get("transport") or ready.get("transport") or "",
             "share_reaches_internet": ready.get("share_reaches_internet"),
@@ -415,6 +488,7 @@ def _emit_receipt(
     *,
     expected_status: str,
     harness_ok: bool,
+    fake_connect: bool = False,
 ) -> int:
     write_receipt(output_dir, receipt)
     _chown_tree(output_dir)
@@ -423,6 +497,7 @@ def _emit_receipt(
         status=str(receipt["status"]),
         expected_status=expected_status,
         harness_ok=harness_ok,
+        fake_connect=fake_connect,
     )
     if code == 0 and str(receipt["status"]).upper() == "FAIL":
         print("job=ok expected=FAIL (honest two-NAT result; assertions unchanged)")
@@ -643,46 +718,26 @@ def run_case(
     exchanged = all(row.get("session_state_exchanged") for row in profile_rows)
     connected = all(row.get("guest_connected") for row in profile_rows)
     fake = any(row.get("fake_connect") for row in profile_rows)
-    if mode == "symmetric":
-        honest = (
-            harness_ok
-            and not connected
-            and not fake
-            and all(
-                row.get("failure_class") == "honest_unreachable"
-                or not row.get("guest_connected")
-                for row in profile_rows
-            )
+    if fake:
+        harness_ok = False
+        notes = (
+            "Symmetric NAT produced a connection. That is a fake connect; "
+            "the job must fail even when --expected-status is FAIL."
         )
+    if mode == "symmetric":
         status = "FAIL"
-        if fake:
-            notes = (
-                "Symmetric NAT produced a connection. Direct-stun must fail "
-                "honestly when the host mapping is destination-dependent."
-            )
-        elif honest:
-            notes = (
-                "Honest failure as expected: symmetric NAT (random port mapping) "
-                "cannot complete packaged direct-stun without a relay."
-            )
-        elif not notes:
-            notes = "Symmetric NAT did not connect; failure copy was not recorded."
+        if not notes:
+            if harness_ok and not connected:
+                notes = honest_product_fail_notes(case=case, nat_mode=mode)
+            elif not harness_ok:
+                notes = _incomplete_guest_notes(profile_rows)
     else:
         status = "PASS" if harness_ok and exchanged and connected else "FAIL"
         if not notes:
             if case == "cross-network" and status == "FAIL" and harness_ok:
-                if mode == "cone":
-                    notes = (
-                        "Cone NAT Host/Join did not connect. See share_route and "
-                        "failure_class in the receipt profiles."
-                    )
-                else:
-                    notes = (
-                        "Expected until ordinary Host/Join uses the v3 rendezvous/relay "
-                        "described in docs/REMOTE-SESSIONS-PLAN.md (usability PR #372)."
-                    )
+                notes = honest_product_fail_notes(case=case, nat_mode=mode)
             elif not harness_ok:
-                notes = "The harness could not start the host on the simulated network."
+                notes = _incomplete_guest_notes(profile_rows)
     routable_values = [
         row.get("invite_host_routable_from_guest")
         for row in profile_rows
@@ -723,4 +778,5 @@ def run_case(
         receipt,
         expected_status=expected_status,
         harness_ok=harness_ok,
+        fake_connect=fake,
     )

@@ -3,7 +3,8 @@
 # Same-LAN is the control (must PASS). Cross-network is expected to FAIL
 # until ordinary Host/Join uses the v3 rendezvous/relay in
 # docs/REMOTE-SESSIONS-PLAN.md. The FAIL receipt is unchanged; the GitHub
-# job is green when that FAIL is honest. On master the two-NAT job is
+# job is green when that FAIL is an honest completed guest result (no
+# timeout, crash, missing result, or fake connect). On master the two-NAT job is
 # report-only. Pull requests that change networking must match the
 # expected receipt (FAIL today; PASS once Internet Join ships).
 name: Cross-network acceptance

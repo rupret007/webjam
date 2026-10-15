@@ -81,7 +81,8 @@ def main(argv: list[str] | None = None) -> int:
         default="PASS",
         help=(
             "CI exit-code target. FAIL still writes a FAIL receipt; the job "
-            "is green only when that FAIL is honest (harness_ok)."
+            "is green only when that FAIL is an honest completed guest result "
+            "(harness_ok, no timeout/crash/missing result, no fake connect)."
         ),
     )
 
