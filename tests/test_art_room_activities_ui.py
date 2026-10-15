@@ -236,8 +236,7 @@ def test_both_production_activities_fit_and_keep_keyboard_actions_reachable(
     copy_recovery = video == "needs_file"
     if copy_recovery:
         # NEEDS_FILE recovery is the one next click even when canvas also
-        # needs attention. Conversation stays in the footer. Making-detail
-        # remains when a canvas is also offered.
+        # needs attention. Conversation stays in the footer.
         assert current.open_my_copy_recovery
         assert current.activity_action == "video"
         assert current.activity_action_label == "Open my copy…"
@@ -249,9 +248,19 @@ def test_both_production_activities_fit_and_keep_keyboard_actions_reachable(
     else:
         assert panel.conversation_button().isVisibleTo(window)
         assert panel.conversation_button().isEnabled()
-    assert panel._making_detail.isVisibleTo(window)
-    assert "You do not need an art app" in panel._making_detail.text()
-    assert "your usual tools, or just talk" in panel._making_detail.text()
+    if current.activity_action == "video":
+        assert panel._making_detail.isHidden()
+        assert panel._making_detail.text() == ""
+        assert "Start making with paper" not in panel.accessibleDescription()
+        assert "You do not need an art app" not in panel.accessibleDescription()
+    else:
+        assert panel._making_detail.isVisibleTo(window)
+        assert panel._making_detail.text() == (
+            "You do not need an art app. Start making with paper, your usual tools, "
+            "or just talk. Shared activities are optional."
+        )
+        assert "You do not need an art app" in panel._making_detail.text()
+        assert "your usual tools, or just talk" in panel._making_detail.text()
     # Deterministically exercise wider glyph metrics without changing a
     # machine's font/DPI settings or replacing production stylesheet sizes.
     for widget in panel._content.findChildren(QLabel) + panel._content.findChildren(QPushButton):
@@ -318,7 +327,8 @@ def test_needs_file_owns_emphasis_when_canvas_also_needs_attention(window, qapp,
     assert panel.secondary_activity_button().text() == "Open workspace"
     assert panel.secondary_activity_button().objectName() == "GhostButton"
     assert not panel.conversation_button().isVisibleTo(window)
-    assert panel._making_detail.isVisibleTo(window)
+    assert panel._making_detail.isHidden()
+    assert panel._making_detail.text() == ""
     assert panel._activity_detail.text() == (
         "Open your own copy of the same video to follow along."
     )
