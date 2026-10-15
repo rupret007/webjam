@@ -1,4 +1,4 @@
-"""Machine-readable receipts the conductor can consume (full SHA + PASS)."""
+"""Machine-readable receipts (full SHA + PASS)."""
 
 import json
 import re
@@ -30,12 +30,10 @@ def require_full_sha(value: str) -> str:
 
 def contains_secret_keys(payload: Any) -> bool:
     if isinstance(payload, dict):
-        for key, item in payload.items():
-            if str(key).lower() in _SECRET_KEYS:
-                return True
-            if contains_secret_keys(item):
-                return True
-        return False
+        return any(
+            str(key).lower() in _SECRET_KEYS or contains_secret_keys(item)
+            for key, item in payload.items()
+        )
     if isinstance(payload, (list, tuple)):
         return any(contains_secret_keys(item) for item in payload)
     return False
@@ -58,18 +56,11 @@ def conductor_line(*, sha: str, status: str, case: str) -> str:
 
 
 def build_receipt(
-    *,
-    sha: str,
-    case: str,
-    status: str,
-    profiles: list[dict[str, Any]],
+    *, sha: str, case: str, status: str, profiles: list[dict[str, Any]],
     rendezvous_reachable_from_host: bool | None,
     rendezvous_reachable_from_guest: bool | None,
-    invite_host_routable_from_guest: bool | None,
-    netem: bool,
-    port_forwarding: bool = False,
-    notes: str = "",
-    nat_mode: str = "",
+    invite_host_routable_from_guest: bool | None, netem: bool,
+    port_forwarding: bool = False, notes: str = "", nat_mode: str = "",
     stun_reachable_from_host: bool | None = None,
     stun_reachable_from_guest: bool | None = None,
 ) -> dict[str, Any]:
@@ -100,10 +91,7 @@ def write_receipt(directory: Path, receipt: dict[str, Any]) -> Path:
     digest = require_full_sha(str(receipt["git_sha"]))
     case = str(receipt["case"])
     json_path = directory / f"{digest}-{case}.json"
-    json_path.write_text(
-        json.dumps(receipt, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    json_path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     json_path.chmod(0o600)
     pass_path = directory / f"{digest}-{case}.PASS"
     if str(receipt["status"]).upper() == "PASS":

@@ -23,9 +23,7 @@ def _maybe_sudo() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Same-LAN and two-NAT Host/Join acceptance."
-    )
+    parser = argparse.ArgumentParser(description="Same-LAN and two-NAT Host/Join.")
     sub = parser.add_subparsers(dest="command")
 
     run = sub.add_parser("run", help="Drive host/join.")
@@ -37,8 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--netem", action="store_true", default=None)
     run.add_argument("--no-netem", action="store_true")
     run.add_argument("--keep-workdir", action="store_true")
-    run.add_argument("--nat", choices=("masquerade", "cone", "symmetric"),
-                     default="masquerade")
+    run.add_argument("--nat", choices=("masquerade", "cone", "symmetric"), default="masquerade")
     run.add_argument("--product-root", type=Path, default=None)
     run.add_argument("--transport-binary", default="")
     run.add_argument("--build-id", default="")

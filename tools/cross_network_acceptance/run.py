@@ -1,4 +1,4 @@
-"""Orchestrate topology, STUN, host, and guest for one acceptance case."""
+"""Orchestrate topology, STUN, host, and guest."""
 
 import json
 import os
@@ -27,9 +27,7 @@ def receipt_case_name(case: str, nat_mode: str) -> str:
         return "same-lan"
     if nat_mode == "cone":
         return "cross-network-cone"
-    if nat_mode == "symmetric":
-        return "cross-network-symmetric"
-    return "cross-network"
+    return "cross-network-symmetric" if nat_mode == "symmetric" else "cross-network"
 
 
 def _drop_ids() -> tuple[int, int]:
@@ -51,9 +49,7 @@ def _chown_tree(path: Path) -> None:
             continue
 
 
-def _user_env(
-    uid: int, *, product_root: Path, transport_binary: str, build_id: str,
-) -> dict[str, str]:
+def _user_env(uid: int, *, product_root: Path, transport_binary: str, build_id: str) -> dict[str, str]:
     record = pwd.getpwuid(uid)
     env = os.environ.copy()
     env.update({
@@ -67,18 +63,15 @@ def _user_env(
     if transport_binary:
         env["WEBJAM_TRANSPORT_BINARY"] = transport_binary
         env["WEBJAM_BUILD_ID"] = build_id
-    else:
+    elif not str(env.get("WEBJAM_TRANSPORT_BINARY") or "").strip():
         env.pop("WEBJAM_TRANSPORT_BINARY", None)
     return env
 
 
 _CLEAN_GUEST_CODES = frozenset({0, 1})
-_NON_NETWORK_REASONS = frozenset(
-    {"startup_refused", "ingress_rejected", "clipboard_unavailable"}
-)
+_NON_NETWORK_REASONS = frozenset({"startup_refused", "ingress_rejected", "clipboard_unavailable"})
 _NON_NETWORK_CLASSES = frozenset(
-    {"programming_error", "startup_failure", "unknown", "state_exchange_failure"}
-)
+    {"programming_error", "startup_failure", "unknown", "state_exchange_failure"})
 _HONEST_NETWORK_CLASSES = frozenset({"honest_unreachable"})
 
 
@@ -88,9 +81,7 @@ def _non_network_guest_outcome(result: dict[str, Any]) -> bool:
     return reason in _NON_NETWORK_REASONS or failure_class in _NON_NETWORK_CLASSES
 
 
-def completed_guest_result(
-    result: dict[str, Any], *, timed_out: bool, returncode: int | None = 0,
-) -> bool:
+def completed_guest_result(result: dict[str, Any], *, timed_out: bool, returncode: int | None = 0) -> bool:
     if timed_out or returncode is None:
         return False
     if not isinstance(result, dict) or "guest_connected" not in result:
@@ -104,9 +95,7 @@ def completed_guest_result(
     return str(result.get("failure_class") or "") in _HONEST_NETWORK_CLASSES
 
 
-def job_exit_code(
-    *, status: str, expected_status: str, harness_ok: bool, fake_connect: bool = False,
-) -> int:
+def job_exit_code(*, status: str, expected_status: str, harness_ok: bool, fake_connect: bool = False) -> int:
     actual = str(status or "").strip().upper()
     expected = str(expected_status or "PASS").strip().upper()
     if actual not in {"PASS", "FAIL"} or expected not in {"PASS", "FAIL"}:
@@ -123,8 +112,7 @@ def discarded_test_net3_hides_nat_type(nat_mode: str) -> bool:
 def honest_product_fail_notes(*, case: str, nat_mode: str) -> str:
     if discarded_test_net3_hides_nat_type(nat_mode):
         return (
-            "Guest completed without connecting. Packaged direct-stun discards "
-            "TEST-NET-3 mappings, so this run does not prove "
+            "Packaged direct-stun discards TEST-NET-3; does not prove "
             "cone-versus-symmetric product NAT behavior."
         )
     if case == "cross-network":
@@ -137,11 +125,11 @@ def _incomplete_guest_notes(profile_rows: list[dict[str, Any]]) -> str:
     if "guest_timeout" in reasons:
         return "Guest timed out before a completed result."
     if reasons & {"guest_crash", "guest_never_started"}:
-        return "Guest crashed or never started; not a network failure."
+        return "Guest crashed or never started."
     if reasons & {"guest_result_missing", "startup_refused"}:
         return "Guest did not finish a network connect attempt."
     if "host_crash" in reasons:
-        return "Host exited during the guest attempt; not a network failure."
+        return "Host exited during the guest attempt."
     if "host_not_ready" in reasons:
         return "Harness could not start the host."
     return "Harness did not complete an honest guest result."
@@ -156,8 +144,7 @@ def _drop_privs(argv: list[str]) -> list[str]:
 
 def ns_popen(
     ns: str, argv: list[str], *, cwd: Path, env: dict[str, str],
-    stderr_path: Path | None = None, drop_privs: bool = True,
-) -> subprocess.Popen[str]:
+    stderr_path: Path | None = None, drop_privs: bool = True) -> subprocess.Popen[str]:
     inner = _drop_privs(argv) if drop_privs else list(argv)
     handle = None
     stderr: Any = subprocess.DEVNULL
@@ -167,8 +154,7 @@ def ns_popen(
         stderr = handle
     proc = subprocess.Popen(
         [required_bin("ip"), "netns", "exec", ns, *inner],
-        cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=stderr, text=True,
-    )
+        cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=stderr, text=True)
     proc._stderr_handle = handle  # type: ignore[attr-defined]
     return proc
 
@@ -254,11 +240,7 @@ def _reap(proc: subprocess.Popen[str], timeout_s: float = 10.0) -> int | None:
 
 
 def _run_profile(
-    topology: AppliedTopology,
-    profile: str,
-    work_dir: Path,
-    env: dict[str, str],
-    cwd: Path,
+    topology: AppliedTopology, profile: str, work_dir: Path, env: dict[str, str], cwd: Path,
 ) -> dict[str, Any]:
     work_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     _chown_tree(work_dir)
@@ -269,8 +251,7 @@ def _run_profile(
                 "--role", role, "--profile", profile, "--work-dir", str(work_dir)]
 
     host_proc = ns_popen(
-        topology.host_ns, role_cmd("host"), cwd=cwd, stderr_path=work_dir / "host.stderr", env=env,
-    )
+        topology.host_ns, role_cmd("host"), cwd=cwd, stderr_path=work_dir / "host.stderr", env=env)
     guest_proc = None
     row: dict[str, Any] = {}
     try:
@@ -287,8 +268,7 @@ def _run_profile(
             return row
         guest_proc = ns_popen(
             topology.guest_ns, role_cmd("guest"), cwd=cwd,
-            stderr_path=work_dir / "guest.stderr", env=env,
-        )
+            stderr_path=work_dir / "guest.stderr", env=env)
         timed_out = False
         deadline = time.monotonic() + 60.0
         while guest_proc.poll() is None and host_proc.poll() is None:
@@ -305,9 +285,7 @@ def _run_profile(
         routable = _invite_host_routable(topology.guest_ns, work_dir, env)
         connected = bool(result.get("guest_connected"))
         rc = guest_proc.returncode
-        completed = completed_guest_result(
-            result, timed_out=timed_out, returncode=rc,
-        )
+        completed = completed_guest_result(result, timed_out=timed_out, returncode=rc)
         reason = ""
         if host_rc is not None:
             completed = False
@@ -331,8 +309,7 @@ def _run_profile(
             "share_reaches_internet": ready.get("share_reaches_internet"),
             "share_route": ready.get("share_route", ""),
             "failure_class": result.get("failure_class", ""),
-            "fake_connect": connected and topology.spec.nat_mode == "symmetric",
-        }
+            "fake_connect": connected and topology.spec.nat_mode == "symmetric"}
         return row
     finally:
         (work_dir / "host.stop").write_text("1\n", encoding="utf-8")
@@ -380,10 +357,9 @@ def _emit_receipt(
     print(receipt["conductor_line"])
     code = job_exit_code(
         status=str(receipt["status"]), expected_status=expected_status,
-        harness_ok=harness_ok, fake_connect=fake_connect,
-    )
+        harness_ok=harness_ok, fake_connect=fake_connect)
     if code == 0 and str(receipt["status"]).upper() == "FAIL":
-        print("job=ok expected=FAIL (honest two-NAT result; assertions unchanged)")
+        print("job=ok expected=FAIL")
     return code
 
 
@@ -408,14 +384,11 @@ def _allow_unprivileged_stun(ns: str) -> None:
     subprocess.run(
         [required_bin("ip"), "netns", "exec", ns,
          required_bin("sysctl"), "-w", "net.ipv4.ip_unprivileged_port_start=0"],
-        check=False, capture_output=True, text=True,
-    )
+        check=False, capture_output=True, text=True)
 
 
 def _start_stun(
-    topology: AppliedTopology,
-    env: dict[str, str],
-    commands: list[list[str]],
+    topology: AppliedTopology, env: dict[str, str], commands: list[list[str]],
 ) -> list[subprocess.Popen[str]]:
     assert topology.inet_ns is not None
     return [
@@ -425,8 +398,8 @@ def _start_stun(
 
 
 def run_case(
-    *, case: str, profiles: tuple[str, ...], output_dir: Path, netem: bool,
-    sha: str, keep_workdir: bool = False, nat_mode: str = "masquerade",
+    *, case: str, profiles: tuple[str, ...], output_dir: Path, netem: bool, sha: str,
+    keep_workdir: bool = False, nat_mode: str = "masquerade",
     product_root: Path | None = None, transport_binary: str = "",
     build_id: str = "", expected_status: str = "PASS",
 ) -> int:
@@ -554,10 +527,10 @@ def run_case(
     fake = any(row.get("fake_connect") for row in profile_rows)
     if fake:
         harness_ok = False
-        notes = (
-            "Symmetric NAT produced a fake connect; the job must fail "
-            "even when --expected-status is FAIL."
-        )
+        notes = "Symmetric NAT produced a fake connect; the job must fail."
+    if spec.netem and not netem_applied:
+        harness_ok = False
+        notes = "Requested netem missing."
     status = (
         "FAIL" if mode == "symmetric"
         else ("PASS" if harness_ok and exchanged and connected else "FAIL")
@@ -573,9 +546,7 @@ def run_case(
             notes = _incomplete_guest_notes(profile_rows)
     routable_values = [
         row.get("invite_host_routable_from_guest")
-        for row in profile_rows
-        if "invite_host_routable_from_guest" in row
-    ]
+        for row in profile_rows if "invite_host_routable_from_guest" in row]
     routable = None
     if routable_values:
         routable = all(bool(item) for item in routable_values)
@@ -584,15 +555,13 @@ def run_case(
         profiles=[{key: row.get(key) for key in (
             "profile", "guest_connected", "session_state_exchanged",
             "harness_ok", "transport", "share_reaches_internet",
-            "share_route", "failure_class", "fake_connect",
-        )} for row in profile_rows],
+            "share_route", "failure_class", "fake_connect")} for row in profile_rows],
         rendezvous_reachable_from_host=host_reach,
         rendezvous_reachable_from_guest=guest_reach,
         invite_host_routable_from_guest=routable, netem=netem_applied,
         notes=notes, nat_mode=mode,
-        stun_reachable_from_host=stun_host, stun_reachable_from_guest=stun_guest,
-    )
+        stun_reachable_from_host=stun_host, stun_reachable_from_guest=stun_guest)
     return _emit_receipt(
         output_dir, receipt, expected_status=expected_status,
-        harness_ok=harness_ok, fake_connect=fake,
-    )
+        harness_ok=harness_ok, fake_connect=fake)
+

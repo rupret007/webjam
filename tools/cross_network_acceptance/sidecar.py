@@ -1,4 +1,4 @@
-"""Build PR #372's webjam-fabric sidecar for this harness only."""
+"""Build PR #372 webjam-fabric for this harness only."""
 
 import os
 import subprocess

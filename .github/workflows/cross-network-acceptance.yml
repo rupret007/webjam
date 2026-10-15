@@ -1,4 +1,4 @@
-# Optional two-NAT Host/Join proof. Not a required check. Same-LAN must PASS.
+# Optional two-NAT proof. Not a required check. Same-LAN must PASS.
 # Two-NAT FAIL is green only for a classified failure-to-connect (no
 # connected-without-state-exchange or fake connect). Report-only on master.
 name: Cross-network acceptance
@@ -36,17 +36,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.11"
-
       - name: Install netns, sch_netem, coturn, and Qt
         run: sudo bash tools/cross_network_acceptance/ci_prep.sh
-      - name: Install Python dependencies
+      - name: Install Python deps
         run: python -m pip install --upgrade pip "setuptools>=83.0.0" && pip install -r requirements.txt pytest "ruff==0.15.22"
-
       - name: Lint the harness
         run: ruff check tools/cross_network_acceptance tests/test_cross_network_acceptance.py
 
@@ -59,14 +56,14 @@ jobs:
           --output-dir out/cross-network-acceptance
           --sha "$(git rev-parse HEAD)" --no-netem --expected-status PASS
 
-      - name: Make receipts readable by the runner
+      - name: Chown receipts
         if: always()
-        run: if [ -d out/cross-network-acceptance ]; then sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance; fi
+        run: sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance || true
       - name: Retain receipts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: webjam-same-lan-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          name: same-lan-${{ github.run_id }}-${{ github.run_attempt }}
           path: out/cross-network-acceptance/
           if-no-files-found: warn
           retention-days: 14
@@ -75,22 +72,20 @@ jobs:
     name: Cross-network (two NATs)
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Report-only on master. Networking PRs must match the expected receipt.
+    # Report-only on master.
     continue-on-error: ${{ github.ref == 'refs/heads/master' }}
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.11"
-
       - name: Install netns, sch_netem, coturn, and Qt
         run: sudo bash tools/cross_network_acceptance/ci_prep.sh
-      - name: Install Python dependencies
+      - name: Install Python deps
         run: python -m pip install --upgrade pip "setuptools>=83.0.0" && pip install -r requirements.txt pytest "ruff==0.15.22"
 
       - name: Run two-NAT Host/Join (expected FAIL)
@@ -99,14 +94,14 @@ jobs:
           --output-dir out/cross-network-acceptance
           --sha "$(git rev-parse HEAD)" --netem --expected-status FAIL
 
-      - name: Make receipts readable by the runner
+      - name: Chown receipts
         if: always()
-        run: if [ -d out/cross-network-acceptance ]; then sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance; fi
+        run: sudo chown -R "$(id -u):$(id -g)" out/cross-network-acceptance || true
       - name: Retain receipts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: webjam-cross-network-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          name: two-nat-${{ github.run_id }}-${{ github.run_attempt }}
           path: out/cross-network-acceptance/
           if-no-files-found: warn
           retention-days: 14

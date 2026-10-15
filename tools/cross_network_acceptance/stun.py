@@ -97,7 +97,7 @@ def python_stun_command(bind_host: str, ports: tuple[int, ...]) -> list[str]:
 
 
 def stun_server_commands(bind_host: str, ports: tuple[int, ...]) -> list[list[str]]:
-    """Prefer coturn; fall back to this Python Binding server."""
+    """Prefer coturn; else this Python Binding server."""
     if not bind_host or not ports:
         raise StunError("need bind address and ports.")
     turn = shutil.which("turnserver")

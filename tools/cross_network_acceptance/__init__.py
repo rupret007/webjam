@@ -1,4 +1,4 @@
-"""Optional Cross-network acceptance harness."""
+"""Optional two-NAT Host/Join."""
 
 import os
 import sys

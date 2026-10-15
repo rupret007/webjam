@@ -1,9 +1,8 @@
 """Two-home netns. No DNAT, NETMAP, REDIRECT, or port forwarding.
 
 RFC 4787: masquerade/cone = endpoint-independent mapping +
-address-and-port-dependent filtering. Not endpoint-independent
-filtering (static inbound rewrite / NETMAP). symmetric =
-endpoint-dependent mapping on NAT-A (`--random-fully`). These modes
+address-and-port-dependent filtering (not static inbound rewrite / NETMAP).
+symmetric = endpoint-dependent mapping (`--random-fully`). These modes
 do not prove product cone-vs-symmetric NAT behavior while packaged
 direct-stun discards TEST-NET-3 mappings.
 """
@@ -33,7 +32,6 @@ NETEM_JITTER = "50ms"
 NETEM_LOSS = "1%"
 NAT_MODES = frozenset({"masquerade", "cone", "symmetric"})
 COMPILED_STUN_NAMES = ("stun.cloudflare.com", "stun.l.google.com")
-# RFC 4787: (mapping behavior, filtering behavior)
 RFC4787 = {
     "masquerade": ("endpoint-independent", "address-and-port-dependent"),
     "cone": ("endpoint-independent", "address-and-port-dependent"),
@@ -53,7 +51,7 @@ def required_bin(name: str) -> str:
         candidate = Path(folder) / name
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
-    raise TopologyError(f"This harness needs {name} on PATH or /usr/sbin.")
+    raise TopologyError(f"Need {name} on PATH or /usr/sbin.")
 
 
 @dataclass(frozen=True)
@@ -93,7 +91,6 @@ def ns_names(prefix: str) -> dict[str, str]:
 
 
 def setup_commands(spec: TopologySpec) -> list[list[str]]:
-
     ip = "ip"
     iptables = "iptables"
     sysctl = "sysctl"
@@ -197,7 +194,7 @@ def assert_no_port_forward(commands: list[list[str]]) -> None:
 
 
 def assert_unsolicited_inbound_udp_dropped(commands: list[list[str]]) -> None:
-    """APDF: no static inbound rewrite; NEW UDP is not forwarded."""
+    """APDF: no static inbound rewrite."""
 
     for argv in commands:
         if "NETMAP" in argv or "DNAT" in argv:
@@ -225,7 +222,6 @@ def _resolve(commands: list[list[str]]) -> list[list[str]]:
 
 
 def stun_override_hosts_text() -> str:
-
     names = " ".join(COMPILED_STUN_NAMES)
     return f"127.0.0.1 localhost\n{INET_ADDR} {names}\n"
 

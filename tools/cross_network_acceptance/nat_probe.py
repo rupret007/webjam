@@ -1,7 +1,6 @@
 """Live RFC 4787 UDP probes. Privileged CI runs this fail-closed.
 
-punch_admitted is APDF reply-from-contacted-endpoint, not Linux
-simultaneous-open.
+punch_admitted is APDF reply-from-contacted-endpoint, not Linux simultaneous-open.
 """
 
 import json
@@ -42,11 +41,7 @@ class ProbeError(RuntimeError):
 
 def expected_behavior(nat_mode: str) -> dict[str, bool]:
     cone = nat_mode in {"cone", "masquerade"}
-    return {
-        "unsolicited_dropped": True,
-        "punch_admitted": True,
-        "mapping_reused": cone,
-    }
+    return {"unsolicited_dropped": True, "punch_admitted": True, "mapping_reused": cone}
 
 
 def _exec(ns: str, script: str, args: list[str], *, popen: bool = False, timeout: float = 6):
