@@ -137,6 +137,7 @@ from webjam_qt.controllers.session_persistence import SessionPersistence
 from webjam_qt.controllers.ui_thread import UiThreadInvoker
 from webjam_qt.controllers.video_coordinator import VideoCoordinator
 from webjam_qt.session_state import SessionPhase, SessionUiState
+from webjam_qt.widgets.session_hud import INVITE_COPIED_NOTICE, WIFI_NEEDED_NOTICE
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.windows.conductor_window import ConductorWindow
 
@@ -6416,6 +6417,7 @@ class ApplicationController(QObject):
                 action_kind="cancel_startup" if close_setup else "retry_startup",
             )
         self._focus_initial_hud_action()
+        ApplicationController._sync_invite_share_notice(self)
         self._persist_startup_attempt(attempt)
         if not isinstance(snapshot, SessionConductorSnapshot):
             return
@@ -7964,11 +7966,9 @@ class ApplicationController(QObject):
             readiness = self._host_share_readiness()
             invite_url = self._current_invite_url(readiness=readiness)
         if not invite_url:
-            self._update_session_hud()
-            self.window.flash_message(
-                "Connect this Mac to Wi-Fi, then try again.",
-                ms=6000,
-            )
+            ApplicationController._publish_invite_share_notice(self, WIFI_NEEDED_NOTICE)
+            if hasattr(self, "_session_conductor_facts"):
+                self._update_session_hud()
             return
         # One paste, not two. A bandmate gets the jam link and, when the host
         # has configured one, the meeting link in the same message with a line
@@ -8004,15 +8004,7 @@ class ApplicationController(QObject):
         ).vocabulary.participant_singular
         link_noun = "room" if _creator_profile_for_controller(self).key == "art" else "jam"
         if owner is None:
-            recipient = (
-                "an artist"
-                if _creator_profile_for_controller(self).key == "art"
-                else f"another {participant}"
-            )
-            copied_detail = (
-                f"Invitation copied. Send the whole message to {recipient} on "
-                "your same Wi-Fi or local network. Keep this room open."
-            )
+            copied_detail = INVITE_COPIED_NOTICE
         else:
             copied_detail = (
                 (
@@ -8022,7 +8014,22 @@ class ApplicationController(QObject):
                 if invite_message.includes_meeting
                 else f"Invite link copied — send it to another {participant}."
             )
-        self.window.flash_message(copied_detail, ms=7000)
+        ApplicationController._publish_invite_share_notice(self, copied_detail)
+
+    @staticmethod
+    def _publish_invite_share_notice(controller, text: str) -> None:
+        """Keep Copy Invite / Wi-Fi guidance on the HUD instead of a 7s bar."""
+
+        notice = str(text or "").strip()
+        controller._invite_share_notice = notice
+        ApplicationController._sync_invite_share_notice(controller)
+
+    @staticmethod
+    def _sync_invite_share_notice(controller) -> None:
+        hud = getattr(getattr(controller, "window", None), "session_hud", None)
+        setter = getattr(hud, "set_notice", None)
+        if callable(setter):
+            setter(str(getattr(controller, "_invite_share_notice", "") or ""))
 
     def accept_invite_url(self, value: str) -> bool:
         """Compatibility boundary for an explicit in-app paste.
@@ -10585,6 +10592,7 @@ class ApplicationController(QObject):
                 presentation,
                 headline=display_override.title,
             )
+            ApplicationController._sync_invite_share_notice(self)
             return
 
         action = presentation.primary_action
@@ -10672,6 +10680,7 @@ class ApplicationController(QObject):
         # reset command remains under More when a v3 host owns that invite.
         if action is SessionPrimaryAction.COPY_INVITE:
             self.window.session_strip.set_invite_available(False)
+        ApplicationController._sync_invite_share_notice(self)
 
     def _publish_musician_guidance(
         self,
@@ -10833,6 +10842,7 @@ class ApplicationController(QObject):
             secondary_action_visible=replace_lan_invite,
             secondary_action_kind="replace_lan_invite",
         )
+        ApplicationController._sync_invite_share_notice(self)
 
     def _on_conductor_action_requested(self, action_kind: str) -> None:
         """Route the one visible conductor action to its real owner."""

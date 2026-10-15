@@ -8,6 +8,7 @@ import pytest
 from PySide6.QtWidgets import QMessageBox
 
 from webjam_qt.controllers.application_controller import ApplicationController
+from webjam_qt.widgets.session_hud import INVITE_COPIED_NOTICE, WIFI_NEEDED_NOTICE
 from webjam_qt.controllers.recording_coordinator import (
     RecorderPhase,
     RecordingCoordinator,
@@ -54,6 +55,7 @@ def _invite_controller(profile_key: str, *, webex_url: str = "") -> SimpleNamesp
         settings=SimpleNamespace(webex_url=webex_url),
         window=SimpleNamespace(
             flash_message=MagicMock(),
+            session_hud=SimpleNamespace(set_notice=MagicMock()),
             session_strip=SimpleNamespace(
                 current_title=MagicMock(return_value="Tuesday Jam")
             ),
@@ -85,7 +87,9 @@ def test_copy_invite_success_uses_creator_participant_vocabulary(
 
     copied = clipboard.setText.call_args.args[0]
     assert "webjam://join?v=3" in copied
-    assert controller.window.flash_message.call_args.args[0] == expected
+    controller.window.flash_message.assert_not_called()
+    assert controller.window.session_hud.set_notice.call_args.args[0] == expected
+    assert controller._invite_share_notice == expected
 
 
 def test_copy_invite_carries_the_meeting_link_in_the_same_message() -> None:
@@ -104,10 +108,65 @@ def test_copy_invite_carries_the_meeting_link_in_the_same_message() -> None:
     assert "webjam://join?v=3" in copied
     assert "https://band.webex.com/meet/jeff" in copied
     assert "does not run it" in copied
-    assert controller.window.flash_message.call_args.args[0] == (
+    controller.window.flash_message.assert_not_called()
+    assert controller.window.session_hud.set_notice.call_args.args[0] == (
         "One invite copied — jam link and meeting link. Send it to another "
         "musician."
     )
+
+
+def test_lan_copy_invite_uses_persistent_wifi_hud_card() -> None:
+    clipboard = MagicMock()
+    controller = SimpleNamespace(
+        _active_creator_profile_key="art",
+        _remote_invite_owner=None,
+        _shutdown_cleanup_blocks_action=lambda: False,
+        _host_peer_warning="",
+        _host_share_readiness=lambda: SimpleNamespace(address="192.168.1.20"),
+        _current_invite_url=lambda readiness=None: "webjam://join?host=192.168.1.20",
+        settings=SimpleNamespace(webex_url=""),
+        window=SimpleNamespace(
+            flash_message=MagicMock(),
+            session_hud=SimpleNamespace(set_notice=MagicMock()),
+            session_strip=SimpleNamespace(
+                current_title=MagicMock(return_value="Make together")
+            ),
+        ),
+        creator_start=SimpleNamespace(key="talk_and_make"),
+    )
+
+    with patch("PySide6.QtWidgets.QApplication") as application:
+        application.clipboard.return_value = clipboard
+        ApplicationController._copy_band_invite(controller)
+
+    controller.window.flash_message.assert_not_called()
+    assert controller.window.session_hud.set_notice.call_args.args[0] == INVITE_COPIED_NOTICE
+    assert controller._invite_share_notice == INVITE_COPIED_NOTICE
+
+
+def test_missing_wifi_copy_invite_promotes_to_hud() -> None:
+    controller = SimpleNamespace(
+        _active_creator_profile_key="music",
+        _remote_invite_owner=None,
+        _shutdown_cleanup_blocks_action=lambda: False,
+        _host_peer_warning="",
+        _host_share_readiness=lambda: SimpleNamespace(address=""),
+        _current_invite_url=lambda readiness=None: "",
+        settings=SimpleNamespace(webex_url=""),
+        window=SimpleNamespace(
+            flash_message=MagicMock(),
+            session_hud=SimpleNamespace(set_notice=MagicMock()),
+            session_strip=SimpleNamespace(
+                current_title=MagicMock(return_value="Band Rehearsal")
+            ),
+        ),
+    )
+
+    ApplicationController._copy_band_invite(controller)
+
+    controller.window.flash_message.assert_not_called()
+    assert controller.window.session_hud.set_notice.call_args.args[0] == WIFI_NEEDED_NOTICE
+    assert controller._invite_share_notice == WIFI_NEEDED_NOTICE
 
 
 def test_copy_invite_drops_a_meeting_link_that_fails_validation() -> None:
@@ -654,4 +713,5 @@ def test_art_copy_invite_names_the_room_and_optional_work_sharing():
     assert "Optional Webex conversation and work sharing" in copied
     assert "Make from your own space" in copied
     assert "carries the music" not in copied
-    assert "room link and meeting link" in controller.window.flash_message.call_args.args[0]
+    controller.window.flash_message.assert_not_called()
+    assert "room link and meeting link" in controller.window.session_hud.set_notice.call_args.args[0]

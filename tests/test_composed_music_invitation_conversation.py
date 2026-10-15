@@ -137,11 +137,11 @@ def copied_room(qapp, monkeypatch, tmp_path):
         assert room_link_preserved
         personal_link_omitted = PERSONAL not in message
         assert personal_link_omitted
-        feedback = host.window.flash_message.call_args.args[0]
-        feedback_honest = all(part in feedback for part in (
-            "whole message", "same Wi-Fi or local network", "Keep this room open",
-        ))
-        assert feedback_honest
+        from webjam_qt.widgets.session_hud import INVITE_COPIED_NOTICE
+
+        feedback = host.window.session_hud.notice_text()
+        assert feedback == INVITE_COPIED_NOTICE
+        host.window.flash_message.assert_not_called()
 
         guest_settings = settings("Guest")
         door = LaunchDialog(guest_settings)

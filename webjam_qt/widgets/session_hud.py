@@ -17,6 +17,11 @@ from PySide6.QtWidgets import (
 
 from webjam_qt.theme.tokens import Space
 
+INVITE_COPIED_NOTICE = (
+    "Copied. Text the whole message to someone on this Wi-Fi. Keep this window open."
+)
+WIFI_NEEDED_NOTICE = "Connect this Mac to Wi-Fi, then try again."
+
 
 class SessionHud(QFrame):
     """Compact session truth with an explicit, credential-safe copy action."""
@@ -54,12 +59,17 @@ class SessionHud(QFrame):
         self._checklist_note.setObjectName("SessionHudChecklistNote")
         self._checklist_note.setWordWrap(True)
         self._checklist_note.setVisible(False)
+        self._notice = QLabel()
+        self._notice.setObjectName("SessionHudNotice")
+        self._notice.setWordWrap(True)
+        self._notice.setVisible(False)
         self._input = QLineEdit()
         self._input.setObjectName("SessionHudInput")
         self._input.setVisible(False)
         status_layout.addWidget(self._status)
         status_layout.addWidget(self._detail)
         status_layout.addWidget(self._checklist_note)
+        status_layout.addWidget(self._notice)
         status_layout.addWidget(self._input)
         layout.addLayout(status_layout, 1)
 
@@ -187,6 +197,23 @@ class SessionHud(QFrame):
         if (visible and self._action_kind == "retry"
                 and not retry_was_available and self.isVisible()):
             self._action.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def set_notice(self, text: str) -> None:
+        """Keep Copy Invite / Wi-Fi guidance in the HUD, not a vanishing bar."""
+
+        notice = str(text or "").strip()
+        self._notice.setText(notice)
+        self._notice.setVisible(bool(notice))
+        if notice:
+            accessible = f"{self._last_accessible_description} {notice}".strip()
+            if accessible != self._last_accessible_description:
+                self.setAccessibleDescription(accessible)
+                self._last_accessible_description = accessible
+
+    def notice_text(self) -> str:
+        if self._notice.isHidden():
+            return ""
+        return self._notice.text()
 
     def _action_description(self, label: str, detail: str) -> str:
         """Give every visible action a useful, action-specific label."""

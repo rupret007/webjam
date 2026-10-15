@@ -56,3 +56,35 @@ def test_retry_refresh_preserves_keyboard_focus_after_initial_recovery(qapp):
     finally:
         window.close()
         window.deleteLater()
+
+
+def test_invite_notice_stays_on_the_hud_after_status_updates(qapp):
+    from webjam_qt.widgets.session_hud import INVITE_COPIED_NOTICE, WIFI_NEEDED_NOTICE
+
+    hud = SessionHud()
+    try:
+        hud.set_state(
+            "Your room is open",
+            "Copy the invite. Keep making while you wait for another artist.",
+            invite_available=True,
+            action_text="Copy Invite",
+            action_kind="invite",
+        )
+        hud.set_notice(INVITE_COPIED_NOTICE)
+        assert hud.notice_text() == INVITE_COPIED_NOTICE
+        assert not hud._notice.isHidden()
+        hud.set_state(
+            "Your room is open",
+            "Copy the invite. Keep making while you wait for another artist.",
+            invite_available=True,
+            action_text="Copy Invite",
+            action_kind="invite",
+        )
+        assert hud.notice_text() == INVITE_COPIED_NOTICE
+        hud.set_notice(WIFI_NEEDED_NOTICE)
+        assert hud.notice_text() == WIFI_NEEDED_NOTICE
+        hud.set_notice("")
+        assert hud.notice_text() == ""
+        assert hud._notice.isHidden()
+    finally:
+        hud.deleteLater()
