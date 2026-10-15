@@ -34,8 +34,10 @@ continuous trefoil identity in its own windows.
 
 The released v0.27.2 Linux and Windows packages can join a jam hosted from
 the macOS build; physical cross-platform joining remains NOT RUN.
-The profile-specific Host action remains disabled on this platform; this
+Music Host remains disabled on this platform; this
 package does not claim to provide the macOS-only managed server.
+Art Host and Join work here. Stay on the same Wi-Fi as the host and keep
+the host's window open.
 
 Music and Podcast & Voice retain standalone Reference Studio for local
 songwriting, recording, arranging, mixing, and WAV/FLAC bounce without joining
@@ -66,8 +68,8 @@ records through v0.28.1. Presence of embedded 3.12.2 bytes does not authorize
 an identity mismatch. Shared Track uses its separate approved headless path;
 unlisted client/server versions still fail closed.
 
-1. Only after exact v0.28.1 release evidence, from a package verified against the v0.28.1 release manifest,
-   install the included Jamulus 3.12.2 package:
+1. If this package includes install-jamulus.sh and you need the bundled
+   Jamulus 3.12.2 package:
 
      ./install-jamulus.sh
 
@@ -79,8 +81,8 @@ unlisted client/server versions still fail closed.
 
      ./WebJam
 
-3. Choose the selected profile's Join, Join Recording, or Join Review action
-   and paste the invitation from the Mac host. Jamulus owns the
+3. For Music, choose Join and paste the invitation from the Mac host.
+   Art can Host or Join on this computer. Jamulus owns the
    audio interface, channels, buffer, headphones, and monitor mix.
 
 Conversation/video is optional and is not bundled. Any meeting platform can
