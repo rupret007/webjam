@@ -6,8 +6,9 @@
  * 13k GB-s, 100k row writes). Unreadable or missing counters fail closed.
  *
  * TURN and mailbox keep separate counters so a host wait cannot 429
- * credential minting. IPv6 is bucketed by /64. New IPs evict the LRU
- * bucket instead of locking the Worker out.
+ * credential minting. IPv6 is bucketed by /64 and /48. New IPs evict
+ * the LRU bucket instead of locking the Worker out. A per-minute cap
+ * on new buckets stops rotating addresses from burning the daily cap.
  */
 
 export const DEFAULT_DAILY_REQUESTS = 10_000;
@@ -15,6 +16,8 @@ export const DEFAULT_DAILY_ROW_WRITES = 10_000;
 export const DEFAULT_DAILY_GB_S = 1_000;
 export const ESTIMATED_GB_S_PER_REQUEST = 0.01;
 export const DEFAULT_RATE_LIMIT = 10;
+export const DEFAULT_MAILBOX_RATE_LIMIT = 30;
+export const DEFAULT_NEW_BUCKETS_PER_MINUTE = 32;
 export const RATE_WINDOW_MS = 60_000;
 export const MAX_IP_BUCKETS = 256;
 
@@ -23,13 +26,19 @@ export function utcDayKey(nowMs) {
 }
 
 export function quotaLimits(env = {}, scope = "mailbox") {
+  const rateFallback =
+    scope === "turn" ? DEFAULT_RATE_LIMIT : DEFAULT_MAILBOX_RATE_LIMIT;
   const rateVar =
     scope === "turn" ? "TURN_RATE_LIMIT_PER_MINUTE" : "MAILBOX_RATE_LIMIT_PER_MINUTE";
   return {
     dailyRequests: positiveInt(env.MAILBOX_DAILY_REQUESTS, DEFAULT_DAILY_REQUESTS),
     dailyRowWrites: positiveInt(env.MAILBOX_DAILY_ROW_WRITES, DEFAULT_DAILY_ROW_WRITES),
     dailyGbS: positiveInt(env.MAILBOX_DAILY_GB_S, DEFAULT_DAILY_GB_S),
-    perMinute: positiveInt(env[rateVar], DEFAULT_RATE_LIMIT),
+    perMinute: positiveInt(env[rateVar], rateFallback),
+    newBucketsPerMinute: positiveInt(
+      env.MAILBOX_NEW_BUCKETS_PER_MINUTE,
+      DEFAULT_NEW_BUCKETS_PER_MINUTE,
+    ),
   };
 }
 
@@ -39,7 +48,7 @@ function positiveInt(raw, fallback) {
 }
 
 export function emptyQuotaState() {
-  return { day: "", requests: 0, rowWrites: 0, gbS: 0, ipBuckets: {} };
+  return { day: "", requests: 0, rowWrites: 0, gbS: 0, ipBuckets: {}, newBuckets: {} };
 }
 
 export function quotaScope(path) {
@@ -62,6 +71,14 @@ export function rateKey(ip) {
     return `${ipv6Groups(value).slice(0, 4).join(":")}::/64`;
   }
   return value;
+}
+
+export function prefix48(ip) {
+  const key = rateKey(ip);
+  if (!key.includes("/64")) {
+    return key;
+  }
+  return `${ipv6Groups(ip).slice(0, 3).join(":")}::/48`;
 }
 
 function ipv6Groups(ip) {
@@ -96,17 +113,31 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits }) {
     state.rowWrites = 0;
     state.gbS = 0;
     state.ipBuckets = {};
+    state.newBuckets = {};
   }
   const key = rateKey(ip);
   if (!key) {
     return { allow: false, status: 429, code: "rate" };
   }
+  const prefix = prefix48(ip);
   const window = Math.floor(nowMs / RATE_WINDOW_MS);
   pruneIpBuckets(state, window);
-  const ipKey = `${key}:${window}`;
-  const nextIp = (Number(state.ipBuckets[ipKey]) || 0) + 1;
-  if (nextIp > limits.perMinute) {
-    return { allow: false, status: 429, code: "rate" };
+  pruneNewBuckets(state, window);
+  const keys = prefix === key ? [key] : [key, prefix];
+  for (const nextKey of keys) {
+    const ipKey = `${nextKey}:${window}`;
+    const nextIp = (Number(state.ipBuckets[ipKey]) || 0) + 1;
+    if (nextIp > limits.perMinute) {
+      return { allow: false, status: 429, code: "rate" };
+    }
+  }
+  const birthKey = `${prefix}:${window}`;
+  const isNew = !(birthKey in (state.ipBuckets || {}));
+  if (isNew) {
+    const born = Number(state.newBuckets[window]) || 0;
+    if (born >= limits.newBucketsPerMinute) {
+      return { allow: false, status: 429, code: "rate" };
+    }
   }
   const writes = Number.isFinite(rowWrites) && rowWrites > 0 ? rowWrites : 0;
   const nextRequests = (Number(state.requests) || 0) + 1;
@@ -119,7 +150,14 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits }) {
   ) {
     return { allow: false, status: 429, code: "cap" };
   }
-  rememberIpBucket(state.ipBuckets, ipKey, nextIp);
+  if (isNew) {
+    state.newBuckets[window] = (Number(state.newBuckets[window]) || 0) + 1;
+  }
+  for (const nextKey of keys) {
+    const ipKey = `${nextKey}:${window}`;
+    const nextIp = (Number(state.ipBuckets[ipKey]) || 0) + 1;
+    rememberIpBucket(state.ipBuckets, ipKey, nextIp);
+  }
   state.requests = nextRequests;
   state.rowWrites = nextWrites;
   state.gbS = nextGbS;
@@ -136,6 +174,19 @@ function pruneIpBuckets(state, window) {
   for (const key of Object.keys(buckets)) {
     if (!key.endsWith(suffix)) {
       delete buckets[key];
+    }
+  }
+}
+
+function pruneNewBuckets(state, window) {
+  const born =
+    state.newBuckets != null && typeof state.newBuckets === "object"
+      ? state.newBuckets
+      : {};
+  state.newBuckets = born;
+  for (const key of Object.keys(born)) {
+    if (String(key) !== String(window)) {
+      delete born[key];
     }
   }
 }

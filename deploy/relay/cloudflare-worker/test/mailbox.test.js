@@ -16,9 +16,13 @@ import {
   DEFAULT_DAILY_GB_S,
   DEFAULT_DAILY_REQUESTS,
   DEFAULT_DAILY_ROW_WRITES,
+  DEFAULT_MAILBOX_RATE_LIMIT,
+  DEFAULT_NEW_BUCKETS_PER_MINUTE,
+  DEFAULT_RATE_LIMIT,
   emptyQuotaState,
   ESTIMATED_GB_S_PER_REQUEST,
   MAX_IP_BUCKETS,
+  prefix48,
   quotaLimits,
   rateKey,
 } from "../src/quota.js";
@@ -136,7 +140,11 @@ test("daily counters keep at least 4x headroom under the free plan", () => {
 
 test("per-IP rate limit lives in durable quota state", () => {
   const state = emptyQuotaState();
-  for (let i = 0; i < 10; i += 1) {
+  assert.equal(LIMITS.perMinute, DEFAULT_MAILBOX_RATE_LIMIT);
+  assert.equal(DEFAULT_MAILBOX_RATE_LIMIT, 30);
+  assert.equal(quotaLimits({}, "turn").perMinute, DEFAULT_RATE_LIMIT);
+  assert.equal(LIMITS.newBucketsPerMinute, DEFAULT_NEW_BUCKETS_PER_MINUTE);
+  for (let i = 0; i < DEFAULT_MAILBOX_RATE_LIMIT; i += 1) {
     assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: LIMITS }).allow, true);
   }
   assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: LIMITS }).code, "rate");
@@ -158,23 +166,53 @@ test("IPv6 addresses in the same /64 share a rate bucket", () => {
   const state = emptyQuotaState();
   const tight = { ...LIMITS, perMinute: 2 };
   assert.equal(rateKey("2001:db8:1:2:aaaa::1"), "2001:db8:1:2::/64");
+  assert.equal(prefix48("2001:db8:1:2:aaaa::1"), "2001:db8:1::/48");
   assert.equal(rateKey("::ffff:203.0.113.10"), "203.0.113.10");
   assert.equal(applyQuota(state, { ip: "2001:db8:1:2:aaaa::1", nowMs: 1, limits: tight }).allow, true);
   assert.equal(applyQuota(state, { ip: "2001:db8:1:2:bbbb::2", nowMs: 1, limits: tight }).allow, true);
   assert.equal(applyQuota(state, { ip: "2001:db8:1:2:cccc::3", nowMs: 1, limits: tight }).code, "rate");
-  assert.equal(applyQuota(state, { ip: "2001:db8:1:3::1", nowMs: 1, limits: tight }).allow, true);
+});
+
+test("IPv6 addresses in the same /48 share a rate bucket", () => {
+  const state = emptyQuotaState();
+  const tight = { ...LIMITS, perMinute: 2 };
+  assert.equal(applyQuota(state, { ip: "2001:db8:1:2::1", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "2001:db8:1:3::2", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "2001:db8:1:4::3", nowMs: 1, limits: tight }).code, "rate");
+  assert.equal(applyQuota(state, { ip: "2001:db8:2::1", nowMs: 1, limits: tight }).allow, true);
 });
 
 test("a flood of new IPs does not block a legitimate user", () => {
   const state = emptyQuotaState();
+  const roomy = { ...LIMITS, newBucketsPerMinute: 1_000 };
   const legit = "203.0.113.10";
-  assert.equal(applyQuota(state, { ip: legit, nowMs: 1, limits: LIMITS }).allow, true);
+  assert.equal(applyQuota(state, { ip: legit, nowMs: 1, limits: roomy }).allow, true);
   for (let i = 0; i < MAX_IP_BUCKETS + 64; i += 1) {
     const ip = `198.51.${(i >> 8) & 255}.${i & 255}`;
-    assert.equal(applyQuota(state, { ip, nowMs: 1, limits: LIMITS }).allow, true);
+    assert.equal(applyQuota(state, { ip, nowMs: 1, limits: roomy }).allow, true);
   }
-  assert.equal(applyQuota(state, { ip: legit, nowMs: 1, limits: LIMITS }).allow, true);
+  assert.equal(applyQuota(state, { ip: legit, nowMs: 1, limits: roomy }).allow, true);
   assert.ok(Object.keys(state.ipBuckets).length <= MAX_IP_BUCKETS);
+});
+
+test("a cap on new buckets stops rotating addresses from burning the daily cap", () => {
+  const state = emptyQuotaState();
+  const tight = { ...LIMITS, newBucketsPerMinute: 2, dailyRequests: 10_000 };
+  assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "203.0.113.11", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "203.0.113.12", nowMs: 1, limits: tight }).code, "rate");
+  assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(state.requests, 3);
+  assert.equal(
+    applyQuota(state, { ip: "2001:db8:1:2::1", nowMs: 1, limits: { ...tight, newBucketsPerMinute: 1 } }).code,
+    "rate",
+  );
+  const rotator = emptyQuotaState();
+  const oneNew = { ...LIMITS, newBucketsPerMinute: 1, perMinute: 30 };
+  assert.equal(applyQuota(rotator, { ip: "2001:db8:9:1::1", nowMs: 1, limits: oneNew }).allow, true);
+  assert.equal(applyQuota(rotator, { ip: "2001:db8:9:2::2", nowMs: 1, limits: oneNew }).allow, true);
+  assert.equal(applyQuota(rotator, { ip: "2001:db8:a::1", nowMs: 1, limits: oneNew }).code, "rate");
+  assert.equal(rotator.requests, 2);
 });
 
 test("a 60s mailbox wait at the 10s poll interval does not 429", () => {
@@ -311,6 +349,64 @@ test("mailbox polling does not consume the TURN rate counter", async () => {
     },
   );
   assert.equal(minted.status, 200);
+});
+
+test("a websocket that fails immediately is not charged", async () => {
+  resetWorkerState();
+  const mailboxFetch = async (request) => {
+    if (String(request.headers.get("Upgrade") || "").toLowerCase() === "websocket") {
+      return new Response(JSON.stringify({ error: "rate" }), {
+        status: 429,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(null, { status: 204 });
+  };
+  const env = { MAILBOX_DAILY_REQUESTS: "1" };
+  const failed = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, {
+      "CF-Connecting-IP": "203.0.113.10",
+      Upgrade: "websocket",
+    }),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(failed.status, 429);
+  const got = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(got.status, 204);
+});
+
+test("a websocket upgrade that succeeds is charged", async () => {
+  resetWorkerState();
+  const mailboxFetch = async (request) => {
+    if (String(request.headers.get("Upgrade") || "").toLowerCase() === "websocket") {
+      // Node's Response rejects 101; the Worker only reads `.status` here.
+      return { status: 101 };
+    }
+    return new Response(null, { status: 204 });
+  };
+  const env = { MAILBOX_DAILY_REQUESTS: "1" };
+  const accepted = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, {
+      "CF-Connecting-IP": "203.0.113.10",
+      Upgrade: "websocket",
+    }),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(accepted.status, 101);
+  const blocked = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(blocked.status, 429);
+  const body = await blocked.json();
+  assert.equal(body.error, "cap");
 });
 
 test("http mailbox requests are rejected", async () => {

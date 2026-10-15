@@ -78,6 +78,7 @@ function applyQuotaEnv(env) {
   const quotaEnv = {
     TURN_RATE_LIMIT_PER_MINUTE: env.TURN_RATE_LIMIT_PER_MINUTE,
     MAILBOX_RATE_LIMIT_PER_MINUTE: env.MAILBOX_RATE_LIMIT_PER_MINUTE,
+    MAILBOX_NEW_BUCKETS_PER_MINUTE: env.MAILBOX_NEW_BUCKETS_PER_MINUTE,
     MAILBOX_DAILY_REQUESTS: env.MAILBOX_DAILY_REQUESTS,
     MAILBOX_DAILY_ROW_WRITES: env.MAILBOX_DAILY_ROW_WRITES,
     MAILBOX_DAILY_GB_S: env.MAILBOX_DAILY_GB_S,
@@ -134,30 +135,45 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites) {
   return errorResponse(decision.status, decision.code);
 }
 
+function isWebsocketUpgrade(request) {
+  return String(request.headers.get("Upgrade") || "").toLowerCase() === "websocket";
+}
+
 async function handleMailbox(request, env, deps, mailbox, nowMs) {
   if (mailbox.invalid) {
     return errorResponse(404, "not_found");
   }
   const writes =
     request.method === "POST" || request.method === "DELETE" ? 1 : 0;
-  const denied = await enforceAccess(request, env, deps, nowMs, writes);
-  if (denied) {
-    return denied;
+  const websocket = isWebsocketUpgrade(request);
+  if (!websocket) {
+    const denied = await enforceAccess(request, env, deps, nowMs, writes);
+    if (denied) {
+      return denied;
+    }
   }
+  let response;
   if (typeof deps.mailboxFetch === "function") {
-    return deps.mailboxFetch(request, mailbox, nowMs);
+    response = await deps.mailboxFetch(request, mailbox, nowMs);
+  } else if (!env.MAILBOX || typeof env.MAILBOX.idFromName !== "function") {
+    response = errorResponse(503, "misconfigured");
+  } else {
+    const headers = new Headers(request.headers);
+    headers.set("X-WebJam-Now", String(nowMs));
+    try {
+      const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailbox.id));
+      response = await stub.fetch(new Request(request, { headers }));
+    } catch {
+      response = errorResponse(503, "unavailable");
+    }
   }
-  if (!env.MAILBOX || typeof env.MAILBOX.idFromName !== "function") {
-    return errorResponse(503, "misconfigured");
+  if (websocket && response.status === 101) {
+    const denied = await enforceAccess(request, env, deps, nowMs, writes);
+    if (denied) {
+      return denied;
+    }
   }
-  const headers = new Headers(request.headers);
-  headers.set("X-WebJam-Now", String(nowMs));
-  try {
-    const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailbox.id));
-    return await stub.fetch(new Request(request, { headers }));
-  } catch {
-    return errorResponse(503, "unavailable");
-  }
+  return response;
 }
 
 export async function handleRequest(request, env, deps = {}) {
