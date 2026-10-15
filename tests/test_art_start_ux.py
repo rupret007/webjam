@@ -1018,6 +1018,19 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+def test_paint_along_selected_start_names_the_room_title():
+    from core.creative_modes import (
+        get_creator_profile_by_key,
+        session_title_for_start,
+    )
+
+    profile = get_creator_profile_by_key("art")
+    assert session_title_for_start(profile, "paint_along") == "Paint along"
+    assert session_title_for_start(profile, "talk_and_make") == "Make together"
+    assert session_title_for_start(profile, "") == "Make together"
+    assert session_title_for_start(profile, "nonsense") == profile.default_template
+
+
 def test_make_together_door_card_matches_the_in_room_session_title(
     qapp, tmp_path: Path
 ):

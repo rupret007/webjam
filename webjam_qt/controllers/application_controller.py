@@ -37,6 +37,7 @@ from core.creative_modes import (
     canonical_creator_profile_key,
     get_creator_profile_by_key_or_default,
     get_mode_by_key_or_default,
+    session_title_for_start,
 )
 from core.reference_video import (
     FILE_UNAVAILABLE_MESSAGE,
@@ -1940,7 +1941,14 @@ class ApplicationController(QObject):
                                 set_session_title = getattr(strip, "set_session_title", None)
                                 if callable(set_session_title):
                                     set_session_title(
-                                        _creator_profile_for_controller(self).default_template
+                                        session_title_for_start(
+                                            _creator_profile_for_controller(self),
+                                            getattr(
+                                                self.settings,
+                                                "last_creator_start_key",
+                                                "",
+                                            ),
+                                        )
                                     )
                                 load_metadata = getattr(
                                     persistence,
