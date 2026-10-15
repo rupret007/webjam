@@ -99,6 +99,8 @@ type fabricUpdate struct {
 	helpRequestID uint64
 	helpText      []byte
 	roomState     *room.State
+	signal        []byte
+	route         string
 }
 
 type fabricOperation interface {
@@ -166,6 +168,7 @@ type enrollmentConfig struct {
 	ExpiresAtUnix        uint64
 	HostSPKISHA256       PublicPin
 	SessionID            SessionID
+	HostSignal           []byte
 }
 
 func enrollmentFromCommand(command *Command, hostPin PublicPin) *enrollmentConfig {
@@ -174,7 +177,7 @@ func enrollmentFromCommand(command *Command, hostPin PublicPin) *enrollmentConfi
 		Generation: command.Generation, SessionReference: command.SessionReference,
 		InviteReference: command.InviteReference, EnrollmentCapability: command.EnrollmentCapability,
 		ExpiresAtUnix: command.ExpiresAtUnix, HostSPKISHA256: command.HostSPKISHA256,
-		SessionID: command.SessionID,
+		SessionID: command.SessionID, HostSignal: append([]byte(nil), command.HostSignal...),
 	}
 	if command.Mode == "host" {
 		configuration.HostSPKISHA256 = hostPin
@@ -191,6 +194,8 @@ func (c *enrollmentConfig) clear() {
 	clear(c.EnrollmentCapability[:])
 	clear(c.HostSPKISHA256[:])
 	clear(c.SessionID[:])
+	clear(c.HostSignal)
+	c.HostSignal = nil
 	c.Profile = profile.Profile{}
 	c.Mode = ""
 	c.TargetPort = 0
@@ -321,8 +326,35 @@ func (s *runnerState) destroy() error {
 
 func Run(ctx context.Context, input io.Reader, output io.Writer, build string) error {
 	return runWithFactoryAndClock(
-		ctx, input, output, build, systemEndpointFactory{}, newReferenceFabricOrchestrator(time.Now), time.Now,
+		ctx, input, output, build, systemEndpointFactory{}, newShippedOrchestrator(time.Now), time.Now,
 	)
+}
+
+type shippedOrchestrator struct {
+	now func() time.Time
+}
+
+func newShippedOrchestrator(now func() time.Time) fabricOrchestrator {
+	return shippedOrchestrator{now: now}
+}
+
+func (s shippedOrchestrator) Start(
+	ctx context.Context,
+	configuration *enrollmentConfig,
+	identity *icequic.Identity,
+	endpoint loopback.Endpoint,
+) (fabricOperation, error) {
+	if configuration == nil {
+		return nil, ErrEnrollmentInvalid
+	}
+	switch configuration.Profile.ID {
+	case profile.ReferenceLocalID:
+		return newReferenceFabricOrchestrator(s.now).Start(ctx, configuration, identity, endpoint)
+	case profile.DirectStunID:
+		return newDirectStunOrchestrator(s.now).Start(ctx, configuration, identity, endpoint)
+	default:
+		return nil, ErrUnsupportedProfile
+	}
 }
 
 func runWithFactoryAndClock(
@@ -634,7 +666,13 @@ func (s *runnerState) handleFabricUpdate(update fabricUpdate, events *emitter) e
 			return s.failFabric(events, ErrProtocol)
 		}
 		s.hostRegistered = true
-		return events.emit(s.metadataEvent(s.active.commandID, "host_registered", "host_waiting"))
+		event := s.metadataEvent(s.active.commandID, "host_registered", "host_waiting")
+		if len(update.signal) != 0 {
+			event.Signal = encodeHostSignal(update.signal)
+		}
+		event.Route = update.route
+		clear(update.signal)
+		return events.emit(event)
 	case updatePeerConnected:
 		if update.err != nil || s.connected || (s.active.mode == "host" && !s.hostRegistered) {
 			return s.failFabric(events, ErrProtocol)

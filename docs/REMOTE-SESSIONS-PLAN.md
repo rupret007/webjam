@@ -1,7 +1,7 @@
 # Cross-network Host/Join plan
 
-- Status: planning record for this PR (docs only; **no** public service, paid
-  account, or new infrastructure is created here)
+- Status: **this PR ships ordinary Host/Join on `direct-stun`** when the
+  bundled sidecar is present. No paid service. No user port forwarding.
 - Product use case: friends in **different houses / different networks**
 - Musician constraint: **no port forwarding** if at all possible
 - Related: [ADR 0001](adr/0001-remote-session-transport.md) (accepted v3
@@ -42,20 +42,18 @@ never asks a guest to type an IP or port.
 | Piece | What actually happens |
 | --- | --- |
 | Who can host | Product door: **macOS only**. Windows/Linux ghost Host and tell the guest to join a Mac. |
-| Live audio | Unmodified **Jamulus** UDP server, default port **22124**. LAN mode does **not** pass `--serverbindip`, so the OS binds the UDP listener on reachable interfaces (`services/bridge_service.py`). |
-| How the guest finds the host | v2 `webjam://join?…` carrying a **literal RFC1918 IPv4**, Jamulus port, session id, peer HTTP port, and one-use bearer (`core/network_invite.py`). |
-| Address chosen | `local_band_address()` prefers the Mac **Wi-Fi** IPv4 over VPN/Tailscale `utun` routes, then other RFC1918 addresses. Public IPs, hostnames, and IPv6 are rejected for v2. |
-| Control / originals | Plaintext HTTP on the same RFC1918 address, **ephemeral port** (`SessionPeerServer(bind_host, 0, …)` in `core/session_transfer_runtime.py`). Bearer enrolls into that one session only. |
-| NAT | The guest must be able to send UDP 22124 and TCP to `peer_port` at that private address. Another house cannot. Even if the host had a public IP, v2 **refuses** it so the recording plane never leaves RFC1918. |
+| Packaged path | If `webjam-fabric` is present, Host uses compiled **`direct-stun`**: Jamulus stays loopback; the sidecar binds UDP, talks to public STUN, and seals candidates on the clipboard. |
+| Source-checkout fallback | Without a sidecar binary, Host stays on **v2 LAN**: unmodified Jamulus UDP **22124**, v2 `webjam://join?…` with a literal RFC1918 IPv4, peer HTTP on an ephemeral port. |
+| NAT (direct-stun) | Guest dials sealed host/srflx candidates. Cone NAT and same LAN can connect. Symmetric NAT / CGNAT / cellular often cannot, with no relay. |
+| NAT (v2 LAN) | Another house cannot reach RFC1918. v2 still refuses public IPs. |
 | Conversation | Optional meeting URL in the same pasted message. That link is a separate app and already works across houses. |
 
 ### Art, ordinary Host
 
-Same v2 invite and same RFC1918 HTTP control plane. Art **does not** start
-Jamulus. Room facts (profile, start, Paint along identity, canvas handoff)
-travel on the peer HTTP snapshot. Art Host is implemented on Windows,
-Linux, and macOS. Cross-network reachability is identical to Music LAN:
-**it does not work** for a friend in another house.
+Same split as Music: packaged `direct-stun` when the sidecar exists; v2 LAN
+otherwise. Art **does not** start Jamulus. Room facts travel on the native
+QUIC room channel (direct-stun) or the LAN peer HTTP snapshot (v2). Art Host
+is implemented on Windows, Linux, and macOS.
 
 ### v3 “remote” path (lab only)
 
@@ -77,17 +75,18 @@ dial TLS to a named host and open a routable UDP socket to a provisioned
 relay. That work is listed in `docs/plans/webjam-remote-joining-decision.md`
 and is still unshipped.
 
-### What a friend in another house experiences today
+### What a friend in another house experiences
 
 1. Host copies an invite. HUD says send it to your friend.
-2. Friend pastes it in Join.
-3. If the invite is v2 (ordinary): Join tries the private IPv4 and fails.
-   Troubleshooting may still mention the host’s Wi-Fi because that is the
-   only network that invite can reach.
-4. If the invite is v3 lab: both apps must reach loopback `reference-local`,
-   which is the same computer or a CI lab, not two homes.
-5. They can still talk in Conversation. They cannot share WebJam music or
-   the Art room.
+2. Friend pastes the whole message in Join (URL plus `webjam-signal:` on
+   packaged `direct-stun`).
+3. If STUN mapped a public port and NAT is cone-like, they Join. If either
+   home is CGNAT/symmetric/cellular, Join fails with a home-Wi-Fi line.
+4. Source checkouts without a sidecar still mint v2 LAN invites, which
+   another house cannot use.
+5. v3 lab (`WEBJAM_ENABLE_REFERENCE_LOCAL=1`) is still loopback
+   `reference-local`, not two homes.
+6. Conversation can still work while the WebJam room cannot.
 
 ## Options (what we considered)
 
@@ -98,9 +97,9 @@ and is still unshipped.
 | C. Public Jamulus directory servers | Guest picks a public server in Jamulus | No | $0 (community servers) | No private room, no WebJam invite, no recording plane, no Art, anyone can walk in | Rejected as Host/Join |
 | D. WebRTC data/audio instead of Jamulus | None if it worked | No | Free STUN; relay often paid | Full WebRTC media stack fights Jamulus (second mixer/codec). STUN-only fails on symmetric NAT / CGNAT | Rejected as the audio engine. ICE may still be used later for traversal. |
 | E. Tailscale / VPN overlay | Both people install and accept a machine share | No | Free for hobby; coordination is vendor-hosted | Extra first-run. Tailscale `100.64.0.0/10` fails v2 RFC1918 check. MTU can break current QUIC wrapping. Not one WebJam invite. | Rejected for v1 |
-| F. **Existing v3 + owner-operated rendezvous/relay** | Install WebJam, paste invite | **No** | One small VM (see cost) | Without a reachable UDP relay, many home pairs cannot connect (see below) | **Selected** |
-| G. v3 + STUN-only (no relay) | Same | No | $0 (public STUN) | Cone NAT sometimes works; **symmetric NAT, CGNAT, and many mobile ISPs fail** | Not reliable enough as the only path |
-| H. Commercial TURN (Twilio, etc.) | Same | No | Metered, often $ tens+/month at music bitrate | Works, but paid vendor + extra policy proof ([threat model](security/remote-session-threat-model.md) requires exact-pair relay policy) | Fallback if owner VM is refused |
+| F. Existing v3 + owner-operated rendezvous/relay | Install WebJam, paste invite | **No** | One small VM (see cost) | Without a reachable UDP relay, many home pairs cannot connect (see below) | Later reliability floor, not this ship |
+| G. **v3 `direct-stun` + public STUN + clipboard-sealed candidates** | Same | **No** | **$0** | Cone NAT / same LAN work; **symmetric NAT, CGNAT, and many mobile ISPs fail** | **Selected for this build** |
+| H. Commercial TURN (Twilio, etc.) | Same | No | Metered, often $ tens+/month at music bitrate | Works, but paid vendor + extra policy proof ([threat model](security/remote-session-threat-model.md) requires exact-pair relay policy) | Skip |
 
 ### What fails without a relay
 
@@ -118,81 +117,81 @@ Say it plainly:
 - **Public Jamulus** can make sound across the Internet on a shared server,
   but it is not WebJam Host/Join and is not private.
 
-A reachable **exact-pair UDP relay** is the reliability floor for “text your
-friend in another house.” Direct ICE is a later latency optimization, not
-the first ship.
+A reachable **exact-pair UDP relay** is still the reliability floor for
+“every pair of homes, including CGNAT and cellular.” This build ships the
+**$0 STUN path** first so friends can Join with no owner VM and no port
+forwarding. Pairs that fail NAT get one honest line, not a fake success.
 
 ## Recommendation (one approach)
 
-**Finish and point ordinary Host/Join at the v3 transport we already have,
-against a self-operated Internet rendezvous + exact-pair UDP relay.**
+**Ordinary Host/Join uses compiled profile `direct-stun`: public STUN, QUIC
+over the host’s UDP socket, sealed candidate bundle on the clipboard (not
+in the v3 URL).**
 
-Why this, not a new stack:
+Why this, not a paid VM, for this ship:
 
-- ADR 0001 already chose the Go sidecar, QUIC DATAGRAM for Jamulus, and
-  exact-pair relay. Jeff authorized the Internet direction on 2026-09-09.
-- The invite is already one opaque paste with no addresses for the guest to
-  understand.
 - Musicians do not port-forward. They do not install a VPN. They do not
   pick a public Jamulus server.
-- Art and Music share the same enrollment; Art stays off Jamulus; Music
-  Jamulus stays loopback-bound on each computer.
-- No new paid vendor is required if the owner runs one small VM.
+- There is **no hosted server to provision** and **$0 / month**.
+- The v3 URL stays opaque (ADR 0001). Addresses travel only inside a sealed
+  `webjam-signal:` clipboard line the friend pastes as part of the same
+  message.
+- Same-LAN still works via RFC1918 host candidates. Other houses work when
+  STUN maps a cone NAT. Art and Music share enrollment; Jamulus stays
+  loopback-bound on each computer.
+- Source checkouts without `webjam-fabric` keep v2 LAN Host. Packaged apps
+  that include the sidecar use `direct-stun` without the lab env flag.
 
-What this is **not**: a public room directory, short codes, or exposing
-Jamulus/HTTP on the host’s WAN IP.
+What this is **not**: a public room directory, short codes, exposing
+Jamulus/HTTP on the WAN IP, or a promise that CGNAT/cellular always Join.
 
 ### Hosted server / paid service / who sets it up
 
-| Item | Who | Monthly cost (order of magnitude) | Notes |
+| Item | Who | Monthly cost | Notes |
 | --- | --- | --- | --- |
-| Cloud VM for `reference_service` (TLS control + UDP relay + loopback health) | **Owner (Jeff)** provisions DNS, TLS cert, VM, firewall allowing TCP 443 (or 47131 with TLS) and UDP 47132 from the Internet | **About $5–6 / month** (Hetzner CX22 ~€4–5, DigitalOcean 1 GB droplet $6). Oracle/Google free-tier is possible but eviction-prone; do not bet a “final build” on it. | One region to start (pick closest to the first two homes). Restart **ends in-memory sessions** (current service has no durable store). |
-| Public STUN | Nobody at WebJam | **$0** (e.g. existing public STUN) | Optional later for direct ICE. Not required to ship relayed Join. |
-| Stock TURN vendor | — | Skip for v1 | Would add metered cost and a second exact-pair policy proof. |
-| Cloudflare Tunnel / ngrok free | — | Skip | TCP-oriented; does not replace the UDP relay. |
-| Musician router, VPN, or paid Tailscale | Musicians | **$0 and not asked** | Out of scope. |
+| Public STUN (`stun.cloudflare.com:3478`, `stun.l.google.com:19302`) | Nobody at WebJam | **$0** | Compiled into the sidecar. No account. |
+| Owner VM / `reference_service` | — | **$0 this ship** | Not required to Host/Join. Still the later reliability floor for CGNAT. About $5–6/month (Hetzner CX22 / DigitalOcean 1 GB) **if** Jeff later wants “almost every home pair.” |
+| Stock TURN vendor | — | Skip | Metered; extra exact-pair policy proof. |
+| Cloudflare Tunnel / ngrok | — | Skip | TCP-oriented; does not replace UDP. |
+| Musician router, VPN, Tailscale | Musicians | **$0 and not asked** | Out of scope. |
 
-Bandwidth to budget: Jamulus is typically tens of kb/s per musician, not
-video. A 1 TB included-transfer VPS is ample for a two-person pilot. Watch
-the cap if many concurrent rooms ever share one VM.
+**What fails without a relay (honest):**
 
-**If the owner will not run a VM:** the product cannot promise
-cross-network Join. STUN-only and public Jamulus do not meet the private
-one-invite bar. Do not ship a fake success path.
+- Host behind **symmetric NAT or CGNAT**: STUN’s mapped port is not the
+  port that receives the guest. Join sits on connecting, then the HUD says
+  to use home Wi-Fi and ask for a fresh invite.
+- **Cellular / many phone hotspots**: same failure.
+- **UDP blocked** (some school/work Wi-Fi): both STUN and QUIC fail.
+- **v2 LAN invites** still fail 100% across houses. Direct-stun is the
+  ordinary packaged path; LAN remains the no-sidecar fallback.
 
-### Concrete build order (sized to ship soon)
+Do not treat a failed Join as success. Conversation (Webex/Zoom/Meet) can
+still work while the WebJam room cannot.
 
-Do these in order. Each step is independently testable. This PR does
-**not** implement them.
+### Concrete build order (this PR, sized to ship)
 
-1. **Immutable public profile** in Python and Go, separate from
-   `reference-local`. Pin DNS name, TLS identity, relay host/port. Invites
-   still carry only the profile id. Keep the loopback profile for CI.
-2. **Native TLS 1.3 control dial** with verified chain and expected name.
-   No `InsecureSkipVerify`, no guest-facing endpoint override. Isolated
-   tests for wrong name, expired cert, timeout.
-3. **Routable exact-pair UDP relay client**: outbound socket, only the
-   provisioned relay, keep Jamulus on loopback. Preserve HMAC/replay/size/
-   rate/generation checks already in the reference relay.
-4. **Ordinary Host uses that profile** without
-   `WEBJAM_ENABLE_REFERENCE_LOCAL`. Unavailable service fails with one
-   musician-facing line, never falls back to public v2 HTTP or public
-   Jamulus. Copy Invite stays the friend-facing HUD card.
-5. **Host admission** before the VM is public: enrolled host device (mTLS
-   or equivalent). Guests stay invitation-only. Existing one-use consume,
-   Reset Invite, eight-hour room cap, 90s idle remain.
-6. **Owner deploys** one VM + DNS + TLS. Document bind, firewall, and
-   “restart kills rooms.” Do not publish the Compose example unchanged.
-7. **Two-home proof** (required before claiming it works): Music audibility
-   and measured latency; Art room state; paste-only invite; Reset Invite;
-   Conversation still optional. Until that row is run, status is **NOT RUN**.
-8. **Later, not blocking first ship:** Pion direct ICE + free STUN with
-   relay fallback (lower latency when NAT allows); UDP-blocked TCP
-   fallback; more than one guest.
+1. **Compiled `direct-stun` profile** in Python and Go, beside
+   `reference-local`. No DNS, TLS control, or relay endpoints.
+2. **Sidecar orchestrator**: bind UDP, STUN, seal WJSE candidates, QUIC
+   listen/dial, exporter-bound proofs on an enrollment stream. Isolated
+   loopback host/guest test.
+3. **Clipboard signaling**: Copy Invite appends `webjam-signal:`; Join paste
+   requires it for `direct-stun`. v3 URL still has no addresses.
+4. **Ordinary Host** uses `direct-stun` when `webjam-fabric` is present.
+   Lab flag still selects `reference-local`. Missing sidecar stays v2 LAN
+   with the honest Wi-Fi line in the paste.
+5. **Musician copy**: friend-facing HUD card unchanged. LAN-only STUN
+   failure keeps the Wi-Fi sentence in the paste. Join timeout names home
+   Wi-Fi, not a fake connected room.
+6. **Two-home proof** (required before claiming it always works): Music
+   audibility and Art room state across two houses; Reset Invite; CGNAT
+   pair expected to fail. Until that row is run, status is **NOT RUN**.
+7. **Later, not blocking this ship:** owner VM exact-pair relay as fallback
+   when STUN cannot map; UDP-blocked TCP; more than one guest.
 
-Music Host remaining macOS-only is a separate product gate. Cross-network
-Join should work for a Windows/Linux **guest** as soon as the v3 profile is
-real; Windows/Linux **Music Host** is not unlocked by the relay.
+Music Host remaining macOS-only is a separate product gate. A Windows/Linux
+**guest** can Join a Mac Music host on `direct-stun`. Windows/Linux **Art
+Host** uses the same profile when the sidecar is present.
 
 ## Security (invite secrets and encryption)
 
@@ -214,7 +213,10 @@ Details: [threat model](security/remote-session-threat-model.md).
 ## This PR
 
 - Retargeted Copy Invite HUD to the friend-facing card.
-- LAN limitation stays in the pasted v2 message and in Join help, only
-  when that invite cannot leave the host’s local network.
-- **No** VM, DNS, TLS cert, paid account, or compiled public profile is
-  created here.
+- LAN limitation stays in the pasted message only when the share cannot
+  leave the host’s local network (v2 LAN, or `direct-stun` without a STUN
+  mapping).
+- Ships compiled `direct-stun`, clipboard-sealed candidates, and ordinary
+  Host/Join on that profile when `webjam-fabric` is in the package.
+- **No** VM, DNS, TLS cert, or paid account is created here. Two-home
+  Internet proof remains **NOT RUN**.

@@ -61,9 +61,9 @@ and [follow-along first test](FOLLOW_ALONG_FIRST_TEST.md).
   Separate from Pocket Stage.
 - [Pocket Stage plan](plans/webjam-pocket-stage-v1.md) and [threat model](security/pocket-stage-mobile-threat-model.md)
   — iPhone owner-device preview and its trust model.
-- [Cross-network Host/Join plan](REMOTE-SESSIONS-PLAN.md) — how Art and Music
-  connect today (LAN vs lab-only v3), and the smallest no-port-forward path
-  for friends in different houses. Docs only; no public service is deployed.
+- [Cross-network Host/Join plan](REMOTE-SESSIONS-PLAN.md) — ordinary packaged
+  Host/Join uses `direct-stun` (public STUN, clipboard signaling, $0, no port
+  forwarding). Two-home proof remains **NOT RUN**.
 - [Webex decision record](adr/0004-webex-external-launch-and-future-oauth.md)
   — external handoff today; OAuth or an embedded companion remains future work.
 - [Conversation companion guidance](../WEBEX_AUDIO_MODES.md) — the canonical

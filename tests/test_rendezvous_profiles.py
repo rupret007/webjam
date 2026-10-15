@@ -4,6 +4,7 @@ import pytest
 
 from core.rendezvous_profiles import (
     DEFAULT_RENDEZVOUS_PROFILES,
+    DIRECT_STUN_PROFILE,
     REFERENCE_LOCAL_PROFILE,
     RendezvousProfile,
     RendezvousProfileError,
@@ -11,13 +12,20 @@ from core.rendezvous_profiles import (
 )
 
 
-def test_default_registry_contains_only_the_loopback_reference_profile() -> None:
-    assert DEFAULT_RENDEZVOUS_PROFILES.profile_ids == {"reference-local"}
+def test_default_registry_contains_lab_and_ordinary_direct_stun_profiles() -> None:
+    assert DEFAULT_RENDEZVOUS_PROFILES.profile_ids == {
+        "reference-local",
+        "direct-stun",
+    }
     assert DEFAULT_RENDEZVOUS_PROFILES.resolve("reference-local") is (
         REFERENCE_LOCAL_PROFILE
     )
+    assert DEFAULT_RENDEZVOUS_PROFILES.resolve("direct-stun") is DIRECT_STUN_PROFILE
     assert REFERENCE_LOCAL_PROFILE.lab_only is True
+    assert DIRECT_STUN_PROFILE.stun_only is True
+    assert DIRECT_STUN_PROFILE.lab_only is False
     assert "127.0.0.1" not in repr(REFERENCE_LOCAL_PROFILE)
+    assert "stun." not in repr(DIRECT_STUN_PROFILE)
 
 
 def test_public_profile_requires_fixed_tls_control_and_dns_service_names() -> None:
@@ -88,6 +96,18 @@ def test_lab_profile_cannot_escape_loopback(changes) -> None:
     }
     with pytest.raises(RendezvousProfileError):
         RendezvousProfile(**values)
+
+
+def test_stun_only_profile_rejects_rendezvous_or_relay_fields() -> None:
+    with pytest.raises(RendezvousProfileError):
+        RendezvousProfile(
+            profile_id="direct-stun",
+            stun_only=True,
+            control_host="stun.example.test",
+            control_port=3478,
+        )
+    with pytest.raises(RendezvousProfileError):
+        RendezvousProfile(profile_id="direct-stun", stun_only=True, lab_only=True)
 
 
 def test_registry_uses_exact_ids_and_rejects_duplicates() -> None:

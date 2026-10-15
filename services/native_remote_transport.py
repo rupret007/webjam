@@ -3,8 +3,8 @@
 The native process owns networking and the loopback UDP proxy. This module
 keeps the Qt/controller boundary small: typed invitations and bounded help
 text go in; only allowlisted connection facts and ephemeral help events come
-back. The built-in profile is deliberately lab-only until a public rendezvous
-profile is provisioned.
+back. Ordinary packaged Host uses compiled ``direct-stun`` when the sidecar binary
+is present. ``reference-local`` remains the explicit lab opt-in.
 """
 
 from __future__ import annotations
@@ -54,6 +54,35 @@ def reference_local_host_requested() -> bool:
     """Return the explicit developer/lab opt-in, never a saved user setting."""
 
     return str(os.environ.get(REFERENCE_LOCAL_OPT_IN, "")).strip() == "1"
+
+
+def transport_sidecar_available() -> bool:
+    """Return whether this checkout or package has a usable fabric binary."""
+
+    try:
+        path = transport_binary_path()
+        return path.is_file() and os.access(path, os.X_OK)
+    except OSError:
+        return False
+
+
+def ordinary_native_host_profile() -> str | None:
+    """Select the compiled v3 profile for ordinary Host, or LAN fallback.
+
+    Lab opt-in keeps ``reference-local``. Packaged apps with a sidecar use
+    ``direct-stun`` (public STUN, no user port forwarding). Source checkouts
+    without a compiled sidecar stay on v2 LAN. The isolated sidecar CI job
+    sets ``WEBJAM_RUN_REMOTE_SIDECAR_INTEGRATION`` and must not flip ordinary
+    Host onto the Internet path.
+    """
+
+    if reference_local_host_requested():
+        return "reference-local"
+    if str(os.environ.get("WEBJAM_RUN_REMOTE_SIDECAR_INTEGRATION", "")).strip() == "1":
+        return None
+    if transport_sidecar_available():
+        return "direct-stun"
+    return None
 
 
 def transport_binary_path() -> Path:
@@ -271,7 +300,11 @@ class NativeGuestTransportBackend:
             ) from None
         return RemoteGuestConnection(
             loopback_port=connected.loopback_port,
-            path=TransportPath.SECURE_RELAY,
+            path=(
+                TransportPath.INTERNET_DIRECT
+                if invitation.profile_id == "direct-stun"
+                else TransportPath.SECURE_RELAY
+            ),
             quality=ConnectionQuality.UNKNOWN,
             generation=connected.generation,
         )
@@ -502,11 +535,17 @@ class NativeHostTransportOwner:
         self._pending_connected: TransportEvent | None = None
         self._owner: RemoteInvitationOwner | None = None
         self._stopped = False
+        self._host_signal = b""
+        self._share_route = ""
         self._snapshot = RemoteSessionSnapshot(
             phase=RemoteSessionPhase.PREPARING,
             role=SessionRole.HOST,
             generation=1,
-            path=TransportPath.SECURE_RELAY,
+            path=(
+                TransportPath.INTERNET_DIRECT
+                if self._profile_id == "direct-stun"
+                else TransportPath.SECURE_RELAY
+            ),
         )
         transport_binary = (
             Path(binary) if binary is not None else transport_binary_path()
@@ -566,7 +605,21 @@ class NativeHostTransportOwner:
                 or self._active_invitation is None
                 or self.snapshot.phase is RemoteSessionPhase.FAILED):
             raise RuntimeError("No remote invitation is active.")
-        return owner.copy_for_clipboard()
+        text = owner.copy_for_clipboard()
+        with self._lock:
+            envelope = self._host_signal
+        if envelope:
+            from core.direct_stun_invite import encode_host_signal_line
+
+            text = f"{text}\n{encode_host_signal_line(envelope)}"
+        return text
+
+    @property
+    def share_reaches_internet(self) -> bool:
+        with self._lock:
+            if self._profile_id != "direct-stun":
+                return True
+            return self._share_route == "public"
 
     def reset(self) -> None:
         owner = self._owner
@@ -775,14 +828,21 @@ class NativeHostTransportOwner:
                 raise TransportProcessError("The transport process was stopped.")
             self._registering_generation = 0
             self._active_invitation = invitation
+            self._host_signal = bytes(getattr(registered, "signal", b"") or b"")
+            self._share_route = str(getattr(registered, "route", "") or "")
             self._room_identity = RoomIdentity.from_invitation(invitation)
             self._room_sent_revision = 0
+            path = (
+                TransportPath.INTERNET_DIRECT
+                if self._profile_id == "direct-stun"
+                else TransportPath.SECURE_RELAY
+            )
             self._snapshot = RemoteSessionSnapshot(
                 phase=RemoteSessionPhase.PREPARING,
                 role=SessionRole.HOST,
                 generation=registered.generation,
                 loopback_port=registered.loopback_port,
-                path=TransportPath.SECURE_RELAY,
+                path=path,
                 quality=ConnectionQuality.UNKNOWN,
             )
             snapshot = self._snapshot
@@ -801,6 +861,8 @@ class NativeHostTransportOwner:
             # until the native process acknowledges close or is reaped.
             self._close_pending = True
             self._active_invitation = None
+            self._host_signal = b""
+            self._share_route = ""
             self._room_identity = None
             self._room_state = None
             self._room_sent_revision = 0
@@ -1028,6 +1090,8 @@ class NativeHostTransportOwner:
 __all__ = [
     "NativeGuestTransportBackend",
     "NativeHostTransportOwner",
+    "ordinary_native_host_profile",
     "reference_local_host_requested",
     "transport_binary_path",
+    "transport_sidecar_available",
 ]

@@ -60,6 +60,8 @@ _EVENT_FIELDS = frozenset(
         "request_id",
         "text",
         "room_state",
+        "signal",
+        "route",
     }
 )
 _EVENT_TYPES = frozenset(
@@ -162,6 +164,8 @@ class TransportEvent:
     request_id: int = 0
     help_text: str = field(default="", repr=False)
     room_state: RoomState | None = field(default=None, repr=False)
+    signal: bytes = field(default=b"", repr=False)
+    route: str = ""
 
 
 def _decode_fixed_public(value: Any, size: int) -> bytes:
@@ -181,6 +185,30 @@ def _decode_fixed_public(value: Any, size: int) -> bytes:
         ) from exc
     canonical = base64.urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii")
     if len(decoded) != size or canonical != value or not any(decoded):
+        raise TransportProtocolError("The transport process sent invalid data.")
+    return decoded
+
+
+def _decode_signal_envelope(value: Any) -> bytes:
+    if not isinstance(value, str) or not value or "=" in value:
+        raise TransportProtocolError("The transport process sent invalid data.")
+    if any(
+        character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        for character in value
+    ):
+        raise TransportProtocolError("The transport process sent invalid data.")
+    try:
+        decoded = base64.b64decode(
+            value + "=" * (-len(value) % 4),
+            altchars=b"-_",
+            validate=True,
+        )
+    except (ValueError, UnicodeError) as exc:
+        raise TransportProtocolError(
+            "The transport process sent invalid data."
+        ) from exc
+    canonical = base64.urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii")
+    if canonical != value or len(decoded) < 8 or len(decoded) > 16 * 1024 or decoded[:4] != b"WJSE":
         raise TransportProtocolError("The transport process sent invalid data.")
     return decoded
 
@@ -340,6 +368,15 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         or build
     ):
         raise TransportProtocolError("The transport process sent invalid data.")
+    encoded_signal = raw.get("signal", "")
+    route = raw.get("route", "")
+    if not isinstance(encoded_signal, str) or not isinstance(route, str):
+        raise TransportProtocolError("The transport process sent invalid data.")
+    signal = b""
+    if encoded_signal:
+        signal = _decode_signal_envelope(encoded_signal)
+    if route and route not in {"local", "public"}:
+        raise TransportProtocolError("The transport process sent invalid data.")
     if event_type == "host_registered" and (
         code != "ok"
         or state != "host_waiting"
@@ -350,7 +387,16 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         or host_pin
         or event_id == 0
         or build
+        or help_text
     ):
+        raise TransportProtocolError("The transport process sent invalid data.")
+    if event_type == "host_registered":
+        if profile_id == "direct-stun":
+            if not signal or route not in {"local", "public"}:
+                raise TransportProtocolError("The transport process sent invalid data.")
+        elif signal or route:
+            raise TransportProtocolError("The transport process sent invalid data.")
+    elif signal or route:
         raise TransportProtocolError("The transport process sent invalid data.")
     if event_type == "peer_connected" and (
         code != "ok"
@@ -479,6 +525,8 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         request_id=request_id,
         help_text=help_text,
         room_state=room_state,
+        signal=signal,
+        route=route,
     )
 
 
@@ -990,6 +1038,11 @@ class TransportProcess:
             fields["host_spki_sha256"] = _encode_fixed_private(
                 invitation.host_spki_sha256, 32
             )
+            envelope = bytes(getattr(invitation, "host_signal", b"") or b"")
+            if envelope:
+                fields["host_signal"] = base64.urlsafe_b64encode(envelope).rstrip(b"=").decode(
+                    "ascii"
+                )
         else:
             raise ValueError("transport mode is invalid")
         try:
@@ -1122,6 +1175,23 @@ class TransportProcess:
                             )
                         self._pending[event.event_id] = event
                     if not event.event_type.startswith(("help_", "room_state_")):
+                        if event.signal:
+                            event = TransportEvent(
+                                event_id=event.event_id,
+                                event_type=event.event_type,
+                                code=event.code,
+                                state=event.state,
+                                mode=event.mode,
+                                generation=event.generation,
+                                loopback_port=event.loopback_port,
+                                profile_id=event.profile_id,
+                                host_spki_sha256=event.host_spki_sha256,
+                                build=event.build,
+                                request_id=event.request_id,
+                                help_text=event.help_text,
+                                room_state=event.room_state,
+                                route=event.route,
+                            )
                         self._timeline.append(event)
                     self._condition.notify_all()
                 callback = self._on_event

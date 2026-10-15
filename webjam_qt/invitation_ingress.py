@@ -280,6 +280,31 @@ def parse_invitation_at_ingress(
             "That's not a WebJam invite. Ask your host to press Copy Invite "
             "and send you the whole message.",
         ) from None
+    if isinstance(invitation, RemoteInvitation):
+        from core.direct_stun_invite import DIRECT_STUN_PROFILE_ID, parse_host_signal_from_paste
+
+        try:
+            signal = parse_host_signal_from_paste(raw)
+        except ValueError:
+            raise InvitationIngressError(
+                InvitationIngressErrorCode.INVALID,
+                "That's not a WebJam invite. Ask your host to press Copy Invite "
+                "and send you the whole message.",
+            ) from None
+        if invitation.profile_id == DIRECT_STUN_PROFILE_ID:
+            if not signal:
+                raise InvitationIngressError(
+                    InvitationIngressErrorCode.INCOMPLETE,
+                    "That invitation looks incomplete. Copy the whole invitation from your host.",
+                )
+            invitation = invitation.with_host_signal(signal)
+        elif signal:
+            raise InvitationIngressError(
+                InvitationIngressErrorCode.INVALID,
+                "That's not a WebJam invite. Ask your host to press Copy Invite "
+                "and send you the whole message.",
+            )
+
     if isinstance(invitation, RemoteInvitation) and invitation.advisory_expired():
         raise InvitationIngressError(
             InvitationIngressErrorCode.EXPIRED,

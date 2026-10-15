@@ -5123,14 +5123,16 @@ class ApplicationController(QObject):
             )
             return True
         if bool(getattr(self.settings, "host_server_enabled", False)):
-            from services.native_remote_transport import reference_local_host_requested
+            from services.native_remote_transport import ordinary_native_host_profile
 
+            native_profile = ordinary_native_host_profile()
             if (
-                reference_local_host_requested()
+                native_profile is not None
                 and getattr(self, "_remote_invite_owner", None) is None
             ):
                 self._begin_remote_host(
                     startup_authorization_generation=authorization_generation,
+                    profile_id=native_profile,
                 )
                 return True
 
@@ -6607,15 +6609,14 @@ class ApplicationController(QObject):
             return
 
         if bool(getattr(self.settings, "host_server_enabled", False)):
-            from services.native_remote_transport import (
-                reference_local_host_requested,
-            )
+            from services.native_remote_transport import ordinary_native_host_profile
 
+            native_profile = ordinary_native_host_profile()
             if (
-                reference_local_host_requested()
+                native_profile is not None
                 and getattr(self, "_remote_invite_owner", None) is None
             ):
-                self._begin_remote_host()
+                self._begin_remote_host(profile_id=native_profile)
                 return
 
         if (
@@ -7994,7 +7995,10 @@ class ApplicationController(QObject):
             # A successful LAN share above is the topology evidence. A native
             # owner must not inherit same-network or public-service claims
             # from the invitation's serialized shape.
-            same_network_required=owner is None,
+            same_network_required=(
+                owner is None
+                or not bool(getattr(owner, "share_reaches_internet", True))
+            ),
         )
         QApplication.clipboard().setText(invite_message.text)
         invite_url = ""
@@ -8758,8 +8762,9 @@ class ApplicationController(QObject):
         self,
         *,
         startup_authorization_generation: int = 0,
+        profile_id: str = "reference-local",
     ) -> None:
-        """Prepare the opt-in local reference host before Band Check starts."""
+        """Prepare the native host path (lab relay or ordinary direct-stun)."""
 
         if getattr(self, "_remote_host_preparing", False):
             return
@@ -8796,6 +8801,7 @@ class ApplicationController(QObject):
 
                 owner = NativeHostTransportOwner(
                     target_port=int(self.settings.jamulus_port),
+                    profile_id=profile_id,
                     on_snapshot=on_snapshot,
                     schedule_callback=self._ui_invoker.invoke,
                     **(
@@ -9066,9 +9072,16 @@ class ApplicationController(QObject):
             )
             self._render_remote_fresh_invitation_hud()
             if getattr(error_code, "value", "") == "timed_out":
-                flash_message = (
-                    "The connection timed out. Choose Paste New Invite."
-                )
+                if getattr(getattr(self, "_remote_invitation", None), "profile_id", "") == "direct-stun":
+                    flash_message = (
+                        "WebJam couldn't reach the host. Use home Wi-Fi on both "
+                        "computers, not a phone hotspot. Ask the host for a "
+                        "fresh invitation."
+                    )
+                else:
+                    flash_message = (
+                        "The connection timed out. Choose Paste New Invite."
+                    )
             elif getattr(error_code, "value", "") == "expired":
                 flash_message = (
                     "That invitation expired. Choose Paste New Invite."

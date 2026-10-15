@@ -1078,9 +1078,9 @@ class LaunchDialog(QDialog):
         self._host_reason.setVisible(bool(reason))
 
     def _can_host(self) -> bool:
-        # Ordinary Art uses the existing Python LAN listener, without the
-        # Music engine. An explicit native lab request must keep its existing
-        # platform gate; it must never silently become an ordinary LAN host.
+        # Ordinary Art uses the Python LAN listener when no sidecar is present.
+        # Packaged apps with webjam-fabric use direct-stun Host instead. An
+        # explicit native lab request must keep its existing platform gate.
         return self._host_available or (
             self._art_lan_host_platform
             and self.selected_creator_profile_key == "art"
