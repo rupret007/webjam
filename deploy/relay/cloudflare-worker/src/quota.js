@@ -6,14 +6,13 @@
  * 13k GB-s, 100k row writes). Unreadable or missing counters fail closed.
  *
  * TURN and mailbox keep separate counters so a host wait cannot 429
- * credential minting. IPv6 is bucketed by /64 and /48. New IPs evict
- * the LRU bucket instead of locking the Worker out.
+ * credential minting. IPv6 is bucketed by /64 and /48. Per-minute rate
+ * keys evict LRU at 256; known prefixes last the UTC day with no
+ * eviction so a rotator cannot lock out a client already seen.
  *
- * The 32/min new-bucket cap applies only to prefixes that are not yet
- * in the known set. Known prefixes last the UTC day (LRU, same 256
- * bound) so a rotator filling the cap cannot lock out clients seen
- * earlier. Each prefix also has a daily share so one IP cannot drain
- * the global cap.
+ * There is no global new-prefix cap. New prefixes are capped per IPv4
+ * /24 and per IPv6 /32. Each prefix also has a daily share so a handful
+ * of IPs cannot drain the global cap.
  */
 
 export const DEFAULT_DAILY_REQUESTS = 10_000;
@@ -23,9 +22,9 @@ export const ESTIMATED_GB_S_PER_REQUEST = 0.01;
 export const DEFAULT_RATE_LIMIT = 10;
 export const DEFAULT_MAILBOX_RATE_LIMIT = 30;
 export const DEFAULT_NEW_BUCKETS_PER_MINUTE = 32;
-export const DEFAULT_PREFIX_DAILY_REQUESTS = 1_000;
-export const DEFAULT_PREFIX_DAILY_ROW_WRITES = 1_000;
-export const DEFAULT_PREFIX_DAILY_GB_S = 100;
+export const DEFAULT_PREFIX_DAILY_REQUESTS = 200;
+export const DEFAULT_PREFIX_DAILY_ROW_WRITES = 200;
+export const DEFAULT_PREFIX_DAILY_GB_S = 20;
 export const RATE_WINDOW_MS = 60_000;
 export const MAX_IP_BUCKETS = 256;
 
@@ -113,6 +112,18 @@ export function prefix48(ip) {
   return `${ipv6Groups(ip).slice(0, 3).join(":")}::/48`;
 }
 
+export function prefixNet(ip) {
+  const key = rateKey(ip);
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(key)) {
+    const parts = key.split(".");
+    return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
+  }
+  if (key.includes("/64") || String(ip || "").includes(":")) {
+    return `${ipv6Groups(ip).slice(0, 2).join(":")}::/32`;
+  }
+  return key;
+}
+
 function ipv6Groups(ip) {
   const bare = String(ip || "").split("%")[0];
   const [left, right = ""] = bare.split("::");
@@ -155,6 +166,7 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits, charge = "
     return { allow: false, status: 429, code: "rate" };
   }
   const prefix = prefix48(ip);
+  const net = prefixNet(ip);
   const window = Math.floor(nowMs / RATE_WINDOW_MS);
   pruneIpBuckets(state, window);
   pruneNewBuckets(state, window);
@@ -172,8 +184,9 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits, charge = "
     }
   }
   const isNew = !(prefix in state.knownPrefixes);
+  const netKey = `${net}:${window}`;
   if (countRate && isNew) {
-    const born = Number(state.newBuckets[window]) || 0;
+    const born = Number(state.newBuckets[netKey]) || 0;
     if (born >= limits.newBucketsPerMinute) {
       return { allow: false, status: 429, code: "rate" };
     }
@@ -205,7 +218,7 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits, charge = "
     }
   }
   if (countRate && isNew) {
-    state.newBuckets[window] = (Number(state.newBuckets[window]) || 0) + 1;
+    state.newBuckets[netKey] = (Number(state.newBuckets[netKey]) || 0) + 1;
   }
   if (countRate) {
     for (const nextKey of keys) {
@@ -246,8 +259,9 @@ function pruneNewBuckets(state, window) {
       ? state.newBuckets
       : {};
   state.newBuckets = born;
+  const suffix = `:${window}`;
   for (const key of Object.keys(born)) {
-    if (String(key) !== String(window)) {
+    if (!key.endsWith(suffix)) {
       delete born[key];
     }
   }
@@ -259,13 +273,6 @@ function touchKnownPrefix(known, prefix, nowMs) {
     prior != null && typeof prior === "object"
       ? prior
       : { at: nowMs, requests: 0, rowWrites: 0, gbS: 0 };
-  if (prefix in known) {
-    delete known[prefix];
-  } else {
-    while (Object.keys(known).length >= MAX_IP_BUCKETS) {
-      delete known[Object.keys(known)[0]];
-    }
-  }
   record.at = nowMs;
   known[prefix] = record;
   return record;

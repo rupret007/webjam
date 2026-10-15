@@ -24,6 +24,7 @@ import {
   ESTIMATED_GB_S_PER_REQUEST,
   MAX_IP_BUCKETS,
   prefix48,
+  prefixNet,
   quotaLimits,
   RATE_WINDOW_MS,
   rateKey,
@@ -146,6 +147,8 @@ test("per-IP rate limit lives in durable quota state", () => {
   assert.equal(DEFAULT_MAILBOX_RATE_LIMIT, 30);
   assert.equal(quotaLimits({}, "turn").perMinute, DEFAULT_RATE_LIMIT);
   assert.equal(LIMITS.newBucketsPerMinute, DEFAULT_NEW_BUCKETS_PER_MINUTE);
+  assert.equal(DEFAULT_PREFIX_DAILY_REQUESTS, 200);
+  assert.equal(LIMITS.prefixDailyRequests, 200);
   for (let i = 0; i < DEFAULT_MAILBOX_RATE_LIMIT; i += 1) {
     assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: LIMITS }).allow, true);
   }
@@ -169,7 +172,10 @@ test("IPv6 addresses in the same /64 share a rate bucket", () => {
   const tight = { ...LIMITS, perMinute: 2 };
   assert.equal(rateKey("2001:db8:1:2:aaaa::1"), "2001:db8:1:2::/64");
   assert.equal(prefix48("2001:db8:1:2:aaaa::1"), "2001:db8:1::/48");
+  assert.equal(prefixNet("2001:db8:1:2:aaaa::1"), "2001:db8::/32");
+  assert.equal(prefixNet("203.0.113.10"), "203.0.113.0/24");
   assert.equal(rateKey("::ffff:203.0.113.10"), "203.0.113.10");
+  assert.equal(prefixNet("::ffff:203.0.113.10"), "203.0.113.0/24");
   assert.equal(applyQuota(state, { ip: "2001:db8:1:2:aaaa::1", nowMs: 1, limits: tight }).allow, true);
   assert.equal(applyQuota(state, { ip: "2001:db8:1:2:bbbb::2", nowMs: 1, limits: tight }).allow, true);
   assert.equal(applyQuota(state, { ip: "2001:db8:1:2:cccc::3", nowMs: 1, limits: tight }).code, "rate");
@@ -195,7 +201,7 @@ test("a flood of new IPs does not block a legitimate user", () => {
   }
   assert.equal(applyQuota(state, { ip: legit, nowMs: 1, limits: roomy }).allow, true);
   assert.ok(Object.keys(state.ipBuckets).length <= MAX_IP_BUCKETS);
-  assert.ok(Object.keys(state.knownPrefixes).length <= MAX_IP_BUCKETS);
+  assert.ok(legit in state.knownPrefixes);
 });
 
 test("a cap on new buckets stops rotating addresses from burning the daily cap", () => {
@@ -207,8 +213,8 @@ test("a cap on new buckets stops rotating addresses from burning the daily cap",
   assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: tight }).allow, true);
   assert.equal(state.requests, 3);
   assert.equal(
-    applyQuota(state, { ip: "2001:db8:1:2::1", nowMs: 1, limits: { ...tight, newBucketsPerMinute: 1 } }).code,
-    "rate",
+    applyQuota(state, { ip: "2001:db8:1:2::1", nowMs: 1, limits: tight }).allow,
+    true,
   );
   const rotator = emptyQuotaState();
   const oneNew = { ...LIMITS, newBucketsPerMinute: 1, perMinute: 30 };
@@ -230,6 +236,29 @@ test("a known prefix is still allowed after the new-bucket cap fills next minute
     assert.equal(applyQuota(state, { ip: "198.51.100.3", nowMs: nextMinute, limits }).code, "rate");
     assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: nextMinute, limits }).allow, true);
     assert.equal(applyQuota(state, { ip: "203.0.113.11", nowMs: nextMinute, limits }).allow, true);
+  }
+});
+
+test("an idle known prefix is still served after 300 rotating prefixes", () => {
+  for (const scope of ["mailbox", "turn"]) {
+    const state = emptyQuotaState();
+    const limits = quotaLimits({}, scope);
+    const legit = "203.0.113.10";
+    const seenAt = 1;
+    const later = seenAt + 10 * RATE_WINDOW_MS;
+    assert.equal(applyQuota(state, { ip: legit, nowMs: seenAt, limits }).allow, true);
+    let added = 0;
+    for (let i = 0; i < 300; i += 1) {
+      const ip = `198.${(i >> 8) & 255}.${i & 255}.10`;
+      const result = applyQuota(state, { ip, nowMs: later, limits });
+      if (result.allow) {
+        added += 1;
+      }
+    }
+    assert.ok(added >= 300);
+    assert.ok(Object.keys(state.knownPrefixes).length >= 301);
+    assert.equal(applyQuota(state, { ip: legit, nowMs: later, limits }).allow, true);
+    assert.ok(legit in state.knownPrefixes);
   }
 });
 
