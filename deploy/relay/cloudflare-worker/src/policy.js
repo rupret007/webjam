@@ -26,6 +26,9 @@ export const USAGE_CACHE_MS = 60_000;
 export const MAX_BODY_BYTES = 4096;
 export const FREE_ALLOWANCE_GB = 1000;
 export const FETCH_TIMEOUT_MS = 5000;
+export const UPSTREAM_FETCHES_PER_REQUEST = 2;
+export const WORKER_WORST_CASE_MS =
+  FETCH_TIMEOUT_MS * UPSTREAM_FETCHES_PER_REQUEST;
 
 const REQUIRED_SECRETS = [
   "TURN_KEY_ID",
@@ -46,8 +49,32 @@ export async function fetchWithTimeout(
 ) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onAbort = () => {
+    throw controller.signal.reason ?? new Error("aborted");
+  };
   try {
-    return await fetchImpl(url, { ...init, signal: controller.signal });
+    const response = await fetchImpl(url, {
+      ...init,
+      signal: controller.signal,
+    });
+    if (controller.signal.aborted) {
+      onAbort();
+    }
+    const body = await Promise.race([
+      response.arrayBuffer(),
+      new Promise((_, reject) => {
+        controller.signal.addEventListener(
+          "abort",
+          () => reject(controller.signal.reason ?? new Error("aborted")),
+          { once: true },
+        );
+      }),
+    ]);
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
   } finally {
     clearTimeout(timer);
   }

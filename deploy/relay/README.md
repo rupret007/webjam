@@ -3,7 +3,16 @@
 Musicians do **zero setup**. The packaged sidecar fetches short-lived TURN
 credentials from a public HTTPS URL compiled in at release (`-ldflags
 -X github.com/rupret007/webjam/transport/internal/directstun.turnCredentialURL=…`).
-Direct ICE is tried first; TURN is used only when that pair fails.
+Direct ICE is tried first; TURN is used only when that pair fails. The
+compiled Host accepts on **both** the direct mux and the TURN listener at
+once. Join probes the host's published candidates first, then dials the
+host's relay candidate. The host does not wait for a guest reply before
+accepting; Paste Reply is only the punch fallback when both sides are
+behind hard NAT.
+
+TURN credentials start in parallel with STUN gather. A LAN-only host
+(no public mapping) does not wait for that fetch. The sidecar client
+timeout is the Worker worst case (two 5s upstreams) plus 2s headroom.
 
 The cross-network relay is **Cloudflare Realtime TURN** (key name
 `webjam-relay`). A Cloudflare Worker mints `iceServers`. The TURN key ID

@@ -5129,9 +5129,7 @@ class ApplicationController(QObject):
             )
             return True
         if bool(getattr(self.settings, "host_server_enabled", False)):
-            from services.native_remote_transport import ordinary_native_host_profile
-
-            native_profile = ordinary_native_host_profile()
+            native_profile = self._ordinary_remote_host_profile()
             if (
                 native_profile is not None
                 and getattr(self, "_remote_invite_owner", None) is None
@@ -6615,9 +6613,7 @@ class ApplicationController(QObject):
             return
 
         if bool(getattr(self.settings, "host_server_enabled", False)):
-            from services.native_remote_transport import ordinary_native_host_profile
-
-            native_profile = ordinary_native_host_profile()
+            native_profile = self._ordinary_remote_host_profile()
             if (
                 native_profile is not None
                 and getattr(self, "_remote_invite_owner", None) is None
@@ -7963,37 +7959,7 @@ class ApplicationController(QObject):
     def _paste_direct_stun_guest_reply(self) -> None:
         """Paste the friend's sealed reply so both homes can punch together."""
 
-        from PySide6.QtWidgets import QApplication
-
-        from core.direct_stun_invite import parse_guest_reply_from_paste
-
-        owner = getattr(self, "_remote_invite_owner", None)
-        apply_reply = getattr(owner, "apply_guest_reply", None)
-        if owner is None or not callable(apply_reply):
-            self.window.flash_message(
-                "Copy the invite first, then paste your friend's reply.",
-                ms=6000,
-            )
-            return
-        try:
-            envelope = parse_guest_reply_from_paste(QApplication.clipboard().text())
-        except ValueError:
-            envelope = b""
-        if not envelope:
-            self.window.flash_message(
-                "Paste your friend's reply, then press Paste Reply.",
-                ms=6000,
-            )
-            return
-        try:
-            apply_reply(envelope)
-        except Exception:  # noqa: BLE001 - private owner exposes fixed state
-            self.window.flash_message(
-                "That reply could not be used. Ask your friend to send it again.",
-                ms=6000,
-            )
-            return
-        self.window.flash_message("Connecting to your friend…", ms=5000)
+        self._paste_guest_reply()
 
     def _copy_direct_stun_guest_reply_if_ready(self) -> None:
         if bool(getattr(self, "_direct_stun_guest_reply_copied", False)):
@@ -8064,7 +8030,7 @@ class ApplicationController(QObject):
         )
         QApplication.clipboard().setText(invite_message.text)
         invite_url = ""
-        if owner is not None and getattr(owner, "_profile_id", "") == "direct-stun":
+        if owner is not None and str(getattr(owner, "profile_id", "") or "") == "direct-stun":
             self._direct_stun_invite_copied = True
         if owner is None:
             # Mark the address only after the complete link was copied. A
@@ -8830,13 +8796,29 @@ class ApplicationController(QObject):
         )
         return True
 
+    def _ordinary_remote_host_profile(self) -> str | None:
+        """Return the compiled Host profile, or None to keep LAN Jamulus."""
+
+        from services.native_remote_transport import ordinary_native_host_profile
+
+        return ordinary_native_host_profile()
+
+    def _remote_paste_reply_available(self, owner: object | None = None) -> bool:
+        owner = owner if owner is not None else getattr(self, "_remote_invite_owner", None)
+        return (
+            bool(getattr(self.settings, "host_server_enabled", False))
+            and owner is not None
+            and callable(getattr(owner, "apply_guest_reply", None))
+            and str(getattr(owner, "profile_id", "") or "") == "direct-stun"
+        )
+
     def _begin_remote_host(
         self,
         *,
         startup_authorization_generation: int = 0,
-        profile_id: str = "reference-local",
+        profile_id: str | None = None,
     ) -> None:
-        """Prepare the native host path (lab relay or ordinary direct-stun)."""
+        """Prepare the compiled Host path (direct-stun, or lab reference-local)."""
 
         if getattr(self, "_remote_host_preparing", False):
             return
@@ -8851,6 +8833,9 @@ class ApplicationController(QObject):
         self.window.session_hud.set_state(
             "Preparing your jam",
             "WebJam is creating one private invitation.",
+        )
+        chosen_profile = (
+            profile_id or self._ordinary_remote_host_profile() or "reference-local"
         )
 
         def worker() -> None:
@@ -8873,7 +8858,7 @@ class ApplicationController(QObject):
 
                 owner = NativeHostTransportOwner(
                     target_port=int(self.settings.jamulus_port),
-                    profile_id=profile_id,
+                    profile_id=chosen_profile,
                     on_snapshot=on_snapshot,
                     schedule_callback=self._ui_invoker.invoke,
                     **(
@@ -9256,6 +9241,56 @@ class ApplicationController(QObject):
             action_visible=True,
             action_kind="paste_invite",
         )
+
+    def _apply_guest_reply_paste(self, text: object) -> bool:
+        """Apply a friend's sealed reply so Host can punch toward Join."""
+
+        owner = getattr(self, "_remote_invite_owner", None)
+        apply_reply = getattr(owner, "apply_guest_reply", None)
+        if owner is None or not callable(apply_reply):
+            return False
+        from core.direct_stun_invite import parse_guest_reply_from_paste
+
+        try:
+            envelope = parse_guest_reply_from_paste(text)
+        except ValueError:
+            envelope = b""
+        if not envelope:
+            self.window.flash_message(
+                "That reply could not be used. Ask your friend to copy it again.",
+                ms=7000,
+            )
+            return False
+        try:
+            apply_reply(envelope)
+        except Exception:  # noqa: BLE001 - never expose private transport detail
+            self.window.flash_message(
+                "That reply could not be used. Ask your friend to copy it again.",
+                ms=7000,
+            )
+            return False
+        self._update_session_hud()
+        return True
+
+    def _paste_guest_reply(self) -> None:
+        """Read the clipboard first; a second paste is only the punch fallback."""
+
+        if self._shutdown_cleanup_blocks_action():
+            return
+        from PySide6.QtWidgets import QApplication, QInputDialog
+
+        clipboard = QApplication.clipboard()
+        text = clipboard.text() if clipboard is not None else ""
+        if self._apply_guest_reply_paste(text):
+            return
+        typed, accepted = QInputDialog.getMultiLineText(
+            self.window,
+            "Paste reply",
+            "Paste the reply your friend copied after they joined.",
+        )
+        if not accepted:
+            return
+        self._apply_guest_reply_paste(typed)
 
     def _paste_new_invitation(self) -> None:
         """Reopen Join without changing the current invitation's retry policy."""
