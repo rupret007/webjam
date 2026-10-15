@@ -69,9 +69,10 @@ webjam.cross-network-acceptance sha=<40-character-sha> status=PASS case=cross-ne
 ```
 
 `--expected-status FAIL` keeps the GitHub job green only when that FAIL is an
-honest completed guest result (`harness_ok`, no timeout/crash/missing result,
-no fake connect). Unexpected PASS, a broken harness, or a fake connect still
-exits 1. Assertions are unchanged: the receipt stays FAIL.
+honest completed guest result (`harness_ok`). A crash after `guest.result`,
+timeout, missing result, never-started process, programming/startup failure,
+or fake connect still exits 1. Only a genuine network-level connect failure
+satisfies expected FAIL. Assertions are unchanged: the receipt stays FAIL.
 
 ## Run locally (Linux)
 
@@ -93,6 +94,7 @@ PRODUCT=/path/to/pr-372
 SIDECAR=out/cross-network-acceptance/webjam-fabric
 .venv/bin/python -m tools.cross_network_acceptance build-sidecar \
   --product-root "$PRODUCT" --output "$SIDECAR"
+# --output is resolved from the current directory, not from transport/.
 for args in "--nat cone --profiles art" "--nat cone --profiles music" \
             "--nat symmetric --profiles art"; do
   sudo -E .venv/bin/python -m tools.cross_network_acceptance run \

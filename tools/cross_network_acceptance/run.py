@@ -92,17 +92,36 @@ def _user_env(
     return env
 
 
+_CLEAN_GUEST_CODES = frozenset({0, 1})
+_NON_NETWORK_REASONS = frozenset(
+    {"startup_refused", "ingress_rejected", "clipboard_unavailable"}
+)
+_NON_NETWORK_CLASSES = frozenset(
+    {"programming_error", "startup_failure", "unknown"}
+)
+
+
+def _non_network_guest_outcome(result: dict[str, Any]) -> bool:
+    reason = str(result.get("reason") or "")
+    failure_class = str(result.get("failure_class") or "")
+    return reason in _NON_NETWORK_REASONS or failure_class in _NON_NETWORK_CLASSES
+
+
 def completed_guest_result(
     result: dict[str, Any],
     *,
     timed_out: bool,
     returncode: int | None = 0,
 ) -> bool:
-    """True only when the guest finished and wrote a real ``guest_connected`` result."""
+    """True only for a finished connect attempt, not a crash or startup bug."""
 
-    if timed_out or returncode is None:
+    if timed_out or returncode not in _CLEAN_GUEST_CODES:
         return False
-    return isinstance(result, dict) and "guest_connected" in result
+    if not isinstance(result, dict) or "guest_connected" not in result:
+        return False
+    if result.get("guest_connected"):
+        return True
+    return not _non_network_guest_outcome(result)
 
 
 def job_exit_code(
@@ -148,8 +167,10 @@ def _incomplete_guest_notes(profile_rows: list[dict[str, Any]]) -> str:
     reasons = [str(row.get("reason") or "") for row in profile_rows]
     if "guest_timeout" in reasons:
         return "The guest timed out before writing a completed result."
-    if "guest_result_missing" in reasons:
-        return "The guest did not write a completed result."
+    if "guest_crash" in reasons or "guest_never_started" in reasons:
+        return "The guest crashed or never started; that is not a network failure."
+    if "guest_result_missing" in reasons or "startup_refused" in reasons:
+        return "The guest did not finish a network connect attempt."
     if "host_not_ready" in reasons:
         return "The harness could not start the host on the simulated network."
     return "The harness did not complete an honest guest result."
@@ -328,14 +349,19 @@ def _run_profile(
         result = _wait_json(work_dir / "guest.result", 2.0)
         routable = _invite_host_routable(topology.guest_ns, work_dir, env)
         connected = bool(result.get("guest_connected"))
+        rc = guest_proc.returncode
         completed = completed_guest_result(
-            result, timed_out=timed_out, returncode=guest_proc.returncode,
+            result, timed_out=timed_out, returncode=rc,
         )
         reason = ""
         if timed_out:
             reason = "guest_timeout"
+        elif rc is None:
+            reason = "guest_never_started"
+        elif rc not in _CLEAN_GUEST_CODES:
+            reason = "guest_crash"
         elif not completed:
-            reason = "guest_result_missing"
+            reason = str(result.get("reason") or "guest_result_missing")
         return {
             "profile": profile,
             "guest_connected": connected,

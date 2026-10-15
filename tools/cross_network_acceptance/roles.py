@@ -14,6 +14,9 @@ from core.network_invite import local_band_address, parse_invite_link
 from core.session_transfer import SessionTransferError
 from core.session_transfer_runtime import GuestPeerSession, HostPeerSession
 
+# Connect-path only. TypeError/ValueError must fail the harness, not expected FAIL.
+NETWORK_CONNECT_EXCEPTIONS = (SessionTransferError, OSError)
+
 ART_START = "paint_along"
 _INVITE_NAME = "invite"
 _READY_NAME = "host.ready"
@@ -175,7 +178,7 @@ def _music_guest(work_dir: Path) -> int:
             },
         )
         return 0 if exchanged else 1
-    except (SessionTransferError, OSError, ValueError):
+    except NETWORK_CONNECT_EXCEPTIONS:
         return _guest_fail(
             work_dir, "music", "lan", reason="unreachable",
             extra={"failure_class": "honest_unreachable"},
@@ -358,7 +361,10 @@ def _art_guest(work_dir: Path) -> int:
             )
             holder["app"] = app
             if not app.begin_startup_journey():
-                return _guest_fail(work_dir, "art", "lan", reason="startup_refused")
+                return _guest_fail(
+                    work_dir, "art", "lan", reason="startup_refused",
+                    extra={"failure_class": "startup_failure"},
+                )
             connected = _drain(
                 qapp, lambda: app._room_participant.state is ArtRoomState.CONNECTED, 32.0,
             )
@@ -377,7 +383,7 @@ def _art_guest(work_dir: Path) -> int:
                 },
             )
             return 0 if exchanged else 1
-        except (SessionTransferError, OSError, ValueError):
+        except NETWORK_CONNECT_EXCEPTIONS:
             return _guest_fail(
                 work_dir, "art", "lan", reason="unreachable",
                 extra={"failure_class": "honest_unreachable"},
@@ -491,7 +497,7 @@ def _native_guest(work_dir: Path, profile: str) -> int:
                 return _guest_fail(
                     work_dir, profile, "direct-stun", reason="ingress_rejected",
                     extra={
-                        "failure_class": "honest_unreachable",
+                        "failure_class": "startup_failure",
                         "failure_text": _sanitize_text(str(exc)),
                     },
                 )
@@ -511,6 +517,7 @@ def _native_guest(work_dir: Path, profile: str) -> int:
                         "session_state_exchanged": False,
                         "reason": "startup_refused",
                         "transport": "direct-stun",
+                        "failure_class": "startup_failure",
                         "failure_text": _sanitize_text(_hud_text(app)),
                     },
                 )
@@ -543,7 +550,7 @@ def _native_guest(work_dir: Path, profile: str) -> int:
                 },
             )
             return 0 if exchanged else 1
-        except (SessionTransferError, OSError, ValueError, TypeError):
+        except NETWORK_CONNECT_EXCEPTIONS:
             return _guest_fail(
                 work_dir, profile, "direct-stun", reason="unreachable",
                 extra={"failure_class": "honest_unreachable"},

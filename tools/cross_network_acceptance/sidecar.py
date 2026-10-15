@@ -24,12 +24,24 @@ def product_sha(product_root: Path) -> str:
     return completed.stdout.strip()
 
 
+def resolve_sidecar_output(output: Path | None = None, *, cwd: Path | None = None) -> Path:
+    """Resolve ``--output`` from the caller's cwd, not from ``transport/``."""
+
+    target = output if output is not None else (
+        HARNESS_ROOT / "out" / "cross-network-acceptance" / "webjam-fabric"
+    )
+    target = Path(target)
+    if not target.is_absolute():
+        target = (cwd or Path.cwd()) / target
+    return target.resolve()
+
+
 def build_sidecar(product_root: Path, output: Path | None = None) -> Path:
     transport = product_root / "transport"
     if not (transport / "cmd" / "webjam-fabric" / "main.go").is_file():
         raise SidecarError("The product tree has no webjam-fabric sources.")
     digest = product_sha(product_root)
-    target = output or (HARNESS_ROOT / "out" / "cross-network-acceptance" / "webjam-fabric")
+    target = resolve_sidecar_output(output)
     target.parent.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     env.setdefault("GOTOOLCHAIN", "go1.25.13")

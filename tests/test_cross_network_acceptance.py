@@ -335,6 +335,104 @@ def test_job_exit_code_keeps_fail_assertions():
     )
 
 
+def test_completed_guest_result_rejects_crash_after_result_file():
+    after_write = {"guest_connected": False, "session_state_exchanged": False}
+    assert completed_guest_result(after_write, timed_out=False, returncode=1) is True
+    for crash_code in (-11, -6, 139):
+        ok = completed_guest_result(
+            after_write, timed_out=False, returncode=crash_code,
+        )
+        assert ok is False
+        assert job_exit_code(
+            status="FAIL", expected_status="FAIL", harness_ok=ok,
+        ) == 1
+
+
+def test_completed_guest_result_rejects_programming_and_startup_failures():
+    from core.session_transfer import SessionTransferError
+
+    from tools.cross_network_acceptance.roles import NETWORK_CONNECT_EXCEPTIONS
+
+    honest = {
+        "guest_connected": False,
+        "failure_class": "honest_unreachable",
+        "reason": "unreachable",
+    }
+    assert completed_guest_result(honest, timed_out=False, returncode=1) is True
+    startup = {
+        "guest_connected": False,
+        "reason": "startup_refused",
+        "failure_class": "startup_failure",
+    }
+    assert completed_guest_result(startup, timed_out=False, returncode=1) is False
+    assert completed_guest_result(
+        {"guest_connected": False, "reason": "ingress_rejected",
+         "failure_class": "startup_failure"},
+        timed_out=False, returncode=1,
+    ) is False
+    assert completed_guest_result(
+        {"guest_connected": False, "failure_class": "unknown"},
+        timed_out=False, returncode=1,
+    ) is False
+    assert completed_guest_result(honest, timed_out=False, returncode=2) is False
+    assert completed_guest_result(honest, timed_out=False, returncode=None) is False
+    assert completed_guest_result(honest, timed_out=False, returncode=127) is False
+    assert not isinstance(TypeError("broken guest"), NETWORK_CONNECT_EXCEPTIONS)
+    assert not isinstance(ValueError("bad args"), NETWORK_CONNECT_EXCEPTIONS)
+    assert isinstance(OSError("connection refused"), NETWORK_CONNECT_EXCEPTIONS)
+    assert isinstance(SessionTransferError("no route"), NETWORK_CONNECT_EXCEPTIONS)
+    source = Path("tools/cross_network_acceptance/roles.py").read_text(encoding="utf-8")
+    assert "except NETWORK_CONNECT_EXCEPTIONS:" in source
+    assert "ValueError, TypeError" not in source
+    assert ", TypeError):" not in source
+    assert job_exit_code(
+        status="FAIL", expected_status="FAIL",
+        harness_ok=completed_guest_result(startup, timed_out=False, returncode=1),
+    ) == 1
+
+
+def test_build_sidecar_resolves_relative_output_against_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from types import SimpleNamespace
+
+    from tools.cross_network_acceptance.sidecar import build_sidecar
+
+    product = tmp_path / "pr-372"
+    fabric = product / "transport" / "cmd" / "webjam-fabric"
+    fabric.mkdir(parents=True)
+    (fabric / "main.go").write_text("package main\n", encoding="utf-8")
+    docs = Path("docs/CROSS-NETWORK-TEST.md").read_text(encoding="utf-8")
+    assert "SIDECAR=out/cross-network-acceptance/webjam-fabric" in docs
+    assert '--output "$SIDECAR"' in docs
+    repo_cwd = tmp_path / "harness-repo"
+    repo_cwd.mkdir()
+    monkeypatch.chdir(repo_cwd)
+
+    def fake_run(argv, **kwargs):
+        argv = list(argv)
+        if argv[:2] == ["git", "rev-parse"]:
+            return SimpleNamespace(returncode=0, stdout="b" * 40 + "\n", stderr="")
+        if argv and argv[0] == "go":
+            assert Path(kwargs.get("cwd")) == product / "transport"
+            out = Path(argv[argv.index("-o") + 1])
+            assert out.is_absolute()
+            assert product / "transport" not in out.parents
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(b"ok")
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        raise AssertionError(argv)
+
+    monkeypatch.setattr(
+        "tools.cross_network_acceptance.sidecar.subprocess.run", fake_run
+    )
+    relative = Path("out/cross-network-acceptance/webjam-fabric")
+    built = build_sidecar(product, relative)
+    assert built == (repo_cwd / relative).resolve()
+    assert built.is_file()
+    assert not (product / "transport" / relative).exists()
+
+
 def test_job_exit_code_rejects_incomplete_or_fake_expected_fail():
     honest = {"guest_connected": False, "session_state_exchanged": False}
     assert completed_guest_result(honest, timed_out=False, returncode=1) is True
