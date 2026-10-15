@@ -28,7 +28,7 @@ class LoopbackShim:
         self.dest_host = dest_host
         self.source_host = source_host
         self.count_path = count_path
-        self.bytes = 0
+        self.loopback_bytes = 0
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._socks: list[socket.socket] = []
@@ -65,14 +65,14 @@ class LoopbackShim:
 
     def _add(self, n: int) -> None:
         with self._lock:
-            self.bytes += n
+            self.loopback_bytes += n
         self._flush()
 
     def _flush(self) -> None:
         if self.count_path is None:
             return
         with self._lock:
-            payload = str(self.bytes)
+            payload = str(self.loopback_bytes)
         try:
             self.count_path.write_text(payload + "\n", encoding="utf-8")
         except OSError:

@@ -15,7 +15,6 @@ from tools.cross_network_acceptance.topology import required_bin
 REALM = "webjam"
 CREDENTIAL_PORT = 8787
 _USAGE = re.compile(r"\brb=(\d+)\b.*\bsb=(\d+)\b")
-_DATA = re.compile(r"Data indication|incoming packet Data", re.IGNORECASE)
 
 
 def turnserver_bin() -> str:
@@ -67,12 +66,11 @@ def turn_command(
 
 
 def relayed_bytes(log_text: str) -> int:
+    """Coturn session usage rb=+sb= only. Signaling lines are not relayed bytes."""
     total = 0
     for match in _USAGE.finditer(log_text or ""):
         total += int(match.group(1)) + int(match.group(2))
-    if total:
-        return total
-    return 8 * len(_DATA.findall(log_text or ""))
+    return total
 
 
 def conntrack_dump(ns: str) -> str:

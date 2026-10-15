@@ -278,15 +278,6 @@ def _wait_port(ns: str, host: str, port: int, env: dict[str, str], timeout_s: fl
         raise HarnessError("reference control unavailable")
 
 
-def _read_count(path: Path) -> int:
-    if not path.is_file():
-        return 0
-    try:
-        return int(path.read_text(encoding="utf-8").strip() or 0)
-    except ValueError:
-        return 0
-
-
 def _arm_timeout(seconds: float) -> None:
     def handle(_signum: int, _frame: Any) -> None:
         raise TimeoutError("case timeout")
@@ -342,7 +333,7 @@ def run_case(
             ref_proc: subprocess.Popen[str] | None = None
             shim_proc: subprocess.Popen[str] | None = None
             turn_log = work_root / "turn.log"
-            count_file = work_root / "shim.count.log"
+            count_file = work_root / "loopback_shim_bytes.log"
             asserting = False
             try:
                 topology = apply_topology(spec)
@@ -455,19 +446,13 @@ def run_case(
                 guest_rc = _reap(guest_proc, 8.0)
                 host_proof = _wait_json(peer_dir / "host.proof", 1.0)
                 guest_proof = _wait_json(peer_dir / "guest.proof", 1.0)
-                shim_bytes = _read_count(count_file)
-                turn_bytes = 0
+                if turn_proc is not None:
+                    _stop_procs([turn_proc])
+                    turn_proc = None
+                relay_count = 0
                 if turn_log.is_file():
-                    turn_bytes = relayed_bytes(
+                    relay_count = relayed_bytes(
                         turn_log.read_text(encoding="utf-8", errors="replace"))
-                # TURN/coturn only, except cone: the compiled exact-pair shim is
-                # not a hole-punch, so those bytes fail the DIRECT assertion.
-                if case == "cone":
-                    relay_count = turn_bytes + shim_bytes
-                elif expect_path == "relay":
-                    relay_count = turn_bytes + shim_bytes
-                else:
-                    relay_count = turn_bytes
                 reason = evaluate_proof(
                     host_proof, guest_proof, expect_path=expect_path,
                     music_nonce=music_nonce, art_nonce=art_nonce, relay_bytes=relay_count,

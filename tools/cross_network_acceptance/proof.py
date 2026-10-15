@@ -48,7 +48,10 @@ def evaluate_proof(
     art_nonce: str,
     relay_bytes: int = 0,
 ) -> str:
-    """Return empty string on PASS; any other string is FAIL."""
+    """Return empty string on PASS; any other string is FAIL.
+
+    relay_bytes is coturn session rb=+sb= only. Loopback-shim counts are never proof.
+    """
     if not isinstance(host, dict) or not isinstance(guest, dict):
         return "missing peer proof"
     for row in (host, guest):
@@ -73,7 +76,7 @@ def evaluate_proof(
             return "direct path used relay"
         return ""
     if want == "relay":
-        if not (host_relay or guest_relay):
+        if not (host_relay and guest_relay):
             return "relay path used direct"
         if int(relay_bytes or 0) < 1:
             return "relay carried no bytes"
@@ -81,13 +84,11 @@ def evaluate_proof(
     return "unknown expect_path"
 
 
-def path_label(path: str, *, same_lan: bool) -> str:
-    """Topology label. IPC does not expose Pion ICE pairs; see README."""
-    if path == "relay":
-        return RELAY_TYPE
+def path_label(*, same_lan: bool) -> str:
+    """Same-LAN compiled loopback is host. Cross-NAT needs sidecar ICE types."""
     if same_lan:
         return "host"
-    return "srflx"
+    return ""
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -130,7 +131,6 @@ def _wait_help(inbox: list[str], nonce: str, timeout_s: float = 12.0) -> str:
 def run_peer(work_dir: Path, role: str) -> int:
     cfg = json.loads((work_dir / "peer-config.json").read_text(encoding="utf-8"))
     role = str(role or cfg.get("role") or "")
-    path = str(cfg["path"])
     if role not in {"host", "guest"}:
         raise ProofError("missing peer role")
     music_nonce = str(cfg["music_nonce"])
@@ -214,7 +214,7 @@ def run_peer(work_dir: Path, role: str) -> int:
             art_echo = _wait_help(inbox, art_nonce)
             if art_echo:
                 process.send_help(art_nonce, generation=1)
-        label = path_label(path, same_lan=not bool(cfg.get("stun")))
+        label = path_label(same_lan=not bool(cfg.get("stun")))
         proof = {
             "role": role,
             "local_type": label,

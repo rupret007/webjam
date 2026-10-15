@@ -194,11 +194,10 @@ def test_workflow_is_optional_and_path_filtered():
     assert "modprobe sch_netem || true" not in setup
 
 
-def test_path_labels_are_topology_not_ice_pairs():
+def test_path_labels_do_not_invent_ice_pairs():
     from tools.cross_network_acceptance.proof import path_label
-    assert path_label("direct", same_lan=True) == "host"
-    assert path_label("direct", same_lan=False) == "srflx"
-    assert path_label("relay", same_lan=False) == "relay"
+    assert path_label(same_lan=True) == "host"
+    assert path_label(same_lan=False) == ""
 
 
 def test_missing_nonce_or_candidate_fields_fail():
@@ -232,11 +231,15 @@ def test_relay_pair_on_direct_job_fails_and_vice_versa():
         host, guest, expect_path="relay", music_nonce=MUSIC, art_nonce=ART, relay_bytes=40,
     ) == "relay path used direct"
     assert evaluate_proof(
+        relay_host, guest, expect_path="relay", music_nonce=MUSIC, art_nonce=ART, relay_bytes=12,
+    ) == "relay path used direct"
+    assert evaluate_proof(
         relay_host, relay_guest, expect_path="relay", music_nonce=MUSIC, art_nonce=ART,
         relay_bytes=0,
     ) == "relay carried no bytes"
     assert evaluate_proof(
-        relay_host, guest, expect_path="relay", music_nonce=MUSIC, art_nonce=ART, relay_bytes=12,
+        relay_host, relay_guest, expect_path="relay", music_nonce=MUSIC, art_nonce=ART,
+        relay_bytes=12,
     ) == ""
 
 
@@ -381,7 +384,7 @@ def test_turn_credentials_contract_and_relay_byte_logs(monkeypatch):
     })
     assert not tc.valid_session_invite_shape({"session_id": "x", "invite_token": "y"})
     assert relayed_bytes("session x usage: rp=2, rb=80, sp=2, sb=40") == 120
-    assert relayed_bytes("incoming packet Data from peer") >= 8
+    assert relayed_bytes("incoming packet Data from peer") == 0
     assert relayed_bytes("idle") == 0
     assert "mint_coturn" in Path(
         "tools/cross_network_acceptance/turn.py").read_text(encoding="utf-8")
@@ -470,3 +473,6 @@ def test_proof_peers_drive_real_sidecar_not_standalone_ice():
     assert "inner.connect(" not in shim and "_udp_loop" in shim
     assert "transport/internal/ipc" in readme and "POST /turn-credentials" in readme
     assert "reference-local" in readme and "directstun" in readme
+    assert "loopback_shim_bytes.log" in run and "shim.count.log" not in run
+    assert " + shim" not in run
+    assert "loopback_bytes" in shim
