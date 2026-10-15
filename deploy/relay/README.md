@@ -3,37 +3,106 @@
 Musicians do **zero setup**. The packaged sidecar fetches short-lived TURN
 credentials from a public HTTPS URL compiled in at release (`-ldflags
 -X github.com/rupret007/webjam/transport/internal/directstun.turnCredentialURL=…`).
-The long-lived coturn `static-auth-secret` (or Cloudflare API token) stays on
-this VM. Direct ICE is tried first; TURN is used only when that pair fails.
+Direct ICE is tried first; TURN is used only when that pair fails.
+
+The cross-network relay is **Cloudflare Realtime TURN** (key name
+`webjam-relay`). A Cloudflare Worker mints `iceServers`. The TURN key ID
+and API token are Worker secrets. They must never be committed or compiled
+into the client.
+
+Self-hosted coturn on Oracle Always Free remains available behind the same
+`POST /turn-credentials` JSON interface.
 
 ## Cost stop ($0)
 
 | Control | Bound | What happens at the cap |
 | --- | --- | --- |
 | Sidecar compiled quota | **256 MiB per session** | Session closes. Credential JSON may only *lower* this. |
-| Credential endpoint | **8 GiB/day** default | HTTP 429; new sessions stay on direct ICE only. |
+| Cloudflare Worker | **800 GB / UTC month** of the **1,000 GB** Realtime TURN free allowance | HTTP 429; new sessions stay on direct ICE only. |
+| Worker fail-closed | Usage analytics unreadable | HTTP 503; same as cap — no new credentials. |
+| Coturn credential endpoint | **8 GiB/day** default | HTTP 429; new sessions stay on direct ICE only. |
 | Oracle Always Free | **10 TB/month outbound**, 1 Ampere A1 VM | Stay on one VM, one public IPv4, no extra block volumes. |
-| Cloudflare Realtime TURN | Use **only** with a **$0 spend cap** | If Cloudflare cannot cap spend at $0, do not enable it. |
 
-8 GiB/day is about 240 GiB/month, far under 10 TB. A music session at
-~300 kbps uses the 256 MiB cap in well under two hours and then stops.
+### Cloudflare monthly cap formula
 
-## Tradeoff
+Cloudflare Realtime TURN counts **ingress + egress** bytes. The Worker
+reads month-to-date usage for `TURN_KEY_ID` from the GraphQL analytics
+API (`callsTurnUsageAdaptiveGroups`) and refuses new credentials when:
 
-- **Self-hosted coturn on Oracle Always Free Ampere A1:** $0 if you stay
-  inside Always Free. You operate a VM, a secret, and HTTPS for the
-  credential URL. This is the default.
-- **Cloudflare Realtime TURN:** same sidecar JSON. The credential service
-  holds the Cloudflare token and returns `iceServers`. Enable only with a
-  $0 spend cap. Extra `allowed_relay_ips` may be required if allocations
-  are not the TURN hostname.
+```
+usage_bytes = sum(ingressBytes) + sum(egressBytes)
+              over the UTC calendar month [first-of-month, today]
+              filtered by keyId = TURN_KEY_ID
+
+cap_bytes   = TURN_MONTHLY_CAP_GB * 1_000_000_000
+              (default 800; free allowance is 1,000 GB)
+
+refuse when usage_bytes >= cap_bytes
+         or the analytics query errors / cannot be parsed
+```
+
+1 GB = 1,000,000,000 bytes (Cloudflare billing). 800 GB leaves 200 GB of
+the free tier for in-flight allocations and analytics lag (~30 seconds).
+`TURN_MONTHLY_CAP_GB` is a Worker var; secrets stay out of the repo.
 
 Exact-pair policy: the sidecar CreatePermission/dials only the peer's
 sealed relay candidate, and only when that IPv4 matches the credentialed
 TURN server (or `allowed_relay_ips`). Stock TURN auth alone is not enough;
 see `docs/security/remote-session-threat-model.md`.
 
-## Oracle Cloud Always Free (ARM Ampere A1)
+## Cloudflare Worker (current relay)
+
+Free-plan Worker at `deploy/relay/cloudflare-worker/`.
+`POST /turn-credentials` requires a WebJam session/invite **token shape**
+(canonical UUID or 64-hex `session_id`, plus `invite_token` matching
+`^[A-Za-z0-9_-]{32,256}$`) and rate-limits per IP.
+
+### Deploy
+
+From a machine that can reach Cloudflare (secrets are typed at the prompt,
+never stored in git):
+
+```
+cd deploy/relay/cloudflare-worker
+npx wrangler login
+npx wrangler secret put TURN_KEY_ID
+npx wrangler secret put TURN_KEY_API_TOKEN
+npx wrangler secret put CLOUDFLARE_ACCOUNT_ID
+npx wrangler deploy
+```
+
+The API token must be able to:
+
+1. `POST https://rtc.live.cloudflare.com/v1/turn/keys/$TURN_KEY_ID/credentials/generate-ice-servers`
+2. Query `https://api.cloudflare.com/client/v4/graphql` with
+   **Account Analytics** (`callsTurnUsageAdaptiveGroups`)
+
+TTL is 3600 seconds. Confirm the deployed URL, then release-build the
+sidecar with that path only:
+
+```
+go build -ldflags "-X github.com/rupret007/webjam/transport/internal/directstun.turnCredentialURL=https://webjam-turn-credentials.<account>.workers.dev/turn-credentials" ./cmd/webjam-fabric
+```
+
+Do not put `TURN_KEY_ID`, `TURN_KEY_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`,
+or `TURN_STATIC_AUTH_SECRET` in ldflags, settings, or the GitHub repo.
+
+### Remaining human steps
+
+1. Confirm the `webjam-relay` TURN key exists in the Cloudflare dashboard
+   (Realtime → TURN) and that the account is on the **free** 1,000 GB/month
+   allowance with no paid TURN add-on.
+2. Create or reuse an API token with TURN credential generation **and**
+   Account Analytics. Put it with `wrangler secret put` (never in the repo).
+3. Put `TURN_KEY_ID` and `CLOUDFLARE_ACCOUNT_ID` the same way.
+4. `npx wrangler deploy` and copy the `*.workers.dev` (or custom domain)
+   URL into the release `turnCredentialURL` ldflag.
+5. Optional: custom hostname in front of the Worker. HTTPS only.
+6. Coturn switchback: point the same ldflag at the Oracle credential
+   URL (`https://turn-creds.example.com/turn-credentials`) instead. The
+   sidecar JSON is unchanged.
+
+## Oracle Cloud Always Free (coturn switchback)
 
 Stay within the Always Free shape so this cannot convert to paid:
 
@@ -77,11 +146,8 @@ turn-creds.example.com {
 6. Release-build the sidecar with that URL only:
 
 ```
-go build -ldflags "-X github.com/rupret007/webjam/transport/internal/directstun.turnCredentialURL=https://turn-creds.example.com/credentials" ./cmd/...
+go build -ldflags "-X github.com/rupret007/webjam/transport/internal/directstun.turnCredentialURL=https://turn-creds.example.com/turn-credentials" ./cmd/webjam-fabric
 ```
-
-Do not put `TURN_STATIC_AUTH_SECRET` or a Cloudflare token in ldflags,
-settings, or the GitHub repo.
 
 Confirm Always Free: one A1 VM, 1 OCPU, no paid load balancer, outbound
 well under 10 TB/month (the daily credential budget enforces this).

@@ -1,8 +1,12 @@
 package directstun
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net"
@@ -25,11 +29,30 @@ const (
 	testTURNSecretEnv = "WEBJAM_TEST_TURN_SECRET"
 	testTURNURLEnv    = "WEBJAM_TEST_TURN_CREDENTIAL_URL"
 	turnRESTUser      = "webjam"
+	turnProofDomain   = "webjam/v1/turn-credential\x00"
 	credentialTTL     = 10 * time.Minute
 	credentialFetch   = 2 * time.Second
 	maxCredentialBody = 4096
 	allocateLimit     = 4 * time.Second
 )
+
+type credentialProof struct {
+	sessionID  [32]byte
+	capability [32]byte
+}
+
+type proofContextKey struct{}
+
+// WithCredentialProof attaches the session/invite token shapes the credential
+// Worker requires. The Cloudflare key and API token never enter this process.
+func WithCredentialProof(ctx context.Context, sessionID, capability [32]byte) context.Context {
+	if ctx == nil || sessionID == ([32]byte{}) || capability == ([32]byte{}) {
+		return ctx
+	}
+	return context.WithValue(ctx, proofContextKey{}, credentialProof{
+		sessionID: sessionID, capability: capability,
+	})
+}
 
 // Compiled public credential URL. Release builds set this with -ldflags -X.
 // The long-lived coturn/Cloudflare secret never belongs in the binary.
@@ -350,7 +373,44 @@ func resolveCredentials(ctx context.Context) (turnCredentials, error) {
 	if rawURL == "" {
 		return turnCredentials{}, errNoTURN
 	}
+	if _, ok := proofFromContext(ctx); !ok && !harnessTURN() {
+		return turnCredentials{}, errNoTURN
+	}
 	return fetchCredentials(ctx, rawURL)
+}
+
+func proofFromContext(ctx context.Context) (credentialProof, bool) {
+	if ctx == nil {
+		return credentialProof{}, false
+	}
+	proof, ok := ctx.Value(proofContextKey{}).(credentialProof)
+	if !ok || proof.sessionID == ([32]byte{}) || proof.capability == ([32]byte{}) {
+		return credentialProof{}, false
+	}
+	return proof, true
+}
+
+func credentialRequestBody(ctx context.Context) []byte {
+	if proof, ok := proofFromContext(ctx); ok {
+		digest := sha256.Sum256(append([]byte(turnProofDomain), proof.capability[:]...))
+		body, err := json.Marshal(map[string]string{
+			"session_id":   hex.EncodeToString(proof.sessionID[:]),
+			"invite_token": base64.RawURLEncoding.EncodeToString(digest[:]),
+		})
+		if err == nil {
+			return body
+		}
+	}
+	if harnessTURN() {
+		body, err := json.Marshal(map[string]string{
+			"session_id":   "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+			"invite_token": strings.Repeat("A", 43),
+		})
+		if err == nil {
+			return body
+		}
+	}
+	return nil
 }
 
 func harnessTURN() bool {
@@ -395,12 +455,21 @@ func fetchCredentials(ctx context.Context, rawURL string) (turnCredentials, erro
 	default:
 		return turnCredentials{}, errNoTURN
 	}
+	payload := credentialRequestBody(ctx)
+	if len(payload) == 0 {
+		return turnCredentials{}, errNoTURN
+	}
 	fetchCtx, cancel := context.WithTimeout(ctx, credentialFetch)
 	defer cancel()
-	request, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, parsed.String(), nil)
+	request, err := http.NewRequestWithContext(
+		fetchCtx, http.MethodPost, parsed.String(), bytes.NewReader(append([]byte(nil), payload...)),
+	)
+	clear(payload)
 	if err != nil {
 		return turnCredentials{}, errNoTURN
 	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", "application/json")
 	client := &http.Client{
 		Timeout: credentialFetch,
 		Transport: &http.Transport{

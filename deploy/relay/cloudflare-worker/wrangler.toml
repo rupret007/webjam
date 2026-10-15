@@ -1,0 +1,17 @@
+# WebJam TURN credential Worker (Cloudflare free plan).
+# Secrets are set with `wrangler secret put` and are never committed.
+name = "webjam-turn-credentials"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+# Configurable $0 cap: 800 GB of the 1,000 GB Realtime TURN free allowance.
+# 1 GB = 1,000,000,000 bytes (Cloudflare billing unit).
+[vars]
+TURN_MONTHLY_CAP_GB = "800"
+TURN_CREDENTIAL_TTL_SECONDS = "3600"
+TURN_RATE_LIMIT_PER_MINUTE = "10"
+
+# Required secrets (do not put values here):
+#   wrangler secret put TURN_KEY_ID
+#   wrangler secret put TURN_KEY_API_TOKEN
+#   wrangler secret put CLOUDFLARE_ACCOUNT_ID

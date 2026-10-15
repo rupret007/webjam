@@ -169,7 +169,11 @@ func (o *directStunOperation) runHost() error {
 		return ErrOpenFailedWrap(err)
 	}
 	drainUDP(conn)
-	allocation := tryAllocateRelay(o.enrollmentCtx)
+	allocation := tryAllocateRelay(directstun.WithCredentialProof(
+		o.enrollmentCtx,
+		[32]byte(o.configuration.SessionID),
+		[32]byte(o.configuration.EnrollmentCapability),
+	))
 	if allocation != nil {
 		if encoded, candErr := allocation.Candidate(); candErr == nil && encoded != "" &&
 			len(candidates) < limits.MaxCandidateCount {
@@ -269,7 +273,11 @@ func (o *directStunOperation) runGuest() error {
 		return ErrOpenFailedWrap(err)
 	}
 	drainUDP(conn)
-	allocation := tryAllocateRelay(o.enrollmentCtx)
+	allocation := tryAllocateRelay(directstun.WithCredentialProof(
+		o.enrollmentCtx,
+		[32]byte(o.configuration.SessionID),
+		[32]byte(o.configuration.EnrollmentCapability),
+	))
 	if allocation != nil {
 		if encoded, candErr := allocation.Candidate(); candErr == nil && encoded != "" &&
 			len(localCandidates) < limits.MaxCandidateCount {

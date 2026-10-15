@@ -114,8 +114,17 @@ func TestHarnessMintAndCredentialURLNeverUseCompiledSecret(t *testing.T) {
 		"quota_bytes": 4096,
 	})
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodGet {
+		if request.Method != http.MethodPost {
 			writer.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct {
+			SessionID   string `json:"session_id"`
+			InviteToken string `json:"invite_token"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil ||
+			body.SessionID == "" || len(body.InviteToken) < 32 {
+			writer.WriteHeader(http.StatusForbidden)
 			return
 		}
 		_, _ = writer.Write(payload)
@@ -125,6 +134,50 @@ func TestHarnessMintAndCredentialURLNeverUseCompiledSecret(t *testing.T) {
 	fetched, err := fetchCredentials(context.Background(), server.URL)
 	if err != nil || fetched.password != "from-endpoint" || fetched.quota != 4096 {
 		t.Fatalf("fetched = %+v, %v", fetched, err)
+	}
+}
+
+func TestFetchCredentialsPostsProofAndSkipsWithoutIt(t *testing.T) {
+	t.Setenv(testHarnessEnv, "1")
+	var method string
+	var sessionID string
+	var token string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		method = request.Method
+		var body struct {
+			SessionID   string `json:"session_id"`
+			InviteToken string `json:"invite_token"`
+		}
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		sessionID = body.SessionID
+		token = body.InviteToken
+		_, _ = writer.Write([]byte(`{
+			"urls": ["turn:203.0.113.1:3478?transport=udp"],
+			"username": "proof:webjam",
+			"credential": "posted"
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	var session, capability [32]byte
+	session[0] = 7
+	capability[0] = 9
+	ctx := WithCredentialProof(context.Background(), session, capability)
+	fetched, err := fetchCredentials(ctx, server.URL)
+	if err != nil || fetched.password != "posted" {
+		t.Fatalf("posted fetch = %+v, %v", fetched, err)
+	}
+	if method != http.MethodPost || len(sessionID) != 64 || len(token) < 32 {
+		t.Fatalf("proof body method=%s session=%q token_len=%d", method, sessionID, len(token))
+	}
+
+	previous := turnCredentialURL
+	turnCredentialURL = "https://turn-creds.example.test/turn-credentials"
+	t.Cleanup(func() { turnCredentialURL = previous })
+	t.Setenv(testHarnessEnv, "")
+	t.Setenv(testTURNURLEnv, "")
+	if _, err = resolveCredentials(context.Background()); err != errNoTURN {
+		t.Fatalf("missing proof must not fetch credentials: %v", err)
 	}
 }
 
