@@ -378,10 +378,21 @@ class ApplicationController(QObject):
             or "music"
         )
         self._creator_profile_host_owned = False
+        if (
+            session_invite is not None
+            and not session_invite.peer_enabled
+            and self._active_creator_profile_key == "art"
+        ):
+            # Art's join path reopens paste when there is no peer. A v1
+            # invite has only a Music endpoint, so borrow that journey
+            # without changing the saved Art door choice. Podcast and
+            # other local profiles keep their own route.
+            self._active_creator_profile_key = "music"
+            self._creator_profile_host_owned = True
         self._chat_profile_generation = 0
         creator_setter = getattr(self.window, "set_creator_profile", None)
         if callable(creator_setter):
-            creator_setter(self.creator_profile, locked=False)
+            creator_setter(self.creator_profile, locked=self._creator_profile_host_owned)
         if not isinstance(offline_reference_studio, bool):
             raise TypeError("offline_reference_studio must be true or false")
         self._offline_reference_studio = offline_reference_studio
@@ -529,10 +540,10 @@ class ApplicationController(QObject):
         self.host_peer = HostPeerSession(
             on_take_updated=self._on_peer_take_updated,
         )
-        # A v2 invite credential is intentionally memory-only for the active
-        # join. A successful Leave/End clears it with the peer runtime, so a
-        # stale bearer cannot silently reopen on a later Start.
-        self._guest_invite = None
+        # Keep the accepted Music (v1) or peer (v2) invitation for routing
+        # and retries. Leave/End clears it with the peer runtime; v2 bearer
+        # credentials remain memory-only.
+        self._guest_invite = session_invite
         self._guest_peer_configuration_failed = False
         self.guest_peer: GuestPeerSession | None = None
         self._shared_track_peer_publish_failed = False
@@ -542,7 +553,6 @@ class ApplicationController(QObject):
         if session_invite is not None and bool(
             getattr(session_invite, "peer_enabled", False)
         ):
-            self._guest_invite = session_invite
             self._room_participant.probing = True
             self._room_participant.role = "guest"
 
@@ -2134,18 +2144,25 @@ class ApplicationController(QObject):
 
     @property
     def creator_start(self):
-        """Return the start card this artist chose, or ``None``.
+        """Return the host's room start, or the local card outside a guest room.
 
         The value is re-resolved against the active profile every time, so a
         key saved under another profile can never arm a capability this one
-        does not have; it falls back to the profile's room-first door.
+        does not have. Guests have no start until the host publishes one; a
+        later empty legacy start restores the saved card. Only local choices
+        fall back to the profile's room-first door.
         """
 
         room = getattr(self, "_room_participant", None)
-        borrowed = room.borrowed_start if room is not None else ""
-        return self.creator_profile.start_or_default(
-            borrowed or getattr(getattr(self, "settings", None), "last_creator_start_key", "")
-        )
+        saved = getattr(getattr(self, "settings", None), "last_creator_start_key", "")
+        if room is not None and room.role == "guest":
+            borrowed = getattr(room, "borrowed_start", "")
+            if borrowed:
+                return self.creator_profile.get_start(borrowed)
+            if getattr(room, "_host_start_published", False):
+                return self.creator_profile.start_or_default(saved)
+            return None
+        return self.creator_profile.start_or_default(saved)
 
     def _art_room_active_start_key(self) -> str:
         start = self.creator_start
@@ -2627,14 +2644,22 @@ class ApplicationController(QObject):
             takes_root / "WebJam Local Originals"
         )
 
+    @staticmethod
+    def _band_invite_is_legacy_music(invite) -> bool:
+        """True for a parsed v1 BandInvite with no same-LAN recording peer."""
+
+        return isinstance(invite, BandInvite) and not invite.peer_enabled
+
     def _local_originals_available(self) -> bool:
         """Whether this session has a real host or v2 guest capture path."""
 
+        invite = getattr(self, "_guest_invite", None)
         return bool(
             getattr(self.settings, "host_server_enabled", False)
             or getattr(self, "guest_peer", None) is not None
             or (
-                getattr(self, "_guest_invite", None) is not None
+                invite is not None
+                and not ApplicationController._band_invite_is_legacy_music(invite)
                 and not getattr(self, "_guest_peer_configuration_failed", False)
             )
         )
@@ -5101,9 +5126,28 @@ class ApplicationController(QObject):
                 return True
 
         room = getattr(self, "_room_participant", None)
+        invite = getattr(self, "_guest_invite", None)
+        if (
+            ApplicationController._band_invite_is_legacy_music(invite)
+            and self.creator_profile.key == "art"
+        ):
+            # Art would reopen Join for a non-peer invite. Borrow Music
+            # without replacing the saved Art preference. A media-operation
+            # veto must retain the invite for a later retry.
+            self._apply_creator_profile_key("music", host_owned=True)
+            if self.creator_profile.key != "music":
+                self.window.flash_message(
+                    "This invite is for a music jam. Finish the workspace "
+                    "operation, then join again.",
+                    ms=7000,
+                )
+                return False
         if room is not None:
-            invite = getattr(self, "_guest_invite", None)
-            if invite is not None and invite is not room.music_invite:
+            if (
+                invite is not None
+                and not ApplicationController._band_invite_is_legacy_music(invite)
+                and invite is not room.music_invite
+            ):
                 return room.start_lan_guest(invite)
             if self.creator_profile.key == "art":
                 if getattr(self, "_remote_invite_owner", None) is not None:
@@ -5537,7 +5581,11 @@ class ApplicationController(QObject):
             return
         guest = getattr(self, "guest_peer", None)
         invite = getattr(self, "_guest_invite", None)
-        if guest is None and invite is not None:
+        if (
+            guest is None
+            and invite is not None
+            and not ApplicationController._band_invite_is_legacy_music(invite)
+        ):
             self._configure_guest_peer(invite)
             guest = getattr(self, "guest_peer", None)
         # A broken optional Local Originals path must never retry in a poll
@@ -7359,7 +7407,11 @@ class ApplicationController(QObject):
                 return
             guest = getattr(self, "guest_peer", None)
             invite = getattr(self, "_guest_invite", None)
-            if guest is None and invite is not None:
+            if (
+                guest is None
+                and invite is not None
+                and not ApplicationController._band_invite_is_legacy_music(invite)
+            ):
                 self._configure_guest_peer(invite)
                 guest = getattr(self, "guest_peer", None)
             if guest is not None:
@@ -8172,10 +8224,15 @@ class ApplicationController(QObject):
     def _accept_band_invitation(self, invite: BandInvite, *, meeting_url: str = "") -> bool:
         """Preserve the existing v1/v2 same-LAN join flow."""
 
+        # Keep the current room's vocabulary through asynchronous cleanup,
+        # even if applying the incoming invitation replaces the profile.
+        switch_is_art = bool(
+            _creator_profile_for_controller(self).key == "art" or self._art_room_active()
+        )
+        session_noun = "room" if switch_is_art else "jam"
         busy = bool(self._is_jamulus_running() or self.bridge.hosted_server_alive()
                     or self._room_is_busy_for_invitation())
         switch_was_hosting = bool(getattr(self.settings, "host_server_enabled", False))
-        switch_was_art = bool(self.creator_profile.key == "art" or self._art_room_active())
         if (
             busy
             and bool(
@@ -8210,12 +8267,8 @@ class ApplicationController(QObject):
             try:
                 reply = QMessageBox.question(
                     self.window,
-                    "Join this room?" if switch_was_art else "Join this jam?",
-                    (
-                        "WebJam will safely end your current room, then join the new one."
-                        if switch_was_art
-                        else "WebJam will safely end your current jam, then join the new one."
-                    ),
+                    f"Join this {session_noun}?",
+                    f"WebJam will safely end your current {session_noun}, then join the new one.",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No,
                 )
@@ -8263,10 +8316,12 @@ class ApplicationController(QObject):
             switch_generation = self._invite_switch_generation
 
         self.window.session_hud.set_state(
-            "Joining your jam…",
-            "WebJam is switching the band connection safely."
+            f"Joining your {session_noun}…",
+            ("WebJam is switching the room connection safely."
+             if switch_is_art else "WebJam is switching the band connection safely.")
             if busy
-            else "WebJam is connecting your music.",
+            else ("WebJam is connecting your room."
+                  if switch_is_art else "WebJam is connecting your music."),
         )
 
         def _apply_and_launch(invitation: BandInvite, conversation_url: str) -> bool:
@@ -8286,7 +8341,7 @@ class ApplicationController(QObject):
                         "connection. Try ending or leaving again, then reopen "
                         "the invitation."
                     ),
-                    title="WebJam couldn’t open the new jam safely",
+                    title=f"WebJam couldn’t open the new {session_noun} safely",
                     detail=(
                         "The previous private connection is still protected. "
                         "Finish cleanup before opening the new invitation."
@@ -8332,10 +8387,14 @@ class ApplicationController(QObject):
                 self.recording.on_audio_session_stopped()
                 self.window.session_strip.reset_session_clock()
             self._reconfigure_services_after_settings(old_settings)
+            self._guest_invite = invitation
             if bool(getattr(invitation, "peer_enabled", False)):
-                self._guest_invite = invitation
                 self._room_participant.probing = True
                 self._room_participant.role = "guest"
+            elif self.creator_profile.key == "art":
+                # As on cold entry, a legacy endpoint starts the existing
+                # Music guest journey instead of Art's paste-invite prompt.
+                self._apply_creator_profile_key("music", host_owned=True)
             # The invitation's name labels this session, but it belongs to
             # whoever sent it. Marking it borrowed keeps it out of the
             # musician's persisted default, so a joined session's name cannot
@@ -8390,49 +8449,32 @@ class ApplicationController(QObject):
             self._complete_pocket_stage_session_end(succeeded=not cleanup_unresolved)
             self.window.participant_grid.set_session_state(SessionUiState.stop_failed())
             self.window.session_hud.set_state(
-                (
-                    "WebJam couldn’t open the new room safely"
-                    if switch_was_art
-                    else "WebJam couldn’t open the new jam safely"
-                ),
+                f"WebJam couldn’t open the new {session_noun} safely",
                 (
                     "Some previous session services still need to stop. Try "
                     "ending or leaving again before opening the invitation."
                     if cleanup_unresolved
-                    else (
-                        "The previous room connection was stopped, but the "
-                        "new invitation could not be applied safely. Quit and "
-                        "reopen WebJam, then open the invitation again."
-                        if switch_was_art
-                        else "The previous music connection was stopped, but the "
-                        "new invitation could not be applied safely. Quit and "
-                        "reopen WebJam, then open the invitation again."
-                    )
+                    else f"The previous {'room' if switch_is_art else 'music'} "
+                    "connection was stopped, but the "
+                    "new invitation could not be applied safely. Quit and "
+                    "reopen WebJam, then open the invitation again."
                 ),
             )
             self.window.session_strip.set_audio_state(
-                ("Try End Session" if switch_was_hosting else "Try Leave Jam")
+                (("Try End Room" if switch_was_hosting else "Try Leave Room")
+                 if switch_is_art
+                 else ("Try End Session" if switch_was_hosting else "Try Leave Jam"))
                 if cleanup_unresolved
                 else "Start Session",
                 enabled=cleanup_unresolved,
             )
             self.window.flash_message(
                 (
-                    (
-                        "The room switch did not finish safely. Try ending or "
-                        "leaving again, then reopen the invitation."
-                        if switch_was_art
-                        else "The jam switch did not finish safely. Try ending or "
-                        "leaving again, then reopen the invitation."
-                    )
+                    f"The {session_noun} switch did not finish safely. Try ending or "
+                    "leaving again, then reopen the invitation."
                     if cleanup_unresolved
-                    else (
-                        "The room switch did not finish. Quit and reopen "
-                        "WebJam, then open the invitation again."
-                        if switch_was_art
-                        else "The jam switch did not finish. Quit and reopen "
-                        "WebJam, then open the invitation again."
-                    )
+                    else f"The {session_noun} switch did not finish. Quit and reopen "
+                    "WebJam, then open the invitation again."
                 ),
                 ms=8000,
             )
@@ -13367,7 +13409,10 @@ class ApplicationController(QObject):
         """Open the focused Studio preferences without exposing RPC plumbing."""
         from core.settings import load_settings
         from copy import deepcopy
-        from webjam_qt.windows.recording_setup import RecordingSetupDialog
+        from webjam_qt.windows.recording_setup import (
+            SESSION_CHANGE_REVIEW_GUIDANCE,
+            RecordingSetupDialog,
+        )
 
         if self._shutdown_cleanup_blocks_action():
             return
@@ -13386,14 +13431,19 @@ class ApplicationController(QObject):
         opening_generation = getattr(self, "_settings_generation", 0)
         opening_guest = getattr(self, "guest_peer", None)
 
-        def format_change_guard() -> str:
+        def session_change_guard() -> str:
             if (
                 self.settings != opening_settings
                 or getattr(self, "_settings_generation", 0) != opening_generation
                 or getattr(self, "guest_peer", None) is not opening_guest
             ):
-                return "The session setup changed. Close and reopen Recording Setup to review it."
-            return ApplicationController._recording_format_change_blocker(self)
+                return SESSION_CHANGE_REVIEW_GUIDANCE
+            return ""
+
+        def format_change_guard() -> str:
+            return session_change_guard() or (
+                ApplicationController._recording_format_change_blocker(self)
+            )
 
         dialog = RecordingSetupDialog(
             self.settings,
@@ -13402,11 +13452,24 @@ class ApplicationController(QObject):
             takes_folder_editable=takes_folder_editable,
             creator_profile=self.creator_profile,
             format_change_guard=format_change_guard,
+            session_change_guard=session_change_guard,
         )
         if dialog.exec() != RecordingSetupDialog.DialogCode.Accepted:
             return
         format_repaired = getattr(dialog, "format_repair_requested", False) is True
         committed = load_settings(settings_path)
+        stale = session_change_guard()
+        if stale:
+            self.window.flash_message(
+                (
+                    "Format preferences were saved but not applied to the current session. "
+                    + stale
+                )
+                if format_repaired
+                else stale,
+                ms=8000,
+            )
+            return
         if format_repaired:
             blocker = format_change_guard()
             if blocker or (committed.audio_samplerate, committed.audio_blocksize) != (48000, 0):
@@ -13424,6 +13487,7 @@ class ApplicationController(QObject):
         if (
             not session_running
             and retained_invite is not None
+            and not ApplicationController._band_invite_is_legacy_music(retained_invite)
             and self.settings.takes_directory != old_settings.takes_directory
         ):
             # GuestPeerSession owns a concrete transfer queue/root. Rebuild it

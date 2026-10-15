@@ -1,6 +1,7 @@
 """Explicit format repair stays separate from consent and live audio."""
 from __future__ import annotations
 
+import inspect
 import os
 from copy import deepcopy
 
@@ -35,13 +36,29 @@ def dialogs(qapp, monkeypatch, tmp_path):
         lambda settings: saved.append(deepcopy(settings)),
     )
 
-    def create(*, capture=False, rate=44100, block=256, guard=None, profile="music"):
+    def create(
+        *,
+        capture=False,
+        rate=44100,
+        block=256,
+        guard=None,
+        session_guard=None,
+        profile="music",
+        jamulus_server="192.168.1.10",
+        musician_name="Original",
+    ):
         settings = AppSettings(
             config_file=str(tmp_path / "settings.json"),
             audio_samplerate=rate, audio_blocksize=block,
             audio_input_device_index=7, local_capture_enabled=capture,
+            jamulus_server=jamulus_server, musician_name=musician_name,
         )
-        kwargs = {} if guard is None else {"format_change_guard": guard}
+        kwargs = {}
+        params = inspect.signature(RecordingSetupDialog.__init__).parameters
+        if guard is not None:
+            kwargs["format_change_guard"] = guard
+        if session_guard is not None and "session_change_guard" in params:
+            kwargs["session_change_guard"] = session_guard
         dialog = RecordingSetupDialog(settings, creator_profile=profile, **kwargs)
         created.append(dialog)
         return dialog, settings, saved
@@ -99,6 +116,37 @@ def test_automatic_buffer_is_named_and_keyboard_can_request_repair(dialogs, qapp
     assert dialog._repair_format.hasFocus()
     assert dialog._repair_format.isChecked()
     assert not saved
+
+
+def test_session_change_guard_rejects_ordinary_save_and_keeps_the_draft(dialogs):
+    message = "The session setup changed. Close and reopen Recording Setup to review it."
+    dialog, original, saved = dialogs(capture=True, session_guard=lambda: message)
+    assert dialog._repair_format.isEnabled()
+    dialog._capture.setChecked(False)
+    dialog._save()
+    assert not saved and dialog.result() == dialog.DialogCode.Rejected
+    assert message in dialog._error.text()
+    assert "reopen" in dialog._error.text().lower()
+    assert dialog._capture.isEnabled()
+    assert not dialog._capture.isChecked()
+    assert original.jamulus_server == "192.168.1.10"
+    assert original.musician_name == "Original"
+    assert original.local_capture_enabled is True
+    assert (dialog._settings.audio_samplerate, dialog._settings.audio_blocksize) == (44100, 256)
+
+
+def test_session_change_guard_failure_stays_path_free_and_rejects_ordinary_save(dialogs):
+    def boom():
+        raise RuntimeError("private join endpoint 192.168.1.20")
+
+    dialog, original, saved = dialogs(session_guard=boom)
+    dialog._save()
+    assert not saved and dialog.result() == dialog.DialogCode.Rejected
+    assert "session setup changed" in dialog._error.text().lower()
+    assert "reopen" in dialog._error.text().lower()
+    assert "192.168.1.20" not in dialog._error.text()
+    assert "private join endpoint" not in dialog._error.text()
+    assert original.jamulus_server == "192.168.1.10"
 
 
 def test_active_guard_disables_only_repair_format_and_allows_opt_out(dialogs):
