@@ -157,3 +157,94 @@ def test_ready_event_precedes_mute_confirmation_and_cannot_allow_play():
     assert video.load(YouTubeLesson("M7lc1UVf-VE")) == 120
     assert len(calls) == 2 and video.muted
     assert not bridge.commands
+
+
+@pytest.fixture
+def workspace_player():
+    """Real Qt page visibility, with offline browser acknowledgements."""
+    from PySide6.QtWidgets import QApplication, QWidget
+
+    from webjam_qt.widgets.youtube_video_player import NativeYouTubeBridge
+    from webjam_qt.windows.conductor_window import ConductorWindow
+    from webjam_qt.windows.reference_video import ReferenceVideoDialog
+
+    app = QApplication.instance() or QApplication([])
+    window = ConductorWindow(
+        mode_entries=[("art", "Art")], initial_mode_key="art", initial_title="Art",
+    )
+    panel = ReferenceVideoDialog(hosting=True, parent=window)
+    surface = QWidget()
+    surface.setFixedSize(200, 200)
+    panel.attach_surface(surface)
+    window.show_paint_along(panel)
+    window.resize(720, 560)
+    window.show()
+    app.processEvents()
+
+    # Exercise the production visibility decision without creating a networked
+    # native web view; only browser readiness/command responses are simulated.
+    class VisibleBridge(Bridge):
+        is_visible = NativeYouTubeBridge.is_visible
+
+    bridge = VisibleBridge()
+    bridge.surface = surface
+    video, bridge = player(bridge)
+    video.load(YouTubeLesson("M7lc1UVf-VE"))
+    try:
+        yield app, window, panel, video, bridge
+    finally:
+        video.close()
+        window.release_paint_along(panel)
+        panel.deleteLater()
+        window.hide()
+        window.deleteLater()
+        from PySide6.QtCore import QCoreApplication, QEvent
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+@pytest.mark.parametrize("visible_height", [40, 100])
+def test_current_paint_along_page_can_play_a_clipped_surface(workspace_player, visible_height):
+    app, window, panel, video, bridge = workspace_player
+    # The compact holder may clip the minimum 200x200 browser surface.
+    panel._surface_holder.setFixedHeight(visible_height)
+    window.activateWindow()
+    panel.setFocus()
+    app.processEvents()
+    assert window.workspace_stack.currentWidget() is panel
+    assert panel.hasFocus()
+    assert bridge.surface.isVisible()
+    visible = bridge.surface.visibleRegion().boundingRect()
+    assert 0 < visible.width() * visible.height() <= 200 * 200 / 2
+
+    video.play()
+
+    assert bridge.commands == [("play", 0)]
+    assert video.playback_state() == "playing"
+    assert video.muted
+
+
+@pytest.mark.parametrize("hidden_by", ["page", "surface", "window", "minimized"])
+def test_real_hidden_surface_blocks_play_until_shown_again(workspace_player, hidden_by):
+    app, window, panel, video, bridge = workspace_player
+    if hidden_by == "page":
+        window.hide_paint_along(panel)
+        assert window.workspace_stack.currentWidget() is window.center_splitter
+    elif hidden_by == "surface":
+        bridge.surface.hide()
+    elif hidden_by == "window":
+        window.hide()
+    else:
+        window.showMinimized()
+    app.processEvents()
+
+    with pytest.raises(ReferenceVideoPlayerError, match="Return to Paint along"):
+        video.play()
+    assert bridge.commands == []
+
+    window.showNormal()
+    window.show_paint_along(panel)
+    bridge.surface.show()
+    app.processEvents()
+    video.play()
+    assert bridge.commands == [("play", 0)]
+    assert video.playback_state() == "playing"

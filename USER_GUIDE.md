@@ -12,6 +12,12 @@
 > macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
 > gates remain **NOT RUN**. A source checkout is not a published package.
 
+## Install the included music component on Windows
+
+When **Help → Music setup…** is available at launch, choose
+**Install the music component** to open the installer included with WebJam.
+Finish the installer, then choose **Back** to continue.
+
 ## Save a session and continue later
 
 In v0.29.0, open **File → Session library…** at launch,
@@ -251,6 +257,8 @@ WebJam's operational status. For example, typing “recording finished” cannot
 create a take or unlock export.
 
 At launch, choose **Art** or **Music**. Those are the equal first clicks.
+The selected profile has an orange fill. A white outline shows keyboard focus;
+arrow keys move the selection between profiles.
 Art is **Make together** or **Paint along**, then **Host** or **Join**. Music
 is **Host** or **Join** only. On these live doors, **File → Session library…**
 opens saved work; File does not offer Music projects, Podcast, or Review as
@@ -337,6 +345,12 @@ connection is current, not that a meeting or drawing app has joined.
 The banner keeps that status brief; making guidance appears once in the room
 overview beside **Set Up Conversation** (or **Conversation** with a saved link).
 
+Opening another invitation while Art is active asks **Join this room?** before
+ending the current room. If cleanup fails, use **Try End Room** (host) or
+**Try Leave Room** (guest), then reopen the invitation.
+If cleanup finishes but the new invitation cannot be applied, **Start Session**
+stays disabled. Quit and reopen WebJam, then open the invitation again.
+
 If the full invitation includes an optional conversation link, **Conversation**
 uses that link for this room. You do not need to paste it again. Joining never
 opens it automatically: choose **Join / Open Meeting** when ready. An invitation
@@ -346,7 +360,9 @@ its guest. Your personal meeting stays saved for later; leaving the room restore
 it. Any meeting already open stays open until you leave it in that service.
 
 The room view shows whether you are waiting for artists or connected to the
-host. It does not show a full artist list yet. Without a shared activity,
+host. It does not show a full artist list yet. When a shared activity action
+is available, the connection explanation stays short so the action fits in
+an 800×600 window. Without a shared activity,
 **Make from your own space** is a complete place to start: you do not need an
 art app. Use paper, your usual tools, or just talk while the room stays open
 beside you.
@@ -358,6 +374,9 @@ and video recovery does not hide **Open canvas**. If you hid the video, return
 through **Open Paint along**, then choose **Show video** when you want it
 visible again. Your existing local copy stays open.
 
+Art **Settings** opens with “Your name and optional meeting link.” Edit
+**Your name**, optionally add a meeting link, then choose **Save**. Art Settings
+shows how your name wraps under **Others see** and does not offer **Verify Sound**.
 While a Paint along host waits for artists in Room, **Copy Invite** is the
 orange action. **Open Paint along** stays available as a quiet button below
 it to choose a local file or lesson link. Guest **Open my copy…** recovery
@@ -375,6 +394,8 @@ copy and hidden-video choice also stay as they were.
 
 Joining borrows the host's room context. After **Leave Room** finishes,
 WebJam returns to your saved workspace, activity, personal title, and notes.
+Your saved Art card applies the next time you choose **Host**. While joining,
+WebJam waits for the host's room details before offering its activity.
 A native invitation carries no title, so its room is called **Room** until
 you choose another title. A title you type yourself is saved for that workspace.
 
@@ -474,8 +495,13 @@ when a local copy or embedded YouTube lesson cannot play. The focused action is 
 Link**, **Join / Open Meeting**, or the available meeting-app action. Merely
 showing these controls does not join a meeting or start a lesson.
 
+Below that action, **Choose a silent reference** offers a local process video
+or YouTube link for silent playback inside WebJam.
+
 For a YouTube lesson, such as a Bob Ross mountain painting, the host chooses
 **Choose YouTube…**, pastes its video link, then chooses **Open in browser**.
+Use an individual video link; playlist and channel-live embed links are rejected
+with “Paste a YouTube video link, such as youtube.com/watch?v=….”
 An existing embedded lesson supplies its current reference link and position;
 **Change YouTube…** selects a different browser lesson. Choosing a link starts
 nothing. Add the meeting link if needed, then **Join / Open Meeting**.
@@ -517,7 +543,9 @@ volume and microphone details. Use **Conversation** to return after Notes;
 your selected lesson stays available. Changing the meeting link retires old
 pause requests. In a supported LAN Art room, **Restart pause requests**
 creates fresh controls without leaving the setup. Rejoining another room
-does not revive old request authority. Small windows and larger text scroll;
+does not revive old request authority. After a brief connection problem, use
+**Restart pause requests** when it appears; old requests are not resent.
+You can still ask the host aloud. Small windows and larger text scroll;
 Tab reveals the focused control and End/Leave remains outside that scroll.
 
 ### Playing along to a song
@@ -571,6 +599,10 @@ available only after continuing into the workspace.
 
 ### Silent Paint Along references
 
+For an embedded YouTube lesson, **Play** works while Paint along and its video
+surface are shown, including when a compact window clips the picture. Return
+to Paint along and restore the window before starting a hidden lesson.
+
 For the existing **silent local-file option**, the host chooses one video file:
 
 1. When a host chose **Paint along**, WebJam opens the large Paint along
@@ -583,6 +615,9 @@ For the existing **silent local-file option**, the host chooses one video file:
    have the right to play. WebJam does not ship, bundle, download, or fetch any
    video, and it will not open anything from a streaming service.
 3. If Room shows **Paint along is starting**, choose **Open Paint along**.
+   Guests on the same network also see this when the host chose Paint along,
+   even before the host shares a video. Joining uses the host's start without
+   changing your saved start choice.
    Before the host shares, the panel shows **Optional silent reference**.
    If you already have the video, choose **Open my copy…**. **Your copy is
    open** means it is waiting locally: WebJam still needs to check it against
@@ -606,6 +641,10 @@ For the existing **silent local-file option**, the host chooses one video file:
 
 Things worth knowing:
 
+- If sharing, pausing, or stopping the shared video is not confirmed, Paint
+  along says **WebJam is retrying**. Local controls still work. The message
+  clears when the current room update succeeds; it does not confirm what
+  guests are watching.
 - If the host's chosen file changes or moves after sharing, WebJam checks it
   again on the next refresh or Play, stops using its old sharing identity, and
   offers **Choose process video…** to open it again. This also applies while
@@ -785,7 +824,9 @@ preserved only while it is safe to retry; WebJam never pretends an uncertain
 invitation succeeded.
 
 The Join door contains one masked invitation field, one **Join** button, and a
-privacy reminder. Paste the complete invitation copied from the host. Harmless
+privacy reminder. When the field is empty, “Paste an invite to continue” explains
+why Join is unavailable. Keyboard order stays **Invite → Join → Back**.
+Paste the complete invitation copied from the host. Harmless
 message whitespace and surrounding punctuation are accepted; incomplete,
 expired, malformed, incompatible, and unsupported invitations are rejected
 with a plain explanation. If the invitation says same network, use the
@@ -793,7 +834,9 @@ host's Wi-Fi or local network first. After a paste error, the invitation
 field keeps keyboard focus so you can paste again. Private invitation values
 are never saved in settings or logs and are not echoed back after a private-link error.
 
-WebJam waits for the host's profile before choosing the room or audio path.
+For room invitations, WebJam waits for the host's profile before choosing the
+room or audio path. Older Music invitations start the Music guest journey even
+if you chose Art at the door; your saved Art preference stays unchanged.
 An Art invitation follows the waiting and connection states described in
 [Art](#art), without Jamulus. For a remote Music invitation, the normal visible
 sequence is **Checking invite → Contacting host → Securing connection → Opening
@@ -1266,6 +1309,12 @@ not start audio. Setup explains when a launch override must be changed before
 restarting WebJam. Start Session and Band Check use the saved setup; choose
 **Record Session** again for a fresh plan and input checks. Jamulus manages its
 live audio settings separately.
+
+If the session settings change while Recording Setup is open, Save asks you
+to close and reopen Setup to review them. Setup scrolls the message into view.
+Your edits stay visible until you close it; review and reapply them after
+reopening. You can still turn off Local Originals during an active session
+when its settings have not changed.
 
 When supported guests report input failures, the host sees their names and
 the specific problems. Older guests retain generic Setup guidance. Fresh guest
