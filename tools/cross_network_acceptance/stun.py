@@ -1,4 +1,4 @@
-"""RFC 5389 STUN Binding server for NAT mapping probes."""
+"""RFC 5389 STUN Binding for NAT mapping probes."""
 
 from __future__ import annotations
 

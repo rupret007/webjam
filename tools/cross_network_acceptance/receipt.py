@@ -1,4 +1,4 @@
-"""Receipts: stale .PASS deleted at start; atomic write only after assertions."""
+"""Stale .PASS deleted at start; write only after assertions."""
 
 from __future__ import annotations
 

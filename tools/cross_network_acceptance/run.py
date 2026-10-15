@@ -1,4 +1,4 @@
-"""Orchestrate topology, mapping probe, proof peers. Proof-only: non-success is FAIL."""
+"""Orchestrate topology, probes, proof peers. Non-success is FAIL."""
 
 from __future__ import annotations
 
@@ -429,6 +429,11 @@ def run_case(
                 host_proof = _wait_json(peer_dir / "host.proof", 1.0)
                 guest_proof = _wait_json(peer_dir / "guest.proof", 1.0)
                 if turn_proc is not None:
+                    try:
+                        turn_proc.send_signal(signal.SIGUSR2)
+                    except (ProcessLookupError, OSError):
+                        pass
+                    _pause(1.0)
                     _stop_procs([turn_proc])
                     turn_proc = None
                 relay_count = 0

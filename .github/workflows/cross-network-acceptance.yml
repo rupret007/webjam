@@ -1,4 +1,4 @@
-# Proof-only two-NAT harness. Every job must PASS. Not a required WebJam CI check.
+# Proof-only two-NAT. Every job must PASS.
 name: Cross-network acceptance
 
 on:

@@ -11,6 +11,7 @@ from tools.cross_network_acceptance.shim import main as shim_main
 from tools.cross_network_acceptance.sidecar import SidecarError, build_sidecar, product_sha
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+_OUT = REPO_ROOT / "out" / "cross-network-acceptance"
 
 
 def _maybe_sudo() -> None:
@@ -24,7 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command")
     run = sub.add_parser("run")
     run.add_argument("--case", choices=("same-lan", "cone", "relay"), required=True)
-    run.add_argument("--output-dir", type=Path, default=REPO_ROOT / "out" / "cross-network-acceptance")
+    run.add_argument("--output-dir", type=Path, default=_OUT)
     run.add_argument("--sha", default="")
     run.add_argument("--netem", action="store_true")
     run.add_argument("--no-netem", action="store_true")
@@ -38,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     peer.add_argument("--work-dir", type=Path, required=True)
     build = sub.add_parser("build-sidecar")
     build.add_argument("--product-root", type=Path, required=True)
-    build.add_argument("--output", type=Path, default=REPO_ROOT / "out" / "cross-network-acceptance" / "webjam-fabric")
+    build.add_argument("--output", type=Path, default=_OUT / "webjam-fabric")
     probe = sub.add_parser("probe-nat")
     probe.add_argument("--nat", action="append", dest="nats", choices=("cone", "symmetric"))
     shim = sub.add_parser("shim")

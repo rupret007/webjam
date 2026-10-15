@@ -1,4 +1,4 @@
-"""Coturn on the public network + production POST /turn-credentials mint."""
+"""Coturn + POST /turn-credentials mint."""
 
 from __future__ import annotations
 
@@ -60,13 +60,13 @@ def turn_command(
         f"--relay-ip={bind_host}", f"--external-ip={bind_host}",
         f"--realm={REALM}", "--use-auth-secret", f"--static-auth-secret={secret}",
         "--no-tls", "--no-dtls", "--no-cli", "--fingerprint",
-        "--no-stdout-log", f"--log-file={log_path}", "--simple-log", "-v",
+        "--no-stdout-log", f"--log-file={log_path}", "-v",
         f"--pidfile={pid_path}",
     ]
 
 
 def relayed_bytes(log_text: str) -> int:
-    """Coturn session usage rb=+sb= only. Signaling lines are not relayed bytes."""
+    """Coturn session rb=+sb= only."""
     total = 0
     for match in _USAGE.finditer(log_text or ""):
         total += int(match.group(1)) + int(match.group(2))

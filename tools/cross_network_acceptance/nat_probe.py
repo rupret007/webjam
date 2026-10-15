@@ -1,4 +1,4 @@
-"""RFC 4787 UDP probes plus dual-STUN mapping verification (fail-closed)."""
+"""RFC 4787 UDP probes plus dual-STUN mapping (fail-closed)."""
 
 from __future__ import annotations
 
