@@ -25,7 +25,11 @@ OFFER_AAD = b"webjam/v3/mailbox/offer"
 ANSWER_AAD = b"webjam/v3/mailbox/answer"
 MAX_PLAINTEXT = 4 * 1024 - 28
 TTL_SECONDS = 600
-POLL_INTERVAL_SECONDS = 0.4
+# Host wait is ~90s. A 0.4s poll burns the 10/min mailbox quota in ~4s
+# and used to share that counter with TURN. Stay near 10s with backoff.
+POLL_INTERVAL_SECONDS = 10.0
+POLL_BACKOFF_FACTOR = 1.5
+POLL_MAX_INTERVAL_SECONDS = 20.0
 DEFAULT_WAIT_SECONDS = 30.0
 ORIGIN_ENV = "WEBJAM_SIGNAL_MAILBOX_URL"
 # Packaged default, same Worker origin as the compiled TURN URL.
@@ -227,6 +231,7 @@ def _poll_slot(
     keys = keys_from_invitation(invitation)
     client = _client(transport)
     deadline = float(now()) + max(0.1, float(timeout_seconds))
+    interval = POLL_INTERVAL_SECONDS
     while True:
         if should_stop is not None and should_stop():
             raise MailboxUnavailable("mailbox wait stopped")
@@ -249,7 +254,19 @@ def _poll_slot(
             raise MailboxUnavailable("mailbox is not configured")
         if float(now()) >= deadline:
             raise MailboxUnavailable("mailbox expired")
-        sleeper(POLL_INTERVAL_SECONDS)
+        remaining = deadline - float(now())
+        nap = min(interval, max(0.0, remaining))
+        waiter = getattr(client, "wait_for_slot", None)
+        if callable(waiter):
+            waiter(
+                f"/mailbox/{keys['mailbox_id']}/{kind}",
+                nap,
+                now=now,
+                sleeper=sleeper,
+            )
+        else:
+            sleeper(nap)
+        interval = min(interval * POLL_BACKOFF_FACTOR, POLL_MAX_INTERVAL_SECONDS)
 
 
 def _hkdf(ikm: bytes, *, salt: bytes, info: bytes, length: int) -> bytes:
@@ -293,6 +310,42 @@ def _unb64(text: str) -> bytes:
 class _HttpTransport:
     def __init__(self, origin: str) -> None:
         self._origin = origin
+
+    def wait_for_slot(self, path: str, seconds: float, *, now=None, sleeper=None) -> None:
+        """Prefer the Worker websocket wake; fall back to the spaced poll."""
+
+        try:
+            self._await_ready(path, seconds)
+            return
+        except (MailboxUnavailable, OSError, TimeoutError, ValueError):
+            pass
+        if sleeper is not None:
+            sleeper(seconds)
+
+    def _await_ready(self, path: str, seconds: float) -> None:
+        try:
+            from websockets.exceptions import WebSocketException
+            from websockets.sync.client import connect
+        except ImportError as exc:
+            raise MailboxUnavailable("mailbox is not configured") from exc
+
+        origin = self._origin
+        if origin.startswith("https://"):
+            ws_origin = "wss://" + origin[len("https://"):]
+        elif origin.startswith("http://"):
+            ws_origin = "ws://" + origin[len("http://"):]
+        else:
+            raise MailboxUnavailable("mailbox is not configured")
+        try:
+            with connect(
+                f"{ws_origin}{path}",
+                additional_headers={"accept": "application/json"},
+                open_timeout=min(5.0, max(0.1, float(seconds))),
+                close_timeout=1,
+            ) as socket:
+                socket.recv(timeout=max(0.1, float(seconds)))
+        except (WebSocketException, TimeoutError, OSError) as exc:
+            raise MailboxUnavailable("mailbox is not configured") from exc
 
     def request(self, method: str, path: str, body: dict | None = None):
         data = None

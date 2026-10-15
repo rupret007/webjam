@@ -20,6 +20,7 @@ import {
   ESTIMATED_GB_S_PER_REQUEST,
   MAX_IP_BUCKETS,
   quotaLimits,
+  rateKey,
 } from "../src/quota.js";
 import { handleRequest, resetWorkerState } from "../src/worker.js";
 
@@ -153,6 +154,45 @@ test("ipBuckets from a prior window are pruned", () => {
   assert.ok(Object.keys(state.ipBuckets).length <= MAX_IP_BUCKETS);
 });
 
+test("IPv6 addresses in the same /64 share a rate bucket", () => {
+  const state = emptyQuotaState();
+  const tight = { ...LIMITS, perMinute: 2 };
+  assert.equal(rateKey("2001:db8:1:2:aaaa::1"), "2001:db8:1:2::/64");
+  assert.equal(rateKey("::ffff:203.0.113.10"), "203.0.113.10");
+  assert.equal(applyQuota(state, { ip: "2001:db8:1:2:aaaa::1", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "2001:db8:1:2:bbbb::2", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "2001:db8:1:2:cccc::3", nowMs: 1, limits: tight }).code, "rate");
+  assert.equal(applyQuota(state, { ip: "2001:db8:1:3::1", nowMs: 1, limits: tight }).allow, true);
+});
+
+test("a flood of new IPs does not block a legitimate user", () => {
+  const state = emptyQuotaState();
+  const legit = "203.0.113.10";
+  assert.equal(applyQuota(state, { ip: legit, nowMs: 1, limits: LIMITS }).allow, true);
+  for (let i = 0; i < MAX_IP_BUCKETS + 64; i += 1) {
+    const ip = `198.51.${(i >> 8) & 255}.${i & 255}`;
+    assert.equal(applyQuota(state, { ip, nowMs: 1, limits: LIMITS }).allow, true);
+  }
+  assert.equal(applyQuota(state, { ip: legit, nowMs: 1, limits: LIMITS }).allow, true);
+  assert.ok(Object.keys(state.ipBuckets).length <= MAX_IP_BUCKETS);
+});
+
+test("a 60s mailbox wait at the 10s poll interval does not 429", () => {
+  const state = emptyQuotaState();
+  let denied = 0;
+  let allowed = 0;
+  for (let nowMs = 0; nowMs <= 60_000; nowMs += 10_000) {
+    const result = applyQuota(state, { ip: "203.0.113.10", nowMs, limits: LIMITS });
+    if (result.allow) {
+      allowed += 1;
+    } else {
+      denied += 1;
+    }
+  }
+  assert.equal(denied, 0);
+  assert.ok(allowed >= 6);
+});
+
 test("content-length is checked before the body is read", () => {
   assert.equal(validContentLength("12"), true);
   assert.equal(validContentLength("0"), false);
@@ -189,6 +229,88 @@ test("worker mailbox posts and reads through the replaceable route", async () =>
     { mailboxFetch, nowMs: 12 },
   );
   assert.equal(missing.status, 404);
+});
+
+test("mailbox polling does not consume the TURN rate counter", async () => {
+  resetWorkerState();
+  const mailboxFetch = memoryMailbox();
+  const nowMs = Date.parse("2026-10-15T00:00:00Z");
+  const env = {
+    TURN_KEY_ID: "webjam-relay-key-id",
+    TURN_KEY_API_TOKEN: "test-turn-api-token",
+    CLOUDFLARE_ACCOUNT_ID: "test-account",
+    CLOUDFLARE_ANALYTICS_API_TOKEN: "test-analytics-token",
+    TURN_MONTHLY_CAP_GB: "800",
+    TURN_CREDENTIAL_TTL_SECONDS: "600",
+    TURN_RATE_LIMIT_PER_MINUTE: "10",
+    MAILBOX_RATE_LIMIT_PER_MINUTE: "10",
+  };
+  for (let i = 0; i < 10; i += 1) {
+    const polled = await handleRequest(
+      mailboxRequest("GET", "answer"),
+      env,
+      { mailboxFetch, nowMs },
+    );
+    assert.equal(polled.status, 204);
+  }
+  const blocked = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs },
+  );
+  assert.equal(blocked.status, 429);
+  const minted = await handleRequest(
+    new Request("https://worker.test/turn-credentials", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "CF-Connecting-IP": "203.0.113.10",
+      },
+      body: JSON.stringify({
+        session_id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+        invite_token: "A".repeat(43),
+      }),
+    }),
+    env,
+    {
+      mailboxFetch,
+      nowMs,
+      fetch: async (url) => {
+        if (String(url).includes("graphql")) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                viewer: {
+                  accounts: [
+                    {
+                      callsTurnUsageAdaptiveGroups: [
+                        { sum: { ingressBytes: 1, egressBytes: 1 } },
+                      ],
+                    },
+                  ],
+                },
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            iceServers: [
+              { urls: ["stun:stun.cloudflare.com:3478"] },
+              {
+                urls: ["turn:turn.cloudflare.com:3478?transport=udp"],
+                username: "cf-user",
+                credential: "cf-pass",
+              },
+            ],
+          }),
+          { status: 201 },
+        );
+      },
+    },
+  );
+  assert.equal(minted.status, 200);
 });
 
 test("http mailbox requests are rejected", async () => {
