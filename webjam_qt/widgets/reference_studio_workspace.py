@@ -59,6 +59,7 @@ class ReferenceStudioPresentation:
     recording: bool = False
     can_save: bool = False
     can_play: bool = False
+    can_retry_recording_stop: bool = False
     can_record: bool = False
     can_bounce: bool = False
 
@@ -88,6 +89,7 @@ class ReferenceStudioPresentation:
             "can_save",
             "can_play",
             "can_record",
+            "can_retry_recording_stop",
             "can_bounce",
         ):
             if not isinstance(getattr(self, field_name), bool):
@@ -812,7 +814,8 @@ class ReferenceStudioWorkspace(QWidget):
         self.bounce_button.setEnabled(local_multitrack and value.can_bounce)
         self.play_button.setEnabled(local_multitrack and value.can_play)
         self.stop_button.setEnabled(
-            local_multitrack and (value.can_play or value.recording)
+            local_multitrack
+            and (value.can_play or value.recording or value.can_retry_recording_stop)
         )
         self.record_button.setEnabled(local_multitrack and value.can_record)
         self._actions["save_project"].setEnabled(local_multitrack and value.can_save)
@@ -821,6 +824,12 @@ class ReferenceStudioWorkspace(QWidget):
             self._actions[command].setEnabled(
                 local_multitrack and (value.can_play or value.recording)
             )
+        self._actions["stop"].setEnabled(self.stop_button.isEnabled())
+        self.stop_button.setAccessibleDescription(
+            "Retry finishing the recording."
+            if value.can_retry_recording_stop
+            else "Stop playback or recording."
+        )
         self._actions["record"].setEnabled(local_multitrack and value.can_record)
         existing_names = tuple(
             str(self.track_list.item(index).data(Qt.ItemDataRole.UserRole + 1) or "")
