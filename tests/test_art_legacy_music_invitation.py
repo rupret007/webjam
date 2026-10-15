@@ -109,7 +109,11 @@ def test_v1_profile_veto_keeps_invite_for_retry(context, tmp_path, monkeypatch):
     settings = settings_for(tmp_path, "art")
     invite = parse_invitation_at_ingress(legacy_link(), source=InvitationSource.PASTE)
     apply_join_invite(settings, invite)
-    app = create(settings, invite=invite)
+    # Construction already borrows Music for a retained v1 invite, before
+    # Session Library exists. Attach the invite afterward so the startup
+    # veto still has an Art profile to refuse.
+    app = create(settings)
+    app._guest_invite = invite
     block_external_start(app, monkeypatch)
     monkeypatch.setattr(app.session_library, "profile_changing", mock.Mock(return_value=False))
     assert not app.begin_startup_journey()
