@@ -28,6 +28,10 @@ class ArtRoomOverview:
     connection_detail: str = (
         "Choose Start Session and paste the host's invitation."
     )
+    #: Room-connection caveat that does not belong in the short, human
+    #: connection_detail paragraph (e.g. "no full artist list yet").
+    #: Carried only in the panel's accessibleDescription.
+    connection_note: str = ""
     activity_label: str = "Make from your own space"
     activity_detail: str = f"{ART_NO_SKILL_NEEDED} {ART_OWN_TOOLS_LINE}"
     activity_action: str = ""
@@ -88,6 +92,7 @@ def art_room_overview(
 ) -> ArtRoomOverview:
     """Keep closure and missing connection evidence ahead of optional layers."""
     role = "Host" if hosting else "Guest"
+    note = ""
     if quitting:
         phase, label, title = "cleanup_required", "Still quitting", "WebJam is still closing"
         connection = "WebJam cleanup is incomplete"
@@ -159,16 +164,18 @@ def art_room_overview(
         phase, label, title = "connected", "In the room", "Make from your own space"
         connection = "Artist connection confirmed" if hosting else "Connected to the host"
         detail = (
-            "An artist has connected to this room. WebJam does not yet show a full artist list."
+            "An artist is here with you."
             if hosting
-            else "This room connection is confirmed. WebJam does not yet show a full artist list."
+            else "You’re connected and ready to make."
         )
+        note = "WebJam does not yet show a full artist list."
         if hosting and named_connections:
             connection = "Connected to your room"
             detail = (
                 "Names guests chose when joining WebJam. "
                 "Talk and screen sharing are separate."
             )
+            note = ""
     elif state is ArtRoomState.WAITING and hosting:
         phase, label, title = "waiting", "Room open", "Make from your own space"
         connection = "Waiting for artists to connect"
@@ -219,7 +226,9 @@ def art_room_overview(
         elif hosting and named_connections:
             detail = "Guest-chosen names. Talk and sharing are separate."
         else:
-            detail = "WebJam does not show a full artist list yet."
+            # Keep #279's human connected line; the roster caveat lives only
+            # in connection_note (accessibleDescription), never visible copy.
+            detail = "An artist is here." if hosting else "You’re connected."
     if (
         _is_open_my_copy_recovery(
             secondary_activity, secondary_action, secondary_action_label,
@@ -239,6 +248,7 @@ def art_room_overview(
         role_label=role,
         connection_label=connection,
         connection_detail=detail,
+        connection_note=note,
         activity_label=activity,
         activity_detail=activity_detail,
         activity_action=action,

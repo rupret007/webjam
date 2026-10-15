@@ -249,6 +249,12 @@ class ArtRoomOverviewWidget(QScrollArea):
             label.setText(text)
             label.setAccessibleDescription(text)
             label.setVisible(bool(text))
+        if overview.connection_note:
+            # The caveat stays out of the short visible paragraph but is
+            # still spoken by screen readers focused on this label.
+            self._connection_detail.setAccessibleDescription(
+                f"{overview.connection_detail} {overview.connection_note}".strip()
+            )
         offered = bool(overview.activity_action and overview.activity_action_label)
         # The waiting host's HUD owns Copy Invite. Keep Paint along available
         # without a second orange action; connected rooms and guest recovery
@@ -319,6 +325,7 @@ class ArtRoomOverviewWidget(QScrollArea):
                 overview.phase_label, overview.role_label,
                 overview.title if overview.making_detail else "",
                 overview.connection_label, overview.connection_detail,
+                overview.connection_note,
                 overview.making_detail,
                 overview.activity_label, overview.activity_detail,
                 *secondary_description,

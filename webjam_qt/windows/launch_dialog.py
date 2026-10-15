@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenuBar,
+    QMessageBox,
     QPushButton,
     QStackedLayout,
     QVBoxLayout,
@@ -70,8 +71,8 @@ from webjam_qt.widgets.jamulus_name_preview import JamulusNamePreview
 
 LOGGER = logging.getLogger("webjam.qt.launch_dialog")
 
-_JOIN_INVITATION_GUIDANCE = (
-    "Paste the invite or the whole message.\n"
+_JOIN_INVITATION_GUIDANCE = "Paste the invite or the whole message."
+_JOIN_NETWORK_HELP = (
     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
 )
 _JOIN_INVITE_FIELD_NAME = "Paste the invite"
@@ -838,9 +839,6 @@ class LaunchDialog(QDialog):
         self._creator_profile_selector = QComboBox()
         self._creator_profile_selector.setObjectName("LaunchCreatorProfileSelector")
         self._creator_profile_selector.setAccessibleName("What are you creating?")
-        self._creator_profile_selector.setAccessibleDescription(
-            "Choose Music, Podcast and Voice, Review and Rehearsal, or Art."
-        )
         self._creator_profile_label.setBuddy(self._creator_profile_selector)
         for profile in CREATOR_PROFILES:
             self._creator_profile_selector.addItem(profile.label, profile.key)
@@ -1119,7 +1117,7 @@ class LaunchDialog(QDialog):
             self._sync_menu_visibility()
             self._install_jamulus_button.setEnabled(False)
             self._installer_error.setText(
-                "The included Jamulus installer failed its integrity check. "
+                "The included music component installer failed its integrity check. "
                 "Re-extract an official WebJam download and try again."
             )
             self._installer_error.setVisible(True)
@@ -1129,7 +1127,7 @@ class LaunchDialog(QDialog):
             subprocess.Popen([self._jamulus_installer], shell=False)
         except OSError:
             self._installer_error.setText(
-                "Jamulus couldn’t open. Re-extract WebJam and try Install Jamulus again."
+                "The installer couldn’t open. Re-extract WebJam and try Install the music component again."
             )
             self._installer_error.setVisible(True)
             self._announce_error(self._installer_error)
@@ -1138,7 +1136,7 @@ class LaunchDialog(QDialog):
         self._installer_error.clear()
         self._installer_error.setVisible(False)
         self._installer_status.setText(
-            "Finish the Jamulus installer, then choose Back to continue."
+            "Finish the music component installer, then choose Back to continue."
         )
 
     def _build_join_page(self) -> QWidget:
@@ -1204,8 +1202,7 @@ class LaunchDialog(QDialog):
         self._join_button_primary.clicked.connect(self._join)
         layout.addWidget(self._join_button_primary)
         # Back follows Join at the layout's normal fixed spacing (no stretch
-        # here) so it never drifts into a dead gap on tall windows; any extra
-        # window height instead goes below Back, matching _build_setup_page.
+        # here) so it never drifts into a dead gap on tall windows.
         self._join_back_button = QPushButton("Back")
         self._join_back_button.setObjectName("GhostButton")
         self._join_back_button.setAccessibleName("Back")
@@ -1215,7 +1212,9 @@ class LaunchDialog(QDialog):
         self._join_back_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._join_back_button.clicked.connect(self.show_choices)
         layout.addWidget(self._join_back_button, 0, Qt.AlignmentFlag.AlignHCenter)
-        layout.addStretch(1)
+        # Give extra height more room below Back to keep the invitation and
+        # both actions together above the fold at compact heights.
+        layout.addStretch(2)
         self._apply_creator_profile_presentation()
         self._on_invite_text_changed()
         return page
@@ -1293,6 +1292,11 @@ class LaunchDialog(QDialog):
         )
         self._creator_profile_label.setVisible(show_picker)
         self._creator_profile_selector.setVisible(show_picker)
+        # Hidden metadata must not advertise extra doors on Art or Music.
+        self._creator_profile_selector.setAccessibleDescription(
+            "Choose Music, Podcast and Voice, Review and Rehearsal, or Art."
+            if show_picker else "Art or Music"
+        )
         if hasattr(self, "_profile_cards"):
             for key, card in self._profile_cards.items():
                 blocked = card.blockSignals(True)
@@ -1412,7 +1416,10 @@ class LaunchDialog(QDialog):
             new = self._workspace_actions["music"]
             new.setShortcut(QKeySequence.StandardKey.New)
             new.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        help_menu = self._menu_bar.addMenu("&Help")
+        self._help_menu = self._menu_bar.addMenu("&Help")
+        help_menu = self._help_menu
+        self._join_help_action = help_menu.addAction("Joining a room…")
+        self._join_help_action.triggered.connect(self._show_join_help)
         self._setup_action = help_menu.addAction("Music setup…")
         self._setup_action.triggered.connect(self._show_music_setup)
         self._setup_action.setEnabled(bool(self._jamulus_installer))
@@ -1438,6 +1445,13 @@ class LaunchDialog(QDialog):
         # The resolver supplies a verified bundled path only on Windows
         # when the music component is missing; revalidation can revoke it.
         self._setup_action.setVisible(profile == "music" and bool(self._jamulus_installer))
+
+    def _show_join_help(self) -> None:
+        QMessageBox.information(
+            self,
+            "Joining a room",
+            f"{_JOIN_INVITATION_GUIDANCE}\n\n{_JOIN_NETWORK_HELP}",
+        )
 
     def _open_session_library(self) -> None:
         if self._submitting or not self._allow_workspace_choices:
@@ -1527,11 +1541,11 @@ class LaunchDialog(QDialog):
         self._installer_status.setWordWrap(True)
         self._installer_status.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(self._installer_status)
-        self._install_jamulus_button = QPushButton("Install Jamulus")
+        self._install_jamulus_button = QPushButton("Install the music component")
         self._install_jamulus_button.setObjectName("GhostButton")
-        self._install_jamulus_button.setAccessibleName("Install Jamulus")
+        self._install_jamulus_button.setAccessibleName("Install the music component")
         self._install_jamulus_button.setAccessibleDescription(
-            "Open the Jamulus installer included with this Windows build."
+            "Open the music component installer included with this Windows build."
         )
         self._install_jamulus_button.clicked.connect(self._install_jamulus)
         self._install_jamulus_button.setVisible(bool(self._jamulus_installer))
@@ -1668,7 +1682,7 @@ class LaunchDialog(QDialog):
         self.remote_invitation = None
         self.accept()
 
-    _EMPTY_JOIN_PROMPT = "Paste your invitation to continue"
+    _EMPTY_JOIN_PROMPT = "Paste an invite to continue"
 
     def _prompt_empty_join_invite(self) -> None:
         self._join_status.setText(self._EMPTY_JOIN_PROMPT)

@@ -415,6 +415,7 @@ class RoomParticipantController:
         self.probing = False
         self.probe_failed = False
         self.state = ArtRoomState.CONNECTED
+        self.borrowed_start = state.art_start_key
         self.observe_creative_state(state)
         self.app._refresh_readiness()
 

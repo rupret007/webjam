@@ -86,7 +86,8 @@ helper that removes quarantine from WebJam only.
 ## Start creating
 
 1. Choose **Art** or **Music**. The launch **File** menu contains local Music
-   projects, Podcast & Voice, and Review & Rehearsal.
+   projects, Podcast & Voice, and Review & Rehearsal. The hidden profile
+   selector does not announce those extra profiles on the Art/Music door.
 2. In Art, choose **Make together** or **Paint along**, then **Host** or
    **Join**. Make from your own space; a shared canvas is optional.
 3. An Art host waits for **Your room is open**, then chooses **Copy Invite**.
@@ -107,7 +108,8 @@ For a short teammate walkthrough of the door and first room action, use
 [Show WebJam](DEMO.md).
 
 Join has one private invitation field and one button. Paste the full invitation
-copied by the host. WebJam checks the host's profile before choosing Art or the
+copied by the host. For same-network guidance, choose **Help → Joining a room…**.
+WebJam checks the host's profile before choosing Art or the
 Music audio path. Art shows waiting, connected, or reconnecting room status;
 Music continues through **Opening Jamulus** and requires fresh authenticated
 Jamulus roster evidence. Use **Try Again** when WebJam says the one-use
