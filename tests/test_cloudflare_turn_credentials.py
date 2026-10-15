@@ -134,7 +134,7 @@ def test_worker_source_has_no_turn_secrets_and_readme_names_wrangler() -> None:
     assert 'TURN_CREDENTIAL_TTL_SECONDS = "600"' in wrangler
     assert "new_sqlite_classes" in wrangler
     assert "MailboxQuota" in wrangler
-    assert 'MAILBOX_DAILY_REQUESTS = "20000"' in wrangler
+    assert 'MAILBOX_DAILY_REQUESTS = "10000"' in wrangler
     readme = (RELAY / "README.md").read_text(encoding="utf-8")
     assert "npx wrangler secret put TURN_KEY_ID" in readme
     assert "npx wrangler secret put TURN_KEY_API_TOKEN" in readme

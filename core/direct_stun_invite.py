@@ -6,7 +6,7 @@ server or port forwarding.
 
 Host start and Join enrollment call only ``publish_guest_reply`` and
 ``accept_guest_reply``. Those two functions post and read the one-invite
-mailbox when a Worker origin is configured. Paste stays the hidden
+mailbox when a Worker origin is configured. Paste stays the visible
 fallback. Keep the ``encode_*`` / ``parse_*`` codecs.
 """
 
@@ -63,11 +63,11 @@ def accept_guest_reply(text: object, invitation=None, *, transport=None) -> byte
             from core.signaling_mailbox import MailboxUnavailable, ack_answer, poll_answer
 
             envelope = poll_answer(invitation, transport=transport, timeout_seconds=0.1)
-            try:
-                ack_answer(invitation, transport=transport)
-            except MailboxUnavailable:
-                pass
             if envelope:
+                try:
+                    ack_answer(invitation, transport=transport)
+                except MailboxUnavailable:
+                    pass
                 return envelope
         except (MailboxUnavailable, ValueError):
             pass

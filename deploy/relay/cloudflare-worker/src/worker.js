@@ -62,36 +62,57 @@ function parseMailboxPath(path) {
   return { id: parts[1], slot: parts[2] || "" };
 }
 
+function applyQuotaEnv(env) {
+  const quotaEnv = {
+    MAILBOX_RATE_LIMIT_PER_MINUTE:
+      env.MAILBOX_RATE_LIMIT_PER_MINUTE ?? env.TURN_RATE_LIMIT_PER_MINUTE,
+    MAILBOX_DAILY_REQUESTS: env.MAILBOX_DAILY_REQUESTS,
+    MAILBOX_DAILY_ROW_WRITES: env.MAILBOX_DAILY_ROW_WRITES,
+    MAILBOX_DAILY_GB_S: env.MAILBOX_DAILY_GB_S,
+  };
+  globalThis.WEBJAM_QUOTA_ENV = quotaEnv;
+  return quotaEnv;
+}
+
+function requireHttps(request) {
+  const url = new URL(request.url);
+  if (url.protocol === "https:") {
+    return null;
+  }
+  if (url.hostname === "127.0.0.1" || url.hostname === "localhost") {
+    return null;
+  }
+  return errorResponse(403, "https");
+}
+
 async function enforceAccess(request, env, deps, nowMs, rowWrites) {
   if (typeof deps.enforceAccess === "function") {
     return deps.enforceAccess(request, nowMs, rowWrites);
   }
   const ip = clientIP(request.headers);
   if (env.MAILBOX_QUOTA && typeof env.MAILBOX_QUOTA.idFromName === "function") {
-    const stub = env.MAILBOX_QUOTA.get(env.MAILBOX_QUOTA.idFromName("quota"));
-    const response = await stub.fetch(
-      new Request("https://quota/check", {
-        method: "POST",
-        headers: {
-          "CF-Connecting-IP": ip,
-          "X-WebJam-Now": String(nowMs),
-          "X-WebJam-Row-Writes": String(rowWrites),
-        },
-      }),
-    );
-    return response.status === 200 ? null : response;
+    try {
+      const stub = env.MAILBOX_QUOTA.get(env.MAILBOX_QUOTA.idFromName("quota"));
+      const response = await stub.fetch(
+        new Request("https://quota/check", {
+          method: "POST",
+          headers: {
+            "CF-Connecting-IP": ip,
+            "X-WebJam-Now": String(nowMs),
+            "X-WebJam-Row-Writes": String(rowWrites),
+          },
+        }),
+      );
+      return response.status === 200 ? null : response;
+    } catch {
+      return errorResponse(503, "unavailable");
+    }
   }
   const decision = applyQuota(quotaState, {
     ip,
     nowMs,
     rowWrites,
-    limits: quotaLimits({
-      MAILBOX_RATE_LIMIT_PER_MINUTE:
-        env.MAILBOX_RATE_LIMIT_PER_MINUTE ?? env.TURN_RATE_LIMIT_PER_MINUTE,
-      MAILBOX_DAILY_REQUESTS: env.MAILBOX_DAILY_REQUESTS,
-      MAILBOX_DAILY_ROW_WRITES: env.MAILBOX_DAILY_ROW_WRITES,
-      MAILBOX_DAILY_GB_S: env.MAILBOX_DAILY_GB_S,
-    }),
+    limits: quotaLimits(applyQuotaEnv(env)),
   });
   if (decision.allow) {
     return null;
@@ -117,11 +138,20 @@ async function handleMailbox(request, env, deps, mailbox, nowMs) {
   }
   const headers = new Headers(request.headers);
   headers.set("X-WebJam-Now", String(nowMs));
-  const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailbox.id));
-  return stub.fetch(new Request(request, { headers }));
+  try {
+    const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailbox.id));
+    return await stub.fetch(new Request(request, { headers }));
+  } catch {
+    return errorResponse(503, "unavailable");
+  }
 }
 
 export async function handleRequest(request, env, deps = {}) {
+  const blocked = requireHttps(request);
+  if (blocked) {
+    return blocked;
+  }
+  applyQuotaEnv(env ?? {});
   const fetchImpl = deps.fetch ?? globalThis.fetch;
   const nowMs = Number(deps.nowMs ?? Date.now());
   const path = new URL(request.url).pathname;

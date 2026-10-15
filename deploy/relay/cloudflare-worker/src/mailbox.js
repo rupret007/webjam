@@ -5,6 +5,8 @@
 
 export const DEFAULT_TTL_SECONDS = 600;
 export const MAX_PAYLOAD_BYTES = 4096;
+export const MAX_BODY_BYTES = MAX_PAYLOAD_BYTES + 64;
+export const MAX_WAITERS = 2;
 export const MAILBOX_ID_RE = /^[0-9a-f]{64}$/;
 
 export function validMailboxId(value) {
@@ -63,6 +65,9 @@ export function applyMailbox(state, action, nowMs, ttlMs = DEFAULT_TTL_SECONDS *
     return { status: 200, code: "ok", payload };
   }
   if (action.kind === "delete") {
+    if (!state.answer) {
+      return { status: 404, code: "not_found" };
+    }
     return { status: 204, code: "gone", clear: true };
   }
   return { status: 404, code: "not_found" };
@@ -78,12 +83,29 @@ function jsonResponse(status, body) {
   });
 }
 
+export function validContentLength(value) {
+  const length = Number(value);
+  return Number.isFinite(length) && length >= 1 && length <= MAX_BODY_BYTES;
+}
+
+export function waiterAccepted(openCount) {
+  return Number(openCount) < MAX_WAITERS;
+}
+
 export class Mailbox {
   constructor(ctx) {
     this.ctx = ctx;
   }
 
   async fetch(request) {
+    try {
+      return await this._handle(request);
+    } catch {
+      return jsonResponse(503, { error: "unavailable" });
+    }
+  }
+
+  async _handle(request) {
     const url = new URL(request.url);
     const nowMs = Number(request.headers.get("X-WebJam-Now") ?? Date.now());
     const parts = url.pathname.split("/").filter(Boolean);
@@ -94,6 +116,9 @@ export class Mailbox {
     } else if (request.headers.get("Upgrade") === "websocket") {
       return this._acceptWait();
     } else if (request.method === "POST") {
+      if (!validContentLength(request.headers.get("content-length"))) {
+        return jsonResponse(400, { error: "payload" });
+      }
       let payload = "";
       try {
         const body = await request.json();
@@ -141,6 +166,10 @@ export class Mailbox {
   }
 
   _acceptWait() {
+    const open = this.ctx.getWebSockets ? this.ctx.getWebSockets() : [];
+    if (!waiterAccepted(open.length)) {
+      return jsonResponse(429, { error: "rate" });
+    }
     const pair = new WebSocketPair();
     this.ctx.acceptWebSocket(pair[1]);
     return new Response(null, { status: 101, webSocket: pair[0] });

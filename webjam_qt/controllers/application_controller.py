@@ -9363,7 +9363,7 @@ class ApplicationController(QObject):
         return self._apply_guest_reply_envelope(envelope)
 
     def _paste_guest_reply(self) -> None:
-        """Hidden fallback: read the clipboard first, then a typed paste."""
+        """Visible fallback: read the clipboard first, then a typed paste."""
 
         if self._shutdown_cleanup_blocks_action():
             return

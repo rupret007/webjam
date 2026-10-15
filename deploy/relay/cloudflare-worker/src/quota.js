@@ -6,12 +6,13 @@
  * 13k GB-s, 100k row writes). Unreadable or missing counters fail closed.
  */
 
-export const DEFAULT_DAILY_REQUESTS = 20_000;
-export const DEFAULT_DAILY_ROW_WRITES = 20_000;
-export const DEFAULT_DAILY_GB_S = 2_000;
+export const DEFAULT_DAILY_REQUESTS = 10_000;
+export const DEFAULT_DAILY_ROW_WRITES = 10_000;
+export const DEFAULT_DAILY_GB_S = 1_000;
 export const ESTIMATED_GB_S_PER_REQUEST = 0.01;
 export const DEFAULT_RATE_LIMIT = 10;
 export const RATE_WINDOW_MS = 60_000;
+export const MAX_IP_BUCKETS = 256;
 
 export function utcDayKey(nowMs) {
   return new Date(nowMs).toISOString().slice(0, 10);
@@ -54,7 +55,14 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits }) {
     return { allow: false, status: 429, code: "rate" };
   }
   const window = Math.floor(nowMs / RATE_WINDOW_MS);
+  pruneIpBuckets(state, window);
   const ipKey = `${ip}:${window}`;
+  if (
+    !(ipKey in state.ipBuckets)
+    && Object.keys(state.ipBuckets).length >= MAX_IP_BUCKETS
+  ) {
+    return { allow: false, status: 429, code: "rate" };
+  }
   const nextIp = (Number(state.ipBuckets[ipKey]) || 0) + 1;
   if (nextIp > limits.perMinute) {
     return { allow: false, status: 429, code: "rate" };
@@ -77,30 +85,55 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits }) {
   return { allow: true, status: 200, code: "ok" };
 }
 
+function pruneIpBuckets(state, window) {
+  const buckets =
+    state.ipBuckets != null && typeof state.ipBuckets === "object"
+      ? state.ipBuckets
+      : {};
+  state.ipBuckets = buckets;
+  const suffix = `:${window}`;
+  for (const key of Object.keys(buckets)) {
+    if (!key.endsWith(suffix)) {
+      delete buckets[key];
+    }
+  }
+}
+
 export class MailboxQuota {
-  constructor(ctx) {
+  constructor(ctx, env) {
     this.ctx = ctx;
+    this.env = env;
+    if (env != null && typeof env === "object") {
+      globalThis.WEBJAM_QUOTA_ENV = env;
+    }
   }
 
   async fetch(request) {
-    const nowMs = Number(request.headers.get("X-WebJam-Now") ?? Date.now());
-    const ip = String(request.headers.get("CF-Connecting-IP") ?? "").trim();
-    const writes = Number(request.headers.get("X-WebJam-Row-Writes") ?? 0);
-    const stored = await this.ctx.storage.get("quota");
-    const state = stored && typeof stored === "object" ? stored : emptyQuotaState();
-    const env = globalThis.WEBJAM_QUOTA_ENV ?? {};
-    const decision = applyQuota(state, {
-      ip,
-      nowMs,
-      rowWrites: writes,
-      limits: quotaLimits(env),
-    });
-    if (decision.allow) {
-      await this.ctx.storage.put("quota", state);
+    try {
+      const nowMs = Number(request.headers.get("X-WebJam-Now") ?? Date.now());
+      const ip = String(request.headers.get("CF-Connecting-IP") ?? "").trim();
+      const writes = Number(request.headers.get("X-WebJam-Row-Writes") ?? 0);
+      const stored = await this.ctx.storage.get("quota");
+      const state = stored && typeof stored === "object" ? stored : emptyQuotaState();
+      const env = this.env ?? globalThis.WEBJAM_QUOTA_ENV ?? {};
+      const decision = applyQuota(state, {
+        ip,
+        nowMs,
+        rowWrites: writes,
+        limits: quotaLimits(env),
+      });
+      if (decision.allow) {
+        await this.ctx.storage.put("quota", state);
+      }
+      return new Response(JSON.stringify({ error: decision.code }), {
+        status: decision.status,
+        headers: { "content-type": "application/json", "cache-control": "no-store" },
+      });
+    } catch {
+      return new Response(JSON.stringify({ error: "unavailable" }), {
+        status: 503,
+        headers: { "content-type": "application/json", "cache-control": "no-store" },
+      });
     }
-    return new Response(JSON.stringify({ error: decision.code }), {
-      status: decision.status,
-      headers: { "content-type": "application/json", "cache-control": "no-store" },
-    });
   }
 }

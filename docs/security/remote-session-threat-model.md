@@ -185,9 +185,13 @@ authenticate the peer. The mailbox TTL is about 10 minutes and the host
 deletes it after a valid answer. The host waits with a hibernatable
 WebSocket or short polls and never holds a long-running request open.
 Per-IP rate limits and a daily request/row-write/GB-s counter live in DO
-storage and fail closed with 429/503 well below the free-plan 100k
-requests, 13k GB-s, and 100k row writes. Paste remains a hidden fallback
-when the mailbox is missing, expired, or unconfigured.
+storage and fail closed with 429/503 at least 4× below the free-plan
+100k requests, 13k GB-s, and 100k row writes. The packaged client uses
+the same Worker origin as TURN credentials (`WEBJAM_SIGNAL_MAILBOX_URL`
+overrides; https only). Copy reply and Paste reply remain the visible
+fallback when the mailbox is missing, expired, or unconfigured. The
+Worker does not ack or delete a mailbox when no answer was found.
+WebSocket waiters are capped at two.
 
 The guest bootstrap and host acknowledgment are AEAD-confidential from the
 service. Exporter proofs are authenticated but not encrypted: a compromised

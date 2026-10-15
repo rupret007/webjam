@@ -12,9 +12,11 @@ from core.direct_stun_invite import (
 from core.remote_invitation import issue_remote_invitation
 from core.signaling_mailbox import (
     MailboxUnavailable,
+    PACKAGED_ORIGIN,
     ack_answer,
     bind_transport,
     mailbox_id,
+    mailbox_origin,
     open_slot,
     poll_answer,
     post_answer,
@@ -56,6 +58,8 @@ class MemoryMailbox:
             self.rooms.pop(mailbox, None)
             return 410, {"error": "expired"}
         if method == "DELETE":
+            if room is None or not room.get("answer"):
+                return 404, {"error": "not_found"}
             self.rooms.pop(mailbox, None)
             return 204, {}
         if method == "POST":
@@ -85,6 +89,25 @@ def mailbox():
     bind_transport(store)
     yield store
     bind_transport(None)
+
+
+def test_packaged_mailbox_origin_is_https_and_env_can_override(monkeypatch) -> None:
+    monkeypatch.delenv("WEBJAM_SIGNAL_MAILBOX_URL", raising=False)
+    assert mailbox_origin() == PACKAGED_ORIGIN
+    assert PACKAGED_ORIGIN.startswith("https://")
+    monkeypatch.setenv("WEBJAM_SIGNAL_MAILBOX_URL", "https://mailbox.example.test")
+    assert mailbox_origin() == "https://mailbox.example.test"
+    monkeypatch.setenv("WEBJAM_SIGNAL_MAILBOX_URL", "http://evil.example")
+    assert mailbox_origin() == ""
+    monkeypatch.setenv("WEBJAM_SIGNAL_MAILBOX_URL", "http://127.0.0.1:8787")
+    assert mailbox_origin() == "http://127.0.0.1:8787"
+
+
+def test_ack_without_an_answer_does_not_delete(issued, mailbox) -> None:
+    with pytest.raises(MailboxUnavailable):
+        ack_answer(issued.invitation)
+    post_answer(issued.invitation, SIGNAL)
+    assert poll_answer(issued.invitation, timeout_seconds=0.1, sleeper=lambda _s: None) == SIGNAL
 
 
 def test_mailbox_id_is_not_the_capability(issued) -> None:

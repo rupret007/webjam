@@ -5,8 +5,11 @@ import {
   applyMailbox,
   emptyMailbox,
   MAX_PAYLOAD_BYTES,
+  MAX_WAITERS,
+  validContentLength,
   validMailboxId,
   validPayload,
+  waiterAccepted,
 } from "../src/mailbox.js";
 import {
   applyQuota,
@@ -15,6 +18,7 @@ import {
   DEFAULT_DAILY_ROW_WRITES,
   emptyQuotaState,
   ESTIMATED_GB_S_PER_REQUEST,
+  MAX_IP_BUCKETS,
   quotaLimits,
 } from "../src/quota.js";
 import { handleRequest, resetWorkerState } from "../src/worker.js";
@@ -105,10 +109,19 @@ test("host delete after a valid read clears the mailbox", () => {
   assert.equal(gone.clear, true);
 });
 
-test("daily counters fail closed well below the free plan", () => {
-  assert.ok(DEFAULT_DAILY_REQUESTS < 100_000);
-  assert.ok(DEFAULT_DAILY_ROW_WRITES < 100_000);
-  assert.ok(DEFAULT_DAILY_GB_S < 13_000);
+test("delete without an answer does not ack or clear", () => {
+  const state = emptyMailbox();
+  applyMailbox(state, { kind: "put", slot: "offer", payload: PAYLOAD }, 5);
+  const missing = applyMailbox(state, { kind: "delete" }, 6);
+  assert.equal(missing.status, 404);
+  assert.notEqual(missing.clear, true);
+  assert.equal(state.offer, PAYLOAD);
+});
+
+test("daily counters keep at least 4x headroom under the free plan", () => {
+  assert.ok(DEFAULT_DAILY_REQUESTS * 4 <= 100_000);
+  assert.ok(DEFAULT_DAILY_ROW_WRITES * 4 <= 100_000);
+  assert.ok(DEFAULT_DAILY_GB_S * 4 <= 13_000);
   const state = emptyQuotaState();
   const tight = { ...LIMITS, dailyRequests: 1 };
   assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: tight }).allow, true);
@@ -130,12 +143,36 @@ test("per-IP rate limit lives in durable quota state", () => {
   assert.equal(applyQuota(state, { ip: "", nowMs: 1, limits: LIMITS }).code, "rate");
 });
 
+test("ipBuckets from a prior window are pruned", () => {
+  const state = emptyQuotaState();
+  state.day = "1970-01-01";
+  state.ipBuckets = { "203.0.113.9:99": 9 };
+  assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: LIMITS }).allow, true);
+  assert.equal(state.ipBuckets["203.0.113.9:99"], undefined);
+  assert.equal(state.ipBuckets["203.0.113.10:0"], 1);
+  assert.ok(Object.keys(state.ipBuckets).length <= MAX_IP_BUCKETS);
+});
+
+test("content-length is checked before the body is read", () => {
+  assert.equal(validContentLength("12"), true);
+  assert.equal(validContentLength("0"), false);
+  assert.equal(validContentLength(String(MAX_PAYLOAD_BYTES + 65)), false);
+  assert.equal(validContentLength(""), false);
+});
+
+test("websocket waiters are capped at two", () => {
+  assert.equal(MAX_WAITERS, 2);
+  assert.equal(waiterAccepted(0), true);
+  assert.equal(waiterAccepted(1), true);
+  assert.equal(waiterAccepted(2), false);
+});
+
 test("worker mailbox posts and reads through the replaceable route", async () => {
   resetWorkerState();
   const mailboxFetch = memoryMailbox();
   const posted = await handleRequest(
     mailboxRequest("POST", "answer", { payload: PAYLOAD }),
-    { MAILBOX_DAILY_REQUESTS: "20000" },
+    { MAILBOX_DAILY_REQUESTS: "10000" },
     { mailboxFetch, nowMs: 10 },
   );
   assert.equal(posted.status, 201);
@@ -152,4 +189,15 @@ test("worker mailbox posts and reads through the replaceable route", async () =>
     { mailboxFetch, nowMs: 12 },
   );
   assert.equal(missing.status, 404);
+});
+
+test("http mailbox requests are rejected", async () => {
+  resetWorkerState();
+  const denied = await handleRequest(
+    new Request("http://worker.test/mailbox/" + ID + "/answer", { method: "GET" }),
+    {},
+    { mailboxFetch: memoryMailbox(), nowMs: 1 },
+  );
+  assert.equal(denied.status, 403);
+  assert.deepEqual(await denied.json(), { error: "https" });
 });

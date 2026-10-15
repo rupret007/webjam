@@ -28,6 +28,9 @@ TTL_SECONDS = 600
 POLL_INTERVAL_SECONDS = 0.4
 DEFAULT_WAIT_SECONDS = 30.0
 ORIGIN_ENV = "WEBJAM_SIGNAL_MAILBOX_URL"
+# Packaged default, same Worker origin as the compiled TURN URL.
+# WEBJAM_SIGNAL_MAILBOX_URL remains the override.
+PACKAGED_ORIGIN = "https://webjam-turn-credentials.jeffstory007.workers.dev"
 _override_transport = None
 
 
@@ -54,7 +57,17 @@ class MailboxUnavailable(Exception):
 
 
 def mailbox_origin() -> str:
-    return str(os.environ.get(ORIGIN_ENV, "") or "").strip().rstrip("/")
+    """Return the https mailbox origin. Env overrides the packaged default."""
+
+    raw = str(os.environ.get(ORIGIN_ENV, "") or PACKAGED_ORIGIN or "").strip().rstrip("/")
+    return raw if _https_origin_allowed(raw) else ""
+
+
+def _https_origin_allowed(origin: str) -> bool:
+    if origin.startswith("https://"):
+        return True
+    # Local Worker harnesses only. Production always uses https.
+    return origin.startswith("http://127.0.0.1") or origin.startswith("http://localhost")
 
 
 def mailbox_id(capability: bytes) -> str:

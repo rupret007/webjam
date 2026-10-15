@@ -67,6 +67,10 @@ def _issued_invite():
     )
 
 
+def _paste_fallback_only(monkeypatch) -> None:
+    monkeypatch.setattr("core.signaling_mailbox.mailbox_origin", lambda: "")
+
+
 def test_host_then_join_then_reply_ends_connected(qapp, tmp_path, monkeypatch) -> None:
     """Ordinary Host start, Join paste, then the paste-reply path, connected.
 
@@ -74,6 +78,7 @@ def test_host_then_join_then_reply_ends_connected(qapp, tmp_path, monkeypatch) -
     This test does not invent another exchange.
     """
 
+    _paste_fallback_only(monkeypatch)
     monkeypatch.setattr(
         "services.native_remote_transport.ordinary_native_host_profile",
         lambda: "direct-stun",
@@ -305,6 +310,7 @@ def _hud_button(controller, name: str):
 def test_copy_and_paste_reply_actions_use_the_hud_buttons(qapp, tmp_path, monkeypatch) -> None:
     """Guest Copy reply and host Paste reply are HUD buttons, not method calls."""
 
+    _paste_fallback_only(monkeypatch)
     monkeypatch.setattr(
         "services.native_remote_transport.ordinary_native_host_profile",
         lambda: "direct-stun",

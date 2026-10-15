@@ -69,10 +69,14 @@ Free-plan Worker at `deploy/relay/cloudflare-worker/`.
 The same Worker hosts one SQLite-backed Durable Object mailbox per
 session (`new_sqlite_classes`). Clients send only an HKDF mailbox id and
 AEAD ciphertext. Do not deploy from this PR; redeploy after review.
-Daily request, row-write, and GB-s counters fail closed well below the
-free 100k / 13k GB-s / 100k row-write limits. Per-IP rate limits live in
-DO storage, not a per-isolate map. After that deploy, point the desktop
-at the Worker origin with `WEBJAM_SIGNAL_MAILBOX_URL` (no path).
+Daily request, row-write, and GB-s counters fail closed at 10k / 10k /
+1k, at least 4× under the free 100k / 13k GB-s / 100k row-write limits.
+Per-IP rate limits live in DO storage, not a per-isolate map. The
+packaged desktop uses
+`https://webjam-turn-credentials.jeffstory007.workers.dev` the same way
+the compiled TURN URL does. `WEBJAM_SIGNAL_MAILBOX_URL` remains the
+override (https only; `http://127.0.0.1` and `http://localhost` are
+allowed for local harnesses).
 
 ### Deploy
 
