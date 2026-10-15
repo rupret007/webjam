@@ -6,23 +6,27 @@ package limits
 import "time"
 
 const (
-	IPCVersion             = 1
-	WireVersion            = 3
-	MaxIPCLineBytes        = 64 * 1024
-	MaxEventLineBytes      = 4 * 1024
-	MaxRoomStateBytes      = 8 * 1024
-	MaxRoomEventLineBytes  = 12 * 1024
-	MaxLivePayloadBytes    = 1024
-	MaxDatagramQueueDepth  = 64
-	MaxStreamFrameBytes    = 64 * 1024
-	MaxStreamFrames        = 16_384
-	MaxStreamBytes         = 1024 * 1024 * 1024
-	MaxConcurrentStreams   = 4
-	MaxBuildIDBytes        = 96
-	MaxICEServerCount      = 8
-	MaxCandidateCount      = 32
-	MaxCandidateBytes      = 2048
-	MaxICECredentialBytes  = 256
+	IPCVersion            = 1
+	WireVersion           = 3
+	MaxIPCLineBytes       = 64 * 1024
+	MaxEventLineBytes     = 4 * 1024
+	MaxRoomStateBytes     = 8 * 1024
+	MaxRoomEventLineBytes = 12 * 1024
+	MaxLivePayloadBytes   = 1024
+	MaxDatagramQueueDepth = 64
+	MaxStreamFrameBytes   = 64 * 1024
+	MaxStreamFrames       = 16_384
+	MaxStreamBytes        = 1024 * 1024 * 1024
+	MaxConcurrentStreams  = 4
+	MaxBuildIDBytes       = 96
+	MaxICEServerCount     = 8
+	MaxCandidateCount     = 32
+	MaxCandidateBytes     = 2048
+	MaxICECredentialBytes = 256
+	// MaxRelaySessionBytes is the compiled per-session TURN cap. Credential
+	// JSON may only lower it. Hitting the cap closes the session so usage
+	// cannot bill past this bound.
+	MaxRelaySessionBytes   = 256 * 1024 * 1024
 	MaxSignalEnvelopeBytes = 16 * 1024
 	MaxCertificateBytes    = 4 * 1024
 	MaxReplayNonces        = 1024
