@@ -213,7 +213,15 @@ def test_join_title_tracks_visible_profile_and_back_navigation(
                     dialog._join_title.fontMetrics().horizontalAdvance(expected)
                 )
                 assert dialog._join_subtitle.text() == (
-                    "Paste the invite or the whole message.\n"
+                    "Paste the invite or the whole message."
+                )
+                with patch(
+                    "webjam_qt.windows.launch_dialog.QMessageBox.information"
+                ) as help_box:
+                    dialog._join_help_action.trigger()
+                help_box.assert_called_once()
+                assert help_box.call_args.args[2] == (
+                    "Paste the invite or the whole message.\n\n"
                     "If your invitation says “same network,” use your host’s Wi-Fi or local network."
                 )
                 assert dialog._join_button_primary.text() == "Join"
@@ -722,7 +730,7 @@ def test_join_paste_prompt_is_shared_from_first_paint_through_empty_submit(
 ):
     dialog = _dialog(tmp_path, profile_key)
     try:
-        expected = "Paste your invitation to continue"
+        expected = "Paste an invite to continue"
         assert LaunchDialog._EMPTY_JOIN_PROMPT == expected
         assert dialog._join_status.text() == expected
         dialog.resize(*size)
@@ -792,6 +800,7 @@ def test_empty_join_return_in_invite_field_announces_paste_prompt(
         assert dialog.result() == initial_result
         assert dialog._invite_input.hasFocus()
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
     finally:
         dialog.deleteLater()
 
@@ -809,11 +818,13 @@ def test_whitespace_only_invite_stays_blocked_and_empty_join_on_submit(
         dialog._on_invite_text_changed()
         assert dialog._join_button_primary.property("joinBlocked") is True
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
         initial_result = dialog.result()
         QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
         qapp.processEvents()
         assert dialog.result() == initial_result
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
         assert dialog._invite_input.hasFocus()
     finally:
         dialog.deleteLater()
@@ -832,6 +843,7 @@ def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
         QTest.keyClick(dialog._join_button_primary, Qt.Key.Key_Space)
         qapp.processEvents()
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
 
         dialog._invite_input.setText("webjam://invite?v=2&token=test")
         dialog._on_invite_text_changed()
@@ -841,6 +853,7 @@ def test_empty_join_prompt_yields_normal_status_once_real_text_is_pasted(
         dialog._invite_input.clear()
         dialog._on_invite_text_changed()
         assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+        assert dialog._join_status.text() == "Paste an invite to continue"
         assert dialog._join_button_primary.property("joinBlocked") is True
     finally:
         dialog.deleteLater()
@@ -1155,6 +1168,41 @@ def test_windows_door_with_missing_music_component_stays_compact(qapp, tmp_path,
         dialog.deleteLater()
 
 
+@pytest.mark.parametrize(
+    ("property_name", "expected"),
+    [
+        ("text", "Install the music component"),
+        ("accessibleName", "Install the music component"),
+        (
+            "accessibleDescription",
+            "Open the music component installer included with this Windows build.",
+        ),
+    ],
+)
+def test_music_setup_button_uses_engine_neutral_copy(
+    qapp, tmp_path, property_name, expected
+):
+    with patch("webjam_qt.windows.launch_dialog.sys.platform", "win32"), patch(
+        "webjam_qt.windows.launch_dialog._windows_jamulus_installer",
+        return_value="C:/WebJam/setup.exe",
+    ):
+        dialog = LaunchDialog(_settings(tmp_path))
+    try:
+        dialog.show()
+        qapp.processEvents()
+        assert dialog._setup_action.isEnabled()
+        dialog._setup_action.trigger()
+        button = dialog._install_jamulus_button
+        assert button.isVisibleTo(dialog)
+        assert button.isEnabled()
+        copy = getattr(button, property_name)()
+        assert copy == expected
+        _assert_first_screen_has_no_banned_words(copy)
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def test_paint_along_mark_stays_neutral_in_every_native_icon_state(qapp, tmp_path):
     from PySide6.QtGui import QIcon
 
@@ -1198,6 +1246,53 @@ def test_make_together_summary_does_not_promise_a_canvas_at_start():
     assert start.shared_canvas is False
     assert "shared canvas from inside the room" in start.detail.casefold()
     assert "work in their own space" in start.detail.casefold()
+
+
+@pytest.mark.parametrize("profile_key", ["music", "art"])
+def test_hidden_profile_picker_a11y_keeps_other_workspaces_off_door(
+    qapp, tmp_path, profile_key
+):
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        selector = dialog._creator_profile_selector
+        assert selector.isHidden()
+        # Include the hidden combo's metadata: the visible-only harvest would
+        # miss stale descriptions advertising extra doors to accessibility tools.
+        spoken = " ".join((
+            harvest_first_screen(dialog),
+            selector.accessibleName(),
+            selector.accessibleDescription(),
+        )).casefold()
+        for hidden_door in ("podcast", "review"):
+            assert hidden_door not in spoken
+        assert_no_banned_first_screen_words(spoken)
+    finally:
+        dialog.deleteLater()
+
+
+@pytest.mark.parametrize("profile_key", ["music", "art"])
+@pytest.mark.parametrize("legacy_key", ["podcast_voice", "review_rehearsal"])
+def test_profile_picker_a11y_tracks_visibility_after_switching(
+    qapp, tmp_path, profile_key, legacy_key
+):
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        selector = dialog._creator_profile_selector
+        # Repeat to catch a description that is narrowed once but never restored.
+        for _ in range(2):
+            selector.setCurrentIndex(selector.findData(legacy_key))
+            assert not selector.isHidden()
+            assert selector.accessibleDescription() == (
+                "Choose Music, Podcast and Voice, Review and Rehearsal, or Art."
+            )
+            assert [selector.itemData(i) for i in range(selector.count())] == [
+                profile.key for profile in CREATOR_PROFILES
+            ]
+            dialog._profile_cards[profile_key].click()
+            assert selector.isHidden()
+            assert selector.accessibleDescription() == "Art or Music"
+    finally:
+        dialog.deleteLater()
 
 
 @pytest.mark.parametrize("profile_key", ["music", "art"])

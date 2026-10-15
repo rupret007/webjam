@@ -6,8 +6,9 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QPoint, QCoreApplication, QEvent
+from PySide6.QtCore import QPoint, QCoreApplication, QEvent, Qt
 from PySide6.QtGui import QFont
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QWidget
 from shiboken6 import isValid
 
@@ -99,6 +100,85 @@ def test_setup_recovery_controls_fit_at_compact_sizes(
         assert dialog._capture.isEnabled()
         assert not dialog._repair_format.isEnabled()
         assert "Close Recording Setup" in dialog._repair_format.accessibleDescription()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        qapp.processEvents()
+        assert not isValid(dialog)
+
+
+@pytest.mark.parametrize("size", [(620, 360), (620, 440), (620, 620)])
+@pytest.mark.parametrize("stretch", [100, 125], ids=["default-font", "125-percent-font"])
+def test_first_session_change_rejection_is_fully_visible(
+    qapp, monkeypatch, size, stretch,
+):
+    for name in ("WEBJAM_AUDIO_SAMPLERATE", "WEBJAM_AUDIO_BLOCKSIZE"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(
+        "webjam_qt.windows.recording_setup.list_input_devices",
+        lambda: [{"name": "Audio interface", "channels": 2, "index": 7}],
+    )
+    saved = []
+    monkeypatch.setattr(
+        "webjam_qt.windows.recording_setup.save_settings", saved.append,
+    )
+    state = {"reason": ""}
+    dialog = RecordingSetupDialog(
+        AppSettings(
+            takes_directory="/Users/maya/Music/WebJam Takes",
+            audio_samplerate=44_100,
+            audio_blocksize=256,
+            audio_input_device_index=7,
+            local_capture_enabled=True,
+        ),
+        session_change_guard=lambda: state["reason"],
+    )
+    dialog.setStyleSheet(load_stylesheet())
+    try:
+        dialog.show()
+        dialog.activateWindow()
+        qapp.processEvents()
+        for widget in dialog.findChildren(QWidget):
+            font = QFont(widget.font())
+            font.setStretch(stretch)
+            widget.setFont(font)
+        dialog.resize(*size)
+        dialog._repair_format.setChecked(True)
+        save = next(
+            button for button in dialog.findChildren(QPushButton)
+            if button.text() == "Save Recording Setup"
+        )
+        save.setFocus()
+        qapp.processEvents()
+        assert (dialog.width(), dialog.height()) == size
+        assert save.hasFocus()
+        assert dialog._error.isHidden()
+        state["reason"] = (
+            "The session setup changed. Close and reopen Recording Setup to review it."
+        )
+
+        # One keyboard Save must reveal all guidance without a second Save
+        # or any test-driven scroll/layout repair.
+        QTest.keyClick(save, Qt.Key.Key_Return)
+        qapp.processEvents()
+
+        assert not saved
+        assert dialog.isVisible()
+        assert dialog.result() == dialog.DialogCode.Rejected
+        assert dialog._repair_format.isChecked()
+        assert dialog._error.isVisibleTo(dialog)
+        assert dialog._error.text() == state["reason"]
+        assert dialog._error.accessibleDescription() == state["reason"]
+        viewport = dialog._scroll.viewport()
+        error_rect = dialog._error.rect().translated(
+            dialog._error.mapTo(viewport, QPoint(0, 0)),
+        )
+        assert viewport.rect().contains(error_rect), (viewport.rect(), error_rect)
+        assert dialog._error.height() >= dialog._error.heightForWidth(dialog._error.width())
+        assert save.hasFocus()
+        QTest.keyClick(save, Qt.Key.Key_Escape)
+        assert not dialog.isVisible()
     finally:
         dialog.close()
         dialog.deleteLater()

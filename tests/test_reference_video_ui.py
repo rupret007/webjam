@@ -90,11 +90,66 @@ def _follow(state, **changes) -> ReferenceVideoFollowSnapshot:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("action, message", [
+    ("share", "Shared video update is not confirmed. WebJam is retrying."),
+    ("pause", "Pausing the shared video is not confirmed. WebJam is retrying."),
+    ("withdraw", "Stopping the shared video is not confirmed. WebJam is retrying."),
+])
+def test_unconfirmed_publication_is_visible_until_current_retry_succeeds(
+    host_dialog, tmp_path, action, message,
+):
+    from tests.test_reference_video_coordinator import (
+        FakeHostPeer, FakePlayer, SESSION_ID, SESSION_KEY, write_video,
+    )
+    from webjam_qt.controllers.reference_video_coordinator import ReferenceVideoCoordinator
+
+    peer = FakeHostPeer()
+    coordinator = ReferenceVideoCoordinator(
+        player_factory=FakePlayer, host_peer_provider=lambda: peer,
+        on_host_snapshot=host_dialog.set_host_snapshot,
+    )
+    coordinator.begin_host(session_id=SESSION_ID, session_key=SESSION_KEY)
+    path = str(write_video(tmp_path / "lesson.mp4"))
+    coordinator.share(path)
+    coordinator.play()
+    peer.raises = True
+    try:
+        if action == "share":
+            coordinator.share(path)
+        else:
+            getattr(coordinator, action)()
+        host_dialog.resize(800, 600)
+        host_dialog.show()
+        QApplication.processEvents()
+        assert host_dialog._status.text() == message
+        assert host_dialog._status.isVisible()
+        assert host_dialog._status.height() >= host_dialog._status.heightForWidth(
+            host_dialog._status.width()
+        )
+        if action == "withdraw":
+            assert host_dialog._share_button.isVisible()
+            assert host_dialog._share_button.isEnabled()
+            assert host_dialog._surface_placeholder.text() != "Video unavailable"
+        else:
+            assert host_dialog._play_button.isVisible()
+            assert host_dialog._play_button.isEnabled()
+        peer.raises = False
+        coordinator.tick()
+        assert "not confirmed" not in host_dialog._status.text()
+        assert host_dialog._status.text() == {
+            "share": "Ready.", "pause": "Paused.",
+            "withdraw": "Choose a local video or YouTube link below for silent playback inside WebJam. You control it.",
+        }[action]
+    finally:
+        coordinator.end()
+        host_dialog.close()
+
+
 def test_the_host_panel_opens_on_the_no_video_path(host_dialog):
     assert host_dialog.windowTitle() == "Paint along"
     assert host_dialog.minimumWidth() == 720
     assert host_dialog.minimumHeight() == 520
-    assert host_dialog._headline.text() == "Or choose a silent reference"
+    assert host_dialog._headline.text() == "Choose a silent reference"
     assert host_dialog._status.text() == (
         "Choose a local video or YouTube link below for silent playback inside WebJam. You control it."
     )
@@ -116,6 +171,38 @@ def test_the_host_panel_opens_on_the_no_video_path(host_dialog):
         assert disabled.isEnabled() is False
     assert host_dialog._more_button.isHidden() is True
     assert host_dialog._position.isEnabled() is False
+
+
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_empty_host_keeps_shared_lesson_first_above_silent_reference(host_dialog, qapp, size):
+    from PySide6.QtCore import QPoint, QRect
+    from PySide6.QtWidgets import QPushButton
+
+    from webjam_qt.theme import load_stylesheet
+
+    host_dialog.setStyleSheet(load_stylesheet())
+    host_dialog.resize(*size)
+    host_dialog.show()
+    qapp.processEvents()
+
+    assert (host_dialog.width(), host_dialog.height()) == size
+    viewport = host_dialog._scroll.viewport()
+    watch = host_dialog._watch_lesson_button
+    watch_bounds = QRect(watch.mapTo(viewport, QPoint()), watch.size())
+    assert watch.isVisible() and watch.isEnabled()
+    assert watch.text() == "Watch a shared lesson"
+    assert viewport.rect().contains(watch_bounds)
+    assert host_dialog._scroll.verticalScrollBar().value() == 0
+    assert watch_bounds.bottom() < host_dialog._headline.mapTo(viewport, QPoint()).y()
+    assert host_dialog._headline.text() == "Choose a silent reference"
+    visible_actions = [
+        button for button in host_dialog.findChildren(QPushButton)
+        if button.isVisible()
+    ]
+    assert min(visible_actions, key=lambda button: button.mapTo(viewport, QPoint()).y()) is watch
+    assert [button for button in visible_actions if button.objectName() == "PrimaryButton"] == [watch]
+    assert host_dialog._share_button.objectName() == "GhostButton"
+    assert host_dialog._youtube_button.objectName() == "GhostButton"
 
 
 def test_the_host_panel_enables_transport_only_once_a_file_is_shared(host_dialog):
@@ -172,7 +259,7 @@ def test_the_host_panel_shows_a_failure_instead_of_a_stale_source(host_dialog):
         )
     )
 
-    assert host_dialog._headline.text() == "Or choose a silent reference"
+    assert host_dialog._headline.text() == "Choose a silent reference"
     assert "couldn't open that video" in host_dialog._status.text()
     assert host_dialog._play_button.isEnabled() is False
     assert host_dialog._clock.text() == "0:00 / 0:00"
@@ -195,7 +282,7 @@ def test_the_host_panel_does_not_keep_paused_copy_after_a_failed_seek(host_dialo
     assert status.startswith("WebJam couldn't move that video on this computer.")
     assert "Paused." not in status
     assert "Choose process video" in status
-    assert host_dialog._headline.text() == "Or choose a silent reference"
+    assert host_dialog._headline.text() == "Choose a silent reference"
     assert host_dialog._play_button.isEnabled() is False
     assert host_dialog._share_button.isHidden() is False
     assert host_dialog._share_button.isEnabled() is True
