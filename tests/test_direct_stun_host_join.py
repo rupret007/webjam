@@ -6,10 +6,12 @@ import pytest
 
 from core.direct_stun_invite import (
     DIRECT_STUN_PROFILE_ID,
+    accept_guest_reply,
     encode_guest_reply_line,
     encode_host_signal_line,
     parse_guest_reply_from_paste,
     parse_host_signal_from_paste,
+    publish_guest_reply,
 )
 from core.meeting_companion import build_invite_message
 from core.remote_invitation import issue_remote_invitation
@@ -44,6 +46,8 @@ def test_guest_reply_round_trip_survives_quoted_paste() -> None:
     paste = f"Here is my reply:\n> {line}\n"
     assert parse_guest_reply_from_paste(paste) == SIGNAL
     assert parse_host_signal_from_paste(paste) == b""
+    assert accept_guest_reply(paste) == SIGNAL
+    assert publish_guest_reply(SIGNAL) == line
 
 
 def test_ordinary_host_stays_on_lan_without_sidecar(monkeypatch, tmp_path) -> None:

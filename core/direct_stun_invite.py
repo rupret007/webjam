@@ -3,6 +3,11 @@
 The v3 URL still carries no addresses. The host's sealed candidate bundle
 travels as a second clipboard line so a friend can Join without a rendezvous
 server or port forwarding.
+
+Guest-reply *delivery* is clipboard paste today. Host start and Join
+enrollment call only ``publish_guest_reply`` and ``accept_guest_reply``.
+Replace those two functions when another delivery exists; keep the
+``encode_*`` / ``parse_*`` codecs.
 """
 
 from __future__ import annotations
@@ -33,6 +38,18 @@ def parse_guest_reply_from_paste(text: object) -> bytes:
     """Return the single sealed guest reply from a paste back to the host."""
 
     return _parse_signal_from_paste(text, GUEST_REPLY_PREFIX)
+
+
+def publish_guest_reply(envelope: bytes) -> str:
+    """Hand the sealed reply to the current delivery (clipboard paste)."""
+
+    return encode_guest_reply_line(envelope)
+
+
+def accept_guest_reply(text: object) -> bytes:
+    """Read the sealed reply from the current delivery (clipboard paste)."""
+
+    return parse_guest_reply_from_paste(text)
 
 
 def _encode_signal_line(prefix: str, envelope: bytes) -> str:
