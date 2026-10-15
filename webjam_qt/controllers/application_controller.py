@@ -2144,18 +2144,25 @@ class ApplicationController(QObject):
 
     @property
     def creator_start(self):
-        """Return the start card this artist chose, or ``None``.
+        """Return the host's room start, or the local card outside a guest room.
 
         The value is re-resolved against the active profile every time, so a
         key saved under another profile can never arm a capability this one
-        does not have; it falls back to the profile's room-first door.
+        does not have. Guests have no start until the host publishes one; a
+        later empty legacy start restores the saved card. Only local choices
+        fall back to the profile's room-first door.
         """
 
         room = getattr(self, "_room_participant", None)
-        borrowed = room.borrowed_start if room is not None else ""
-        return self.creator_profile.start_or_default(
-            borrowed or getattr(getattr(self, "settings", None), "last_creator_start_key", "")
-        )
+        saved = getattr(getattr(self, "settings", None), "last_creator_start_key", "")
+        if room is not None and room.role == "guest":
+            borrowed = getattr(room, "borrowed_start", "")
+            if borrowed:
+                return self.creator_profile.get_start(borrowed)
+            if getattr(room, "_host_start_published", False):
+                return self.creator_profile.start_or_default(saved)
+            return None
+        return self.creator_profile.start_or_default(saved)
 
     def _art_room_active_start_key(self) -> str:
         start = self.creator_start
