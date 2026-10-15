@@ -62,8 +62,9 @@ and [follow-along first test](FOLLOW_ALONG_FIRST_TEST.md).
 - [Pocket Stage plan](plans/webjam-pocket-stage-v1.md) and [threat model](security/pocket-stage-mobile-threat-model.md)
   — iPhone owner-device preview and its trust model.
 - [Cross-network Host/Join plan](REMOTE-SESSIONS-PLAN.md) — ordinary packaged
-  Host/Join uses `direct-stun` (public STUN, clipboard signaling, $0, no port
-  forwarding). Two-home proof remains **NOT RUN**.
+  Host/Join uses `direct-stun` (public STUN, clipboard signaling, TURN
+  fallback only when direct ICE fails, $0, no port forwarding). Two-home
+  physical proof remains **NOT RUN**.
 - [Webex decision record](adr/0004-webex-external-launch-and-future-oauth.md)
   — external handoff today; OAuth or an embedded companion remains future work.
 - [Conversation companion guidance](../WEBEX_AUDIO_MODES.md) — the canonical
@@ -96,8 +97,8 @@ and [follow-along first test](FOLLOW_ALONG_FIRST_TEST.md).
   has not yet been collected against an exact package.
 - [Cross-network Host/Join acceptance](CROSS-NETWORK-TEST.md) — optional Ubuntu
   netns/NAT harness: same-LAN control (PASS), two-home Join without port
-  forwarding, and cone vs symmetric NAT against packaged direct-stun. Not a
-  required check.
+  forwarding, coturn in the public namespace, cone PASS on the direct path,
+  and symmetric PASS through TURN. Not a required check.
 - [Dual-musician and exact multitrack proof lab](../DUAL_MUSICIAN_REHEARSAL_LAB.md)
   — deterministic host/guest, ARM/ACK, mono/stereo, repeat-lane, export, and
   20-process source evidence with explicit hardware/Jamulus limitations.

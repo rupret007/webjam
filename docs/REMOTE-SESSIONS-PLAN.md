@@ -1,7 +1,9 @@
 # Cross-network Host/Join plan
 
 - Status: **this PR ships ordinary Host/Join on `direct-stun`** when the
-  bundled sidecar is present. No paid service. No user port forwarding.
+  bundled sidecar is present. Direct ICE first; **TURN relay only when that
+  pair fails**. $0 (self-hosted coturn on Oracle Always Free, or Cloudflare
+  Realtime TURN with a $0 spend cap). No user port forwarding.
 - Product use case: friends in **different houses / different networks**
 - Musician constraint: **no port forwarding** if at all possible
 - Related: [ADR 0001](adr/0001-remote-session-transport.md) (accepted v3
@@ -44,7 +46,7 @@ never asks a guest to type an IP or port.
 | Who can host | Product door: **macOS only**. Windows/Linux ghost Host and tell the guest to join a Mac. |
 | Packaged path | If `webjam-fabric` is present, Host uses compiled **`direct-stun`**: Jamulus stays loopback; the sidecar binds UDP, talks to public STUN, and seals candidates on the clipboard. |
 | Source-checkout fallback | Without a sidecar binary, Host stays on **v2 LAN**: unmodified Jamulus UDP **22124**, v2 `webjam://join?…` with a literal RFC1918 IPv4, peer HTTP on an ephemeral port. |
-| NAT (direct-stun) | Both homes probe host and srflx candidates at the same time (ICE-lite). The friend sends a short `webjam-reply:` line back to the host so the host can punch too. Cone NAT and same LAN can connect. Symmetric NAT / CGNAT / cellular often cannot, with no relay. |
+| NAT (direct-stun) | Both homes probe host and srflx candidates at the same time (ICE-lite). The friend sends a short `webjam-reply:` line back to the host so the host can punch too. Cone NAT and same LAN stay on the **direct** path. Symmetric NAT / CGNAT fall back to **TURN relay** (coturn or Cloudflare, short-lived REST credentials, 256 MiB session cap). |
 | NAT (v2 LAN) | Another house cannot reach RFC1918. v2 still refuses public IPs. |
 | Conversation | Optional meeting URL in the same pasted message. That link is a separate app and already works across houses. |
 
@@ -66,7 +68,7 @@ uses.
 | Invite | v3 `webjam://join?v=3&r=<profile>&i=<opaque envelope>`. Envelope has session/invite refs, one-use capability, expiry, host cert pin. **No address, port, name, or relay URL** ([ADR 0001](adr/0001-remote-session-transport.md)). |
 | Compiled profile | Only `reference-local`: control TCP `127.0.0.1:47131` (plaintext because loopback), relay UDP `127.0.0.1:47132` (`core/rendezvous_profiles.py`). Go orchestrator **rejects** any other profile id and **rejects** a non-loopback relay destination. |
 | Jamulus | Remote host mode adds `--serverbindip 127.0.0.1`. Live packets never leave the machine except inside the sidecar. |
-| Data plane | Go sidecar: Jamulus UDP on loopback ↔ QUIC DATAGRAM; control/media on reliable QUIC streams. Native reference path uses an **exact-pair UDP relay**, not stock TURN. Pion ICE/STUN/TURN exists as a **separate lab** and is not the ordinary Host path. |
+| Data plane | Go sidecar: Jamulus UDP on loopback ↔ QUIC DATAGRAM; control/media on reliable QUIC streams. Ordinary Host uses ICE-lite then QUIC on the nominated pair, with pion/turn relay candidates only after direct probes fail. Exact-pair: CreatePermission/dial only the peer's sealed relay IPv4 from the credentialed TURN server. The native `reference-local` path remains a separate lab exact-pair UDP relay. |
 | Auth | One-use enrollment token (HKDF from the invite capability). Guest pins host SPKI from the invite. Mutually pinned QUIC TLS 1.3. Relay cannot decrypt audio. Reset Invite rotates the capability. |
 | Proof | Isolated native + Python service tests exist. **Two homes, public DNS, packaged Internet Host: NOT RUN.** |
 
@@ -102,8 +104,9 @@ and is still unshipped.
 | D. WebRTC data/audio instead of Jamulus | None if it worked | No | Free STUN; relay often paid | Full WebRTC media stack fights Jamulus (second mixer/codec). STUN-only fails on symmetric NAT / CGNAT | Rejected as the audio engine. ICE may still be used later for traversal. |
 | E. Tailscale / VPN overlay | Both people install and accept a machine share | No | Free for hobby; coordination is vendor-hosted | Extra first-run. Tailscale `100.64.0.0/10` fails v2 RFC1918 check. MTU can break current QUIC wrapping. Not one WebJam invite. | Rejected for v1 |
 | F. Existing v3 + owner-operated rendezvous/relay | Install WebJam, paste invite | **No** | One small VM (see cost) | Without a reachable UDP relay, many home pairs cannot connect (see below) | Later reliability floor, not this ship |
-| G. **v3 `direct-stun` + public STUN + clipboard-sealed candidates** | Same | **No** | **$0** | Cone NAT / same LAN work; **symmetric NAT, CGNAT, and many mobile ISPs fail** | **Selected for this build** |
-| H. Commercial TURN (Twilio, etc.) | Same | No | Metered, often $ tens+/month at music bitrate | Works, but paid vendor + extra policy proof ([threat model](security/remote-session-threat-model.md) requires exact-pair relay policy) | Skip |
+| G. **v3 `direct-stun` + public STUN + clipboard-sealed candidates** | Same | **No** | **$0** | Cone NAT / same LAN work; **symmetric NAT, CGNAT, and many mobile ISPs fail without relay** | Direct path of this build |
+| H. Commercial metered TURN (Twilio, etc.) | Same | No | Metered, often $ tens+/month at music bitrate | Works, but paid vendor | Skip |
+| I. **TURN fallback at $0** (coturn on Oracle Always Free Ampere A1, or Cloudflare Realtime TURN with a $0 spend cap) | Same | **No** | **$0** | Symmetric NAT / CGNAT Join through relay; cone stays direct. Compiled 256 MiB/session cap plus credential daily budget so usage cannot bill. | **Selected fallback** |
 
 ### What fails without a relay
 
@@ -121,16 +124,17 @@ Say it plainly:
 - **Public Jamulus** can make sound across the Internet on a shared server,
   but it is not WebJam Host/Join and is not private.
 
-A reachable **exact-pair UDP relay** is still the reliability floor for
-“every pair of homes, including CGNAT and cellular.” This build ships the
-**$0 STUN path** first so friends can Join with no owner VM and no port
-forwarding. Pairs that fail NAT get one honest line, not a fake success.
+A reachable **exact-pair UDP relay** is the reliability floor for CGNAT and
+cellular. This build ships the **$0 STUN path** plus a **$0 TURN fallback**
+(self-hosted coturn, or Cloudflare only with a $0 spend cap). Musicians
+never configure TURN. UDP-blocked networks still fail honestly.
 
 ## Recommendation (one approach)
 
 **Ordinary Host/Join uses compiled profile `direct-stun`: public STUN, QUIC
-over the host’s UDP socket, sealed candidate bundle on the clipboard (not
-in the v3 URL).**
+over the nominated ICE-lite pair, sealed candidate bundle on the clipboard
+(not in the v3 URL), and pion/turn relay candidates only when that pair
+fails.**
 
 Why this, not a paid VM, for this ship:
 
@@ -154,18 +158,22 @@ Jamulus/HTTP on the WAN IP, or a promise that CGNAT/cellular always Join.
 | Item | Who | Monthly cost | Notes |
 | --- | --- | --- | --- |
 | Public STUN (`stun.cloudflare.com:3478`, `stun.l.google.com:19302`) | Nobody at WebJam | **$0** | Compiled into the sidecar. No account. |
-| Owner VM / `reference_service` | — | **$0 this ship** | Not required to Host/Join. Still the later reliability floor for CGNAT. About $5–6/month (Hetzner CX22 / DigitalOcean 1 GB) **if** Jeff later wants “almost every home pair.” |
-| Stock TURN vendor | — | Skip | Metered; extra exact-pair policy proof. |
+| Self-hosted coturn (Oracle Always Free Ampere A1) | Owner VM, one public IPv4 | **$0** if Always Free limits are kept | Short-lived REST credentials minted on the VM. Guide: `deploy/relay/`. |
+| Cloudflare Realtime TURN | Credential endpoint holds the API token | **$0 only with a spend cap** | Same JSON as coturn. Do not enable without a $0 cap. |
+| Owner VM / `reference_service` | — | **$0 this ship** | Not required to Host/Join. |
+| Metered TURN vendor (Twilio, etc.) | — | Skip | Would bill. |
 | Cloudflare Tunnel / ngrok | — | Skip | TCP-oriented; does not replace UDP. |
 | Musician router, VPN, Tailscale | Musicians | **$0 and not asked** | Out of scope. |
 
 **What fails without a relay (honest):**
 
 - Host behind **symmetric NAT or CGNAT**: STUN’s mapped port is not the
-  port that receives the guest. Join sits on connecting, then the HUD says
-  to use home Wi-Fi and ask for a fresh invite.
-- **Cellular / many phone hotspots**: same failure.
-- **UDP blocked** (some school/work Wi-Fi): both STUN and QUIC fail.
+  port that receives the guest. Join uses TURN when credentials are
+  available; otherwise the HUD says to use home Wi-Fi and ask for a fresh
+  invite.
+- **UDP blocked** (some school/work Wi-Fi): STUN, QUIC, and UDP TURN fail.
+- **Relay quota**: 256 MiB/session compiled cap. The session stops. This is
+  the $0 billing stop, not a musician setting.
 - **v2 LAN invites** still fail 100% across houses. Direct-stun is the
   ordinary packaged path; LAN remains the no-sidecar fallback.
 
@@ -190,8 +198,12 @@ still work while the WebJam room cannot.
 6. **Two-home proof** (required before claiming it always works): Music
    audibility and Art room state across two houses; Reset Invite; CGNAT
    pair expected to fail. Until that row is run, status is **NOT RUN**.
-7. **Later, not blocking this ship:** owner VM exact-pair relay as fallback
-   when STUN cannot map; UDP-blocked TCP; more than one guest.
+7. **TURN fallback (this PR):** pion/turn allocate on a dedicated UDP
+   socket, sealed relay candidates, QUIC only after ~8s of failed direct
+   probes. Credential URL compiled at release; harness HMAC mint only.
+   Per-session `session_path` / `relay_bytes` in IPC and logs. `deploy/relay/`
+   coturn + Oracle Ampere A1 guide.
+8. **Later, not blocking this ship:** UDP-blocked TCP; more than one guest.
 
 Music Host remaining macOS-only is a separate product gate. A Windows/Linux
 **guest** can Join a Mac Music host on `direct-stun`. Windows/Linux **Art
@@ -220,7 +232,8 @@ Details: [threat model](security/remote-session-threat-model.md).
 - LAN limitation stays in the pasted message only when the share cannot
   leave the host’s local network (v2 LAN, or `direct-stun` without a STUN
   mapping).
-- Ships compiled `direct-stun`, clipboard-sealed candidates, and ordinary
-  Host/Join on that profile when `webjam-fabric` is in the package.
-- **No** VM, DNS, TLS cert, or paid account is created here. Two-home
-  Internet proof remains **NOT RUN**.
+- Ships compiled `direct-stun`, clipboard-sealed candidates, ordinary
+  Host/Join on that profile when `webjam-fabric` is in the package, and
+  TURN relay fallback at $0 (no long-lived secret in the binary).
+- Two-home physical Internet proof remains **NOT RUN**. The two-NAT harness
+  is the automated stand-in: cone PASS direct, symmetric PASS relay.

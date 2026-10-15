@@ -27,8 +27,12 @@ proven.
    has no destination field and forwards only between the registered host and
    guest endpoints for the exact opaque session and generation. Its
    authenticated wrapper enforces replay, size, rate, byte, idle, and lifetime
-   budgets and fails closed. Stock TURN authorization alone is insufficient;
-   any future TURN profile requires a separate exact-pair policy proof.
+   budgets and fails closed. Stock TURN authorization alone is insufficient.
+   Ordinary `direct-stun` TURN fallback is exact-pair: CreatePermission and
+   QUIC dial use only the peer's sealed relay candidate, and only when that
+   IPv4 matches the credentialed TURN server (or `allowed_relay_ips` from the
+   short-lived credential document). Long-lived coturn/Cloudflare secrets stay
+   off the shipped binary. Per-session relay bytes are capped at 256 MiB.
 3. **Keep v3 secrets out of process arguments.** A v3 URL is never accepted
    from `sys.argv` and no invite, capability, credential, address, musician
    name, or private path enters a sidecar command line. macOS may use the Qt
@@ -391,7 +395,7 @@ handles, or names.
 | Certificate private keys | Endpoint memory; sidecar TLS identity | Guest close/process end; host reset may retain the prepared identity, shutdown destroys it |
 | Candidate/enrollment keys | HKDF outputs in endpoint memory | Enrollment/session end as appropriate |
 | Reference role/enrollment token | Independently derived, role/session scoped, short-lived | Session close or token TTL |
-| Future TURN credential | Derived, peer/session scoped, short-lived | Allocation close or credential TTL |
+| TURN REST credential | Short-lived HMAC (coturn use-auth-secret) or Cloudflare iceServers fetched over HTTPS; never compiled into the sidecar | Allocation close or credential TTL |
 | Reconnect credential | Not issued by `reference-local` | Reconnect requires a fresh invitation and generation |
 | Media upload grant | Host-issued over QUIC; take/segment scoped | Complete, cancel, revoke, expiry, or end |
 

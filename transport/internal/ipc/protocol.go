@@ -187,6 +187,8 @@ type Event struct {
 	Text           string      `json:"text,omitempty"`
 	Signal         string      `json:"signal,omitempty"`
 	Route          string      `json:"route,omitempty"`
+	SessionPath    string      `json:"session_path,omitempty"`
+	RelayBytes     uint64      `json:"relay_bytes,omitempty"`
 	RoomState      *room.State `json:"room_state,omitempty"`
 }
 
@@ -602,17 +604,21 @@ func validateEvent(event *Event) error {
 	peerFieldsEmpty := event.Mode == "" && event.ProfileID == "" && event.Generation == 0 && event.LoopbackPort == 0
 	helpFieldsEmpty := event.RequestID == 0 && event.Text == ""
 	signalEmpty := event.Signal == "" && event.Route == ""
+	accountingEmpty := event.SessionPath == "" && event.RelayBytes == 0
+	if event.SessionPath != "" && event.SessionPath != "direct" && event.SessionPath != "relay" {
+		return ErrProtocol
+	}
 	if event.RoomState != nil && event.Type != "room_state_received" {
 		return ErrProtocol
 	}
 	switch event.Type {
 	case "ready":
 		if event.ID != 0 || event.Code != CodeOK || event.State != "idle" || event.Build == "" ||
-			!peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty {
+			!peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty || !accountingEmpty {
 			return ErrProtocol
 		}
 	case "hello":
-		if event.ID == 0 || event.Code != CodeOK || event.Build == "" || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty {
+		if event.ID == 0 || event.Code != CodeOK || event.Build == "" || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty || !accountingEmpty {
 			return ErrProtocol
 		}
 		if event.State == "connecting" || event.State == "host_waiting" || event.State == "connected" {
@@ -624,7 +630,7 @@ func validateEvent(event *Event) error {
 		}
 	case "host_prepared":
 		if event.ID == 0 || event.Code != CodeOK || event.State != "identity_ready" || event.Build != "" ||
-			!peerFieldsEmpty || event.HostSPKISHA256 == "" || !helpFieldsEmpty || !signalEmpty {
+			!peerFieldsEmpty || event.HostSPKISHA256 == "" || !helpFieldsEmpty || !signalEmpty || !accountingEmpty {
 			return ErrProtocol
 		}
 	case "host_registered":
@@ -643,10 +649,13 @@ func validateEvent(event *Event) error {
 		} else if !signalEmpty {
 			return ErrProtocol
 		}
+		if !accountingEmpty {
+			return ErrProtocol
+		}
 	case "guest_signal":
 		if event.ID != 0 || event.Code != CodeOK || event.State != "connecting" || event.Build != "" ||
 			event.Mode != "guest" || event.ProfileID != profile.DirectStunID || event.Generation == 0 ||
-			event.LoopbackPort == 0 || event.HostSPKISHA256 != "" || !helpFieldsEmpty {
+			event.LoopbackPort == 0 || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !accountingEmpty {
 			return ErrProtocol
 		}
 		if _, err := decodeSignalEnvelope(event.Signal); err != nil {
@@ -655,13 +664,13 @@ func validateEvent(event *Event) error {
 	case "signal_applied":
 		if event.ID == 0 || event.Code != CodeOK || event.State != "host_waiting" || event.Build != "" ||
 			event.Mode != "host" || event.ProfileID != profile.DirectStunID || event.Generation == 0 ||
-			event.LoopbackPort == 0 || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty {
+			event.LoopbackPort == 0 || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty || !accountingEmpty {
 			return ErrProtocol
 		}
 	case "peer_connected":
 		if event.Code != CodeOK || event.State != "connected" || event.Build != "" ||
 			event.Mode == "" || event.ProfileID == "" || event.Generation == 0 || event.LoopbackPort == 0 ||
-			event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty {
+			event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty || event.RelayBytes != 0 {
 			return ErrProtocol
 		}
 		// A host connection completes asynchronously after host_registered, so
@@ -670,17 +679,31 @@ func validateEvent(event *Event) error {
 		if (event.Mode == "host") != (event.ID == 0) {
 			return ErrProtocol
 		}
+		if event.ProfileID == profile.DirectStunID {
+			if event.SessionPath != "direct" && event.SessionPath != "relay" {
+				return ErrProtocol
+			}
+		} else if event.SessionPath != "" {
+			return ErrProtocol
+		}
 	case "peer_closed":
 		if event.ID == 0 || event.Code != CodeOK || event.State != "closed" || event.Build != "" ||
 			event.Mode == "" || event.ProfileID == "" || event.Generation == 0 || event.LoopbackPort != 0 ||
 			event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty {
 			return ErrProtocol
 		}
+		if event.ProfileID == profile.DirectStunID {
+			if event.SessionPath != "" && event.SessionPath != "direct" && event.SessionPath != "relay" {
+				return ErrProtocol
+			}
+		} else if !accountingEmpty {
+			return ErrProtocol
+		}
 	case "help_accepted", "help_received", "help_delivered":
 		if event.Code != CodeOK || event.State != "connected" || event.Build != "" ||
 			event.Mode == "" || event.ProfileID == "" || event.Generation == 0 ||
 			event.LoopbackPort != 0 || event.HostSPKISHA256 != "" || event.RequestID == 0 ||
-			event.Signal != "" || event.Route != "" {
+			event.Signal != "" || event.Route != "" || !accountingEmpty {
 			return ErrProtocol
 		}
 		switch event.Type {
@@ -699,7 +722,7 @@ func validateEvent(event *Event) error {
 			}
 		}
 	case "room_state_accepted", "room_state_received":
-		if event.Code != CodeOK || event.State != "connected" || event.Build != "" || event.ProfileID == "" || event.Generation == 0 || event.LoopbackPort != 0 || event.HostSPKISHA256 != "" || event.Text != "" || event.Signal != "" || event.Route != "" {
+		if event.Code != CodeOK || event.State != "connected" || event.Build != "" || event.ProfileID == "" || event.Generation == 0 || event.LoopbackPort != 0 || event.HostSPKISHA256 != "" || event.Text != "" || event.Signal != "" || event.Route != "" || !accountingEmpty {
 			return ErrProtocol
 		}
 		if event.Type == "room_state_accepted" {
@@ -711,12 +734,12 @@ func validateEvent(event *Event) error {
 		}
 	case "stopped":
 		if event.Code != CodeOK || event.State != "stopped" || event.Build != "" ||
-			!peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty {
+			!peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty || !accountingEmpty {
 			return ErrProtocol
 		}
 	case "error":
 		if event.Code == "" || event.Code == CodeOK || event.State == "" || event.State == "stopped" ||
-			event.Build != "" || !peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty {
+			event.Build != "" || !peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty || !accountingEmpty {
 			return ErrProtocol
 		}
 	default:

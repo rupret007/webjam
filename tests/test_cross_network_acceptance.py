@@ -252,3 +252,63 @@ def test_cone_and_symmetric_receipt_cases_are_allowed(tmp_path: Path):
         write_receipt(tmp_path, receipt)
         assert (tmp_path / f"{FULL_SHA}-{case}.json").is_file()
         assert not (tmp_path / f"{FULL_SHA}-{case}.PASS").exists()
+
+
+def test_harness_coturn_config_is_auth_secret_and_not_in_receipts(tmp_path: Path):
+    from tools.cross_network_acceptance.turn import write_config
+
+    config = write_config(tmp_path, secret="harness-only-secret")
+    text = config.read_text(encoding="utf-8")
+    assert "use-auth-secret" in text
+    assert "static-auth-secret=harness-only-secret" in text
+    assert "listening-port=3478" in text
+    assert "no-tcp" in text
+    assert "allocation-default-address-family=ipv4" in text
+    from tools.cross_network_acceptance.turn import argv as turn_argv
+
+    assert "-n" not in turn_argv(config)
+    receipt = build_receipt(
+        sha=FULL_SHA,
+        case="cross-network-symmetric",
+        status="PASS",
+        profiles=[
+            {
+                "profile": "art",
+                "guest_connected": True,
+                "session_state_exchanged": True,
+                "harness_ok": True,
+                "session_path": "relay",
+            }
+        ],
+        rendezvous_reachable_from_host=True,
+        rendezvous_reachable_from_guest=True,
+        invite_host_routable_from_guest=False,
+        netem=False,
+        nat_mode="symmetric",
+        stun_reachable_from_host=True,
+        stun_reachable_from_guest=True,
+    )
+    assert receipt["status"] == "PASS"
+    assert receipt["profiles"][0]["session_path"] == "relay"
+    assert not contains_secret_keys(receipt)
+
+
+def test_deploy_relay_keeps_secret_out_of_the_repo():
+    root = Path("deploy/relay")
+    assert (root / "coturn.conf").is_file()
+    assert (root / "webjam-turn.service").is_file()
+    assert (root / "turn_credentials.py").is_file()
+    assert (root / "README.md").is_file()
+    assert (root / "firewall.md").is_file()
+    conf = (root / "coturn.conf").read_text(encoding="utf-8")
+    assert "use-auth-secret" in conf
+    assert "static-auth-secret=" not in conf
+    example = (root / "secret.env.example").read_text(encoding="utf-8")
+    assert "replace-with-a-long-random-secret" in example
+    creds = (root / "turn_credentials.py").read_text(encoding="utf-8")
+    assert "TURN_DAILY_BUDGET_BYTES" in creds
+    assert "quota_bytes" in creds
+    guide = (root / "README.md").read_text(encoding="utf-8")
+    assert "Ampere A1" in guide
+    assert "256 MiB" in guide
+    assert "$0" in guide

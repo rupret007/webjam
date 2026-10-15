@@ -777,6 +777,43 @@ func TestMarshalEventRejectsFreeFormFields(t *testing.T) {
 	}
 }
 
+func TestDirectStunPeerConnectedRequiresSessionPath(t *testing.T) {
+	t.Parallel()
+	valid := Event{
+		ID: 0, Type: "peer_connected", Code: CodeOK, State: "connected",
+		Mode: "host", ProfileID: profile.DirectStunID, Generation: 1, LoopbackPort: 41000,
+		SessionPath: "direct",
+	}
+	if _, err := MarshalEvent(valid); err != nil {
+		t.Fatal(err)
+	}
+	valid.SessionPath = "relay"
+	if _, err := MarshalEvent(valid); err != nil {
+		t.Fatal(err)
+	}
+	valid.SessionPath = ""
+	if _, err := MarshalEvent(valid); !errors.Is(err, ErrProtocol) {
+		t.Fatalf("missing session_path error = %v", err)
+	}
+	valid.SessionPath = "turn"
+	if _, err := MarshalEvent(valid); !errors.Is(err, ErrProtocol) {
+		t.Fatalf("unknown session_path error = %v", err)
+	}
+	closed := Event{
+		ID: 3, Type: "peer_closed", Code: CodeOK, State: "closed",
+		Mode: "host", ProfileID: profile.DirectStunID, Generation: 1,
+		SessionPath: "relay", RelayBytes: 4096,
+	}
+	encoded, err := MarshalEvent(closed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"session_path":"relay"`) ||
+		!strings.Contains(string(encoded), `"relay_bytes":4096`) {
+		t.Fatalf("closed event = %s", encoded)
+	}
+}
+
 func TestHelpEventsAreExactEphemeralAndFormattingRedactsText(t *testing.T) {
 	t.Parallel()
 	base := Event{

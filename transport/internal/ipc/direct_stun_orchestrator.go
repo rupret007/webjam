@@ -27,11 +27,13 @@ import (
 const (
 	directStunProofDomain = "webjam/v3/direct-stun/proof-nonce"
 	directStunDialAttempt = 4 * time.Second
+	directPathTimeout     = 8 * time.Second
 )
 
 var (
 	gatherListenCandidates = directstun.Gather
 	parseDialTarget        = directstun.ParseDialTarget
+	tryAllocateRelay       = directstun.TryAllocate
 )
 
 type directStunOrchestrator struct {
@@ -100,16 +102,19 @@ type directStunOperation struct {
 	updates          chan fabricUpdate
 	done             chan struct{}
 
-	resourceMu  sync.Mutex
-	packetConn  *net.UDPConn
-	mux         *directstun.Mux
-	listener    *icequic.Listener
-	connection  *icequic.Connection
-	peer        *peer.Peer
-	control     *room.Channel
-	guestSignal chan []byte
-	icePassword string
-	bundleNonce signaling.BundleNonce
+	resourceMu   sync.Mutex
+	packetConn   *net.UDPConn
+	mux          *directstun.Mux
+	listener     *icequic.Listener
+	turnListener *icequic.Listener
+	allocation   *directstun.Allocation
+	connection   *icequic.Connection
+	peer         *peer.Peer
+	control      *room.Channel
+	guestSignal  chan []byte
+	icePassword  string
+	bundleNonce  signaling.BundleNonce
+	sessionPath  string
 
 	cleanupOnce sync.Once
 }
@@ -164,6 +169,16 @@ func (o *directStunOperation) runHost() error {
 		return ErrOpenFailedWrap(err)
 	}
 	drainUDP(conn)
+	allocation := tryAllocateRelay(o.enrollmentCtx)
+	if allocation != nil {
+		if encoded, candErr := allocation.Candidate(); candErr == nil && encoded != "" &&
+			len(candidates) < limits.MaxCandidateCount {
+			candidates = append(candidates, encoded)
+		}
+		o.resourceMu.Lock()
+		o.allocation = allocation
+		o.resourceMu.Unlock()
+	}
 	envelope, err := o.sealHostBundle(candidates, expiresAt)
 	if err != nil {
 		return err
@@ -190,11 +205,21 @@ func (o *directStunOperation) runHost() error {
 		return o.enrollmentCtx.Err()
 	}
 
-	accepted := make(chan acceptResult, 1)
-	go func() {
-		connection, acceptErr := listener.Accept(o.enrollmentCtx)
-		accepted <- acceptResult{connection: connection, err: acceptErr}
-	}()
+	accepted := make(chan acceptResult, 2)
+	go acceptOn(o.enrollmentCtx, listener, "direct", accepted)
+	if allocation != nil {
+		turnListener, listenErr := icequic.Listen(allocation.PacketConn(), *o.identity)
+		if listenErr == nil {
+			o.resourceMu.Lock()
+			o.turnListener = turnListener
+			o.resourceMu.Unlock()
+			go acceptOn(o.enrollmentCtx, turnListener, "relay", accepted)
+		}
+	}
+	pending := 1
+	if o.turnListener != nil {
+		pending = 2
+	}
 	for {
 		select {
 		case envelope := <-guestSignal:
@@ -203,16 +228,19 @@ func (o *directStunOperation) runHost() error {
 				return parseErr
 			}
 			mux.SetRemotes(candidateAddrs(guestBundle.Candidates))
+			o.permitPeerRelays(guestBundle.Candidates)
 		case result := <-accepted:
 			if result.err != nil {
-				if o.enrollmentCtx.Err() != nil {
-					return ErrUnreachable
+				pending--
+				if pending == 0 {
+					if o.enrollmentCtx.Err() != nil {
+						return ErrUnreachable
+					}
+					return result.err
 				}
-				return result.err
+				continue
 			}
-			o.resourceMu.Lock()
-			o.connection = result.connection
-			o.resourceMu.Unlock()
+			o.nominatePath(result)
 			if err = o.exchangeHostProofs(result.connection, expiresAt); err != nil {
 				return err
 			}
@@ -241,6 +269,16 @@ func (o *directStunOperation) runGuest() error {
 		return ErrOpenFailedWrap(err)
 	}
 	drainUDP(conn)
+	allocation := tryAllocateRelay(o.enrollmentCtx)
+	if allocation != nil {
+		if encoded, candErr := allocation.Candidate(); candErr == nil && encoded != "" &&
+			len(localCandidates) < limits.MaxCandidateCount {
+			localCandidates = append(localCandidates, encoded)
+		}
+		o.resourceMu.Lock()
+		o.allocation = allocation
+		o.resourceMu.Unlock()
+	}
 	reply, err := o.sealGuestBundle(localCandidates, expiresAt)
 	if err != nil {
 		return err
@@ -253,7 +291,7 @@ func (o *directStunOperation) runGuest() error {
 		}
 		targets = append(targets, target)
 	}
-	if len(targets) == 0 {
+	if len(targets) == 0 && allocation == nil {
 		return ErrEnrollmentInvalid
 	}
 	mux := directstun.NewMux(conn, bundle.ICEPassword, [16]byte(bundle.Nonce), directstun.RoleGuest)
@@ -264,24 +302,37 @@ func (o *directStunOperation) runGuest() error {
 	if !o.sendWithContext(o.enrollmentCtx, fabricUpdate{kind: updateGuestSignal, signal: reply}) {
 		return o.enrollmentCtx.Err()
 	}
-	nominated, err := mux.WaitNominated(o.enrollmentCtx)
+	directCtx, cancelDirect := context.WithTimeout(o.enrollmentCtx, directPathTimeout)
+	nominated, err := mux.WaitNominated(directCtx)
+	cancelDirect()
+	if err == nil {
+		dialCtx, cancel := context.WithTimeout(o.enrollmentCtx, directStunDialAttempt)
+		defer cancel()
+		connection, dialErr := icequic.Dial(
+			dialCtx, mux, nominated, *o.identity,
+			hex.EncodeToString(o.configuration.HostSPKISHA256[:]),
+		)
+		if dialErr == nil {
+			o.resourceMu.Lock()
+			o.connection = connection
+			o.sessionPath = "direct"
+			o.resourceMu.Unlock()
+			if err = o.exchangeGuestProofs(connection, expiresAt); err != nil {
+				return err
+			}
+			return o.runPeer(peer.ModeGuest)
+		}
+		if o.enrollmentCtx.Err() != nil {
+			return ErrUnreachable
+		}
+	}
+	connection, err := o.dialRelay(bundle.Candidates)
 	if err != nil {
 		return ErrUnreachable
 	}
-	dialCtx, cancel := context.WithTimeout(o.enrollmentCtx, directStunDialAttempt)
-	defer cancel()
-	connection, err := icequic.Dial(
-		dialCtx, mux, nominated, *o.identity,
-		hex.EncodeToString(o.configuration.HostSPKISHA256[:]),
-	)
-	if err != nil {
-		if o.enrollmentCtx.Err() != nil || errors.Is(err, context.DeadlineExceeded) {
-			return ErrUnreachable
-		}
-		return err
-	}
 	o.resourceMu.Lock()
 	o.connection = connection
+	o.sessionPath = "relay"
 	o.resourceMu.Unlock()
 	if err = o.exchangeGuestProofs(connection, expiresAt); err != nil {
 		return err
@@ -289,9 +340,108 @@ func (o *directStunOperation) runGuest() error {
 	return o.runPeer(peer.ModeGuest)
 }
 
+func acceptOn(ctx context.Context, listener *icequic.Listener, path string, accepted chan<- acceptResult) {
+	if listener == nil {
+		return
+	}
+	connection, err := listener.Accept(ctx)
+	select {
+	case accepted <- acceptResult{connection: connection, err: err, path: path}:
+	case <-ctx.Done():
+		if connection != nil {
+			_ = connection.CloseWithError(0, "unused path")
+		}
+	}
+}
+
+func (o *directStunOperation) permitPeerRelays(encoded []string) {
+	o.resourceMu.Lock()
+	allocation := o.allocation
+	o.resourceMu.Unlock()
+	if allocation == nil {
+		return
+	}
+	for _, item := range encoded {
+		target, err := allocation.ParsePeerRelay(item)
+		if err != nil {
+			continue
+		}
+		_ = allocation.Permit(target)
+	}
+}
+
+func (o *directStunOperation) nominatePath(result acceptResult) {
+	o.resourceMu.Lock()
+	o.connection = result.connection
+	o.sessionPath = result.path
+	unused := o.turnListener
+	if result.path == "relay" {
+		unused = o.listener
+	}
+	o.resourceMu.Unlock()
+	if unused != nil && result.path == "relay" {
+		_ = unused.Close()
+	} else if unused != nil && result.path == "direct" {
+		_ = unused.Close()
+	}
+}
+
+func (o *directStunOperation) dialRelay(hostCandidates []string) (*icequic.Connection, error) {
+	o.resourceMu.Lock()
+	allocation := o.allocation
+	o.resourceMu.Unlock()
+	if allocation == nil {
+		return nil, ErrUnreachable
+	}
+	var target *net.UDPAddr
+	for _, encoded := range hostCandidates {
+		parsed, err := allocation.ParsePeerRelay(encoded)
+		if err != nil {
+			continue
+		}
+		target = parsed
+		break
+	}
+	if target == nil {
+		return nil, ErrUnreachable
+	}
+	if err := allocation.Permit(target); err != nil {
+		return nil, ErrUnreachable
+	}
+	dialCtx, cancel := context.WithTimeout(o.enrollmentCtx, directStunDialAttempt)
+	defer cancel()
+	return icequic.Dial(
+		dialCtx, allocation.PacketConn(), target, *o.identity,
+		hex.EncodeToString(o.configuration.HostSPKISHA256[:]),
+	)
+}
+
+func (o *directStunOperation) SessionPath() string {
+	if o == nil {
+		return ""
+	}
+	o.resourceMu.Lock()
+	defer o.resourceMu.Unlock()
+	return o.sessionPath
+}
+
+func (o *directStunOperation) RelayBytes() uint64 {
+	if o == nil {
+		return 0
+	}
+	o.resourceMu.Lock()
+	allocation := o.allocation
+	o.resourceMu.Unlock()
+	if allocation == nil {
+		return 0
+	}
+	return allocation.Bytes()
+}
+
 type acceptResult struct {
 	connection *icequic.Connection
 	err        error
+	path       string
 }
 
 func (o *directStunOperation) ApplyGuestSignal(ctx context.Context, envelope []byte) error {
@@ -536,7 +686,7 @@ func (o *directStunOperation) runPeer(mode peer.Mode) error {
 	}()
 	select {
 	case <-livePeer.Ready():
-		if !o.sendWithContext(pumpCtx, fabricUpdate{kind: updatePeerConnected}) {
+		if !o.sendWithContext(pumpCtx, fabricUpdate{kind: updatePeerConnected, sessionPath: o.SessionPath()}) {
 			return pumpCtx.Err()
 		}
 		workers.Add(1)
@@ -653,7 +803,8 @@ func (o *directStunOperation) sendWithContext(ctx context.Context, update fabric
 
 func (o *directStunOperation) interruptDataPlane() {
 	o.resourceMu.Lock()
-	livePeer, connection, listener, mux, packetConn := o.peer, o.connection, o.listener, o.mux, o.packetConn
+	livePeer, connection, listener, turnListener, mux, packetConn := o.peer, o.connection, o.listener, o.turnListener, o.mux, o.packetConn
+	allocation := o.allocation
 	endpoint := o.endpoint
 	o.resourceMu.Unlock()
 	if livePeer != nil {
@@ -665,10 +816,16 @@ func (o *directStunOperation) interruptDataPlane() {
 	if listener != nil {
 		_ = listener.Close()
 	}
+	if turnListener != nil {
+		_ = turnListener.Close()
+	}
 	if mux != nil {
 		_ = mux.Close()
 	} else if packetConn != nil {
 		_ = packetConn.Close()
+	}
+	if allocation != nil {
+		_ = allocation.Close()
 	}
 	if endpoint != nil {
 		_ = endpoint.Close()
@@ -734,6 +891,7 @@ func safeDirectStunFailure(err error) error {
 		return room.ErrUnsupported
 	case errors.Is(err, ErrUnreachable),
 		errors.Is(err, directstun.ErrUnreachable),
+		errors.Is(err, directstun.ErrRelayQuota),
 		errors.Is(err, context.DeadlineExceeded),
 		errors.Is(err, icequic.ErrQUICHandshake):
 		return ErrUnreachable

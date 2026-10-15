@@ -9,12 +9,14 @@ branch protection. The required `WebJam CI` workflow is unchanged.
 
 ## What it proves
 
-Two cases:
+Cases:
 
 | Case | Topology | Expected today | When remote sessions ship |
 | --- | --- | --- | --- |
 | Same-LAN control | Host and guest on one RFC1918 L2, no NAT | **PASS** (ordinary v2 LAN) | Still PASS |
-| Cross-network | Host behind NAT-A, guest behind NAT-B, public internet between them, **no port forward** | **FAIL** | **PASS** |
+| Cross-network (masquerade) | Host behind NAT-A, guest behind NAT-B, public internet between them, **no port forward** | Restricted-cone MASQUERADE without NETMAP | **FAIL** until v2 LAN is gone |
+| Cross-network cone | Same homes; UDP NETMAP reverse (not a product port-forward) | Direct ICE | **PASS** on `session_path=direct` |
+| Cross-network symmetric | Host NAT `--random-fully`; guest cone; coturn in the public ns | Direct ICE fails; TURN relay | **PASS** on `session_path=relay` |
 
 Both cases drive the existing offscreen/headless Host and Join paths:
 
@@ -41,7 +43,7 @@ Cross-network
         │
   public internet 203.0.113.1
         │  rendezvous TCP 47131, relay UDP 47132
-        │  real STUN UDP 3478 (and 19302 for the compiled Google fallback)
+        │  coturn STUN+TURN UDP 3478 (Python STUN on 19302 for Google fallback)
         │
   NAT-B 192.168.120.1 / 203.0.113.20   MASQUERADE, no DNAT
         │
@@ -134,8 +136,11 @@ sudo -E .venv/bin/python -m tools.cross_network_acceptance run \
 
 `--nat cone` keeps iptables MASQUERADE and adds a UDP NETMAP reverse (full cone /
 1:1 for the single LAN host). That is not a product `--dport` port-forward.
-`--nat symmetric` uses `MASQUERADE --random-fully` on the host NAT so the STUN
-mapping is destination-dependent; Join must fail honestly, not fake a connect.
+Cone **must PASS on the direct path** (`session_path=direct`); TURN is allocated
+for signaling only. `--nat symmetric` uses `MASQUERADE --random-fully` on the
+host NAT so the STUN mapping is destination-dependent; Join **must PASS through
+the TURN relay** (`session_path=relay`). The public namespace runs coturn on
+UDP 3478 with a per-run `use-auth-secret`. Packaged apps never see that secret.
 
 ## Test-only STUN override (never in packaged builds)
 
@@ -144,10 +149,12 @@ Ordinary Host compiles STUN servers in `transport/internal/directstun/path.go`
 builds start `webjam-fabric` with an empty environment and never honor a STUN
 override.
 
-This harness sets `WEBJAM_TEST_HARNESS=1` and `WEBJAM_TEST_STUN_SERVER=203.0.113.1:3478`
-on unpackaged role processes. The sidecar reads that override only when the
-harness flag is set. `/etc/netns/<ns>/hosts` still maps the compiled names
-as a belt-and-suspenders fallback. Packaged apps never see either hook.
+This harness sets `WEBJAM_TEST_HARNESS=1`, `WEBJAM_TEST_STUN_SERVER=203.0.113.1:3478`,
+`WEBJAM_TEST_TURN_SERVER=203.0.113.1:3478`, and a per-run
+`WEBJAM_TEST_TURN_SECRET` on unpackaged role processes. The sidecar mints
+short-lived coturn REST credentials only when the harness flag is set.
+`/etc/netns/<ns>/hosts` still maps the compiled STUN names as a
+belt-and-suspenders fallback. Packaged apps never see these hooks.
 
 Do not add a packaged STUN URL setting. Pointing Host/Join at a lab STUN
 server is a harness concern only.

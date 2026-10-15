@@ -86,6 +86,14 @@ def ordinary_native_host_profile() -> str | None:
     return None
 
 
+def _session_transport_path(profile_id: str, session_path: str) -> TransportPath:
+    if profile_id == "direct-stun" and session_path == "relay":
+        return TransportPath.SECURE_RELAY
+    if profile_id == "direct-stun":
+        return TransportPath.INTERNET_DIRECT
+    return TransportPath.SECURE_RELAY
+
+
 def transport_binary_path() -> Path:
     """Locate only the sidecar belonging to this checkout or frozen app."""
 
@@ -223,6 +231,7 @@ class NativeGuestTransportBackend:
         self._process_generation = 0
         self._retired_guest_generation = 0
         self._guest_reply = b""
+        self._session_path = ""
 
     def start_guest(
         self,
@@ -304,13 +313,12 @@ class NativeGuestTransportBackend:
             raise RemoteBackendError(
                 RemoteSessionErrorCode.INVITATION_UNUSABLE
             ) from None
+        session_path = str(getattr(connected, "session_path", "") or "")
+        with self._lock:
+            self._session_path = session_path
         return RemoteGuestConnection(
             loopback_port=connected.loopback_port,
-            path=(
-                TransportPath.INTERNET_DIRECT
-                if invitation.profile_id == "direct-stun"
-                else TransportPath.SECURE_RELAY
-            ),
+            path=_session_transport_path(invitation.profile_id, session_path),
             quality=ConnectionQuality.UNKNOWN,
             generation=connected.generation,
         )
@@ -402,6 +410,11 @@ class NativeGuestTransportBackend:
     def guest_reply(self) -> bytes:
         with self._lock:
             return bytes(self._guest_reply)
+
+    @property
+    def session_path(self) -> str:
+        with self._lock:
+            return str(self._session_path or "")
 
     def _handle_event(self, event: TransportEvent, *, source: TransportProcess) -> None:
         with self._lock:
@@ -558,6 +571,7 @@ class NativeHostTransportOwner:
         self._stopped = False
         self._host_signal = b""
         self._share_route = ""
+        self._session_path = ""
         self._guest_reply_applied = False
         self._snapshot = RemoteSessionSnapshot(
             phase=RemoteSessionPhase.PREPARING,
@@ -667,6 +681,11 @@ class NativeHostTransportOwner:
             if self._profile_id != "direct-stun":
                 return True
             return self._share_route == "public"
+
+    @property
+    def session_path(self) -> str:
+        with self._lock:
+            return str(self._session_path or "")
 
     def reset(self) -> None:
         owner = self._owner
@@ -1039,6 +1058,12 @@ class NativeHostTransportOwner:
                 self._schedule_help_callback(deliver)
             return
         if event.event_type in {"stopped", "peer_closed"}:
+            if event.event_type == "peer_closed":
+                LOGGER.info(
+                    "session_path=%s relay_bytes=%s",
+                    getattr(event, "session_path", "") or "n/a",
+                    getattr(event, "relay_bytes", 0),
+                )
             with self._lock:
                 if self._stopped:
                     return
@@ -1105,12 +1130,18 @@ class NativeHostTransportOwner:
                     or self._active_invitation is not consumed_invitation
                 ):
                     return
+                session_path = str(getattr(event, "session_path", "") or "")
+                self._session_path = session_path
+                LOGGER.info(
+                    "session_path=%s relay_bytes=0",
+                    session_path or "n/a",
+                )
                 self._snapshot = RemoteSessionSnapshot(
                     phase=RemoteSessionPhase.CONNECTED,
                     role=SessionRole.HOST,
                     generation=event.generation,
                     loopback_port=event.loopback_port,
-                    path=TransportPath.SECURE_RELAY,
+                    path=_session_transport_path(self._profile_id, session_path),
                     quality=ConnectionQuality.UNKNOWN,
                 )
                 snapshot = self._snapshot

@@ -8,7 +8,7 @@ one bounded stdin command. It is never placed in argv, the environment, an
 event, or the diagnostic timeline.  The public host pin is decoded into a
 fixed-size value before the desktop may issue an invitation. Frozen builds
 always start the sidecar with an empty environment. ``WEBJAM_TEST_HARNESS=1``
-may pass a documented STUN override in unpackaged harness runs only.
+may pass documented STUN/TURN overrides in unpackaged harness runs only.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import signal
@@ -43,6 +44,7 @@ MAX_HELP_TEXT_BYTES = 500
 DEFAULT_START_TIMEOUT_SECONDS = 5.0
 DEFAULT_COMMAND_TIMEOUT_SECONDS = 5.0
 DEFAULT_STOP_TIMEOUT_SECONDS = 3.0
+LOGGER = logging.getLogger("webjam.services.transport_runtime")
 
 _BUILD_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+\-]{0,95}$")
 _SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
@@ -64,6 +66,8 @@ _EVENT_FIELDS = frozenset(
         "room_state",
         "signal",
         "route",
+        "session_path",
+        "relay_bytes",
     }
 )
 _EVENT_TYPES = frozenset(
@@ -171,6 +175,8 @@ class TransportEvent:
     room_state: RoomState | None = field(default=None, repr=False)
     signal: bytes = field(default=b"", repr=False)
     route: str = ""
+    session_path: str = ""
+    relay_bytes: int = 0
 
 
 def _decode_fixed_public(value: Any, size: int) -> bytes:
@@ -376,13 +382,20 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         raise TransportProtocolError("The transport process sent invalid data.")
     encoded_signal = raw.get("signal", "")
     route = raw.get("route", "")
+    session_path = raw.get("session_path", "")
+    relay_bytes_raw = raw.get("relay_bytes", 0)
     if not isinstance(encoded_signal, str) or not isinstance(route, str):
+        raise TransportProtocolError("The transport process sent invalid data.")
+    if not isinstance(session_path, str):
         raise TransportProtocolError("The transport process sent invalid data.")
     signal = b""
     if encoded_signal:
         signal = _decode_signal_envelope(encoded_signal)
     if route and route not in {"local", "public"}:
         raise TransportProtocolError("The transport process sent invalid data.")
+    if session_path and session_path not in {"direct", "relay"}:
+        raise TransportProtocolError("The transport process sent invalid data.")
+    relay_bytes = _strict_int(relay_bytes_raw, minimum=0, maximum=2**63 - 1)
     if event_type == "host_registered" and (
         code != "ok"
         or state != "host_waiting"
@@ -394,6 +407,8 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         or event_id == 0
         or build
         or help_text
+        or session_path
+        or relay_bytes
     ):
         raise TransportProtocolError("The transport process sent invalid data.")
     if event_type == "host_registered":
@@ -416,6 +431,8 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
             or help_text
             or not signal
             or route
+            or session_path
+            or relay_bytes
         ):
             raise TransportProtocolError("The transport process sent invalid data.")
     elif event_type == "signal_applied":
@@ -432,9 +449,14 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
             or help_text
             or signal
             or route
+            or session_path
+            or relay_bytes
         ):
             raise TransportProtocolError("The transport process sent invalid data.")
-    elif signal or route:
+    elif signal or route or (
+        event_type not in {"peer_connected", "peer_closed"}
+        and (session_path or relay_bytes)
+    ):
         raise TransportProtocolError("The transport process sent invalid data.")
     if event_type == "peer_connected" and (
         code != "ok"
@@ -446,8 +468,15 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         or host_pin
         or ((mode == "host") != (event_id == 0))
         or build
+        or relay_bytes
     ):
         raise TransportProtocolError("The transport process sent invalid data.")
+    if event_type == "peer_connected":
+        if profile_id == "direct-stun":
+            if session_path not in {"direct", "relay"}:
+                raise TransportProtocolError("The transport process sent invalid data.")
+        elif session_path:
+            raise TransportProtocolError("The transport process sent invalid data.")
     if event_type == "peer_closed" and (
         code != "ok"
         or state != "closed"
@@ -459,6 +488,12 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         or build
     ):
         raise TransportProtocolError("The transport process sent invalid data.")
+    if event_type == "peer_closed":
+        if profile_id == "direct-stun":
+            if session_path and session_path not in {"direct", "relay"}:
+                raise TransportProtocolError("The transport process sent invalid data.")
+        elif session_path or relay_bytes:
+            raise TransportProtocolError("The transport process sent invalid data.")
     if event_type in {"help_accepted", "help_received", "help_delivered"}:
         if (
             code != "ok"
@@ -565,6 +600,8 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         room_state=room_state,
         signal=signal,
         route=route,
+        session_path=session_path,
+        relay_bytes=relay_bytes,
     )
 
 
@@ -745,6 +782,14 @@ def _sidecar_environment() -> dict[str, str]:
     stun = str(os.environ.get("WEBJAM_TEST_STUN_SERVER", "") or "").strip()
     if stun:
         environment["WEBJAM_TEST_STUN_SERVER"] = stun
+    for key in (
+        "WEBJAM_TEST_TURN_SERVER",
+        "WEBJAM_TEST_TURN_SECRET",
+        "WEBJAM_TEST_TURN_CREDENTIAL_URL",
+    ):
+        value = str(os.environ.get(key, "") or "").strip()
+        if value:
+            environment[key] = value
     return environment
 
 
@@ -1252,6 +1297,12 @@ class TransportProcess:
                         )
                     break
                 event = parse_transport_event(line)
+                if event.event_type in {"peer_connected", "peer_closed"}:
+                    LOGGER.info(
+                        "session_path=%s relay_bytes=%s",
+                        event.session_path or "n/a",
+                        event.relay_bytes,
+                    )
                 with self._condition:
                     if event.event_type == "ready":
                         if self._ready is not None or self._timeline:
@@ -1286,6 +1337,8 @@ class TransportProcess:
                                 help_text=event.help_text,
                                 room_state=event.room_state,
                                 route=event.route,
+                                session_path=event.session_path,
+                                relay_bytes=event.relay_bytes,
                             )
                         self._timeline.append(event)
                     self._condition.notify_all()

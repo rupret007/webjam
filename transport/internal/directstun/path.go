@@ -118,6 +118,32 @@ func ParseDialTarget(encoded string) (*net.UDPAddr, error) {
 	return &net.UDPAddr{IP: net.IP(address.AsSlice()), Port: candidate.Port()}, nil
 }
 
+// ParseRelayTarget accepts a sealed relay candidate only when its IPv4 equals
+// the credentialed TURN server. That is the exact-pair bound: CreatePermission
+// and QUIC dial use this address, never an arbitrary peer-supplied relay.
+func ParseRelayTarget(encoded string, allowed netip.Addr) (*net.UDPAddr, error) {
+	if !stunMappedIPv4(allowed) {
+		return nil, errRejectedCandidate
+	}
+	candidate, err := ice.UnmarshalCandidate(encoded)
+	if err != nil || candidate == nil || candidate.Component() != 1 {
+		return nil, errRejectedCandidate
+	}
+	if candidate.Type() != ice.CandidateTypeRelay {
+		return nil, errRejectedCandidate
+	}
+	address, err := netip.ParseAddr(candidate.Address())
+	if err != nil {
+		return nil, errRejectedCandidate
+	}
+	address = address.Unmap()
+	if !stunMappedIPv4(address) || address != allowed.Unmap() ||
+		candidate.Port() < 1 || candidate.Port() > 65_535 {
+		return nil, errRejectedCandidate
+	}
+	return &net.UDPAddr{IP: net.IP(address.AsSlice()), Port: candidate.Port()}, nil
+}
+
 func privateIPv4s() []netip.Addr {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
@@ -147,6 +173,21 @@ func hostCandidate(address netip.Addr, port int) (string, error) {
 		Address:   address.String(),
 		Port:      port,
 		Component: 1,
+	})
+	if err != nil {
+		return "", err
+	}
+	return candidate.Marshal(), nil
+}
+
+func relayCandidate(relayed netip.AddrPort, relatedPort int) (string, error) {
+	candidate, err := ice.NewCandidateRelay(&ice.CandidateRelayConfig{
+		Network:   "udp",
+		Address:   relayed.Addr().String(),
+		Port:      int(relayed.Port()),
+		Component: 1,
+		RelAddr:   "0.0.0.0",
+		RelPort:   relatedPort,
 	})
 	if err != nil {
 		return "", err

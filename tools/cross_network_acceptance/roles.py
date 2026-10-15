@@ -613,9 +613,18 @@ def _native_guest(work_dir: Path, profile: str) -> int:
         connected = _drain(qapp, _progress, 50.0)
         exchanged = connected and _native_state_exchanged(app, profile)
         room = app._room_participant
-        snapshot = getattr(getattr(app, "_remote_session", None), "snapshot", None)
+        runtime = getattr(app, "_remote_session", None)
+        snapshot = getattr(runtime, "snapshot", None)
         error_code = getattr(getattr(snapshot, "error_code", None), "value", "")
         failure_text = _sanitize_text(" ".join(flashes) or _hud_text(app))
+        session_path = str(getattr(runtime, "session_path", "") or "")
+        if not session_path:
+            path = getattr(snapshot, "path", None)
+            label = str(getattr(path, "value", path) or "")
+            if label == "internet_direct":
+                session_path = "direct"
+            elif label == "secure_relay":
+                session_path = "relay"
         if connected:
             failure_class = ""
         elif _honest_failure(failure_text) or room.state is ArtRoomState.FAILED:
@@ -634,6 +643,7 @@ def _native_guest(work_dir: Path, profile: str) -> int:
                 "error_code": error_code,
                 "failure_class": failure_class,
                 "failure_text": failure_text,
+                "session_path": session_path if connected else "",
                 "transport": "direct-stun",
             },
         )

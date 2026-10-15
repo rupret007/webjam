@@ -11,6 +11,7 @@
   `direct-stun` (public STUN, simultaneous UDP hole punch, clipboard-sealed
   candidates, no port forwarding, $0). After Join, the friend sends a short
   reply back and the host presses Paste Reply. Source checkouts without the
-  sidecar stay on LAN. Symmetric NAT / CGNAT / cellular still fail without a
-  later relay; the HUD says WebJam couldn't reach the host instead of treating
-  the invite as used. Plan: `docs/REMOTE-SESSIONS-PLAN.md`.
+  sidecar stay on LAN. When the direct pair fails, Host/Join uses a $0 TURN
+  relay (self-hosted coturn or Cloudflare Realtime). The HUD still says
+  WebJam couldn't reach the host if both paths fail. Plan:
+  `docs/REMOTE-SESSIONS-PLAN.md`.

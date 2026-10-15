@@ -26,6 +26,8 @@ from tools.cross_network_acceptance.topology import (
     apply_topology,
     cleanup_topology,
 )
+from tools.cross_network_acceptance.turn import argv as turn_argv
+from tools.cross_network_acceptance.turn import new_secret, write_config
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -105,6 +107,10 @@ def _user_env(
     env.pop("WEBJAM_ENABLE_REFERENCE_LOCAL", None)
     env["WEBJAM_TEST_HARNESS"] = "1"
     env["WEBJAM_TEST_STUN_SERVER"] = f"{INET_ADDR}:{STUN_UDP}"
+    env["WEBJAM_TEST_TURN_SERVER"] = f"{INET_ADDR}:{STUN_UDP}"
+    secret = str(os.environ.get("WEBJAM_TEST_TURN_SECRET", "") or "").strip()
+    if secret:
+        env["WEBJAM_TEST_TURN_SECRET"] = secret
     if transport_binary:
         env["WEBJAM_TRANSPORT_BINARY"] = transport_binary
         env["WEBJAM_BUILD_ID"] = build_id
@@ -348,8 +354,10 @@ def _run_profile(
             "failure_class": result.get("failure_class", ""),
             "failure_text": result.get("failure_text", ""),
             "error_code": result.get("error_code", ""),
+            "session_path": str(result.get("session_path") or ""),
             "fake_connect": connected
-            and topology.spec.nat_mode == "symmetric",
+            and topology.spec.nat_mode == "symmetric"
+            and str(result.get("session_path") or "") != "relay",
         }
     finally:
         (work_dir / "host.stop").write_text("1\n", encoding="utf-8")
@@ -443,6 +451,7 @@ def run_case(
         return 1
     rendezvous: subprocess.Popen[str] | None = None
     stun_proc: subprocess.Popen[str] | None = None
+    turn_proc: subprocess.Popen[str] | None = None
     host_reach = guest_reach = None
     stun_host = stun_guest = None
     profile_rows: list[dict[str, Any]] = []
@@ -453,6 +462,24 @@ def run_case(
         netem_applied = False
     try:
         if topology.inet_ns and topology.inet_addr:
+            turn_secret = new_secret()
+            env["WEBJAM_TEST_TURN_SECRET"] = turn_secret
+            try:
+                config = write_config(work_root / "coturn", secret=turn_secret)
+                # turnserver runs as the dropped-privilege user; the config
+                # directory is created as root and must be readable/writable.
+                _chown_tree(config.parent)
+                turn_proc = ns_popen(
+                    topology.inet_ns,
+                    turn_argv(config),
+                    cwd=REPO_ROOT,
+                    env=env,
+                    stderr_path=work_root / "coturn.stderr",
+                )
+            except Exception:
+                turn_proc = None
+                if not notes:
+                    notes = "The public TURN server could not be started."
             stun_proc = ns_popen(
                 topology.inet_ns,
                 [
@@ -460,7 +487,6 @@ def run_case(
                     "-m",
                     "tools.cross_network_acceptance.stun",
                     topology.inet_addr,
-                    str(STUN_UDP),
                     str(STUN_UDP_ALT),
                 ],
                 cwd=REPO_ROOT,
@@ -515,7 +541,7 @@ def run_case(
                     )
                 )
     finally:
-        for proc in (stun_proc, rendezvous):
+        for proc in (turn_proc, stun_proc, rendezvous):
             if proc is None:
                 continue
             proc.send_signal(signal.SIGTERM)
@@ -538,44 +564,42 @@ def run_case(
     exchanged = all(row.get("session_state_exchanged") for row in profile_rows)
     connected = all(row.get("guest_connected") for row in profile_rows)
     fake = any(row.get("fake_connect") for row in profile_rows)
+    paths = [str(row.get("session_path") or "") for row in profile_rows]
     if mode == "symmetric":
-        honest = (
-            harness_ok
-            and not connected
-            and not fake
-            and all(
-                row.get("failure_class") == "honest_unreachable"
-                or not row.get("guest_connected")
-                for row in profile_rows
-            )
-        )
-        status = "FAIL"
-        if fake:
+        relayed = bool(paths) and all(item == "relay" for item in paths)
+        status = "PASS" if harness_ok and exchanged and connected and relayed else "FAIL"
+        if fake or (connected and not relayed):
             notes = (
-                "Symmetric NAT produced a connection. Direct-stun must fail "
-                "honestly when the host mapping is destination-dependent."
+                "Symmetric NAT connected without the TURN relay. The fallback "
+                "must be the only path that succeeds on random port mapping."
             )
-        elif honest:
+        elif status == "PASS":
+            notes = "Symmetric NAT joined through the TURN relay."
+        elif not notes:
+            notes = "Symmetric NAT did not connect through the TURN relay."
+    elif mode == "cone":
+        direct = bool(paths) and all(item == "direct" for item in paths)
+        status = "PASS" if harness_ok and exchanged and connected and direct else "FAIL"
+        if connected and not direct:
             notes = (
-                "Honest failure as expected: symmetric NAT (random port mapping) "
-                "cannot complete packaged direct-stun without a relay."
+                "Cone NAT used the TURN relay; it must stay on the direct path."
             )
         elif not notes:
-            notes = "Symmetric NAT did not connect; failure copy was not recorded."
+            if status == "FAIL" and harness_ok:
+                notes = (
+                    "Cone NAT Host/Join did not connect. See share_route and "
+                    "failure_class in the receipt profiles."
+                )
+            elif not harness_ok:
+                notes = "The harness could not start the host on the simulated network."
     else:
         status = "PASS" if harness_ok and exchanged and connected else "FAIL"
         if not notes:
             if case == "cross-network" and status == "FAIL" and harness_ok:
-                if mode == "cone":
-                    notes = (
-                        "Cone NAT Host/Join did not connect. See share_route and "
-                        "failure_class in the receipt profiles."
-                    )
-                else:
-                    notes = (
-                        "Expected until ordinary Host/Join uses the v3 rendezvous/relay "
-                        "described in docs/REMOTE-SESSIONS-PLAN.md (usability PR #372)."
-                    )
+                notes = (
+                    "Expected until ordinary Host/Join uses the v3 rendezvous/relay "
+                    "described in docs/REMOTE-SESSIONS-PLAN.md (usability PR #372)."
+                )
             elif not harness_ok:
                 notes = "The harness could not start the host on the simulated network."
     routable_values = [
@@ -600,6 +624,7 @@ def run_case(
                 "share_reaches_internet": row.get("share_reaches_internet"),
                 "share_route": str(row.get("share_route") or ""),
                 "failure_class": str(row.get("failure_class") or ""),
+                "session_path": str(row.get("session_path") or ""),
                 "fake_connect": bool(row.get("fake_connect")),
             }
             for row in profile_rows

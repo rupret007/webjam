@@ -12,8 +12,8 @@ NAT modes for the two-home case:
   mapping is reachable from the other house (full cone / 1:1 for the one
   LAN host). Not a product port-forward of a service port.
 - symmetric: NAT-A uses MASQUERADE --random-fully (random port mapping);
-  NAT-B stays cone. Guest-originated packets to the host STUN mapping
-  must fail honestly.
+  NAT-B stays cone. Direct STUN mapping must fail; Join must PASS through
+  the public-namespace coturn relay.
 """
 
 from __future__ import annotations

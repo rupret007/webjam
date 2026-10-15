@@ -217,6 +217,15 @@ def test_sidecar_environment_is_empty_except_unpackaged_harness(
     }
     assert "WEBJAM_ENROLLMENT_CAPABILITY" not in captured["env"]
 
+    monkeypatch.setenv("WEBJAM_TEST_TURN_SERVER", "203.0.113.1:3478")
+    monkeypatch.setenv("WEBJAM_TEST_TURN_SECRET", "harness-only")
+    process = TransportProcess(_sidecar(tmp_path), expected_build="test-build")
+    process.start()
+    process.stop()
+    assert captured["env"]["WEBJAM_TEST_TURN_SERVER"] == "203.0.113.1:3478"
+    assert captured["env"]["WEBJAM_TEST_TURN_SECRET"] == "harness-only"
+    assert "WEBJAM_ENROLLMENT_CAPABILITY" not in captured["env"]
+
     monkeypatch.setattr(transport_runtime.sys, "frozen", True, raising=False)
     assert transport_runtime._sidecar_environment() == {}
 
@@ -589,6 +598,38 @@ def test_peer_connected_schema_distinguishes_guest_response_and_host_update() ->
     ):
         with pytest.raises(TransportProtocolError):
             parse_transport_event(json.dumps(invalid).encode() + b"\n")
+
+
+def test_direct_stun_peer_connected_requires_session_path() -> None:
+    base = {
+        "version": 1,
+        "type": "peer_connected",
+        "code": "ok",
+        "state": "connected",
+        "profile_id": "direct-stun",
+        "generation": 2,
+        "loopback_port": 43123,
+        "session_path": "direct",
+    }
+    guest = parse_transport_event(
+        json.dumps({**base, "id": 7, "mode": "guest"}).encode() + b"\n"
+    )
+    assert guest.session_path == "direct"
+    relayed = parse_transport_event(
+        json.dumps({**base, "id": 0, "mode": "host", "session_path": "relay"}).encode()
+        + b"\n"
+    )
+    assert relayed.session_path == "relay"
+    for invalid in (
+        {**base, "id": 7, "mode": "guest", "session_path": ""},
+        {**base, "id": 7, "mode": "guest", "session_path": "turn"},
+        {**base, "id": 7, "mode": "guest", "relay_bytes": 12},
+    ):
+        payload = {k: v for k, v in invalid.items() if v != ""}
+        if invalid.get("session_path") == "":
+            payload.pop("session_path", None)
+        with pytest.raises(TransportProtocolError):
+            parse_transport_event(json.dumps(payload).encode() + b"\n")
 
 
 def test_help_event_schema_is_exact_canonical_and_redacted() -> None:

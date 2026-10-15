@@ -217,6 +217,12 @@ class RemoteSessionRuntime:
         return bytes(getattr(backend, "guest_reply", b"") or b"")
 
     @property
+    def session_path(self) -> str:
+        """direct or relay after peer_connected; empty before that."""
+
+        return str(getattr(self._backend, "session_path", "") or "")
+
+    @property
     def connection_available(self) -> bool:
         with self._condition:
             if self._snapshot.phase is not RemoteSessionPhase.CONNECTED:

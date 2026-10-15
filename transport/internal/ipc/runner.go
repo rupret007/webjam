@@ -103,6 +103,7 @@ type fabricUpdate struct {
 	roomState     *room.State
 	signal        []byte
 	route         string
+	sessionPath   string
 }
 
 type fabricOperation interface {
@@ -212,6 +213,13 @@ type peerMetadata struct {
 	profileID    string
 	generation   uint32
 	loopbackPort int
+	sessionPath  string
+	relayBytes   uint64
+}
+
+type sessionAccounting interface {
+	SessionPath() string
+	RelayBytes() uint64
 }
 
 type runnerState struct {
@@ -246,6 +254,18 @@ func (s *runnerState) stateName() string {
 	default:
 		return "idle"
 	}
+}
+
+func closedPeerEvent(id uint64, metadata peerMetadata) Event {
+	event := Event{
+		ID: id, Type: "peer_closed", Code: CodeOK, State: "closed",
+		Mode: metadata.mode, ProfileID: metadata.profileID, Generation: metadata.generation,
+	}
+	if metadata.profileID == profile.DirectStunID {
+		event.SessionPath = metadata.sessionPath
+		event.RelayBytes = metadata.relayBytes
+	}
+	return event
 }
 
 func (s *runnerState) metadataEvent(id uint64, eventType, state string) Event {
@@ -287,6 +307,12 @@ func (s *runnerState) closeActive(preserveHostIdentity bool) (peerMetadata, erro
 		s.openCancel = nil
 	}
 	operation := s.operation
+	if accounting, ok := operation.(sessionAccounting); ok {
+		if path := accounting.SessionPath(); path != "" {
+			metadata.sessionPath = path
+		}
+		metadata.relayBytes = accounting.RelayBytes()
+	}
 	// Retire callbacks and application authority immediately, but retain the
 	// owned operation and identity until bounded local teardown is confirmed.
 	// A failed Close can then be retried without opening a second operation.
@@ -553,10 +579,7 @@ func (s *runnerState) handle(
 				// application error.
 				metadata := *s.recentlyClosed
 				s.recentlyClosed = nil
-				return false, events.emit(Event{
-					ID: command.ID, Type: "peer_closed", Code: CodeOK, State: "closed",
-					Mode: metadata.mode, ProfileID: metadata.profileID, Generation: metadata.generation,
-				})
+				return false, events.emit(closedPeerEvent(command.ID, metadata))
 			}
 			return false, events.emit(Event{ID: command.ID, Type: "error", Code: CodePeerNotOpen, State: s.stateName()})
 		}
@@ -571,10 +594,7 @@ func (s *runnerState) handle(
 			// Keep the prepared identity and pin for the next invitation.
 			s.openConsumed = false
 		}
-		return false, events.emit(Event{
-			ID: command.ID, Type: "peer_closed", Code: CodeOK, State: "closed",
-			Mode: metadata.mode, ProfileID: metadata.profileID, Generation: metadata.generation,
-		})
+		return false, events.emit(closedPeerEvent(command.ID, metadata))
 	case CommandShutdown:
 		if err := s.destroy(); err != nil {
 			return false, events.emit(Event{ID: command.ID, Type: "error", Code: CodeProtocolViolation, State: "failed"})
@@ -703,11 +723,14 @@ func (s *runnerState) handleFabricUpdate(update fabricUpdate, events *emitter) e
 			return s.failFabric(events, ErrProtocol)
 		}
 		s.connected = true
+		s.active.sessionPath = update.sessionPath
 		id := s.active.commandID
 		if s.active.mode == "host" {
 			id = 0
 		}
-		return events.emit(s.metadataEvent(id, "peer_connected", "connected"))
+		event := s.metadataEvent(id, "peer_connected", "connected")
+		event.SessionPath = update.sessionPath
+		return events.emit(event)
 	case updateHelpReceived:
 		if update.err != nil || !s.connected || update.helpRequestID == 0 ||
 			len(update.helpText) == 0 {
