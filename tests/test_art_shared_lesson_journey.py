@@ -14,6 +14,7 @@ from core.reference_video import (
     ReferenceVideoSnapshot,
     ReferenceVideoState,
 )
+from core.session_conductor import ArtRoomState
 
 from tests.test_art_notes_conversation_journey import (
     _make_notes,
@@ -22,6 +23,7 @@ from tests.test_art_notes_conversation_journey import (
     qapp as _qapp_fixture,
     room as _room_fixture,
 )
+from tests.test_lan_lesson_request_worker import Clock, MemoryPeer
 from webjam_qt.controllers.application_controller import ApplicationController
 
 qapp = _qapp_fixture
@@ -65,6 +67,109 @@ def _assert_no_handoff(pair, external_handoffs):
     assert pair.launcher.joined == [] and pair.launcher.host_pages == 0
     for opener in external_handoffs:
         opener.assert_not_called()
+
+
+@pytest.fixture
+def request_guest(room, qapp, monkeypatch, external_handoffs):
+    """Real app and LAN worker; replace only the HTTP peer with a bounded store."""
+    pair = room(role="lan", profile="art", configured=True)
+    owner = pair.owner
+    clock = Clock()
+    peer = MemoryPeer(clock, owner.last_state)
+    owner.client = peer
+    monkeypatch.setattr(owner, "_clock", clock)
+    owner.poll_once()
+    qapp.processEvents()
+    dialog = _paint_along(pair, qapp)
+    QTest.mouseClick(dialog._watch_lesson_button, Qt.MouseButton.LeftButton)
+    owner.poll_once()
+    qapp.processEvents()
+    assert owner.lesson_request_state.can_submit
+    pair.peer, pair.dialog = peer, dialog
+    yield pair
+    _assert_no_handoff(pair, external_handoffs)
+
+
+def test_guest_requests_survive_real_readiness_refresh_without_replay(request_guest, qapp):
+    pair = request_guest
+    app, owner, peer = pair.app, pair.owner, pair.peer
+    room, panel = app._room_participant, app.window.webex_embed
+    binding = room._lesson_binding
+    old_submit = room._lesson_slots[0][1]
+    QTest.mouseClick(panel._lesson_pause_button, Qt.MouseButton.LeftButton)
+    # The host accepts the POST, then the receipt GET fails. Recovery must
+    # rediscover that notice without replaying the old intent.
+    peer.get_hook = Mock(side_effect=OSError("offline"))
+    with pytest.raises(OSError, match="offline"):
+        owner.poll_once()
+    room.lose_lan(owner, room.generation, False)
+    qapp.processEvents()
+    assert room.state is ArtRoomState.RECONNECTING
+    assert room._lesson_binding is binding
+    assert panel._shared_lesson_hosting is False
+    assert not panel._lesson_pause_button.isEnabled()
+    assert not panel._lesson_ready_button.isEnabled()
+    assert not panel._lesson_retry_button.isEnabled()
+    assert panel._lesson_request_guest_status.text() == "Ask the host aloud."
+    assert not panel.lesson_handoff.restart_button.isVisibleTo(app.window)
+    assert not pair.dialog._watch_lesson_button.isEnabled()
+    old_submit("ready")
+    assert owner.lesson_request_state.command is None
+    assert len(peer.commands) == 1
+    notices = peer.store.host_notices()
+    assert len(notices) == 1
+    peer.get_hook = None
+    owner.poll_once()
+    qapp.processEvents()
+    assert room._lesson_binding is binding
+    assert not panel._lesson_pause_button.isEnabled()
+    owner.poll_once()
+    qapp.processEvents()
+    assert room._lesson_binding is binding
+    assert panel._lesson_pause_button.isEnabled()
+    assert panel._lesson_ready_button.isEnabled()
+    assert owner.lesson_request_state.status == "accepted"
+    assert peer.store.host_notices() == notices
+    assert len(peer.commands) == 1
+    assert pair.dialog._watch_lesson_button.isEnabled()
+    assert not panel.lesson_handoff.restart_button.isVisibleTo(app.window)
+
+
+@pytest.mark.parametrize("boundary", [
+    "generation", "profile", "blocked", "role", "owner", "meeting", "video_binding", "terminal", "leave",
+])
+def test_unavailable_guest_sync_still_retires_changed_authority(request_guest, monkeypatch, boundary):
+    app, owner = request_guest.app, request_guest.owner
+    room, panel = app._room_participant, app.window.webex_embed
+    binding = room._lesson_binding
+    old_submit = room._lesson_slots[0][1]
+    room.state = ArtRoomState.RECONNECTING
+    with monkeypatch.context() as patch:
+        if boundary == "generation":
+            patch.setattr(room, "generation", room.generation + 1)
+        elif boundary == "profile":
+            patch.setattr(app, "_active_creator_profile_key", "music")
+        elif boundary == "blocked":
+            patch.setattr(room, "stopping", True)
+        elif boundary == "role":
+            patch.setattr(room, "role", "")
+        elif boundary == "owner":
+            patch.setattr(room, "lan_guest", None)
+        elif boundary == "meeting":
+            patch.setattr(app, "_session_meeting_generation", app._session_meeting_generation + 1)
+        elif boundary == "video_binding":
+            patch.setattr(app, "_reference_video_binding", None)
+        elif boundary == "terminal":
+            room.lose_lan(owner, room.generation, True)
+        else:
+            assert app._stop_session_peer(clear_invite=True)
+        assert not app._sync_paint_along_room()
+        assert room._lesson_binding is None
+        assert panel._shared_lesson_hosting is None
+        assert not room._lesson_current(binding)
+        old_submit("ready")
+        assert not owner.lesson_request_state.can_submit
+        assert request_guest.peer.commands == []
 
 
 @pytest.mark.parametrize("role", ["host", "lan", "native"])
