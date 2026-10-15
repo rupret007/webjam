@@ -10,11 +10,16 @@
  * keys evict LRU at 256; known prefixes last the UTC day with no
  * eviction so a rotator cannot lock out a client already seen.
  *
- * Prefix records live in SQLite (one row per prefix, UTC-day expiry).
- * Each request reads and writes that one row instead of growing a
- * single quota:${scope} blob. An IPv6 /32 adding ~32 /48s a minute
- * therefore cannot push the Durable Object over the value-size or CPU
- * limit and 503 every user.
+ * Prefix and /24|/32 share records live in SQLite (one row each,
+ * UTC-day expiry). Each request reads and writes those rows instead
+ * of growing a single quota:${scope} blob. An IPv6 /32 adding ~32
+ * /48s a minute therefore cannot push the Durable Object over the
+ * value-size or CPU limit and 503 every user. There is no fixed
+ * network table: a new /24 or /32 is still served after hundreds of
+ * other nets.
+ *
+ * Unreadable quota counters fail closed: a thrown storage get must
+ * not reset the day and overwrite the real counters.
  *
  * There is no global new-prefix cap. New prefixes are capped per IPv4
  * /24 and per IPv6 /32. Each prefix has a daily share of 200. Each
@@ -25,7 +30,8 @@
  * per UTC day (~2k) and already-known prefixes are not rewritten.
  * Each rate-only allow still rewrites ipBuckets and counts as one
  * daily row write so rotating failed upgrades cannot persist
- * unboundedly.
+ * unboundedly. Daily allows also count the prefix upsert, net
+ * upsert, KV put, and UTC-day DELETE toward dailyRowWrites.
  */
 
 export const DEFAULT_DAILY_REQUESTS = 10_000;
@@ -44,7 +50,6 @@ export const DEFAULT_NET_DAILY_GB_S = 200;
 export const DEFAULT_RATE_PREFIX_DAILY = 2_000;
 export const RATE_WINDOW_MS = 60_000;
 export const MAX_IP_BUCKETS = 256;
-export const MAX_NET_SHARES = 512;
 export const MAX_QUOTA_VALUE_BYTES = 96 * 1024;
 
 export const PREFIX_SCHEMA_SQL =
@@ -55,6 +60,14 @@ export const UPSERT_PREFIX_SQL =
   "INSERT OR REPLACE INTO known_prefixes (scope, prefix, day, at, requests, row_writes, gb_s) VALUES (?, ?, ?, ?, ?, ?, ?)";
 export const EXPIRE_PREFIX_SQL =
   "DELETE FROM known_prefixes WHERE scope = ? AND day != ?";
+export const NET_SCHEMA_SQL =
+  "CREATE TABLE IF NOT EXISTS net_shares (scope TEXT NOT NULL, net TEXT NOT NULL, day TEXT NOT NULL, requests REAL NOT NULL DEFAULT 0, row_writes INTEGER NOT NULL DEFAULT 0, gb_s REAL NOT NULL DEFAULT 0, PRIMARY KEY (scope, net))";
+export const SELECT_NET_SQL =
+  "SELECT requests, row_writes, gb_s FROM net_shares WHERE scope = ? AND net = ? AND day = ?";
+export const UPSERT_NET_SQL =
+  "INSERT OR REPLACE INTO net_shares (scope, net, day, requests, row_writes, gb_s) VALUES (?, ?, ?, ?, ?, ?)";
+export const EXPIRE_NET_SQL =
+  "DELETE FROM net_shares WHERE scope = ? AND day != ?";
 
 export function utcDayKey(nowMs) {
   return new Date(nowMs).toISOString().slice(0, 10);
@@ -142,7 +155,6 @@ export function compactQuotaState(state) {
     gbS: state.gbS,
     ipBuckets: state.ipBuckets,
     newBuckets: state.newBuckets,
-    netShares: state.netShares,
     ratePrefixWrites: state.ratePrefixWrites,
   };
 }
@@ -261,11 +273,6 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits, charge = "
       return { allow: false, status: 429, code: "rate" };
     }
   }
-  const netKnown = Object.prototype.hasOwnProperty.call(state.netShares, net);
-  const canTrackNet = netKnown || Object.keys(state.netShares).length < MAX_NET_SHARES;
-  if (countDaily && isNew && !canTrackNet) {
-    return { allow: false, status: 429, code: "rate" };
-  }
   const writes = Number.isFinite(rowWrites) && rowWrites > 0 ? rowWrites : 0;
   let nextRequests = Number(state.requests) || 0;
   let nextWrites = Number(state.rowWrites) || 0;
@@ -335,16 +342,14 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits, charge = "
     record.requests = prefixRequests;
     record.rowWrites = prefixWrites;
     record.gbS = prefixGbS;
-    if (canTrackNet) {
-      const share =
-        netPrior != null && typeof netPrior === "object"
-          ? netPrior
-          : { requests: 0, rowWrites: 0, gbS: 0 };
-      share.requests = netRequests;
-      share.rowWrites = netWrites;
-      share.gbS = netGbS;
-      state.netShares[net] = share;
-    }
+    const share =
+      netPrior != null && typeof netPrior === "object"
+        ? netPrior
+        : { requests: 0, rowWrites: 0, gbS: 0 };
+    share.requests = netRequests;
+    share.rowWrites = netWrites;
+    share.gbS = netGbS;
+    state.netShares[net] = share;
   } else if (rateOnly) {
     if (isNew) {
       touchKnownPrefix(state.knownPrefixes, prefix, nowMs);
@@ -357,6 +362,7 @@ export function applyQuota(state, { ip, nowMs, rowWrites = 0, limits, charge = "
     status: 200,
     code: "ok",
     prefixWritten: countDaily || (rateOnly && isNew),
+    netWritten: countDaily,
   };
 }
 
@@ -416,8 +422,9 @@ function quotaSql(storage) {
     : null;
 }
 
-function ensurePrefixTable(sql) {
+function ensureQuotaTables(sql) {
   sql.exec(PREFIX_SCHEMA_SQL);
+  sql.exec(NET_SCHEMA_SQL);
 }
 
 function readPrefixRow(sql, scope, prefix, day) {
@@ -447,6 +454,49 @@ function writePrefixRow(sql, scope, prefix, day, record) {
 
 function expirePrefixRows(sql, scope, day) {
   sql.exec(EXPIRE_PREFIX_SQL, scope, day);
+}
+
+function readNetRow(sql, scope, net, day) {
+  for (const row of sql.exec(SELECT_NET_SQL, scope, net, day)) {
+    return {
+      requests: Number(row.requests) || 0,
+      rowWrites: Number(row.row_writes) || 0,
+      gbS: Number(row.gb_s) || 0,
+    };
+  }
+  return null;
+}
+
+function writeNetRow(sql, scope, net, day, record) {
+  sql.exec(
+    UPSERT_NET_SQL,
+    scope,
+    net,
+    day,
+    Number(record.requests) || 0,
+    Number(record.rowWrites) || 0,
+    Number(record.gbS) || 0,
+  );
+}
+
+function expireNetRows(sql, scope, day) {
+  sql.exec(EXPIRE_NET_SQL, scope, day);
+}
+
+function extraPersistWrites({ charge, prefixWritten, netWritten, expiredTables }) {
+  let extra = 0;
+  const rateOnly = charge === "rate";
+  if (!rateOnly) {
+    extra += 1;
+    if (prefixWritten) {
+      extra += 1;
+    }
+  }
+  if (netWritten) {
+    extra += 1;
+  }
+  extra += Number(expiredTables) || 0;
+  return extra;
 }
 
 function deniedResponse(status, code) {
@@ -480,27 +530,37 @@ export class MailboxQuota {
       const scope =
         request.headers.get("X-WebJam-Quota-Scope") === "turn" ? "turn" : "mailbox";
       const storageKey = `quota:${scope}`;
-      let stored;
-      try {
-        stored = await this.ctx.storage.get(storageKey);
-      } catch {
-        stored = null;
+      const stored = await this.ctx.storage.get(storageKey);
+      let state;
+      if (stored === undefined) {
+        state = emptyQuotaState();
+      } else if (stored != null && typeof stored === "object") {
+        state = { ...stored };
+      } else {
+        return deniedResponse(503, "unreadable");
       }
-      const state =
-        stored && typeof stored === "object" ? { ...stored } : emptyQuotaState();
       delete state.knownPrefixes;
+      delete state.netShares;
       state.knownPrefixes = {};
+      state.netShares = {};
       const env = this.env ?? globalThis.WEBJAM_QUOTA_ENV ?? {};
       const limits = quotaLimits(env, scope);
       const day = utcDayKey(nowMs);
       const prefix = prefix48(ip);
-      ensurePrefixTable(sql);
+      const net = prefixNet(ip);
+      ensureQuotaTables(sql);
+      const hadPriorDay = Boolean(state.day) && state.day !== day;
       if (state.day !== day) {
         expirePrefixRows(sql, scope, day);
+        expireNetRows(sql, scope, day);
       }
-      const row = prefix ? readPrefixRow(sql, scope, prefix, day) : null;
-      if (row) {
-        state.knownPrefixes[prefix] = row;
+      const prefixRow = prefix ? readPrefixRow(sql, scope, prefix, day) : null;
+      if (prefixRow) {
+        state.knownPrefixes[prefix] = prefixRow;
+      }
+      const netRow = net ? readNetRow(sql, scope, net, day) : null;
+      if (netRow) {
+        state.netShares[net] = netRow;
       }
       const decision = applyQuota(state, {
         ip,
@@ -510,7 +570,20 @@ export class MailboxQuota {
         charge,
       });
       if (decision.allow) {
-        if (charge === "rate" && (Number(state.rowWrites) || 0) > limits.dailyRowWrites) {
+        const extra = extraPersistWrites({
+          charge,
+          prefixWritten: decision.prefixWritten,
+          netWritten: decision.netWritten,
+          expiredTables: hadPriorDay ? 2 : 0,
+        });
+        const nextWrites = (Number(state.rowWrites) || 0) + extra;
+        if (nextWrites > limits.dailyRowWrites) {
+          return deniedResponse(429, "cap");
+        }
+        state.rowWrites = nextWrites;
+        const persisted = compactQuotaState(state);
+        const encoded = JSON.stringify(persisted);
+        if (encoded.length > MAX_QUOTA_VALUE_BYTES) {
           return deniedResponse(429, "cap");
         }
         if (decision.prefixWritten) {
@@ -519,10 +592,11 @@ export class MailboxQuota {
             writePrefixRow(sql, scope, prefix, state.day, record);
           }
         }
-        const persisted = compactQuotaState(state);
-        const encoded = JSON.stringify(persisted);
-        if (encoded.length > MAX_QUOTA_VALUE_BYTES) {
-          return deniedResponse(429, "cap");
+        if (decision.netWritten) {
+          const share = state.netShares[net];
+          if (share) {
+            writeNetRow(sql, scope, net, state.day, share);
+          }
         }
         await this.ctx.storage.put(storageKey, persisted);
       }

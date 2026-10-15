@@ -27,17 +27,21 @@ import {
   DEFAULT_RATE_PREFIX_DAILY,
   emptyQuotaState,
   ESTIMATED_GB_S_PER_REQUEST,
+  EXPIRE_NET_SQL,
   EXPIRE_PREFIX_SQL,
   MailboxQuota,
   MAX_IP_BUCKETS,
   MAX_QUOTA_VALUE_BYTES,
+  NET_SCHEMA_SQL,
   PREFIX_SCHEMA_SQL,
   prefix48,
   prefixNet,
   quotaLimits,
   RATE_WINDOW_MS,
   rateKey,
+  SELECT_NET_SQL,
   SELECT_PREFIX_SQL,
+  UPSERT_NET_SQL,
   UPSERT_PREFIX_SQL,
 } from "../src/quota.js";
 import { handleRequest, resetWorkerState } from "../src/worker.js";
@@ -88,11 +92,11 @@ function sqlCursor(rows) {
   };
 }
 
-function memoryPrefixSql(prefixRows) {
-  const keyOf = (scope, prefix) => `${scope}\t${prefix}`;
+function memoryQuotaSql(prefixRows, netRows) {
+  const keyOf = (scope, id) => `${scope}\t${id}`;
   return {
     exec(query, ...params) {
-      if (query === PREFIX_SCHEMA_SQL) {
+      if (query === PREFIX_SCHEMA_SQL || query === NET_SCHEMA_SQL) {
         return sqlCursor([]);
       }
       if (query === SELECT_PREFIX_SQL) {
@@ -125,6 +129,35 @@ function memoryPrefixSql(prefixRows) {
         }
         return sqlCursor([]);
       }
+      if (query === SELECT_NET_SQL) {
+        const [scope, net, day] = params;
+        const row = netRows.get(keyOf(scope, net));
+        if (!row || row.day !== day) {
+          return sqlCursor([]);
+        }
+        return sqlCursor([row]);
+      }
+      if (query === UPSERT_NET_SQL) {
+        const [scope, net, day, requests, row_writes, gb_s] = params;
+        netRows.set(keyOf(scope, net), {
+          requests,
+          row_writes,
+          gb_s,
+          day,
+          scope,
+          net,
+        });
+        return sqlCursor([]);
+      }
+      if (query === EXPIRE_NET_SQL) {
+        const [scope, day] = params;
+        for (const [key, row] of netRows) {
+          if (row.scope === scope && row.day !== day) {
+            netRows.delete(key);
+          }
+        }
+        return sqlCursor([]);
+      }
       throw new Error("unsupported sql");
     },
   };
@@ -133,10 +166,12 @@ function memoryPrefixSql(prefixRows) {
 function memoryQuotaStorage() {
   const data = new Map();
   const prefixRows = new Map();
+  const netRows = new Map();
   let puts = 0;
   return {
     data,
     prefixRows,
+    netRows,
     get puts() {
       return puts;
     },
@@ -148,7 +183,7 @@ function memoryQuotaStorage() {
         puts += 1;
         data.set(key, value);
       },
-      sql: memoryPrefixSql(prefixRows),
+      sql: memoryQuotaSql(prefixRows, netRows),
     },
   };
 }
@@ -872,6 +907,102 @@ test("MailboxQuota fails closed before a rate-only storage put that would exceed
   assert.equal(memory.puts, 2);
 });
 
+test("MailboxQuota fails closed when quota storage get throws", async () => {
+  const memory = memoryQuotaStorage();
+  memory.storage.get = async () => {
+    throw new Error("unreadable");
+  };
+  const quota = new MailboxQuota({ storage: memory.storage }, {});
+  const response = await quota.fetch(
+    new Request("https://quota/check", {
+      method: "POST",
+      headers: {
+        "CF-Connecting-IP": "203.0.113.10",
+        "X-WebJam-Now": "1",
+        "X-WebJam-Row-Writes": "0",
+        "X-WebJam-Quota-Scope": "mailbox",
+        "X-WebJam-Quota-Charge": "all",
+      },
+    }),
+  );
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, "unavailable");
+  assert.equal(memory.puts, 0);
+  assert.equal(memory.data.size, 0);
+});
+
+test("more than 512 networks in a day still serve a new network", async () => {
+  const memory = memoryQuotaStorage();
+  const quota = new MailboxQuota(
+    { storage: memory.storage },
+    {
+      MAILBOX_DAILY_REQUESTS: "10000",
+      MAILBOX_DAILY_ROW_WRITES: "10000",
+      MAILBOX_RATE_LIMIT_PER_MINUTE: "1000",
+      MAILBOX_NEW_BUCKETS_PER_MINUTE: "1000",
+    },
+  );
+  const check = (ip) =>
+    quota.fetch(
+      new Request("https://quota/check", {
+        method: "POST",
+        headers: {
+          "CF-Connecting-IP": ip,
+          "X-WebJam-Now": "1",
+          "X-WebJam-Row-Writes": "0",
+          "X-WebJam-Quota-Scope": "mailbox",
+          "X-WebJam-Quota-Charge": "all",
+        },
+      }),
+    );
+  const seen = 520;
+  for (let i = 0; i < seen; i += 1) {
+    const ip = `198.${(i >> 8) & 255}.${i & 255}.10`;
+    const response = await check(ip);
+    assert.notEqual(response.status, 503);
+    assert.equal(response.status, 200);
+  }
+  const next = await check("203.0.113.10");
+  assert.notEqual(next.status, 503);
+  assert.equal(next.status, 200);
+  const stored = memory.data.get("quota:mailbox");
+  assert.equal("netShares" in stored, false);
+  assert.ok(memory.netRows.size > 512);
+  assert.ok(memory.netRows.size >= seen + 1);
+});
+
+test("MailboxQuota counts prefix, net, and KV persists toward daily row writes", async () => {
+  const memory = memoryQuotaStorage();
+  const quota = new MailboxQuota(
+    { storage: memory.storage },
+    {
+      MAILBOX_DAILY_ROW_WRITES: "3",
+      MAILBOX_RATE_LIMIT_PER_MINUTE: "100",
+      MAILBOX_NEW_BUCKETS_PER_MINUTE: "100",
+    },
+  );
+  const check = () =>
+    quota.fetch(
+      new Request("https://quota/check", {
+        method: "POST",
+        headers: {
+          "CF-Connecting-IP": "203.0.113.10",
+          "X-WebJam-Now": "1",
+          "X-WebJam-Row-Writes": "0",
+          "X-WebJam-Quota-Scope": "mailbox",
+          "X-WebJam-Quota-Charge": "all",
+        },
+      }),
+    );
+  const first = await check();
+  const second = await check();
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 429);
+  assert.equal((await second.json()).error, "cap");
+  assert.equal(memory.puts, 1);
+  assert.equal(memory.data.get("quota:mailbox").rowWrites, 3);
+});
+
 test("30k prefixes from one /32 still serve other users and never 503", async () => {
   const memory = memoryQuotaStorage();
   const quota = new MailboxQuota(
@@ -912,10 +1043,12 @@ test("30k prefixes from one /32 still serve other users and never 503", async ()
   }
   const stored = memory.data.get("quota:mailbox");
   assert.equal(stored.knownPrefixes, undefined);
+  assert.equal(stored.netShares, undefined);
   const encoded = JSON.stringify(stored);
   assert.ok(encoded.length < MAX_QUOTA_VALUE_BYTES);
   assert.ok(encoded.length < 32 * 1024);
   assert.equal("knownPrefixes" in stored, false);
+  assert.equal("netShares" in stored, false);
   assert.deepEqual(stored, compactQuotaState(stored));
   assert.ok(memory.prefixRows.size >= flood);
   const outsider = await check(other, 1);
