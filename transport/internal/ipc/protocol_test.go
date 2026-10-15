@@ -945,6 +945,10 @@ func (o *recordingOperation) PublishRoomState(_ context.Context, state *room.Sta
 	return state.Validate()
 }
 
+func (o *recordingOperation) ApplyGuestSignal(context.Context, []byte) error {
+	return nil
+}
+
 func (o *recordingOperation) Close(context.Context) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()

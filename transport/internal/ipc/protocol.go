@@ -31,6 +31,7 @@ var (
 	ErrEventTooLarge      = errors.New("IPC event exceeds limit")
 	ErrUnsupportedProfile = errors.New("unsupported compiled profile")
 	ErrEnrollmentInvalid  = errors.New("invalid enrollment configuration")
+	ErrUnreachable        = errors.New("peer unreachable")
 )
 
 type CommandType string
@@ -39,6 +40,7 @@ const (
 	CommandHello            CommandType = "hello"
 	CommandPrepareHost      CommandType = "prepare_host"
 	CommandOpenPeer         CommandType = "open_peer"
+	CommandApplySignal      CommandType = "apply_signal"
 	CommandSendHelp         CommandType = "send_help"
 	CommandPublishRoomState CommandType = "publish_room_state"
 	CommandClosePeer        CommandType = "close_peer"
@@ -249,6 +251,8 @@ func ParseCommandAt(line []byte, now time.Time) (Command, error) {
 		return command, nil
 	case CommandOpenPeer:
 		return parseOpenCommand(command, wire, now)
+	case CommandApplySignal:
+		return parseApplySignalCommand(command, wire)
 	case CommandSendHelp:
 		return parseHelpCommand(command, wire)
 	case CommandPublishRoomState:
@@ -413,6 +417,24 @@ func parseOpenCommand(command Command, wire wireCommand, now time.Time) (Command
 		}
 	}
 	command.SessionID = deriveSessionID(command.SessionReference, command.InviteReference)
+	return command, nil
+}
+
+func parseApplySignalCommand(command Command, wire wireCommand) (Command, error) {
+	if wire.Generation == nil || *wire.Generation == 0 || wire.HostSignal == nil || *wire.HostSignal == "" ||
+		wire.Mode != nil || wire.TargetPort != nil || wire.ProfileID != nil ||
+		wire.SessionReference != nil || wire.InviteReference != nil ||
+		wire.EnrollmentCapability != nil || wire.ExpiresAtUnix != nil ||
+		wire.HostSPKISHA256 != nil || wire.HelpText != nil || wire.RoomState != nil {
+		return command, ErrProtocol
+	}
+	envelope, err := decodeSignalEnvelope(string(*wire.HostSignal))
+	if err != nil {
+		command.ClearSensitive()
+		return command, ErrEnrollmentInvalid
+	}
+	command.Generation = *wire.Generation
+	command.HostSignal = envelope
 	return command, nil
 }
 
@@ -621,6 +643,21 @@ func validateEvent(event *Event) error {
 		} else if !signalEmpty {
 			return ErrProtocol
 		}
+	case "guest_signal":
+		if event.ID != 0 || event.Code != CodeOK || event.State != "connecting" || event.Build != "" ||
+			event.Mode != "guest" || event.ProfileID != profile.DirectStunID || event.Generation == 0 ||
+			event.LoopbackPort == 0 || event.HostSPKISHA256 != "" || !helpFieldsEmpty {
+			return ErrProtocol
+		}
+		if _, err := decodeSignalEnvelope(event.Signal); err != nil {
+			return ErrProtocol
+		}
+	case "signal_applied":
+		if event.ID == 0 || event.Code != CodeOK || event.State != "host_waiting" || event.Build != "" ||
+			event.Mode != "host" || event.ProfileID != profile.DirectStunID || event.Generation == 0 ||
+			event.LoopbackPort == 0 || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty {
+			return ErrProtocol
+		}
 	case "peer_connected":
 		if event.Code != CodeOK || event.State != "connected" || event.Build != "" ||
 			event.Mode == "" || event.ProfileID == "" || event.Generation == 0 || event.LoopbackPort == 0 ||
@@ -693,12 +730,14 @@ var (
 	profilePattern    = regexp.MustCompile(`\A[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?\z`)
 	allowedEventTypes = map[string]struct{}{
 		"ready": {}, "hello": {}, "host_prepared": {}, "host_registered": {},
+		"guest_signal": {}, "signal_applied": {},
 		"peer_connected": {}, "peer_closed": {}, "help_accepted": {},
 		"help_received": {}, "help_delivered": {}, "room_state_accepted": {}, "room_state_received": {}, "stopped": {}, "error": {},
 	}
 	allowedEventCodes = map[string]struct{}{
 		CodeOK: {}, CodeProtocolViolation: {}, CodePeerAlreadyOpen: {}, CodePeerNotOpen: {},
 		CodeOpenFailed: {}, CodeIdentityNotPrepared: {}, CodeUnsupportedProfile: {}, CodeEnrollmentInvalid: {},
+		CodeTimedOut:     {},
 		CodeRoomNotReady: {}, CodeRoomInvalid: {}, CodeRoomRateLimited: {}, CodePeerProtocolUnsupported: {},
 		CodeHelpNotReady: {}, CodeHelpInvalid: {}, CodeHelpRateLimited: {}, CodeHelpQueueFull: {},
 	}

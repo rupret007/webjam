@@ -437,6 +437,8 @@ class ApplicationController(QObject):
         self._remote_invitation_requires_replacement = False
         self._remote_session = None
         self._remote_invite_owner = None
+        self._direct_stun_invite_copied = False
+        self._direct_stun_guest_reply_copied = False
         self._remote_host_preparing = False
         self._remote_route_base_settings: AppSettings | None = None
         self._remote_route_generation = 0
@@ -7954,6 +7956,62 @@ class ApplicationController(QObject):
                 self._request_reference_track_teardown()
         self.recording.on_record_requested()
 
+    def _paste_direct_stun_guest_reply(self) -> None:
+        """Paste the friend's sealed reply so both homes can punch together."""
+
+        from PySide6.QtWidgets import QApplication
+
+        from core.direct_stun_invite import parse_guest_reply_from_paste
+
+        owner = getattr(self, "_remote_invite_owner", None)
+        apply_reply = getattr(owner, "apply_guest_reply", None)
+        if owner is None or not callable(apply_reply):
+            self.window.flash_message(
+                "Copy the invite first, then paste your friend's reply.",
+                ms=6000,
+            )
+            return
+        try:
+            envelope = parse_guest_reply_from_paste(QApplication.clipboard().text())
+        except ValueError:
+            envelope = b""
+        if not envelope:
+            self.window.flash_message(
+                "Paste your friend's reply, then press Paste Reply.",
+                ms=6000,
+            )
+            return
+        try:
+            apply_reply(envelope)
+        except Exception:  # noqa: BLE001 - private owner exposes fixed state
+            self.window.flash_message(
+                "That reply could not be used. Ask your friend to send it again.",
+                ms=6000,
+            )
+            return
+        self.window.flash_message("Connecting to your friend…", ms=5000)
+
+    def _copy_direct_stun_guest_reply_if_ready(self) -> None:
+        if bool(getattr(self, "_direct_stun_guest_reply_copied", False)):
+            return
+        runtime = getattr(self, "_remote_session", None)
+        raw = bytes(getattr(runtime, "guest_reply", b"") or b"")
+        if not raw:
+            return
+        from PySide6.QtWidgets import QApplication
+
+        from core.direct_stun_invite import encode_guest_reply_line
+
+        try:
+            QApplication.clipboard().setText(encode_guest_reply_line(raw))
+        except ValueError:
+            return
+        self._direct_stun_guest_reply_copied = True
+        self.window.flash_message(
+            "Send this reply to the host. Keep this window open.",
+            ms=7000,
+        )
+
     def _copy_band_invite(self) -> None:
         """Copy one complete invitation; never make a musician parse it."""
         from PySide6.QtWidgets import QApplication
@@ -8002,6 +8060,8 @@ class ApplicationController(QObject):
         )
         QApplication.clipboard().setText(invite_message.text)
         invite_url = ""
+        if owner is not None and getattr(owner, "_profile_id", "") == "direct-stun":
+            self._direct_stun_invite_copied = True
         if owner is None:
             # Mark the address only after the complete link was copied. A
             # failed link generation must not suppress the Wi-Fi-change
@@ -8011,7 +8071,15 @@ class ApplicationController(QObject):
             # The legacy invitation is intentionally still usable, but the
             # host must never miss why automatic originals are unavailable.
             self._update_session_hud()
-        ApplicationController._publish_invite_share_notice(self, INVITE_COPIED_NOTICE)
+        if bool(getattr(self, "_direct_stun_invite_copied", False)):
+            ApplicationController._publish_invite_share_notice(
+                self,
+                "Copied. Send it to your friend. When they send a reply, "
+                "press Paste Reply.",
+            )
+            self._update_session_hud()
+        else:
+            ApplicationController._publish_invite_share_notice(self, INVITE_COPIED_NOTICE)
 
     @staticmethod
     def _publish_invite_share_notice(controller, text: str) -> None:
@@ -9062,8 +9130,11 @@ class ApplicationController(QObject):
             flash_message = "Choose Try Again to start the private connection."
         elif guest_enrollment:
             # The sidecar entered open_guest(), so the reference service may
-            # have atomically consumed this one-use capability. Remove the
-            # controller copy before any generic start path can see it.
+            # have atomically consumed this one-use capability. Capture the
+            # profile before clearing so NAT timeouts keep distinct copy.
+            profile_id = getattr(
+                getattr(self, "_remote_invitation", None), "profile_id", ""
+            )
             self._remote_invitation = None
             self._remote_invitation_requires_replacement = True
             self._reference_track_remote_route_pre_retired = False
@@ -9072,7 +9143,7 @@ class ApplicationController(QObject):
             )
             self._render_remote_fresh_invitation_hud()
             if getattr(error_code, "value", "") == "timed_out":
-                if getattr(getattr(self, "_remote_invitation", None), "profile_id", "") == "direct-stun":
+                if profile_id == "direct-stun":
                     flash_message = (
                         "WebJam couldn't reach the host. Use home Wi-Fi on both "
                         "computers, not a phone hotspot. Ask the host for a "
@@ -10590,6 +10661,14 @@ class ApplicationController(QObject):
             return
 
         action = presentation.primary_action
+        action_text = presentation.action_label
+        action_kind = self._conductor_action_kind(action)
+        if (
+            action is SessionPrimaryAction.COPY_INVITE
+            and bool(getattr(self, "_direct_stun_invite_copied", False))
+        ):
+            action_text = "Paste Reply"
+            action_kind = "paste_reply"
         header_owned = action in {
             SessionPrimaryAction.RECORD,
             SessionPrimaryAction.STOP_RECORDING,
@@ -10639,9 +10718,9 @@ class ApplicationController(QObject):
             presentation.title,
             detail,
             invite_available=action is SessionPrimaryAction.COPY_INVITE,
-            action_text=presentation.action_label,
+            action_text=action_text,
             action_visible=action_visible,
-            action_kind=self._conductor_action_kind(action),
+            action_kind=action_kind,
             ready=presentation.phase is SessionConductorPhase.TAKE_READY
             or (
                 presentation.phase is SessionConductorPhase.LIVE
@@ -10750,6 +10829,7 @@ class ApplicationController(QObject):
     def _update_session_hud(self) -> None:
         """Refresh legacy exceptional copy, then the canonical conductor."""
 
+        self._copy_direct_stun_guest_reply_if_ready()
         if bool(getattr(self, "_shutdown_cleanup_pending", False)):
             self._render_shutdown_cleanup_pending()
             return
@@ -10896,6 +10976,8 @@ class ApplicationController(QObject):
             self._retry_session()
         elif action == "paste_invite":
             self._paste_new_invitation()
+        elif action == "paste_reply":
+            self._paste_direct_stun_guest_reply()
         elif action == "cancel_startup":
             self._cancel_startup_journey()
         elif action in {"primary", "start_session"}:

@@ -1,12 +1,14 @@
 """Strict desktop ownership for the bundled WebJam transport sidecar.
 
 The Go sidecar is deliberately treated as an untrusted child process boundary:
-it receives no command-line configuration, no inherited environment, and only
-the small versioned JSON-lines protocol defined by ``transport/internal/ipc``.
-Invitation material crosses this boundary only in one bounded stdin command.
-It is never placed in argv, the environment, an event, or the diagnostic
-timeline.  The public host pin is decoded into a fixed-size value before the
-desktop may issue an invitation.
+it receives no command-line configuration, no inherited parent environment, and
+only the small versioned JSON-lines protocol defined by
+``transport/internal/ipc``. Invitation material crosses this boundary only in
+one bounded stdin command. It is never placed in argv, the environment, an
+event, or the diagnostic timeline.  The public host pin is decoded into a
+fixed-size value before the desktop may issue an invitation. Frozen builds
+always start the sidecar with an empty environment. ``WEBJAM_TEST_HARNESS=1``
+may pass a documented STUN override in unpackaged harness runs only.
 """
 
 from __future__ import annotations
@@ -70,6 +72,8 @@ _EVENT_TYPES = frozenset(
         "hello",
         "host_prepared",
         "host_registered",
+        "guest_signal",
+        "signal_applied",
         "peer_connected",
         "peer_closed",
         "help_accepted",
@@ -92,6 +96,7 @@ _EVENT_CODES = frozenset(
         "identity_not_prepared",
         "unsupported_profile",
         "enrollment_invalid",
+        "timed_out",
         "help_not_ready",
         "help_invalid",
         "help_rate_limited",
@@ -350,6 +355,7 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
             raise TransportProtocolError("The transport process sent invalid data.")
     elif event_id == 0 and event_type not in {
         "peer_connected",
+        "guest_signal",
         "help_received",
         "help_delivered",
         "room_state_received",
@@ -395,6 +401,38 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
             if not signal or route not in {"local", "public"}:
                 raise TransportProtocolError("The transport process sent invalid data.")
         elif signal or route:
+            raise TransportProtocolError("The transport process sent invalid data.")
+    elif event_type == "guest_signal":
+        if (
+            code != "ok"
+            or state != "connecting"
+            or mode != "guest"
+            or profile_id != "direct-stun"
+            or generation == 0
+            or loopback_port == 0
+            or host_pin
+            or event_id != 0
+            or build
+            or help_text
+            or not signal
+            or route
+        ):
+            raise TransportProtocolError("The transport process sent invalid data.")
+    elif event_type == "signal_applied":
+        if (
+            code != "ok"
+            or state != "host_waiting"
+            or mode != "host"
+            or profile_id != "direct-stun"
+            or generation == 0
+            or loopback_port == 0
+            or host_pin
+            or event_id == 0
+            or build
+            or help_text
+            or signal
+            or route
+        ):
             raise TransportProtocolError("The transport process sent invalid data.")
     elif signal or route:
         raise TransportProtocolError("The transport process sent invalid data.")
@@ -690,6 +728,26 @@ def secrets_compare(left: str, right: str) -> bool:
     return hmac.compare_digest(left, right)
 
 
+def _sidecar_environment() -> dict[str, str]:
+    """Return the only environment the sidecar may see.
+
+    Packaged/frozen builds always start with an empty environment. Source
+    checkouts may pass the documented test-harness STUN override when
+    ``WEBJAM_TEST_HARNESS=1``. Session material never travels in the
+    environment.
+    """
+
+    if getattr(sys, "frozen", False):
+        return {}
+    if str(os.environ.get("WEBJAM_TEST_HARNESS", "")).strip() != "1":
+        return {}
+    environment = {"WEBJAM_TEST_HARNESS": "1"}
+    stun = str(os.environ.get("WEBJAM_TEST_STUN_SERVER", "") or "").strip()
+    if stun:
+        environment["WEBJAM_TEST_STUN_SERVER"] = stun
+    return environment
+
+
 class TransportProcess:
     """Own exactly one constant-argv transport process and its bounded IPC."""
 
@@ -784,7 +842,7 @@ class TransportProcess:
                 "stdout": subprocess.PIPE,
                 "stderr": subprocess.DEVNULL,
                 "cwd": str(binary.parent),
-                "env": {},
+                "env": _sidecar_environment(),
                 "shell": False,
                 "close_fds": True,
                 "bufsize": 0,
@@ -917,6 +975,38 @@ class TransportProcess:
         if (event.event_type != "peer_connected" or event.mode != "guest"
                 or event.generation != current_generation
                 or event.profile_id != invitation.profile_id):
+            self._record_failure(
+                TransportProtocolError("The transport process sent invalid data.")
+            )
+            raise TransportProtocolError("The transport process sent invalid data.")
+        return event
+
+    def apply_guest_signal(
+        self,
+        envelope: bytes,
+        *,
+        generation: int,
+    ) -> TransportEvent:
+        raw = bytes(envelope or b"")
+        if len(raw) < 8 or raw[:4] != b"WJSE":
+            raise TransportProcessError("The guest reply is not valid.")
+        current_generation = self._command_int(
+            generation, minimum=1, maximum=2**32 - 1
+        )
+        encoded = base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+        try:
+            event = self._request(
+                "apply_signal",
+                generation=current_generation,
+                host_signal=encoded,
+            )
+        finally:
+            encoded = ""
+        if (
+            event.event_type != "signal_applied"
+            or event.mode != "host"
+            or event.generation != current_generation
+        ):
             self._record_failure(
                 TransportProtocolError("The transport process sent invalid data.")
             )
@@ -1144,6 +1234,10 @@ class TransportProcess:
                 raise TransportRoomRateLimitedError("The room update needs a brief retry.")
             if event.code == "peer_protocol_unsupported":
                 raise TransportPeerProtocolError("The peer needs a compatible WebJam version.")
+            if event.code == "timed_out":
+                raise TransportTimeoutError(
+                    "The transport process did not reach the host in time."
+                )
             raise TransportProcessError("The secure transport could not continue.")
         return event
 
@@ -1174,6 +1268,7 @@ class TransportProcess:
                                 "The transport process sent an unexpected response."
                             )
                         self._pending[event.event_id] = event
+                    callback_event = event
                     if not event.event_type.startswith(("help_", "room_state_")):
                         if event.signal:
                             event = TransportEvent(
@@ -1197,7 +1292,7 @@ class TransportProcess:
                 callback = self._on_event
                 if callback is not None:
                     try:
-                        callback(event)
+                        callback(callback_event)
                     except Exception:
                         # Event observers receive only immutable allowlisted
                         # facts and cannot own the reader or child lifecycle.

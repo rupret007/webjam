@@ -210,6 +210,13 @@ class RemoteSessionRuntime:
             return identity if type(identity) is RoomIdentity else None
 
     @property
+    def guest_reply(self) -> bytes:
+        """Sealed guest candidate bundle for the host to paste, if any."""
+
+        backend = self._backend
+        return bytes(getattr(backend, "guest_reply", b"") or b"")
+
+    @property
     def connection_available(self) -> bool:
         with self._condition:
             if self._snapshot.phase is not RemoteSessionPhase.CONNECTED:

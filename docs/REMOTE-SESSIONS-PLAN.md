@@ -44,7 +44,7 @@ never asks a guest to type an IP or port.
 | Who can host | Product door: **macOS only**. Windows/Linux ghost Host and tell the guest to join a Mac. |
 | Packaged path | If `webjam-fabric` is present, Host uses compiled **`direct-stun`**: Jamulus stays loopback; the sidecar binds UDP, talks to public STUN, and seals candidates on the clipboard. |
 | Source-checkout fallback | Without a sidecar binary, Host stays on **v2 LAN**: unmodified Jamulus UDP **22124**, v2 `webjam://join?…` with a literal RFC1918 IPv4, peer HTTP on an ephemeral port. |
-| NAT (direct-stun) | Guest dials sealed host/srflx candidates. Cone NAT and same LAN can connect. Symmetric NAT / CGNAT / cellular often cannot, with no relay. |
+| NAT (direct-stun) | Both homes probe host and srflx candidates at the same time (ICE-lite). The friend sends a short `webjam-reply:` line back to the host so the host can punch too. Cone NAT and same LAN can connect. Symmetric NAT / CGNAT / cellular often cannot, with no relay. |
 | NAT (v2 LAN) | Another house cannot reach RFC1918. v2 still refuses public IPs. |
 | Conversation | Optional meeting URL in the same pasted message. That link is a separate app and already works across houses. |
 
@@ -80,13 +80,17 @@ and is still unshipped.
 1. Host copies an invite. HUD says send it to your friend.
 2. Friend pastes the whole message in Join (URL plus `webjam-signal:` on
    packaged `direct-stun`).
-3. If STUN mapped a public port and NAT is cone-like, they Join. If either
-   home is CGNAT/symmetric/cellular, Join fails with a home-Wi-Fi line.
-4. Source checkouts without a sidecar still mint v2 LAN invites, which
+3. Friend's WebJam copies a short `webjam-reply:` line. They send that reply
+   back in the same chat. The host presses **Paste Reply**.
+4. Both computers send UDP probes to each other's addresses at the same time,
+   then run QUIC on the pair that works. If STUN mapped a cone-like NAT, they
+   Join. If either home is CGNAT/symmetric/cellular, Join fails with a
+   home-Wi-Fi line.
+5. Source checkouts without a sidecar still mint v2 LAN invites, which
    another house cannot use.
-5. v3 lab (`WEBJAM_ENABLE_REFERENCE_LOCAL=1`) is still loopback
+6. v3 lab (`WEBJAM_ENABLE_REFERENCE_LOCAL=1`) is still loopback
    `reference-local`, not two homes.
-6. Conversation can still work while the WebJam room cannot.
+7. Conversation can still work while the WebJam room cannot.
 
 ## Options (what we considered)
 
@@ -133,9 +137,9 @@ Why this, not a paid VM, for this ship:
 - Musicians do not port-forward. They do not install a VPN. They do not
   pick a public Jamulus server.
 - There is **no hosted server to provision** and **$0 / month**.
-- The v3 URL stays opaque (ADR 0001). Addresses travel only inside a sealed
-  `webjam-signal:` clipboard line the friend pastes as part of the same
-  message.
+- The v3 URL stays opaque (ADR 0001). Addresses travel only inside sealed
+  clipboard lines: `webjam-signal:` on the invite, then a `webjam-reply:`
+  line the friend pastes back. There is no relay and no public rendezvous.
 - Same-LAN still works via RFC1918 host candidates. Other houses work when
   STUN maps a cone NAT. Art and Music share enrollment; Jamulus stays
   loopback-bound on each computer.

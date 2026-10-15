@@ -780,6 +780,28 @@ def test_guest_enrollment_failure_flash_names_paste_new_invite_button(
     controller.shutdown()
 
 
+def test_direct_stun_timeout_flash_names_home_wifi(qapp, tmp_path) -> None:
+    controller = _controller(tmp_path)
+    controller.window.flash_message = mock.MagicMock()
+    controller._remote_invitation = issue_remote_invitation(
+        "direct-stun",
+        allowed_profiles={"direct-stun"},
+        host_spki_sha256=bytes.fromhex("44" * 32),
+    ).invitation
+    controller._show_remote_session_failure(
+        guest_enrollment=True,
+        retry_safe=False,
+        error_code=RemoteSessionErrorCode.TIMED_OUT,
+    )
+    flash = controller.window.flash_message.call_args.args[0]
+    assert "couldn't reach the host" in flash
+    assert "phone hotspot" in flash
+    assert "already be used" not in flash.casefold()
+    assert controller.window.session_hud._action.text() == "Paste New Invite"
+    assert controller._remote_invitation is None
+    controller.shutdown()
+
+
 def test_guest_retry_safe_failure_flash_names_try_again_button(
     qapp, tmp_path,
 ) -> None:

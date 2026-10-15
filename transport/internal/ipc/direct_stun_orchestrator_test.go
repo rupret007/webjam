@@ -161,6 +161,11 @@ func TestDirectStunLoopbackHostGuestConnects(t *testing.T) {
 			if update.kind == updateFabricFailed {
 				t.Fatalf("guest failed: %v", update.err)
 			}
+			if update.kind == updateGuestSignal {
+				if applyErr := hostOp.ApplyGuestSignal(ctx, update.signal); applyErr != nil {
+					t.Fatalf("apply guest signal: %v", applyErr)
+				}
+			}
 			if update.kind == updatePeerConnected {
 				guestConnected = true
 			}

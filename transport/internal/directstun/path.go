@@ -7,6 +7,8 @@ import (
 	"context"
 	"net"
 	"net/netip"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/pion/ice/v4"
@@ -18,11 +20,18 @@ const (
 	stunAttemptLimit = 2 * time.Second
 )
 
-// Compiled public STUN servers. No account, no WebJam VM.
+// Compiled public STUN servers. No account, no WebJam VM. Packaged Host/Join
+// always uses this list. A test-only override is read only when
+// WEBJAM_TEST_HARNESS=1 (never in frozen builds; see stunServerList).
 var stunServers = []string{
 	"stun.cloudflare.com:3478",
 	"stun.l.google.com:19302",
 }
+
+const (
+	testHarnessEnv = "WEBJAM_TEST_HARNESS"
+	testSTUNEnv    = "WEBJAM_TEST_STUN_SERVER"
+)
 
 var nonPublicAddressPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"),
@@ -59,12 +68,14 @@ func Gather(ctx context.Context, conn *net.UDPConn) (candidates []string, public
 		candidates = append(candidates, encoded)
 	}
 	mapped, stunErr := serverReflexive(ctx, conn)
-	if stunErr == nil && publicUnicastIPv4(mapped.Addr()) {
+	if stunErr == nil && stunMappedIPv4(mapped.Addr()) {
 		encoded, encodeErr := srflxCandidate(mapped, local.Port)
 		if encodeErr == nil {
 			if _, exists := seen[encoded]; !exists {
 				seen[encoded] = struct{}{}
 				candidates = append(candidates, encoded)
+				// public means STUN returned a mapping, including lab TEST-NET
+				// ranges. Do not classify srflx by reserved address prefixes.
 				public = true
 			}
 		}
@@ -76,8 +87,9 @@ func Gather(ctx context.Context, conn *net.UDPConn) (candidates []string, public
 }
 
 // ParseDialTarget accepts one sealed ICE candidate string and returns the
-// UDP address a guest may dial. Host candidates must be RFC1918 IPv4; srflx
-// candidates must be public unicast IPv4.
+// UDP address a peer may probe. Host candidates must be RFC1918 IPv4. Server-
+// reflexive candidates are accepted because STUN returned them, including
+// documentation/test ranges used by the two-NAT harness.
 func ParseDialTarget(encoded string) (*net.UDPAddr, error) {
 	candidate, err := ice.UnmarshalCandidate(encoded)
 	if err != nil || candidate == nil || candidate.Component() != 1 {
@@ -97,7 +109,7 @@ func ParseDialTarget(encoded string) (*net.UDPAddr, error) {
 			return nil, errRejectedCandidate
 		}
 	case ice.CandidateTypeServerReflexive:
-		if !publicUnicastIPv4(address) {
+		if !stunMappedIPv4(address) {
 			return nil, errRejectedCandidate
 		}
 	default:
@@ -158,13 +170,27 @@ func srflxCandidate(mapped netip.AddrPort, relatedPort int) (string, error) {
 }
 
 func serverReflexive(ctx context.Context, conn *net.UDPConn) (netip.AddrPort, error) {
-	for _, server := range stunServers {
+	for _, server := range stunServerList() {
 		mapped, err := stunBinding(ctx, conn, server)
 		if err == nil {
 			return mapped, nil
 		}
 	}
 	return netip.AddrPort{}, errNoAddress
+}
+
+func stunServerList() []string {
+	if strings.TrimSpace(os.Getenv(testHarnessEnv)) != "1" {
+		return stunServers
+	}
+	override := strings.TrimSpace(os.Getenv(testSTUNEnv))
+	if override == "" {
+		return stunServers
+	}
+	if _, _, err := net.SplitHostPort(override); err != nil {
+		return stunServers
+	}
+	return []string{override}
 }
 
 func stunBinding(ctx context.Context, conn *net.UDPConn, server string) (netip.AddrPort, error) {
@@ -223,9 +249,16 @@ func stunBinding(ctx context.Context, conn *net.UDPConn, server string) (netip.A
 	}
 }
 
+func stunMappedIPv4(address netip.Addr) bool {
+	return address.IsValid() && address.Is4() && !address.IsUnspecified() &&
+		!address.IsLoopback() && !address.IsMulticast() && !address.IsLinkLocalUnicast()
+}
+
+// publicUnicastIPv4 is the real-world public unicast check (documentation
+// prefixes excluded). Gather/ParseDialTarget do not use it to drop a STUN
+// mapping; STUN success classifies srflx.
 func publicUnicastIPv4(address netip.Addr) bool {
-	if !address.IsValid() || !address.Is4() || !address.IsGlobalUnicast() || address.IsPrivate() ||
-		address.IsLoopback() || address.IsLinkLocalUnicast() || address.IsMulticast() || address.IsUnspecified() {
+	if !stunMappedIPv4(address) || !address.IsGlobalUnicast() || address.IsPrivate() {
 		return false
 	}
 	for _, prefix := range nonPublicAddressPrefixes {
@@ -254,6 +287,7 @@ func ParseLoopbackDialTarget(encoded string) (*net.UDPAddr, error) {
 var (
 	errNoAddress         = errString("direct-stun has no reachable UDP address")
 	errRejectedCandidate = errString("direct-stun candidate rejected")
+	ErrUnreachable       = errString("direct-stun could not reach the peer")
 )
 
 type errString string

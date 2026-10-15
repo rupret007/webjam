@@ -26,6 +26,7 @@ const (
 	CodeIdentityNotPrepared     = "identity_not_prepared"
 	CodeUnsupportedProfile      = "unsupported_profile"
 	CodeEnrollmentInvalid       = "enrollment_invalid"
+	CodeTimedOut                = "timed_out"
 	CodeHelpNotReady            = "help_not_ready"
 	CodeRoomNotReady            = "room_state_not_ready"
 	CodeRoomInvalid             = "room_state_invalid"
@@ -86,6 +87,7 @@ type fabricUpdateKind uint8
 
 const (
 	updateHostRegistered fabricUpdateKind = iota + 1
+	updateGuestSignal
 	updatePeerConnected
 	updateHelpReceived
 	updateHelpDelivered
@@ -107,6 +109,7 @@ type fabricOperation interface {
 	Updates() <-chan fabricUpdate
 	SendHelp(context.Context, uint64, string) error
 	PublishRoomState(context.Context, *room.State) error
+	ApplyGuestSignal(context.Context, []byte) error
 	Close(context.Context) error
 }
 
@@ -489,6 +492,19 @@ func (s *runnerState) handle(
 		})
 	case CommandOpenPeer:
 		return false, s.openPeer(ctx, command, events, now)
+	case CommandApplySignal:
+		if s.operation == nil || s.active == nil || !s.hostRegistered || s.connected ||
+			s.active.mode != "host" || command.Generation != s.active.generation ||
+			s.active.profileID != profile.DirectStunID || len(command.HostSignal) == 0 {
+			return false, events.emit(Event{ID: command.ID, Type: "error", Code: CodePeerNotOpen, State: s.stateName()})
+		}
+		applyCtx, cancel := context.WithTimeout(ctx, limits.HelpOperationLimit)
+		err := s.operation.ApplyGuestSignal(applyCtx, command.HostSignal)
+		cancel()
+		if err != nil {
+			return false, events.emit(Event{ID: command.ID, Type: "error", Code: CodeEnrollmentInvalid, State: s.stateName()})
+		}
+		return false, events.emit(s.metadataEvent(command.ID, "signal_applied", "host_waiting"))
 	case CommandSendHelp:
 		if s.operation == nil || s.active == nil || !s.connected ||
 			command.Generation != s.active.generation {
@@ -673,6 +689,15 @@ func (s *runnerState) handleFabricUpdate(update fabricUpdate, events *emitter) e
 		event.Route = update.route
 		clear(update.signal)
 		return events.emit(event)
+	case updateGuestSignal:
+		if update.err != nil || s.active.mode != "guest" || s.connected || len(update.signal) == 0 {
+			clear(update.signal)
+			return s.failFabric(events, ErrProtocol)
+		}
+		event := s.metadataEvent(0, "guest_signal", "connecting")
+		event.Signal = encodeHostSignal(update.signal)
+		clear(update.signal)
+		return events.emit(event)
 	case updatePeerConnected:
 		if update.err != nil || s.connected || (s.active.mode == "host" && !s.hostRegistered) {
 			return s.failFabric(events, ErrProtocol)
@@ -755,6 +780,9 @@ func (s *runnerState) failFabric(events *emitter, failure error) error {
 	}
 	if errors.Is(failure, ErrEnrollmentInvalid) {
 		code = CodeEnrollmentInvalid
+	}
+	if errors.Is(failure, ErrUnreachable) {
+		code = CodeTimedOut
 	}
 	metadata, closeErr := s.closeActive(true)
 	mode := metadata.mode

@@ -8,7 +8,9 @@
   Start Session; Paint along titles the room; Art Settings hides song-tool
   keys.
 - Cross-network Host/Join: packaged apps with `webjam-fabric` use compiled
-  `direct-stun` (public STUN, clipboard-sealed candidates, no port forwarding,
-  $0). Source checkouts without the sidecar stay on LAN. Symmetric NAT / CGNAT
-  / cellular still fail without a later relay; the HUD says so instead of
-  faking a room. Plan: `docs/REMOTE-SESSIONS-PLAN.md`.
+  `direct-stun` (public STUN, simultaneous UDP hole punch, clipboard-sealed
+  candidates, no port forwarding, $0). After Join, the friend sends a short
+  reply back and the host presses Paste Reply. Source checkouts without the
+  sidecar stay on LAN. Symmetric NAT / CGNAT / cellular still fail without a
+  later relay; the HUD says WebJam couldn't reach the host instead of treating
+  the invite as used. Plan: `docs/REMOTE-SESSIONS-PLAN.md`.

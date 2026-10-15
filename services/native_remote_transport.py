@@ -38,6 +38,7 @@ from services.transport_runtime import (
     TransportProcessError,
     TransportPeerProtocolError,
     TransportRoomRateLimitedError,
+    TransportTimeoutError,
 )
 
 REFERENCE_LOCAL_OPT_IN = "WEBJAM_ENABLE_REFERENCE_LOCAL"
@@ -221,6 +222,7 @@ class NativeGuestTransportBackend:
         self._generation = 0
         self._process_generation = 0
         self._retired_guest_generation = 0
+        self._guest_reply = b""
 
     def start_guest(
         self,
@@ -236,6 +238,7 @@ class NativeGuestTransportBackend:
                     raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE)
                 if self._process is not None:
                     raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE)
+                self._guest_reply = b""
                 process = TransportProcess(
                     self._binary,
                     expected_build=self._expected_build,
@@ -282,6 +285,9 @@ class NativeGuestTransportBackend:
         except TransportPeerProtocolError:
             self._discard_failed_process(process)
             raise RemoteBackendError(RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED) from None
+        except TransportTimeoutError:
+            self._discard_failed_process(process)
+            raise RemoteBackendError(RemoteSessionErrorCode.TIMED_OUT) from None
         except Exception:  # noqa: BLE001 - preserve no sidecar detail
             self._discard_failed_process(process)
             raise RemoteBackendError(
@@ -326,7 +332,9 @@ class NativeGuestTransportBackend:
 
     def _mark_connection_lost(self, source: TransportProcess) -> None:
         with self._lock:
-            if source is not self._process or self._phase not in {"enrolling", "connected"}:
+            # Enrollment failures stay typed (timed_out vs invitation_unusable).
+            # A stop/error while still joining must not become transport_failed.
+            if source is not self._process or self._phase != "connected":
                 return
             self._phase = "failed"
             self._room_identity = None
@@ -390,9 +398,22 @@ class NativeGuestTransportBackend:
                 raise RemoteBackendError(RemoteSessionErrorCode.TRANSPORT_FAILED)
         return accepted
 
+    @property
+    def guest_reply(self) -> bytes:
+        with self._lock:
+            return bytes(self._guest_reply)
+
     def _handle_event(self, event: TransportEvent, *, source: TransportProcess) -> None:
         with self._lock:
             if source is not self._process:
+                return
+            if (
+                event.event_type == "guest_signal"
+                and event.mode == "guest"
+                and event.generation == self._generation
+                and event.signal
+            ):
+                self._guest_reply = bytes(event.signal)
                 return
             lost = (
                 event.event_type == "stopped"
@@ -537,6 +558,7 @@ class NativeHostTransportOwner:
         self._stopped = False
         self._host_signal = b""
         self._share_route = ""
+        self._guest_reply_applied = False
         self._snapshot = RemoteSessionSnapshot(
             phase=RemoteSessionPhase.PREPARING,
             role=SessionRole.HOST,
@@ -598,6 +620,31 @@ class NativeHostTransportOwner:
     def snapshot(self) -> RemoteSessionSnapshot:
         with self._lock:
             return self._snapshot
+
+    def apply_guest_reply(self, envelope: bytes) -> None:
+        """Apply the friend's sealed reply so both sides can punch at once."""
+
+        raw = bytes(envelope or b"")
+        with self._lock:
+            if (
+                self._stopped
+                or self._close_pending
+                or self._process is None
+                or self._profile_id != "direct-stun"
+                or self._snapshot.phase is RemoteSessionPhase.FAILED
+            ):
+                raise RuntimeError("No remote invitation is active.")
+            process = self._process
+            generation = self._generation
+        try:
+            process.apply_guest_signal(raw, generation=generation)
+        except TransportProcessError:
+            with self._lock:
+                if self._snapshot.phase is RemoteSessionPhase.CONNECTED:
+                    return
+            raise
+        with self._lock:
+            self._guest_reply_applied = True
 
     def copy_for_clipboard(self) -> str:
         owner = self._owner

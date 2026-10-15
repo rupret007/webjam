@@ -6,7 +6,9 @@ import pytest
 
 from core.direct_stun_invite import (
     DIRECT_STUN_PROFILE_ID,
+    encode_guest_reply_line,
     encode_host_signal_line,
+    parse_guest_reply_from_paste,
     parse_host_signal_from_paste,
 )
 from core.meeting_companion import build_invite_message
@@ -35,6 +37,13 @@ def test_host_signal_round_trip_survives_quoted_paste() -> None:
     line = encode_host_signal_line(SIGNAL)
     paste = f"Join this jam on WebJam:\n> {line}\n{_direct_link()}\n"
     assert parse_host_signal_from_paste(paste) == SIGNAL
+
+
+def test_guest_reply_round_trip_survives_quoted_paste() -> None:
+    line = encode_guest_reply_line(SIGNAL)
+    paste = f"Here is my reply:\n> {line}\n"
+    assert parse_guest_reply_from_paste(paste) == SIGNAL
+    assert parse_host_signal_from_paste(paste) == b""
 
 
 def test_ordinary_host_stays_on_lan_without_sidecar(monkeypatch, tmp_path) -> None:

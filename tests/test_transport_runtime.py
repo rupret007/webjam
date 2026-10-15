@@ -188,6 +188,39 @@ def test_transport_process_has_constant_argv_empty_env_and_clean_lifecycle(
     )
 
 
+def test_sidecar_environment_is_empty_except_unpackaged_harness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+    real_popen = transport_runtime.subprocess.Popen
+
+    def capturing_popen(*args, **kwargs):
+        captured["env"] = kwargs.get("env")
+        return real_popen(*args, **kwargs)
+
+    monkeypatch.setattr(transport_runtime.subprocess, "Popen", capturing_popen)
+    monkeypatch.setenv("WEBJAM_ENROLLMENT_CAPABILITY", "must-not-reach-child")
+    monkeypatch.setenv("WEBJAM_TEST_STUN_SERVER", "203.0.113.1:3478")
+    monkeypatch.delenv("WEBJAM_TEST_HARNESS", raising=False)
+    process = TransportProcess(_sidecar(tmp_path), expected_build="test-build")
+    process.start()
+    process.stop()
+    assert captured["env"] == {}
+
+    monkeypatch.setenv("WEBJAM_TEST_HARNESS", "1")
+    process = TransportProcess(_sidecar(tmp_path), expected_build="test-build")
+    process.start()
+    process.stop()
+    assert captured["env"] == {
+        "WEBJAM_TEST_HARNESS": "1",
+        "WEBJAM_TEST_STUN_SERVER": "203.0.113.1:3478",
+    }
+    assert "WEBJAM_ENROLLMENT_CAPABILITY" not in captured["env"]
+
+    monkeypatch.setattr(transport_runtime.sys, "frozen", True, raising=False)
+    assert transport_runtime._sidecar_environment() == {}
+
+
 def test_help_is_nfc_bounded_ephemeral_and_excluded_from_diagnostics(
     tmp_path: Path,
 ) -> None:
