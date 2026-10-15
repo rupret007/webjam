@@ -2148,16 +2148,21 @@ class ApplicationController(QObject):
 
         The value is re-resolved against the active profile every time, so a
         key saved under another profile can never arm a capability this one
-        does not have. Guests have no start until host state supplies one;
-        only local choices fall back to the profile's room-first door.
+        does not have. Guests have no start until the host publishes one; a
+        later empty legacy start restores the saved card. Only local choices
+        fall back to the profile's room-first door.
         """
 
         room = getattr(self, "_room_participant", None)
+        saved = getattr(getattr(self, "settings", None), "last_creator_start_key", "")
         if room is not None and room.role == "guest":
-            return self.creator_profile.get_start(room.borrowed_start)
-        return self.creator_profile.start_or_default(
-            getattr(getattr(self, "settings", None), "last_creator_start_key", "")
-        )
+            borrowed = getattr(room, "borrowed_start", "")
+            if borrowed:
+                return self.creator_profile.get_start(borrowed)
+            if getattr(room, "_host_start_published", False):
+                return self.creator_profile.start_or_default(saved)
+            return None
+        return self.creator_profile.start_or_default(saved)
 
     def _art_room_active_start_key(self) -> str:
         start = self.creator_start

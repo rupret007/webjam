@@ -166,6 +166,7 @@ class RoomParticipantController:
         self.probe_failed = False
         self.music_invite = None
         self.borrowed_start = ""
+        self._host_start_published = False
         self.native_source = None
         self.native_generation = 0
         self.native_state = None
@@ -301,6 +302,7 @@ class RoomParticipantController:
         self.state = ArtRoomState.STARTING
         self.probing = True
         self.probe_failed = False
+        self._host_start_published = False
         self._lan_terminal_owner = None
         self.stopping = False
         self.app._conductor_setup_requested = True
@@ -416,6 +418,8 @@ class RoomParticipantController:
         self.probe_failed = False
         self.state = ArtRoomState.CONNECTED
         self.borrowed_start = state.art_start_key
+        if state.art_start_key:
+            self._host_start_published = True
         self.observe_creative_state(state)
         self.app._refresh_readiness()
 
@@ -687,6 +691,7 @@ class RoomParticipantController:
         self.generation += 1
         self.role = role
         self.stopping = False
+        self._host_start_published = False
         self.native_source = None
         self.native_state = None
         self.native_applied = None
@@ -778,6 +783,8 @@ class RoomParticipantController:
         self.native_applied = key
         self.probing = False
         self.borrowed_start = state.art_start_key
+        if state.art_start_key:
+            self._host_start_published = True
         if state.creator_profile_key == "art":
             self.state = ArtRoomState.CONNECTED
             self.app._remote_invitation = None
@@ -1183,6 +1190,7 @@ class RoomParticipantController:
         self.native_source = None
         self.publisher = None
         self.borrowed_start = ""
+        self._host_start_published = False
         self.state = ArtRoomState.NONE
         self.role = ""
         return True
