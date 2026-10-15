@@ -13,7 +13,10 @@ type Profile struct {
 	control        reference.ControlConnector
 }
 
-const ReferenceLocalID = "reference-local"
+const (
+	ReferenceLocalID = "reference-local"
+	DirectStunID     = "direct-stun"
+)
 
 var referenceLocal = Profile{
 	ID:             ReferenceLocalID,
@@ -23,20 +26,32 @@ var referenceLocal = Profile{
 	control:        reference.LocalControlConnector(),
 }
 
+// directStun is the ordinary Internet Host/Join profile: public STUN plus
+// clipboard-sealed candidates. It has no rendezvous, relay, or control
+// connector. Musicians do not port-forward.
+var directStun = Profile{
+	ID:      DirectStunID,
+	LabOnly: false,
+}
+
 // ControlConnector resolves only an unmodified, shipped profile value. The
 // caller cannot turn an ID into authority for a substituted address, TLS
 // policy, or relay by editing the descriptive exported fields.
 func (p Profile) ControlConnector() (reference.ControlConnector, bool) {
 	canonical, ok := Lookup(p.ID)
-	if !ok || p != canonical {
+	if !ok || p != canonical || p.ID != ReferenceLocalID {
 		return reference.ControlConnector{}, false
 	}
 	return p.control, true
 }
 
 func Lookup(id string) (Profile, bool) {
-	if id != ReferenceLocalID {
+	switch id {
+	case ReferenceLocalID:
+		return referenceLocal, true
+	case DirectStunID:
+		return directStun, true
+	default:
 		return Profile{}, false
 	}
-	return referenceLocal, true
 }

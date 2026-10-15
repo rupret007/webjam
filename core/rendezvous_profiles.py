@@ -4,8 +4,8 @@ An invitation carries only a short profile identifier. It can never introduce
 an address, URL, redirect, certificate policy, or relay destination. Profiles
 describe WebJam's native bounded control and exact-pair UDP relay; they do not
 pretend that the reference service is HTTP, WebSocket, STUN, or TURN. Public
-profiles must ship with the application; the only built-in v0.11 profile is a
-loopback-only reference used by the isolated service and CI lab.
+profiles must ship with the application. Built-in profiles are the loopback
+lab reference and ordinary ``direct-stun`` (public STUN, no rendezvous).
 """
 
 from __future__ import annotations
@@ -69,15 +69,29 @@ def _service_port(value: object) -> int:
 @dataclass(frozen=True, slots=True)
 class RendezvousProfile:
     profile_id: str
-    control_host: str
-    control_port: int
-    control_tls: bool
-    relay_host: str
-    relay_port: int
+    control_host: str = ""
+    control_port: int = 0
+    control_tls: bool = False
+    relay_host: str = ""
+    relay_port: int = 0
     lab_only: bool = False
+    stun_only: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "profile_id", _validate_profile_id(self.profile_id))
+        if not isinstance(self.stun_only, bool) or not isinstance(self.lab_only, bool):
+            _profile_error()
+        if self.stun_only:
+            if (
+                self.lab_only
+                or self.control_host
+                or self.relay_host
+                or self.control_tls
+                or self.control_port
+                or self.relay_port
+            ):
+                _profile_error("STUN-only profiles cannot carry a rendezvous or relay.")
+            return
         object.__setattr__(
             self,
             "control_host",
@@ -107,7 +121,7 @@ class RendezvousProfile:
         return (
             "RendezvousProfile("
             f"profile_id={self.profile_id!r}, lab_only={self.lab_only!r}, "
-            "endpoints=[provisioned])"
+            f"stun_only={self.stun_only!r}, endpoints=[provisioned])"
         )
 
 
@@ -146,6 +160,11 @@ REFERENCE_LOCAL_PROFILE = RendezvousProfile(
     lab_only=True,
 )
 
+DIRECT_STUN_PROFILE = RendezvousProfile(
+    profile_id="direct-stun",
+    stun_only=True,
+)
+
 DEFAULT_RENDEZVOUS_PROFILES = RendezvousProfileRegistry(
-    (REFERENCE_LOCAL_PROFILE,)
+    (REFERENCE_LOCAL_PROFILE, DIRECT_STUN_PROFILE)
 )

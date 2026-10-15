@@ -406,6 +406,62 @@ def test_guest_backend_allows_same_invitation_retry_only_before_open_guest(
     assert open_process.guest_generations == [2]
     assert open_process.stopped == 1
 
+    class OpenGuestTimeoutProcess(FakeProcess):
+        def open_guest(self, invitation, *, generation):
+            self.guest_generations.append(generation)
+            raise native.TransportTimeoutError("The transport process did not reach the host in time.")
+
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", OpenGuestTimeoutProcess)
+    unreachable = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric",
+        expected_build="abc1234",
+    )
+
+    with pytest.raises(RemoteBackendError) as timeout_error:
+        unreachable.start_guest(_invitation(), generation=3)
+
+    assert timeout_error.value.code is RemoteSessionErrorCode.TIMED_OUT
+    timeout_process = FakeProcess.instances[-1]
+    assert timeout_process.guest_generations == [3]
+    assert timeout_process.stopped == 1
+
+
+def test_enrollment_timeout_does_not_report_authenticated_loss(monkeypatch) -> None:
+    """A NAT timeout while joining must stay timed_out, not transport_failed."""
+
+    losses: list[int] = []
+
+    class OpenGuestTimeoutWithStopEvent(FakeProcess):
+        def open_guest(self, invitation, *, generation):
+            self.guest_generations.append(generation)
+            if self.on_event is not None:
+                self.on_event(
+                    TransportEvent(
+                        event_id=0,
+                        event_type="error",
+                        code="timed_out",
+                        state="failed",
+                    )
+                )
+            raise native.TransportTimeoutError(
+                "The transport process did not reach the host in time."
+            )
+
+    FakeProcess.instances.clear()
+    monkeypatch.setattr(native, "TransportProcess", OpenGuestTimeoutWithStopEvent)
+    unreachable = native.NativeGuestTransportBackend(
+        binary="/private/webjam-fabric",
+        expected_build="abc1234",
+        on_connection_lost=losses.append,
+    )
+
+    with pytest.raises(RemoteBackendError) as timeout_error:
+        unreachable.start_guest(_invitation(), generation=3)
+
+    assert timeout_error.value.code is RemoteSessionErrorCode.TIMED_OUT
+    assert losses == []
+
 
 def test_guest_stop_cancels_pre_ready_start_without_enrollment(
     monkeypatch,

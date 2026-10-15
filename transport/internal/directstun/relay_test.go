@@ -37,6 +37,23 @@ func TestParseRelayTargetPinsCredentialedServer(t *testing.T) {
 	}
 }
 
+func TestParseRelayTargetAllowsHarnessLoopback(t *testing.T) {
+	t.Setenv(testHarnessEnv, "1")
+	loopback := netip.MustParseAddr("127.0.0.1")
+	encoded, err := relayCandidate(netip.MustParseAddrPort("127.0.0.1:49152"), 4000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := ParseRelayTarget(encoded, loopback)
+	if err != nil || target.IP.String() != "127.0.0.1" || target.Port != 49152 {
+		t.Fatalf("harness loopback relay = %v, %v", target, err)
+	}
+	t.Setenv(testHarnessEnv, "")
+	if _, err = ParseRelayTarget(encoded, loopback); err == nil {
+		t.Fatal("loopback relay must stay rejected outside the harness")
+	}
+}
+
 func TestCredentialJSONAcceptsCoturnAndCloudflareShapes(t *testing.T) {
 	t.Parallel()
 	coturn, err := parseCredentialJSON([]byte(`{
@@ -178,6 +195,36 @@ func TestFetchCredentialsPostsProofAndSkipsWithoutIt(t *testing.T) {
 	t.Setenv(testTURNURLEnv, "")
 	if _, err = resolveCredentials(context.Background()); err != errNoTURN {
 		t.Fatalf("missing proof must not fetch credentials: %v", err)
+	}
+}
+
+func TestCredentialFetchTimeoutCoversWorkerAndSlowBody(t *testing.T) {
+	if credentialFetch <= workerWorstCase || credentialFetch != workerWorstCase+credentialHeadroom {
+		t.Fatalf("credentialFetch=%s want Worker worst case %s plus headroom %s",
+			credentialFetch, workerWorstCase, credentialHeadroom)
+	}
+	t.Setenv(testHarnessEnv, "1")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusOK)
+		if flusher, ok := writer.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		<-request.Context().Done()
+	}))
+	t.Cleanup(server.Close)
+	var session, capability [32]byte
+	session[0], capability[0] = 1, 2
+	ctx, cancel := context.WithTimeout(
+		WithCredentialProof(context.Background(), session, capability),
+		200*time.Millisecond,
+	)
+	defer cancel()
+	start := time.Now()
+	if _, err := fetchCredentials(ctx, server.URL); err != errNoTURN {
+		t.Fatalf("slow body must fail closed, got %v", err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("timeout must stay in force after headers")
 	}
 }
 

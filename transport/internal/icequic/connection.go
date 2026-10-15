@@ -102,6 +102,37 @@ func (c *Connection) CloseWithError(code quic.ApplicationErrorCode, reason strin
 	return c.inner.CloseWithError(code, reason)
 }
 
+// PeerSPKIFingerprint is the TLS peer's SPKI SHA-256. Direct-stun uses this
+// instead of an out-of-band bootstrap because the client certificate is
+// already on the handshake.
+func (c *Connection) PeerSPKIFingerprint() ([32]byte, error) {
+	if c == nil || c.inner == nil {
+		return [32]byte{}, ErrPeerIdentityMismatch
+	}
+	peerCertificates := c.inner.ConnectionState().TLS.PeerCertificates
+	if len(peerCertificates) != 1 {
+		return [32]byte{}, ErrPeerIdentityMismatch
+	}
+	return sha256.Sum256(peerCertificates[0].RawSubjectPublicKeyInfo), nil
+}
+
+// OpenEnrollmentStream is the only stream that may be used before the
+// exporter-bound proof authorizes the data planes.
+func (c *Connection) OpenEnrollmentStream(ctx context.Context) (*quic.Stream, error) {
+	if c == nil || c.inner == nil || ctx == nil {
+		return nil, ErrQUICHandshake
+	}
+	return c.inner.OpenStreamSync(ctx)
+}
+
+// AcceptEnrollmentStream receives the matching pre-authorization stream.
+func (c *Connection) AcceptEnrollmentStream(ctx context.Context) (*quic.Stream, error) {
+	if c == nil || c.inner == nil || ctx == nil {
+		return nil, ErrQUICHandshake
+	}
+	return c.inner.AcceptStream(ctx)
+}
+
 type Listener struct{ inner *quic.Listener }
 
 func (l *Listener) Accept(ctx context.Context) (*Connection, error) {
