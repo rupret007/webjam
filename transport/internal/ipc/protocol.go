@@ -194,6 +194,7 @@ type Event struct {
 	Route          string      `json:"route,omitempty"`
 	SessionPath    string      `json:"session_path,omitempty"`
 	RelayBytes     uint64      `json:"relay_bytes,omitempty"`
+	ExpiresAtUnix  int64       `json:"expires_at_unix,omitempty"`
 	RoomState      *room.State `json:"room_state,omitempty"`
 }
 
@@ -578,6 +579,9 @@ func MarshalEvent(event Event) ([]byte, error) {
 func validateEvent(event *Event) error {
 	if isWebJoinEvent(event.Type) {
 		return validateWebJoinEvent(event)
+	}
+	if event.ExpiresAtUnix != 0 {
+		return ErrProtocol
 	}
 	if _, ok := allowedEventTypes[event.Type]; !ok {
 		return ErrProtocol

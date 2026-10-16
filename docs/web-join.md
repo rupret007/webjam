@@ -34,6 +34,10 @@ SDP. ICE configuration comes from a compiled HTTPS credential endpoint with
 redirects disabled. Error events contain fixed codes; diagnostic event history
 omits sealed signaling. A process admits one capability for its entire lifetime.
 Generation mismatch closes the endpoint instead of resetting replay state.
+The `web_join_offer` event returns the sealed offer's effective expiry. The host
+uses that value in the invite fragment after checking that it is still live and
+does not exceed the requested lifetime, including when TURN credentials expire
+sooner than ten minutes.
 
 The browser is static under `web/join/`, without build secrets or third-party
 scripts. Its only application network origin is the existing relay Worker.
@@ -67,13 +71,15 @@ or proofs, bad pins, wrong generations and expiry close the endpoint.
 
 ## Networks, deadlines and free limits
 
-ICE gathers public server-reflexive and allowlisted TURN candidates together;
+ICE gathers public IPv4 server-reflexive and allowlisted TURN candidates together;
 ICE priority prefers a direct pair and can fall back to TURN within the same
 negotiation. TURN over UDP, TCP, and TLS service URLs are supported. Host,
 private, multicast, reserved and non-allowlisted relay candidates are rejected.
 There is no production loopback policy override; loopback/private hosts are
 available only to the Go test harness. These restrictions can reject same-LAN
 networks without a permitted public or relay path.
+IPv6 candidates are filtered from host offers and rejected in browser answers,
+matching the browser's IPv4-only policy without discarding usable IPv4 fallback.
 
 Cloudflare's reviewed relay IPv4 addresses are `141.101.90.1` and
 `162.159.207.1`; a provider change fails closed until the allowlists in both

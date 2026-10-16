@@ -68,6 +68,7 @@ _EVENT_FIELDS = frozenset(
         "route",
         "session_path",
         "relay_bytes",
+        "expires_at_unix",
     }
 )
 _EVENT_TYPES = frozenset(
@@ -177,6 +178,7 @@ class TransportEvent:
     route: str = ""
     session_path: str = ""
     relay_bytes: int = 0
+    expires_at_unix: int = 0
 
 
 def _decode_web_join_envelope(value: Any) -> bytes:
@@ -194,7 +196,7 @@ def _decode_web_join_envelope(value: Any) -> bytes:
 def _parse_web_join_event(raw: dict, event_id: int, event_type: str) -> TransportEvent:
     fields = {"version", "id", "type", "code", "state", "generation"}
     if event_type == "web_join_offer":
-        fields.add("signal")
+        fields.update({"signal", "expires_at_unix"})
     if set(raw) != fields or raw.get("code") != "ok":
         raise TransportProtocolError("The transport process sent invalid data.")
     generation = _strict_int(raw.get("generation"), minimum=1, maximum=2**32 - 1)
@@ -205,6 +207,7 @@ def _parse_web_join_event(raw: dict, event_id: int, event_type: str) -> Transpor
         event_id=event_id, event_type=event_type, code="ok", state=expected_state,
         generation=generation,
         signal=_decode_web_join_envelope(raw["signal"]) if "signal" in raw else b"",
+        expires_at_unix=_strict_int(raw["expires_at_unix"], minimum=1, maximum=2**63 - 1) if "expires_at_unix" in raw else 0,
     )
 
 
@@ -327,6 +330,8 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
     event_type = raw.get("type")
     if isinstance(event_type, str) and event_type in {"web_join_offer", "web_join_answer_applied", "web_join_closed", "web_join_connected"}:
         return _parse_web_join_event(raw, event_id, event_type)
+    if "expires_at_unix" in raw:
+        raise TransportProtocolError("The transport process sent invalid data.")
     if len(encoded) > MAX_EVENT_LINE_BYTES and event_type not in {
         "room_state_received", "room_state_accepted"
     }:
@@ -995,7 +1000,12 @@ class TransportProcess:
             generation=self._command_int(generation, minimum=1, maximum=2**32 - 1),
             expires_at_unix=self._command_int(expires_at_unix, minimum=1, maximum=2**63 - 1),
         )
-        if event.event_type != "web_join_offer" or event.generation != generation:
+        if (
+            event.event_type != "web_join_offer"
+            or event.generation != generation
+            or type(event.expires_at_unix) is not int
+            or not time.time() < event.expires_at_unix <= expires_at_unix
+        ):
             raise TransportProtocolError("The transport process sent invalid data.")
         return event
 

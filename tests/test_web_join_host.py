@@ -3,6 +3,7 @@ import json
 import threading
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -101,10 +102,12 @@ def test_transport_web_events_remain_fixed_shape():
         "code": "ok",
         "state": "host_waiting",
         "generation": 2,
+        "expires_at_unix": 1700000300,
         "signal": base64.urlsafe_b64encode(ENVELOPE).rstrip(b"=").decode(),
     }
     event = parse_transport_event(json.dumps(raw).encode() + b"\n")
     assert event.signal == ENVELOPE
+    assert event.expires_at_unix == 1700000300
     assert "WJWS1" not in repr(event)
     for key, value in (
         ("url", "https://invalid"),
@@ -112,9 +115,31 @@ def test_transport_web_events_remain_fixed_shape():
         ("state", "connected"),
         ("generation", True),
         ("id", 0),
+        ("expires_at_unix", True),
+        ("expires_at_unix", 0),
+        ("expires_at_unix", -1),
+        ("expires_at_unix", 2**63),
+        ("expires_at_unix", "1700000300"),
     ):
         with pytest.raises(TransportProtocolError):
             parse_transport_event(json.dumps({**raw, key: value}).encode() + b"\n")
+    del raw["expires_at_unix"]
+    with pytest.raises(TransportProtocolError):
+        parse_transport_event(json.dumps(raw).encode() + b"\n")
+
+
+@pytest.mark.parametrize("event", [
+    {"id": 1, "type": "web_join_answer_applied", "state": "connecting", "generation": 1},
+    {"id": 1, "type": "web_join_closed", "state": "closed", "generation": 1},
+    {"id": 0, "type": "web_join_connected", "state": "connected", "generation": 1},
+    {"id": 0, "type": "ready", "state": "idle", "build": "dev"},
+])
+def test_offer_expiry_is_rejected_on_other_event_shapes(event):
+    raw = {"version": 1, "code": "ok", **event}
+    parse_transport_event(json.dumps(raw).encode() + b"\n")
+    for expiry in (0, 1700000090):
+        with pytest.raises(TransportProtocolError):
+            parse_transport_event(json.dumps({**raw, "expires_at_unix": expiry}).encode() + b"\n")
 
 
 class FakeBridge:
@@ -144,7 +169,7 @@ class FakeProcess:
 
     def open_web_join(self, **kwargs):
         self.open_args = kwargs
-        return SimpleNamespace(signal=ENVELOPE)
+        return SimpleNamespace(signal=ENVELOPE, expires_at_unix=kwargs["expires_at_unix"])
 
     def apply_web_join_answer(self, answer, **kwargs):
         assert answer == ENVELOPE
@@ -213,13 +238,62 @@ def test_prepare_failure_closes_owned_bridge_and_sidecar():
     assert not process.running and bridge.closed.is_set() and not host.invite
 
 
+def test_host_invite_uses_credential_clamped_offer_expiry(monkeypatch):
+    monkeypatch.setattr("services.web_join_host.time.time", lambda: 1700000000)
+    process, bridge = FakeProcess(None), FakeBridge(22124)
+
+    def open_web_join(**kwargs):
+        assert kwargs["expires_at_unix"] == 1700000600
+        # The sidecar sealed the offer with the shorter Worker credential TTL.
+        return SimpleNamespace(signal=ENVELOPE, expires_at_unix=1700000090)
+
+    process.open_web_join = open_web_join
+    host = WebJoinHost(
+        process_factory=lambda _: process,
+        bridge_factory=lambda _: bridge,
+        mailbox_factory=FakeMailbox,
+    )
+    try:
+        invite = host.allow(22124)
+        assert parse_qs(urlsplit(invite).fragment)["e"] == ["1700000090"]
+    finally:
+        host.stop()
+
+
+@pytest.mark.parametrize("expiry", [None, True, 0, -1, "1700000090", 1700000090.0, 1699999999, 1700000000, 1700000601])
+def test_host_rejects_invalid_offer_expiry_before_publication(monkeypatch, expiry):
+    monkeypatch.setattr("services.web_join_host.time.time", lambda: 1700000000)
+    process, bridge = FakeProcess(None), FakeBridge(22124)
+    process.open_web_join = lambda **_: SimpleNamespace(signal=ENVELOPE, expires_at_unix=expiry)
+    mailboxes = []
+
+    def mailbox_factory(*args, **kwargs):
+        mailbox = FakeMailbox(*args, **kwargs)
+        mailboxes.append(mailbox)
+        return mailbox
+
+    host = WebJoinHost(
+        process_factory=lambda _: process,
+        bridge_factory=lambda _: bridge,
+        mailbox_factory=mailbox_factory,
+    )
+    try:
+        with pytest.raises(WebJoinUnavailable):
+            host.allow(22124)
+        assert not mailboxes
+        assert not host.invite and not process.running and bridge.closed.is_set()
+    finally:
+        host.stop()
+
+
 def test_transport_open_serializes_no_network_authority(monkeypatch):
+    monkeypatch.setattr("services.transport_runtime.time.time", lambda: 1700000000)
     process = TransportProcess("/unused", expected_build="dev")
     recorded = {}
 
     def request(kind, **kwargs):
         recorded.update(kind=kind, **kwargs)
-        return SimpleNamespace(event_type="web_join_offer", generation=1)
+        return SimpleNamespace(event_type="web_join_offer", generation=1, expires_at_unix=1700000090)
 
     monkeypatch.setattr(process, "_request", request)
     process.open_web_join(
@@ -240,6 +314,21 @@ def test_transport_open_serializes_no_network_authority(monkeypatch):
         "generation",
         "expires_at_unix",
     }
+
+
+@pytest.mark.parametrize("expiry", [True, 0, 1699999999, 1700000000, 1700000301])
+def test_transport_open_rejects_expired_or_extended_offer(monkeypatch, expiry):
+    monkeypatch.setattr("services.transport_runtime.time.time", lambda: 1700000000)
+    process = TransportProcess("/unused", expected_build="dev")
+    monkeypatch.setattr(process, "_request", lambda *_args, **_kwargs: SimpleNamespace(
+        event_type="web_join_offer", generation=1, expires_at_unix=expiry,
+    ))
+    with pytest.raises(TransportProtocolError):
+        process.open_web_join(
+            session_id=b"s" * 32, capability=b"c" * 32,
+            bridge_port=22125, bridge_token=b"t" * 32,
+            generation=1, expires_at_unix=1700000300,
+        )
 
 
 @pytest.mark.parametrize("failing", ["process", "bridge", "both"])

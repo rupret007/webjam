@@ -130,7 +130,8 @@ func newEndpoint(ctx context.Context, cfg Config, lab bool) (*Endpoint, error) {
 	}
 	e.fingerprint = pinBytes(pin)
 	engine := webrtc.SettingEngine{}
-	engine.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6})
+	// Match the browser's IPv4 candidate policy before gathering begins.
+	engine.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4})
 	engine.SetICEMulticastDNSMode(ice.MulticastDNSModeDisabled)
 	engine.SetICETimeouts(5*time.Second, 10*time.Second, 2*time.Second)
 	engine.SetSTUNGatherTimeout(5 * time.Second)

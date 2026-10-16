@@ -146,22 +146,22 @@ func validateWebJoinEvent(e *Event) error {
 	}
 	switch e.Type {
 	case "web_join_offer":
-		if e.ID == 0 || e.State != "host_waiting" {
+		if e.ID == 0 || e.State != "host_waiting" || e.ExpiresAtUnix <= 0 {
 			return ErrProtocol
 		}
 		raw, err := decodeWebJoinEnvelope(e.Signal)
 		clear(raw)
 		return err
 	case "web_join_answer_applied":
-		if e.ID == 0 || e.State != "connecting" || e.Signal != "" {
+		if e.ID == 0 || e.State != "connecting" || e.Signal != "" || e.ExpiresAtUnix != 0 {
 			return ErrProtocol
 		}
 	case "web_join_closed":
-		if e.State != "closed" || e.Signal != "" {
+		if e.State != "closed" || e.Signal != "" || e.ExpiresAtUnix != 0 {
 			return ErrProtocol
 		}
 	case "web_join_connected":
-		if e.ID != 0 || e.State != "connected" || e.Signal != "" {
+		if e.ID != 0 || e.State != "connected" || e.Signal != "" || e.ExpiresAtUnix != 0 {
 			return ErrProtocol
 		}
 	default:
@@ -235,7 +235,7 @@ func (s *runnerState) handleWebJoin(ctx context.Context, command *Command, event
 			return failure(CodeOpenFailed)
 		}
 		defer clear(offer)
-		return events.emit(Event{ID: command.ID, Type: "web_join_offer", Code: CodeOK, State: "host_waiting", Generation: w.generation, Signal: base64.RawURLEncoding.EncodeToString(offer)})
+		return events.emit(Event{ID: command.ID, Type: "web_join_offer", Code: CodeOK, State: "host_waiting", Generation: w.generation, Signal: base64.RawURLEncoding.EncodeToString(offer), ExpiresAtUnix: endpoint.OfferExpiresAt()})
 	case commandWebJoinAnswer:
 		if s.webJoin == nil {
 			return failure(CodePeerNotOpen)

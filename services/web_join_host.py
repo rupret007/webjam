@@ -277,12 +277,19 @@ class WebJoinHost:
                 generation=generation,
                 expires_at_unix=expiry,
             )
+            # ICE credentials can shorten the sealed offer's lifetime. Publish
+            # that exact binding in the fragment, never the requested deadline.
+            offer_expiry = offer.expires_at_unix
+            if type(offer_expiry) is not int or not time.time() < offer_expiry <= expiry:
+                raise WebJoinUnavailable("Web Join signaling failed.")
             mailbox = self._mailbox_factory(capability, session, cancel=self._stop)
             mailbox.publish_offer(offer.signal)
             with self._lock:
                 if self._stop.is_set():
                     raise WebJoinUnavailable("Web Join stopped.")
-                self._invite = f"{JOIN_PAGE}#k={_b64(capability)}&s={session.hex()}&g={generation}&e={expiry}"
+                if offer_expiry <= time.time():
+                    raise WebJoinUnavailable("This web invitation has ended.")
+                self._invite = f"{JOIN_PAGE}#k={_b64(capability)}&s={session.hex()}&g={generation}&e={offer_expiry}"
                 self._state = "waiting"
                 self._worker = threading.Thread(
                     target=self._wait_guest,

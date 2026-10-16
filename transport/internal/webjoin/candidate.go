@@ -33,11 +33,16 @@ func candidateAllowed(candidate ice.Candidate, relays map[netip.Addr]bool, lab b
 	if err != nil {
 		return false
 	}
+	isIPv4 := ip.Is4()
 	ip = ip.Unmap()
 	if lab && (ip.IsLoopback() || ip.IsPrivate()) && (candidate.Type() == ice.CandidateTypeHost || candidate.Type() == ice.CandidateTypePeerReflexive || (candidate.Type() == ice.CandidateTypeRelay && relays[ip])) {
 		return true
 	}
-	if !publicIP(ip) {
+	// The browser's sealed-SDP policy admits IPv4 only. An IPv6 candidate in
+	// a host offer would reject the entire offer, including usable IPv4 paths.
+	// Check the original address family: mapped IPv6 text is also rejected by
+	// the browser, even when it represents an otherwise permitted IPv4 address.
+	if !isIPv4 || !publicIP(ip) {
 		return false
 	}
 	if candidate.Type() == ice.CandidateTypeRelay {

@@ -64,7 +64,7 @@ func TestWebJoinFixedShapeIPC(t *testing.T) {
 func TestWebJoinEnvelopeAndEvents(t *testing.T) {
 	raw := append([]byte("WJWS1"), bytes.Repeat([]byte{1}, 3000)...)
 	encoded := base64.RawURLEncoding.EncodeToString(raw)
-	event := Event{ID: 1, Type: "web_join_offer", Code: "ok", State: "host_waiting", Generation: 1, Signal: encoded}
+	event := Event{ID: 1, Type: "web_join_offer", Code: "ok", State: "host_waiting", Generation: 1, Signal: encoded, ExpiresAtUnix: 1700000300}
 	if _, err := MarshalEvent(event); err != nil {
 		t.Fatal(err)
 	}
@@ -91,5 +91,42 @@ func TestWebJoinEnvelopeAndEvents(t *testing.T) {
 	}
 	if state.webJoin != nil || state.webJoinUsed {
 		t.Fatal("close enabled endpoint")
+	}
+}
+
+func TestWebJoinOfferExpiryIsRequiredAndExclusive(t *testing.T) {
+	envelope := append([]byte("WJWS1"), bytes.Repeat([]byte{1}, 64)...)
+	offer := Event{ID: 1, Type: "web_join_offer", Code: "ok", State: "host_waiting", Generation: 1, Signal: base64.RawURLEncoding.EncodeToString(envelope), ExpiresAtUnix: 1700000090}
+	encoded, err := MarshalEvent(offer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if len(fields) != 8 || string(fields["expires_at_unix"]) != "1700000090" {
+		t.Fatal("offer omitted its bounded expiry metadata")
+	}
+	for _, expiry := range []int64{0, -1} {
+		invalid := offer
+		invalid.ExpiresAtUnix = expiry
+		if _, err := MarshalEvent(invalid); err == nil {
+			t.Fatal("accepted invalid offer expiry")
+		}
+	}
+	for _, event := range []Event{
+		{ID: 1, Type: "web_join_answer_applied", Code: "ok", State: "connecting", Generation: 1},
+		{ID: 1, Type: "web_join_closed", Code: "ok", State: "closed", Generation: 1},
+		{Type: "web_join_connected", Code: "ok", State: "connected", Generation: 1},
+		{Type: "ready", Code: "ok", State: "idle", Build: "dev"},
+	} {
+		if _, err := MarshalEvent(event); err != nil {
+			t.Fatal(err)
+		}
+		event.ExpiresAtUnix = offer.ExpiresAtUnix
+		if _, err := MarshalEvent(event); err == nil {
+			t.Fatalf("accepted offer expiry on %s", event.Type)
+		}
 	}
 }
