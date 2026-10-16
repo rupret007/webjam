@@ -43,6 +43,7 @@ trap 'rm -rf "$w01_cache"' EXIT
 PYTHONPYCACHEPREFIX="$w01_cache" .venv/bin/python -m compileall -q core webjam_qt ui services api tests
 .venv/bin/python -m pip check
 .venv/bin/python tools/runtime_dependency_policy.py --check
+.venv/bin/python tools/changelog_fragments.py check --base origin/master
 .venv/bin/python ux_smoke_test.py
 git diff --check
 if ((w01_status != 0)); then
