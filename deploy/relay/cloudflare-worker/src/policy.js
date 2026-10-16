@@ -5,13 +5,14 @@
  *
  *   usage_bytes = sum(ingressBytes) + sum(egressBytes)
  *                 over the UTC calendar month [month_start, today]
- *                 filtered by keyId = TURN_KEY_ID
+ *                 summed across TURN_KEY_ID and (if configured) WEB_TURN_KEY_ID
  *
  *   cap_bytes   = TURN_MONTHLY_CAP_GB * 1_000_000_000
  *                 (default 800; Cloudflare's free allowance is 1,000 GB)
  *
  *   refuse new credentials when usage_bytes >= cap_bytes
  *   or when the analytics query is missing, errors, or unparseable.
+ *   Web additionally stops at 200 GB for its separate key.
  *
  * 1 GB = 1,000,000,000 bytes (Cloudflare billing). 800 GB leaves 200 GB of
  * the 1,000 GB free tier for in-flight allocations and analytics lag.
@@ -19,6 +20,7 @@
 
 export const GIGABYTE_BYTES = 1_000_000_000;
 export const DEFAULT_CAP_GB = 800;
+export const DEFAULT_WEB_CAP_GB = 200;
 export const DEFAULT_TTL_SECONDS = 600;
 export const DEFAULT_RATE_LIMIT = 10;
 export const RATE_WINDOW_MS = 60_000;
@@ -101,15 +103,21 @@ export function monthlyCapBytes(capGbRaw) {
   const parsed = Number.parseInt(String(capGbRaw ?? ""), 10);
   const gigabytes =
     Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CAP_GB;
-  return gigabytes * GIGABYTE_BYTES;
+  return Math.min(gigabytes, DEFAULT_CAP_GB) * GIGABYTE_BYTES;
 }
 
-export function credentialTtlSeconds(raw) {
+export function webMonthlyCapBytes(raw) {
+  const parsed = Number.parseInt(String(raw ?? ""), 10);
+  const cap = Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_WEB_CAP_GB;
+  return Math.min(cap, DEFAULT_WEB_CAP_GB) * GIGABYTE_BYTES;
+}
+
+export function credentialTtlSeconds(raw, web = false) {
   const parsed = Number.parseInt(String(raw ?? ""), 10);
   if (!Number.isFinite(parsed) || parsed < 60 || parsed > 86400) {
     return DEFAULT_TTL_SECONDS;
   }
-  return parsed;
+  return web ? Math.min(parsed, 3600) : parsed;
 }
 
 export function rateLimitPerMinute(raw) {
@@ -136,8 +144,10 @@ export function validSessionInviteShape(body) {
   if (body == null || typeof body !== "object" || Array.isArray(body)) {
     return false;
   }
-  const session = String(body.session_id ?? "");
-  const token = String(body.invite_token ?? body.token ?? "");
+  if (body.client !== undefined && body.client !== "web") return false;
+  const session = body.session_id;
+  const token = body.invite_token ?? body.token;
+  if (typeof session !== "string" || typeof token !== "string") return false;
   const sessionOk = UUID_RE.test(session) || SESSION_HEX_RE.test(session);
   return sessionOk && INVITE_TOKEN_RE.test(token);
 }
@@ -183,7 +193,7 @@ export function allowRate(store, ip, nowMs, limit, windowMs = RATE_WINDOW_MS) {
   return next <= limit;
 }
 
-export function readUsageBytes(payload) {
+export function readUsageBytes(payload, field = "callsTurnUsageAdaptiveGroups") {
   if (payload == null || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
   }
@@ -194,7 +204,7 @@ export function readUsageBytes(payload) {
   if (!Array.isArray(accounts) || accounts.length !== 1) {
     return null;
   }
-  const groups = accounts[0]?.callsTurnUsageAdaptiveGroups;
+  const groups = accounts[0]?.[field];
   if (!Array.isArray(groups)) {
     return null;
   }
@@ -234,9 +244,19 @@ export function decideCap(usageBytes, capBytes) {
   return { allow: true, code: "ok" };
 }
 
-export function usageAnalyticsQuery(accountId, keyId, dateFrom, dateTo) {
+export function usageAnalyticsQuery(accountId, keyId, dateFrom, dateTo, webKeyId = "") {
+  // Aliases let one bounded upstream request read both independently metered
+  // keys. No dimensions are selected, so each group is one monthly sum.
+  const webVariable = webKeyId ? ", $webKeyId: String!" : "";
+  const webQuery = webKeyId ? `
+      webUsage: callsTurnUsageAdaptiveGroups(
+        limit: 1
+        filter: { date_geq: $dateFrom, date_leq: $dateTo, keyId: $webKeyId }
+      ) {
+        sum { ingressBytes egressBytes }
+      }` : "";
   return {
-    query: `query WebJamTurnMonthUsage($accountId: String!, $keyId: String!, $dateFrom: Date!, $dateTo: Date!) {
+    query: `query WebJamTurnMonthUsage($accountId: String!, $keyId: String!, $dateFrom: Date!, $dateTo: Date!${webVariable}) {
   viewer {
     accounts(filter: { accountTag: $accountId }) {
       callsTurnUsageAdaptiveGroups(
@@ -244,11 +264,11 @@ export function usageAnalyticsQuery(accountId, keyId, dateFrom, dateTo) {
         filter: { date_geq: $dateFrom, date_leq: $dateTo, keyId: $keyId }
       ) {
         sum { ingressBytes egressBytes }
-      }
+      }${webQuery}
     }
   }
 }`,
-    variables: { accountId, keyId, dateFrom, dateTo },
+    variables: { accountId, keyId, dateFrom, dateTo, ...(webKeyId ? { webKeyId } : {}) },
   };
 }
 

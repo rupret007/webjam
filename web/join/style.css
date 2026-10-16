@@ -1,0 +1,17 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #101718; color: #edf2eb; }
+body { margin: 0; padding: 32px 20px; }
+main { max-width: 660px; margin: 5vh auto; }
+h1 { font-size: clamp(2rem, 6vw, 3rem); line-height: 1.1; letter-spacing: -.04em; }
+p { line-height: 1.65; }
+.eyebrow { color: #bbe48b; letter-spacing: .14em; text-transform: uppercase; }
+#status { padding: 16px; border-left: 3px solid #bbe48b; background: #1b2625; }
+.headphones { display: flex; align-items: flex-start; gap: 12px; padding: 18px 0; line-height: 1.5; }
+input { width: 20px; height: 20px; flex-shrink: 0; }
+button { font: inherit; font-weight: 650; padding: 14px 22px; border: 0; border-radius: 8px; cursor: pointer; background: #bbe48b; color: #15210c; }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid white; outline-offset: 4px; }
+.actions { display: flex; gap: 12px; }
+.privacy, #latency { color: #b4c2bd; font-size: .9rem; }
+#warnings { color: #f3d7a5; white-space: pre-line; }
+details { margin: 28px 0; }
+summary { cursor: pointer; }

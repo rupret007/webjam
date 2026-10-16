@@ -5,6 +5,7 @@
  */
 
 import { Mailbox, validMailboxId } from "./mailbox.js";
+import { allowedOrigin, corsGate, withCors } from "./cors.js";
 import {
   FETCH_TIMEOUT_MS,
   MAX_BODY_BYTES,
@@ -17,6 +18,7 @@ import {
   iceServersDocument,
   missingRequiredSecrets,
   monthlyCapBytes,
+  webMonthlyCapBytes,
   readUsageBytes,
   usageAnalyticsQuery,
   utcMonthDateRange,
@@ -38,6 +40,7 @@ const SESSION_QUOTA_BYTES = 256 * 1024 * 1024;
 let quotaStates = {
   turn: emptyQuotaState(),
   mailbox: emptyQuotaState(),
+  web: emptyQuotaState(),
 };
 let usageCache = null;
 
@@ -45,6 +48,7 @@ export function resetWorkerState() {
   quotaStates = {
     turn: emptyQuotaState(),
     mailbox: emptyQuotaState(),
+    web: emptyQuotaState(),
   };
   usageCache = null;
 }
@@ -89,6 +93,7 @@ function applyQuotaEnv(env) {
     MAILBOX_NET_DAILY_ROW_WRITES: env.MAILBOX_NET_DAILY_ROW_WRITES,
     MAILBOX_NET_DAILY_GB_S: env.MAILBOX_NET_DAILY_GB_S,
     MAILBOX_RATE_PREFIX_DAILY: env.MAILBOX_RATE_PREFIX_DAILY,
+    WEB_DAILY_REQUESTS: env.WEB_DAILY_REQUESTS,
   };
   globalThis.WEBJAM_QUOTA_ENV = quotaEnv;
   return quotaEnv;
@@ -105,12 +110,27 @@ function requireHttps(request) {
   return errorResponse(403, "https");
 }
 
-async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all") {
+async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all", web = false) {
   if (typeof deps.enforceAccess === "function") {
-    return deps.enforceAccess(request, nowMs, rowWrites, charge);
+    return deps.enforceAccess(request, nowMs, rowWrites, charge, web);
   }
+  if (web) {
+    if ((typeof env.MAILBOX_QUOTA?.idFromName !== "function" ||
+         typeof env.MAILBOX_QUOTA?.get !== "function") &&
+        !deps.fetch && !deps.mailboxFetch && env.ENVIRONMENT !== "development") {
+      return errorResponse(503, "misconfigured");
+    }
+    // One persistent web counter spans both endpoints. Keep the original
+    // mailbox/TURN caps too; a browser request never escapes those budgets.
+    const denied = await enforceScope(request, env, nowMs, 0, charge, "web");
+    if (denied) return denied;
+  }
+  return enforceScope(request, env, nowMs, rowWrites, charge,
+    quotaScope(new URL(request.url).pathname));
+}
+
+async function enforceScope(request, env, nowMs, rowWrites, charge, scope) {
   const ip = clientIP(request.headers);
-  const scope = quotaScope(new URL(request.url).pathname);
   if (env.MAILBOX_QUOTA && typeof env.MAILBOX_QUOTA.idFromName === "function") {
     try {
       const stub = env.MAILBOX_QUOTA.get(env.MAILBOX_QUOTA.idFromName(scope));
@@ -164,7 +184,7 @@ function closeAcceptedSocket(response) {
   }
 }
 
-async function handleMailbox(request, env, deps, mailbox, nowMs) {
+async function handleMailbox(request, env, deps, mailbox, nowMs, web) {
   if (mailbox.invalid) {
     return errorResponse(404, "not_found");
   }
@@ -182,6 +202,7 @@ async function handleMailbox(request, env, deps, mailbox, nowMs) {
     nowMs,
     websocket ? 0 : writes,
     websocket ? "rate" : "all",
+    web,
   );
   if (denied) {
     return denied;
@@ -202,7 +223,7 @@ async function handleMailbox(request, env, deps, mailbox, nowMs) {
     }
   }
   if (websocket && mailboxCountsDaily(response.status)) {
-    const charged = await enforceAccess(request, env, deps, nowMs, writes, "daily");
+    const charged = await enforceAccess(request, env, deps, nowMs, writes, "daily", web);
     if (charged) {
       closeAcceptedSocket(response);
       return charged;
@@ -212,6 +233,15 @@ async function handleMailbox(request, env, deps, mailbox, nowMs) {
 }
 
 export async function handleRequest(request, env, deps = {}) {
+  env ??= {};
+  // Origin checks and preflight must finish before any quota/mailbox DO call.
+  const cors = corsGate(request, env);
+  if (cors) return cors;
+  const origin = allowedOrigin(request, env);
+  return withCors(await handleAllowedRequest(request, env, deps), origin);
+}
+
+async function handleAllowedRequest(request, env, deps) {
   const blocked = requireHttps(request);
   if (blocked) {
     return blocked;
@@ -219,10 +249,12 @@ export async function handleRequest(request, env, deps = {}) {
   applyQuotaEnv(env ?? {});
   const fetchImpl = deps.fetch ?? globalThis.fetch;
   const nowMs = Number(deps.nowMs ?? Date.now());
-  const path = new URL(request.url).pathname;
+  const url = new URL(request.url);
+  const path = url.pathname;
+  let web = request.headers.has("Origin") || url.searchParams.get("client") === "web";
   const mailbox = parseMailboxPath(path);
   if (mailbox) {
-    return handleMailbox(request, env, deps, mailbox, nowMs);
+    return handleMailbox(request, env, deps, mailbox, nowMs, web);
   }
   if (request.method !== "POST") {
     return errorResponse(405, "method");
@@ -230,19 +262,6 @@ export async function handleRequest(request, env, deps = {}) {
   if (path !== "/turn-credentials") {
     return errorResponse(404, "not_found");
   }
-
-  const denied = await enforceAccess(request, env, deps, nowMs, 0);
-  if (denied) {
-    return denied;
-  }
-
-  if (missingRequiredSecrets(env).length > 0) {
-    return errorResponse(503, "misconfigured");
-  }
-  const keyId = String(env.TURN_KEY_ID ?? "").trim();
-  const apiToken = String(env.TURN_KEY_API_TOKEN ?? "").trim();
-  const accountId = String(env.CLOUDFLARE_ACCOUNT_ID ?? "").trim();
-  const timeoutMs = Number(deps.fetchTimeoutMs ?? FETCH_TIMEOUT_MS);
 
   let body;
   try {
@@ -257,22 +276,46 @@ export async function handleRequest(request, env, deps = {}) {
   if (!validSessionInviteShape(body)) {
     return errorResponse(403, "unauthorized");
   }
+  if (web && body.client !== "web") {
+    return errorResponse(403, "unauthorized");
+  }
+  web ||= body.client === "web";
+  const denied = await enforceAccess(request, env, deps, nowMs, 0, "all", web);
+  if (denied) return denied;
+
+  const desktopKeyId = String(env.TURN_KEY_ID ?? "").trim();
+  const webKeyId = String(env.WEB_TURN_KEY_ID ?? "").trim();
+  const keyId = web ? webKeyId : desktopKeyId;
+  const apiToken = String((web ? env.WEB_TURN_KEY_API_TOKEN : env.TURN_KEY_API_TOKEN) ?? "").trim();
+  if (missingRequiredSecrets(env).length > 0 ||
+      (web && (!webKeyId || !apiToken)) ||
+      (webKeyId && webKeyId === desktopKeyId)) {
+    return errorResponse(503, "misconfigured");
+  }
+  const accountId = String(env.CLOUDFLARE_ACCOUNT_ID ?? "").trim();
+  const timeoutMs = Number(deps.fetchTimeoutMs ?? FETCH_TIMEOUT_MS);
 
   const capBytes = monthlyCapBytes(env.TURN_MONTHLY_CAP_GB);
-  const usageBytes = await monthUsageBytes(
+  const usage = await monthUsageBytes(
     fetchImpl,
     env,
-    keyId,
+    desktopKeyId,
     accountId,
     nowMs,
     timeoutMs,
   );
-  const decision = decideCap(usageBytes, capBytes);
+  const decision = decideCap(usage?.total, capBytes);
   if (!decision.allow) {
     return errorResponse(decision.code === "cap" ? 429 : 503, decision.code);
   }
+  if (web) {
+    const webDecision = decideCap(usage?.web, webMonthlyCapBytes(env.WEB_TURN_MONTHLY_CAP_GB));
+    if (!webDecision.allow) {
+      return errorResponse(webDecision.code === "cap" ? 429 : 503, webDecision.code);
+    }
+  }
 
-  const ttl = credentialTtlSeconds(env.TURN_CREDENTIAL_TTL_SECONDS);
+  const ttl = credentialTtlSeconds(env.TURN_CREDENTIAL_TTL_SECONDS, web);
   let generated;
   try {
     generated = await generateIceServers(
@@ -289,6 +332,13 @@ export async function handleRequest(request, env, deps = {}) {
   if (document == null) {
     return errorResponse(503, "unavailable");
   }
+  // Do not trust an upstream response to extend the requested browser TTL.
+  if (web) {
+    document.client = "web";
+    document.ttl = ttl;
+    // Reviewed exact allocation IPs: https://developers.cloudflare.com/realtime/turn/faq/
+    document.allowed_relay_ips = ["141.101.90.1", "162.159.207.1"];
+  }
   return jsonResponse(200, document);
 }
 
@@ -301,12 +351,15 @@ async function monthUsageBytes(
   timeoutMs = FETCH_TIMEOUT_MS,
 ) {
   const range = utcMonthDateRange(new Date(nowMs));
+  const webKeyId = String(env.WEB_TURN_KEY_ID ?? "").trim();
+  const cacheKey = `${accountId}:${keyId}:${webKeyId}:${range.monthKey}`;
   if (
     usageCache &&
-    usageCache.monthKey === range.monthKey &&
+    usageCache.key === cacheKey &&
+    nowMs >= usageCache.fetchedAt &&
     nowMs - usageCache.fetchedAt < USAGE_CACHE_MS
   ) {
-    return usageCache.bytes;
+    return usageCache.usage;
   }
   const analyticsToken = analyticsBearerToken(env);
   if (!analyticsToken) {
@@ -317,6 +370,7 @@ async function monthUsageBytes(
     keyId,
     range.dateFrom,
     range.dateTo,
+    webKeyId,
   );
   let response;
   try {
@@ -347,11 +401,13 @@ async function monthUsageBytes(
     return null;
   }
   const bytes = readUsageBytes(parsed);
-  if (bytes == null) {
+  const webBytes = webKeyId ? readUsageBytes(parsed, "webUsage") : 0;
+  if (bytes == null || webBytes == null || !Number.isFinite(bytes + webBytes)) {
     return null;
   }
-  usageCache = { monthKey: range.monthKey, bytes, fetchedAt: nowMs };
-  return bytes;
+  const usage = { total: bytes + webBytes, web: webBytes };
+  usageCache = { key: cacheKey, usage, fetchedAt: nowMs };
+  return usage;
 }
 
 async function generateIceServers(

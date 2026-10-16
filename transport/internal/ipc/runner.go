@@ -223,6 +223,8 @@ type sessionAccounting interface {
 }
 
 type runnerState struct {
+	webJoin        *webJoinOperation
+	webJoinUsed    bool
 	active         *peerMetadata
 	recentlyClosed *peerMetadata
 	hostRegistered bool
@@ -345,6 +347,7 @@ func (s *runnerState) destroyIdentity() {
 }
 
 func (s *runnerState) destroy() error {
+	s.closeWebJoin()
 	if _, err := s.closeActive(false); err != nil {
 		return err
 	}
@@ -427,6 +430,20 @@ func runWithFactoryAndClock(
 			}
 		}
 		select {
+		case <-state.webJoinEnrolled():
+			state.webJoin.connected = true
+			if !state.webJoin.endpoint.Authorized() {
+				continue
+			}
+			if err := events.emit(Event{Type: "web_join_connected", Code: CodeOK, State: "connected", Generation: state.webJoin.generation}); err != nil {
+				return err
+			}
+		case <-state.webJoinDone():
+			generation := state.webJoin.generation
+			state.closeWebJoin()
+			if err := events.emit(Event{Type: "web_join_closed", Code: CodeOK, State: "closed", Generation: generation}); err != nil {
+				return err
+			}
 		case <-ctx.Done():
 			if err := state.destroy(); err != nil {
 				_ = events.emit(Event{ID: 0, Type: "error", Code: CodeProtocolViolation, State: "failed"})
@@ -491,6 +508,9 @@ func (s *runnerState) handle(
 	build string,
 	now func() time.Time,
 ) (bool, error) {
+	if command.WebJoin != nil {
+		return false, s.handleWebJoin(ctx, command, events)
+	}
 	switch command.Type {
 	case CommandHello:
 		event := Event{ID: command.ID, Type: "hello", Code: CodeOK, State: s.stateName(), Build: build}
