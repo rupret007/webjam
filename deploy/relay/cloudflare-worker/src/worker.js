@@ -168,8 +168,10 @@ async function handleMailbox(request, env, deps, mailbox, nowMs) {
   if (mailbox.invalid) {
     return errorResponse(404, "not_found");
   }
+  // POST pre-charges the later TTL delete (alarm or expired GET) so those
+  // mailbox rows cannot write unpaid. DELETE is the live clear.
   const writes =
-    request.method === "POST" || request.method === "DELETE" ? 1 : 0;
+    request.method === "POST" ? 2 : request.method === "DELETE" ? 1 : 0;
   // Only a non-mutating handshake must accept before the daily charge.
   // POST/DELETE that merely carry Upgrade still mutate if they run first.
   const websocket = isWebsocketUpgrade(request) && writes === 0;
