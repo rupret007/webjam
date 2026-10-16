@@ -97,9 +97,24 @@ def test_svg_is_a_portable_warm_trinity_companion():
     assert "jamulus" not in source.lower()
     assert "logic" not in source.lower()
     assert "<title>WebJam</title>" in source
-    assert "One continuous three-loop trefoil for musicians playing together" in source
+    assert "<desc>One continuous three-loop trefoil.</desc>" in source
+    assert "musician" not in source.lower()
+    assert "playing together" not in source.lower()
     assert source == _svg_source()
     assert f'd="{trinity_svg_path_data()}"' in source
+
+
+def test_brand_description_is_profile_neutral():
+    """Art and Music share one mark; the spoken description names the symbol."""
+
+    assert BRAND_DESCRIPTION == (
+        "WebJam symbol: one continuous three-loop trefoil."
+    )
+    lowered = BRAND_DESCRIPTION.casefold()
+    assert "musician" not in lowered
+    assert "playing together" not in lowered
+    assert "jamulus" not in lowered
+    assert "webex" not in lowered
 
 
 def test_canonical_curve_is_the_approved_historical_continuous_trefoil():
@@ -173,6 +188,10 @@ def test_brand_widget_has_accessible_identity_and_native_vector_rendering():
     assert mark.text() == ""
     assert mark.accessibleName() == BRAND_NAME
     assert mark.accessibleDescription() == BRAND_DESCRIPTION
+    assert mark.accessibleDescription() == (
+        "WebJam symbol: one continuous three-loop trefoil."
+    )
+    assert "musician" not in mark.accessibleDescription().casefold()
     assert mark.focusPolicy().name == "NoFocus"
     assert mark.width() == 28
     assert mark.height() == 28
@@ -197,6 +216,11 @@ def test_launch_dialog_uses_the_trinity_mark_without_an_abbreviation(tmp_path):
     assert isinstance(dialog._logo, BrandMark)
     assert dialog._logo.has_vector_mark()
     assert dialog._logo.accessibleName() == "WebJam"
+    assert dialog._logo.accessibleDescription() == BRAND_DESCRIPTION
+    assert dialog._logo.accessibleDescription() == (
+        "WebJam symbol: one continuous three-loop trefoil."
+    )
+    assert "musician" not in dialog._logo.accessibleDescription().casefold()
     assert dialog._logo.text() not in {"WJ", "WEBJAM"}
     assert all(
         label.text() not in {"WJ", "WEBJAM"} for label in dialog.findChildren(QLabel)
