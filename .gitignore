@@ -44,3 +44,8 @@ audit-v*/
 # Cloudflare Worker local state
 deploy/relay/cloudflare-worker/node_modules/
 deploy/relay/cloudflare-worker/.wrangler/
+
+# Sketch Jam development and browser-test artifacts
+web/sketch-jam/node_modules/
+web/sketch-jam/test-results/
+web/sketch-jam/playwright-report/

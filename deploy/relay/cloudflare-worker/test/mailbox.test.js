@@ -1497,3 +1497,51 @@ test("http mailbox requests are rejected", async () => {
   assert.equal(denied.status, 403);
   assert.deepEqual(await denied.json(), { error: "https" });
 });
+
+test("web quota survives Worker resets, shares the desktop mailbox budget, and fails closed on unreadable storage", async () => {
+  resetWorkerState();
+  const memories = new Map();
+  const objects = new Map();
+  const env = { WEB_DAILY_REQUESTS: "2" };
+  env.MAILBOX_QUOTA = {
+    idFromName: (scope) => scope,
+    get(scope) {
+      if (!objects.has(scope)) {
+        const memory = memoryQuotaStorage();
+        memories.set(scope, memory);
+        objects.set(scope, new MailboxQuota({ storage: memory.storage }, env));
+      }
+      return objects.get(scope);
+    },
+  };
+  let mailboxCalls = 0;
+  const deps = {
+    nowMs: 1,
+    mailboxFetch: async () => {
+      mailboxCalls += 1;
+      return new Response(null, { status: 204 });
+    },
+  };
+  const webRequest = () => new Request(`https://worker.test/mailbox/${ID}/offer?client=web`, {
+    headers: { "CF-Connecting-IP": "203.0.113.10" },
+  });
+  assert.equal((await handleRequest(webRequest(), env, deps)).status, 204);
+  resetWorkerState();
+  assert.equal((await handleRequest(webRequest(), env, deps)).status, 204);
+  resetWorkerState();
+  const capped = await handleRequest(webRequest(), env, deps);
+  assert.equal(capped.status, 429);
+  assert.deepEqual(await capped.json(), { error: "cap" });
+  assert.equal(mailboxCalls, 2);
+  assert.equal(memories.get("web").data.get("quota:web").requests, 2);
+  assert.equal(memories.get("mailbox").data.get("quota:mailbox").requests, 2);
+  assert.equal(memories.get("web").data.get("quota:web").rowWrites, memories.get("web").storageMutations);
+  memories.get("web").data.set("quota:web", null);
+  const corrupt = await handleRequest(webRequest(), env, deps);
+  assert.equal(corrupt.status, 503);
+  assert.equal(mailboxCalls, 2);
+  memories.get("web").storage.get = async () => { throw Error("unavailable"); };
+  const unavailable = await handleRequest(webRequest(), env, deps);
+  assert.equal(unavailable.status, 503);
+  assert.equal(mailboxCalls, 2);
+});

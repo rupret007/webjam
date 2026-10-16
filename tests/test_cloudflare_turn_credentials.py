@@ -31,7 +31,14 @@ SESSION_HEX = "ab" * 32
 
 def test_node_worker_policy_and_fail_closed_cap() -> None:
     result = subprocess.run(
-        ["node", "--test", "test/policy.test.js", "test/mailbox.test.js"],
+        [
+            "node",
+            "--test",
+            *sorted(
+                str(path.relative_to(WORKER))
+                for path in (WORKER / "test").glob("*.test.js")
+            ),
+        ],
         cwd=WORKER,
         check=False,
         capture_output=True,
