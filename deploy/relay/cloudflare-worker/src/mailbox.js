@@ -136,6 +136,7 @@ export class Mailbox {
     const state = stored && typeof stored === "object" ? stored : emptyMailbox();
     const result = applyMailbox(state, action, nowMs);
     if (result.clear) {
+      // Prepaid: Worker POST charges the later TTL/host delete.
       await this.ctx.storage.deleteAll();
     } else if (result.status === 201) {
       await this.ctx.storage.put("mailbox", state);
@@ -154,6 +155,7 @@ export class Mailbox {
   }
 
   async alarm() {
+    // Prepaid: Worker POST charges this TTL cleanup when the slot is written.
     await this.ctx.storage.deleteAll();
   }
 

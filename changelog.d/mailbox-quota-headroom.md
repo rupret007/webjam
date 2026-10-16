@@ -16,8 +16,11 @@
   A successful mailbox reply that only carried an unused Upgrade
   header is still charged. POST or DELETE that only carry an
   Upgrade header must still pass the daily cap before they can
-  mutate. Failed upgrades may remember a prefix for the
+  mutate.   Failed upgrades may remember a prefix for the
   new-bucket check, but those writes do not rewrite known
-  prefixes. Each rate-only persist, plus daily prefix/net upserts,
-  the quota KV put, and the UTC-day DELETE, counts against the
-  daily row-write cap.
+  prefixes. Each storage write or delete is admitted before it
+  executes: rate-only persists spend the same prefix/net write
+  shares as mailbox ops, prefix inserts count as row writes, and
+  expiry deletes charge the deleted row count, not a table. A
+  mailbox put pre-charges the later TTL delete. The daily
+  row-write cap is never exceeded.

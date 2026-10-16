@@ -27,6 +27,8 @@ import {
   DEFAULT_RATE_PREFIX_DAILY,
   emptyQuotaState,
   ESTIMATED_GB_S_PER_REQUEST,
+  COUNT_EXPIRED_NET_SQL,
+  COUNT_EXPIRED_PREFIX_SQL,
   EXPIRE_NET_SQL,
   EXPIRE_PREFIX_SQL,
   MailboxQuota,
@@ -92,12 +94,49 @@ function sqlCursor(rows) {
   };
 }
 
-function memoryQuotaSql(prefixRows, netRows) {
+function memoryQuotaSql(prefixRows, netRows, stats) {
   const keyOf = (scope, id) => `${scope}\t${id}`;
+  const expireRows = (rows, scope, day, limit) => {
+    const keys = [];
+    for (const [key, row] of rows) {
+      if (row.scope === scope && row.day !== day) {
+        keys.push(key);
+      }
+    }
+    const parsed = Number(limit);
+    const max = Number.isFinite(parsed) ? parsed : keys.length;
+    const removing = keys.slice(0, Math.max(0, max));
+    for (const key of removing) {
+      rows.delete(key);
+    }
+    stats.deletedRows += removing.length;
+    stats.rowMutations += removing.length;
+    return sqlCursor([], removing.length);
+  };
   return {
     exec(query, ...params) {
       if (query === PREFIX_SCHEMA_SQL || query === NET_SCHEMA_SQL) {
         return sqlCursor([]);
+      }
+      if (query === COUNT_EXPIRED_PREFIX_SQL) {
+        const [scope, day] = params;
+        let n = 0;
+        for (const row of prefixRows.values()) {
+          if (row.scope === scope && row.day !== day) {
+            n += 1;
+          }
+        }
+        return sqlCursor([{ n }]);
+      }
+      if (query === COUNT_EXPIRED_NET_SQL) {
+        const [scope, day] = params;
+        let n = 0;
+        for (const row of netRows.values()) {
+          if (row.scope === scope && row.day !== day) {
+            n += 1;
+          }
+        }
+        return sqlCursor([{ n }]);
       }
       if (query === SELECT_PREFIX_SQL) {
         const [scope, prefix, day] = params;
@@ -118,16 +157,13 @@ function memoryQuotaSql(prefixRows, netRows) {
           scope,
           prefix,
         });
-        return sqlCursor([]);
+        stats.prefixUpserts += 1;
+        stats.rowMutations += 1;
+        return sqlCursor([], 1);
       }
       if (query === EXPIRE_PREFIX_SQL) {
-        const [scope, day] = params;
-        for (const [key, row] of prefixRows) {
-          if (row.scope === scope && row.day !== day) {
-            prefixRows.delete(key);
-          }
-        }
-        return sqlCursor([]);
+        const [scope, day, limit] = params;
+        return expireRows(prefixRows, scope, day, limit);
       }
       if (query === SELECT_NET_SQL) {
         const [scope, net, day] = params;
@@ -147,16 +183,13 @@ function memoryQuotaSql(prefixRows, netRows) {
           scope,
           net,
         });
-        return sqlCursor([]);
+        stats.netUpserts += 1;
+        stats.rowMutations += 1;
+        return sqlCursor([], 1);
       }
       if (query === EXPIRE_NET_SQL) {
-        const [scope, day] = params;
-        for (const [key, row] of netRows) {
-          if (row.scope === scope && row.day !== day) {
-            netRows.delete(key);
-          }
-        }
-        return sqlCursor([]);
+        const [scope, day, limit] = params;
+        return expireRows(netRows, scope, day, limit);
       }
       throw new Error("unsupported sql");
     },
@@ -167,13 +200,18 @@ function memoryQuotaStorage() {
   const data = new Map();
   const prefixRows = new Map();
   const netRows = new Map();
+  const stats = { prefixUpserts: 0, netUpserts: 0, deletedRows: 0, rowMutations: 0 };
   let puts = 0;
   return {
     data,
     prefixRows,
     netRows,
+    stats,
     get puts() {
       return puts;
+    },
+    get storageMutations() {
+      return puts + stats.rowMutations;
     },
     storage: {
       async get(key) {
@@ -183,9 +221,24 @@ function memoryQuotaStorage() {
         puts += 1;
         data.set(key, value);
       },
-      sql: memoryQuotaSql(prefixRows, netRows),
+      sql: memoryQuotaSql(prefixRows, netRows, stats),
     },
   };
+}
+
+function quotaCheck(quota, { ip, nowMs, writes = 0, charge = "all", scope = "mailbox" }) {
+  return quota.fetch(
+    new Request("https://quota/check", {
+      method: "POST",
+      headers: {
+        "CF-Connecting-IP": ip,
+        "X-WebJam-Now": String(nowMs),
+        "X-WebJam-Row-Writes": String(writes),
+        "X-WebJam-Quota-Scope": scope,
+        "X-WebJam-Quota-Charge": charge,
+      },
+    }),
+  );
 }
 
 function mailboxRequest(method, slot, body, headers = { "CF-Connecting-IP": "203.0.113.10" }) {
@@ -879,27 +932,27 @@ test("MailboxQuota fails closed before a rate-only storage put that would exceed
   const quota = new MailboxQuota(
     { storage: memory.storage },
     {
-      MAILBOX_DAILY_ROW_WRITES: "2",
+      // Each rate-only persist is KV + prefix + net (3 rows).
+      MAILBOX_DAILY_ROW_WRITES: "6",
       MAILBOX_RATE_LIMIT_PER_MINUTE: "100",
       MAILBOX_NEW_BUCKETS_PER_MINUTE: "100",
     },
   );
-  const check = (nowMs) =>
-    quota.fetch(
-      new Request("https://quota/check", {
-        method: "POST",
-        headers: {
-          "CF-Connecting-IP": "203.0.113.10",
-          "X-WebJam-Now": String(nowMs),
-          "X-WebJam-Row-Writes": "0",
-          "X-WebJam-Quota-Scope": "mailbox",
-          "X-WebJam-Quota-Charge": "rate",
-        },
-      }),
-    );
-  const first = await check(1);
-  const second = await check(1);
-  const third = await check(1);
+  const first = await quotaCheck(quota, {
+    ip: "203.0.113.10",
+    nowMs: 1,
+    charge: "rate",
+  });
+  const second = await quotaCheck(quota, {
+    ip: "203.0.113.10",
+    nowMs: 1,
+    charge: "rate",
+  });
+  const third = await quotaCheck(quota, {
+    ip: "203.0.113.10",
+    nowMs: 1,
+    charge: "rate",
+  });
   assert.equal(first.status, 200);
   assert.equal(second.status, 200);
   assert.equal(third.status, 429);
@@ -1060,6 +1113,378 @@ test("30k prefixes from one /32 still serve other users and never 503", async ()
   assert.equal(prefixNet("2001:db8:1::1"), "2001:db8::/32");
   assert.equal(prefixNet("2001:db8:7530::1"), "2001:db8::/32");
   assert.notEqual(prefixNet(other), "2001:db8::/32");
+});
+
+test("rate-only requests cannot bypass prefix or net write shares", async () => {
+  const prefixLimits = {
+    ...LIMITS,
+    dailyRowWrites: 20,
+    prefixDailyRowWrites: 2,
+    netDailyRowWrites: 20,
+    perMinute: 100,
+    newBucketsPerMinute: 100,
+  };
+  const prefixState = emptyQuotaState();
+  assert.equal(
+    applyQuota(prefixState, {
+      ip: "203.0.113.10",
+      nowMs: 1,
+      limits: prefixLimits,
+      charge: "rate",
+    }).allow,
+    true,
+  );
+  assert.equal(
+    applyQuota(prefixState, {
+      ip: "203.0.113.10",
+      nowMs: 1,
+      limits: prefixLimits,
+      charge: "rate",
+    }).allow,
+    true,
+  );
+  const prefixDenied = applyQuota(prefixState, {
+    ip: "203.0.113.10",
+    nowMs: 1,
+    limits: prefixLimits,
+    charge: "rate",
+  });
+  assert.equal(prefixDenied.allow, false);
+  assert.equal(prefixDenied.code, "cap");
+  assert.ok(prefixState.rowWrites <= 2);
+  assert.ok((prefixState.knownPrefixes["203.0.113.10"]?.rowWrites ?? 0) <= 2);
+  assert.equal(
+    applyQuota(prefixState, {
+      ip: "198.51.100.1",
+      nowMs: 1,
+      limits: prefixLimits,
+      charge: "rate",
+    }).allow,
+    true,
+  );
+
+  const netLimits = {
+    ...LIMITS,
+    dailyRowWrites: 20,
+    prefixDailyRowWrites: 20,
+    netDailyRowWrites: 2,
+    perMinute: 100,
+    newBucketsPerMinute: 100,
+  };
+  const netState = emptyQuotaState();
+  assert.equal(
+    applyQuota(netState, {
+      ip: "203.0.113.10",
+      nowMs: 1,
+      limits: netLimits,
+      charge: "rate",
+    }).allow,
+    true,
+  );
+  assert.equal(
+    applyQuota(netState, {
+      ip: "203.0.113.11",
+      nowMs: 1,
+      limits: netLimits,
+      charge: "rate",
+    }).allow,
+    true,
+  );
+  const netDenied = applyQuota(netState, {
+    ip: "203.0.113.12",
+    nowMs: 1,
+    limits: netLimits,
+    charge: "rate",
+  });
+  assert.equal(netDenied.allow, false);
+  assert.equal(netDenied.code, "cap");
+  assert.equal(
+    applyQuota(netState, {
+      ip: "198.51.100.1",
+      nowMs: 1,
+      limits: netLimits,
+      charge: "rate",
+    }).allow,
+    true,
+  );
+
+  const memory = memoryQuotaStorage();
+  const quota = new MailboxQuota(
+    { storage: memory.storage },
+    {
+      MAILBOX_DAILY_ROW_WRITES: "20",
+      MAILBOX_PREFIX_DAILY_ROW_WRITES: "6",
+      MAILBOX_NET_DAILY_ROW_WRITES: "20",
+      MAILBOX_RATE_LIMIT_PER_MINUTE: "100",
+      MAILBOX_NEW_BUCKETS_PER_MINUTE: "100",
+    },
+  );
+  let allowed = 0;
+  for (let i = 0; i < 10; i += 1) {
+    const response = await quotaCheck(quota, {
+      ip: "203.0.113.10",
+      nowMs: 1,
+      charge: "rate",
+    });
+    if (response.status === 200) {
+      allowed += 1;
+    } else {
+      assert.equal(response.status, 429);
+      assert.equal((await response.json()).error, "cap");
+    }
+  }
+  assert.ok(allowed <= 2);
+  assert.ok(memory.puts <= 2);
+  assert.ok((memory.data.get("quota:mailbox")?.rowWrites ?? 0) <= 6);
+  const outsider = await quotaCheck(quota, {
+    ip: "198.51.100.1",
+    nowMs: 1,
+    charge: "rate",
+  });
+  assert.equal(outsider.status, 200);
+  assert.ok((memory.data.get("quota:mailbox")?.rowWrites ?? 0) < 20);
+});
+
+test("rate-only prefix inserts count toward daily row writes before they execute", async () => {
+  const memory = memoryQuotaStorage();
+  const quota = new MailboxQuota(
+    { storage: memory.storage },
+    {
+      MAILBOX_DAILY_ROW_WRITES: "1",
+      MAILBOX_RATE_LIMIT_PER_MINUTE: "100",
+      MAILBOX_NEW_BUCKETS_PER_MINUTE: "100",
+    },
+  );
+  const response = await quotaCheck(quota, {
+    ip: "203.0.113.10",
+    nowMs: 1,
+    charge: "rate",
+  });
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).error, "cap");
+  assert.equal(memory.puts, 0);
+  assert.equal(memory.prefixRows.size, 0);
+  assert.equal(memory.netRows.size, 0);
+  assert.equal(memory.stats.rowMutations, 0);
+});
+
+test("expiry deletes are admitted as deleted rows and do not run before the daily cap", async () => {
+  const day1 = Date.parse("2026-10-15T00:00:00Z");
+  const day2 = Date.parse("2026-10-16T00:00:00Z");
+  const deniedMemory = memoryQuotaStorage();
+  const deniedEnv = {
+    MAILBOX_DAILY_ROW_WRITES: "1000",
+    MAILBOX_RATE_LIMIT_PER_MINUTE: "100",
+    MAILBOX_NEW_BUCKETS_PER_MINUTE: "100",
+  };
+  const deniedQuota = new MailboxQuota({ storage: deniedMemory.storage }, deniedEnv);
+  const seedIps = ["203.0.113.10", "198.51.100.1", "192.0.2.8", "203.0.114.10", "198.51.101.1"];
+  for (const ip of seedIps) {
+    const seeded = await quotaCheck(deniedQuota, {
+      ip,
+      nowMs: day1,
+      charge: "all",
+    });
+    assert.equal(seeded.status, 200);
+  }
+  const seededPrefixes = deniedMemory.prefixRows.size;
+  const seededNets = deniedMemory.netRows.size;
+  assert.ok(seededPrefixes >= 5);
+  deniedEnv.MAILBOX_DAILY_ROW_WRITES = "2";
+  const denied = await quotaCheck(deniedQuota, {
+    ip: "198.51.100.1",
+    nowMs: day2,
+    charge: "all",
+  });
+  assert.equal(denied.status, 429);
+  assert.equal((await denied.json()).error, "cap");
+  assert.equal(deniedMemory.prefixRows.size, seededPrefixes);
+  assert.equal(deniedMemory.netRows.size, seededNets);
+
+  const countedMemory = memoryQuotaStorage();
+  const countedQuota = new MailboxQuota(
+    { storage: countedMemory.storage },
+    {
+      MAILBOX_DAILY_ROW_WRITES: "1000",
+      MAILBOX_RATE_LIMIT_PER_MINUTE: "100",
+      MAILBOX_NEW_BUCKETS_PER_MINUTE: "100",
+    },
+  );
+  for (const ip of seedIps) {
+    const seeded = await quotaCheck(countedQuota, {
+      ip,
+      nowMs: day1,
+      charge: "all",
+    });
+    assert.equal(seeded.status, 200);
+  }
+  const beforeMutations = countedMemory.storageMutations;
+  const beforeDeletes = countedMemory.stats.deletedRows;
+  const rolled = await quotaCheck(countedQuota, {
+    ip: "203.0.115.9",
+    nowMs: day2,
+    charge: "all",
+  });
+  assert.equal(rolled.status, 200);
+  const deleted = countedMemory.stats.deletedRows - beforeDeletes;
+  assert.ok(deleted >= 5);
+  const charged = countedMemory.data.get("quota:mailbox").rowWrites;
+  const persistMutations = countedMemory.storageMutations - beforeMutations;
+  assert.equal(charged, persistMutations);
+  assert.ok(charged >= 3 + deleted);
+  assert.notEqual(charged, 3 + 2);
+});
+
+test("quota admission charges every storage row across mixed request types and never exceeds the daily cap", async () => {
+  const cap = 40;
+  const memory = memoryQuotaStorage();
+  const quota = new MailboxQuota(
+    { storage: memory.storage },
+    {
+      MAILBOX_DAILY_ROW_WRITES: String(cap),
+      MAILBOX_PREFIX_DAILY_ROW_WRITES: String(cap),
+      MAILBOX_NET_DAILY_ROW_WRITES: String(cap),
+      MAILBOX_DAILY_REQUESTS: "100",
+      MAILBOX_RATE_LIMIT_PER_MINUTE: "100",
+      MAILBOX_NEW_BUCKETS_PER_MINUTE: "100",
+    },
+  );
+  const env = {
+    MAILBOX_QUOTA: {
+      idFromName() {
+        return "mailbox";
+      },
+      get() {
+        return { fetch: (request) => quota.fetch(request) };
+      },
+    },
+    MAILBOX_DAILY_ROW_WRITES: String(cap),
+    MAILBOX_PREFIX_DAILY_ROW_WRITES: String(cap),
+    MAILBOX_NET_DAILY_ROW_WRITES: String(cap),
+    MAILBOX_DAILY_REQUESTS: "100",
+    MAILBOX_RATE_LIMIT_PER_MINUTE: "100",
+    MAILBOX_NEW_BUCKETS_PER_MINUTE: "100",
+  };
+  const mailboxFetch = memoryMailbox();
+  let mailboxWritesCharged = 0;
+  const snapshotMutations = () => memory.storageMutations;
+  const assertInvariant = (allowed) => {
+    const stored = memory.data.get("quota:mailbox");
+    const charged = stored ? Number(stored.rowWrites) || 0 : 0;
+    assert.ok(charged <= cap);
+    assert.equal(charged, memory.storageMutations + mailboxWritesCharged);
+    if (!allowed) {
+      assert.equal(memory.storageMutations, snapshotBefore);
+    }
+  };
+
+  let snapshotBefore = snapshotMutations();
+  const posted = await handleRequest(
+    mailboxRequest("POST", "answer", { payload: PAYLOAD }),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(posted.status, 201);
+  mailboxWritesCharged += 2;
+  assertInvariant(true);
+
+  snapshotBefore = snapshotMutations();
+  const polled = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(polled.status, 200);
+  assertInvariant(true);
+
+  snapshotBefore = snapshotMutations();
+  const failedUpgrade = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, {
+      "CF-Connecting-IP": "203.0.113.10",
+      Upgrade: "websocket",
+    }),
+    env,
+    {
+      mailboxFetch: async () =>
+        new Response(JSON.stringify({ error: "rate" }), {
+          status: 429,
+          headers: { "content-type": "application/json" },
+        }),
+      nowMs: 1,
+    },
+  );
+  assert.equal(failedUpgrade.status, 429);
+  assertInvariant(true);
+
+  snapshotBefore = snapshotMutations();
+  const upgraded = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, {
+      "CF-Connecting-IP": "198.51.100.1",
+      Upgrade: "websocket",
+    }),
+    env,
+    {
+      mailboxFetch: async () => ({ status: 101 }),
+      nowMs: 1,
+    },
+  );
+  assert.equal(upgraded.status, 101);
+  assertInvariant(true);
+
+  const day1 = Date.parse("2026-10-15T00:00:00Z");
+  const day2 = Date.parse("2026-10-16T00:00:00Z");
+  resetWorkerState();
+  const rolloverMemory = memoryQuotaStorage();
+  const rolloverQuota = new MailboxQuota(
+    { storage: rolloverMemory.storage },
+    {
+      MAILBOX_DAILY_ROW_WRITES: String(cap),
+      MAILBOX_PREFIX_DAILY_ROW_WRITES: String(cap),
+      MAILBOX_NET_DAILY_ROW_WRITES: String(cap),
+      MAILBOX_RATE_LIMIT_PER_MINUTE: "100",
+      MAILBOX_NEW_BUCKETS_PER_MINUTE: "100",
+    },
+  );
+  const seedNets = ["203.0.113.20", "198.51.100.20", "192.0.2.20", "203.0.114.20"];
+  for (const ip of seedNets) {
+    const seeded = await quotaCheck(rolloverQuota, {
+      ip,
+      nowMs: day1,
+      writes: 1,
+      charge: "all",
+    });
+    assert.equal(seeded.status, 200);
+  }
+  const rolloverCharged = () => {
+    const stored = rolloverMemory.data.get("quota:mailbox");
+    return stored ? Number(stored.rowWrites) || 0 : 0;
+  };
+  assert.equal(rolloverCharged(), rolloverMemory.storageMutations + 4);
+  assert.ok(rolloverCharged() <= cap);
+
+  const mutationsAtRollover = rolloverMemory.storageMutations;
+  const expired = await quotaCheck(rolloverQuota, {
+    ip: "198.51.101.9",
+    nowMs: day2,
+    writes: 1,
+    charge: "all",
+  });
+  assert.equal(expired.status, 200);
+  const todayMutations = rolloverMemory.storageMutations - mutationsAtRollover;
+  assert.equal(rolloverCharged(), todayMutations + 1);
+  assert.ok(rolloverCharged() <= cap);
+  assert.ok(rolloverCharged() >= 1 + 3);
+
+  const mutationsBeforeDeny = rolloverMemory.storageMutations;
+  const tight = await quotaCheck(rolloverQuota, {
+    ip: "203.0.113.10",
+    nowMs: day2,
+    writes: cap,
+    charge: "all",
+  });
+  assert.equal(tight.status, 429);
+  assert.equal(rolloverMemory.storageMutations, mutationsBeforeDeny);
+  assert.ok(rolloverCharged() <= cap);
 });
 
 test("http mailbox requests are rejected", async () => {
