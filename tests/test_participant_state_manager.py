@@ -160,6 +160,127 @@ class TestParticipantStateManager(unittest.TestCase):
         self.assertFalse(manager.participants[2].muted)
         self.assertEqual(manager._pre_solo_mute, {})
 
+    def _seed_listening_roster(self, manager):
+        manager.add_participant("WebJam Track", 7)
+        manager.add_participant("Collaborator", 8)
+        manager.add_participant("My monitor", 9)
+        manager.set_fader_level(7, 40)
+        manager.set_mute(8, True)
+        return manager.participants[7]
+
+    def test_same_id_name_change_is_occupant_replacement(self):
+        manager, _ = _build_manager()
+        departed = self._seed_listening_roster(manager)
+        departed.pan = 20
+        manager.sync_from_protocol({
+            7: "New guitarist",
+            8: "Collaborator",
+            9: "My monitor",
+        })
+        replacement = manager.participants[7]
+        self.assertIsNot(replacement, departed)
+        self.assertEqual(replacement.name, "New guitarist")
+        self.assertEqual(replacement.fader_level, 100)
+        self.assertEqual(replacement.pan, 50)
+        self.assertFalse(replacement.muted)
+        self.assertFalse(replacement.solo)
+        self.assertTrue(manager.participants[8].muted)
+        self.assertFalse(manager.participants[9].muted)
+        self.assertEqual(manager.participants[8].fader_level, 100)
+        self.assertEqual(departed.fader_level, 40)
+
+    def test_replacing_solo_owner_restores_others_pre_solo_choices(self):
+        manager, _ = _build_manager()
+        departed = self._seed_listening_roster(manager)
+        manager.set_solo(7, True)
+        manager.sync_from_protocol({
+            7: "New guitarist",
+            8: "Collaborator",
+            9: "My monitor",
+        })
+        replacement = manager.participants[7]
+        self.assertIsNot(replacement, departed)
+        self.assertFalse(any(p.solo for p in manager.get_participants()))
+        self.assertFalse(replacement.solo)
+        self.assertFalse(replacement.muted)
+        self.assertEqual(replacement.fader_level, 100)
+        self.assertTrue(manager.participants[8].muted)
+        self.assertFalse(manager.participants[9].muted)
+        self.assertEqual(manager._pre_solo_mute, {})
+
+    def test_replacement_during_other_solo_stays_suppressed(self):
+        manager, _ = _build_manager()
+        departed = self._seed_listening_roster(manager)
+        manager.set_solo(8, True)
+        manager.sync_from_protocol({
+            7: "New guitarist",
+            8: "Collaborator",
+            9: "My monitor",
+        })
+        replacement = manager.participants[7]
+        self.assertIsNot(replacement, departed)
+        self.assertFalse(replacement.solo)
+        self.assertTrue(replacement.muted)
+        self.assertEqual(replacement.fader_level, 100)
+        self.assertTrue(manager.participants[8].solo)
+        self.assertFalse(manager.participants[8].muted)
+        self.assertTrue(manager.participants[9].muted)
+        self.assertEqual(manager._pre_solo_mute.get(7), False)
+
+    def test_udp_same_id_name_change_is_also_occupant_replacement(self):
+        manager, _ = _build_manager()
+        departed = self._seed_listening_roster(manager)
+        manager.apply_udp_clients_payload({
+            7: "New guitarist",
+            8: "Collaborator",
+            9: "My monitor",
+        })
+        self.assertIsNot(manager.participants[7], departed)
+        self.assertEqual(manager.participants[7].fader_level, 100)
+        self.assertFalse(manager.participants[7].solo)
+
+    def test_unchanged_roster_retains_mix_and_object(self):
+        manager, cbs = _build_manager()
+        self._seed_listening_roster(manager)
+        manager.set_solo(7, True)
+        cbs["send_rpc_gain"].reset_mock()
+        cbs["apply_mixer"].reset_mock()
+        chosen = {
+            cid: (p.name, p.fader_level, p.muted, p.solo, p)
+            for cid, p in manager.participants.items()
+        }
+        manager.sync_from_protocol({
+            7: "WebJam Track",
+            8: "Collaborator",
+            9: "My monitor",
+        })
+        for cid, (name, fader, muted, solo, obj) in chosen.items():
+            current = manager.participants[cid]
+            self.assertIs(current, obj)
+            self.assertEqual(current.name, name)
+            self.assertEqual(current.fader_level, fader)
+            self.assertEqual(current.muted, muted)
+            self.assertEqual(current.solo, solo)
+        cbs["send_rpc_gain"].assert_not_called()
+        cbs["apply_mixer"].assert_not_called()
+
+    def test_case_and_padding_keep_the_same_occupant(self):
+        # Protocol names are not a durable person identity. Only a normalized
+        # name change is treated as replacement, so case/padding noise does
+        # not drop an otherwise unchanged mix.
+        manager, _ = _build_manager()
+        occupant = self._seed_listening_roster(manager)
+        manager.sync_from_protocol({
+            7: "  webjam TRACK ",
+            8: "Collaborator",
+            9: "My monitor",
+        })
+        current = manager.participants[7]
+        self.assertIs(current, occupant)
+        self.assertEqual(current.name, "  webjam TRACK ")
+        self.assertEqual(current.fader_level, 40)
+        self.assertTrue(manager.participants[8].muted)
+
     def test_jamulus_participant_default_factory(self):
         # Sanity-check the dataclass moved across cleanly.
         p = JamulusParticipant(channel_id=3, name="X")
