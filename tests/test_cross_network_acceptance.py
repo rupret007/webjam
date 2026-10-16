@@ -425,6 +425,7 @@ def test_dual_stun_mapping_mismatch_is_setup_error():
 
 
 def test_nat_probe_fails_on_subprocess_or_missing_mapping(monkeypatch):
+    import shutil
     import subprocess
     import sys
     from tools.cross_network_acceptance.nat_probe import _exec, _read
@@ -445,7 +446,9 @@ def test_nat_probe_fails_on_subprocess_or_missing_mapping(monkeypatch):
         "mapping_reused": True, "host_mapped": 41234, "guest_mapped": 42000,
         "observed_ports": [41234, 41234], "mapped_addr": "27.1.0.10",
     })
-    monkeypatch.setattr("tools.cross_network_acceptance.nat_probe.required_bin", lambda _n: "/bin/false")
+    false_binary = shutil.which("false")
+    assert false_binary is not None
+    monkeypatch.setattr("tools.cross_network_acceptance.nat_probe.required_bin", lambda _n: false_binary)
     with pytest.raises(ProbeError):
         _exec("ns", "print(1)", [])
     proc = subprocess.Popen([sys.executable, "-c", "print('not-json')"], stdout=subprocess.PIPE, text=True)
