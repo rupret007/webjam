@@ -1,4 +1,4 @@
-Library summary export no longer deletes the chosen pathname after a write or
-sync failure, preserving any file another writer has placed there. Failed exports
-report that the file may be incomplete and ask for a new filename. Existing
-destinations remain protected from overwrite.
+- Library **Export summary** no longer deletes the chosen file after a write
+  or sync failure, so another writer's replacement stays intact. A failed
+  export says the file may be incomplete and asks for a new filename.
+  Existing destinations are still never overwritten.

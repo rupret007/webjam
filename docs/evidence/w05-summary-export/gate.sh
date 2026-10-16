@@ -10,6 +10,7 @@ PY=.venv/bin/python
 "$PY" -m ruff check tests/test_session_library_coordinator.py
 "$PY" -m compileall -q core webjam_qt ui services api tests
 "$PY" -m pip check
+"$PY" -c "from tools.changelog_fragments import check; problems=check('origin/master'); print('\n'.join(problems) or 'changelog fragment OK'); raise SystemExit(1 if problems else 0)"
 "$PY" ux_smoke_test.py
 
 # CONTRIBUTING.md / DEVELOPMENT.md standard gate for the touched Library UI,
