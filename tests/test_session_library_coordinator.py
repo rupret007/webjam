@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -22,7 +23,7 @@ from webjam_qt.controllers.session_library import (  # noqa: E402
     SessionLibraryCoordinator, import_legacy_workspaces,
 )
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
-from webjam_qt.windows.session_library import SessionLibraryDialog  # noqa: E402
+from webjam_qt.windows.session_library import SessionLibraryDialog, workspace_summary  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
@@ -55,6 +56,126 @@ def library_coordinator(tmp_path):
     window.deleteLater()
     owner.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+@pytest.mark.parametrize("failure", ["write", "flush", "fsync", "close"])
+@pytest.mark.parametrize("replacement", [False, True])
+def test_summary_export_io_failure_preserves_output_and_reports_uncertainty(
+        library_coordinator, tmp_path, failure, replacement):
+    coordinator, window = library_coordinator
+    window.session_canvas.set_notes("Decision: keep these notes")
+    coordinator.show()
+    dialog = coordinator.dialog
+    destination = tmp_path / "summary.md"
+    other_bytes = b"Completed work from another writer\x00\xff\n"
+    real_fdopen = os.fdopen
+    failures = []
+
+    def fail():
+        failures.append(failure)
+        if replacement:
+            other = tmp_path / "other-writer.md"
+            other.write_bytes(other_bytes)
+            os.replace(other, destination)
+        raise OSError("injected export failure")
+
+    @contextmanager
+    def failing_fdopen(*args, **kwargs):
+        with real_fdopen(*args, **kwargs) as handle:
+            proxy = Mock(wraps=handle)
+
+            def write(text):
+                handle.write(text[:12])
+                handle.flush()
+                fail()
+
+            if failure == "write":
+                proxy.write.side_effect = write
+            elif failure == "flush":
+                proxy.flush.side_effect = fail
+            yield proxy
+        if failure == "close":
+            fail()
+
+    with ExitStack() as stack:
+        def choose_path(*_args):
+            # Install only after workspace reconciliation has saved its files.
+            stack.enter_context(patch("os.fdopen", side_effect=failing_fdopen))
+            if failure == "fsync":
+                stack.enter_context(patch("os.fsync", side_effect=lambda _fd: fail()))
+            return str(destination), ""
+
+        stack.enter_context(patch.object(QFileDialog, "getSaveFileName", side_effect=choose_path))
+        dialog._export()
+
+    assert failures == [failure]
+    assert destination.exists()
+    if replacement:
+        assert destination.read_bytes() == other_bytes
+    else:
+        assert destination.read_bytes()
+    assert dialog.status.text() == (
+        "Summary export failed. The chosen file may be incomplete. Retry with a new filename."
+    )
+    assert coordinator.library.load(dialog.record.id).notes == "Decision: keep these notes"
+
+
+@pytest.mark.parametrize("kind", ["file", "hardlink", "symlink", "dangling_symlink"])
+def test_summary_export_refuses_existing_destination(library_coordinator, tmp_path, kind):
+    coordinator, _window = library_coordinator
+    coordinator.show()
+    dialog = coordinator.dialog
+    destination = tmp_path / "summary.md"
+    original = tmp_path / "original.md"
+    original_bytes = b"Original work\x00\xff\n"
+    if kind != "dangling_symlink":
+        original.write_bytes(original_bytes)
+    if kind == "file":
+        destination.write_bytes(original_bytes)
+    elif kind == "hardlink":
+        os.link(original, destination)
+    else:
+        destination.symlink_to(original)
+    before = destination.lstat()
+
+    with patch.object(QFileDialog, "getSaveFileName", return_value=(str(destination), "")):
+        dialog._export()
+
+    assert destination.lstat() == before
+    if kind == "dangling_symlink":
+        assert destination.is_symlink()
+        assert not original.exists()
+    else:
+        assert destination.read_bytes() == original_bytes
+        assert original.read_bytes() == original_bytes
+    assert dialog.status.text() == "Summary was not exported. Choose a new filename in a writable folder."
+
+
+def test_summary_export_stream_open_failure_closes_descriptor(library_coordinator, tmp_path):
+    coordinator, _window = library_coordinator
+    coordinator.show()
+    dialog = coordinator.dialog
+    destination = tmp_path / "summary.md"
+    descriptors = []
+
+    def fail_open(fd, *_args, **_kwargs):
+        descriptors.append(fd)
+        raise OSError("injected stream open failure")
+
+    with ExitStack() as stack:
+        def choose_path(*_args):
+            stack.enter_context(patch("os.fdopen", side_effect=fail_open))
+            return str(destination), ""
+
+        stack.enter_context(patch.object(QFileDialog, "getSaveFileName", side_effect=choose_path))
+        dialog._export()
+
+    assert len(descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(descriptors[0])
+    assert destination.read_bytes() == b""
+    assert "may be incomplete" in dialog.status.text()
+    assert "Summary exported" not in dialog.status.text()
 
 
 @pytest.mark.parametrize("action", ["window", "escape", "button"])
@@ -348,6 +469,8 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertIn("newest pending decision", summary)
         self.assertIn("## Session history", summary)
         self.assertIn("NEW LIVE DECISION", summary)
+        self.assertEqual(summary, workspace_summary(self.library.load(baseline.id)))
+        self.assertEqual(editor.status.text(), "Summary exported. Original work is unchanged.")
         self.assertEqual(self.library.load(baseline.id).notes, "Decision: newest pending decision")
         # Export must not advance the baseline behind unchanged controls (W04).
         self.assertEqual(editor._base_record, baseline)
