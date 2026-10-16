@@ -235,11 +235,17 @@ export class SketchRoom {
       let iceServers = [{ urls: "stun:stun.cloudflare.com:3478" }];
       if (round === "relay") {
         this.onStatus("Direct connection could not reach this peer. Trying the free relay…");
-        this.turn ??= this.transport.turnCredentials();
-        let credentials = await this.turn;
-        if (credentials.expiresAt <= Date.now() + 15_000) {
-          this.turn = this.transport.turnCredentials();
-          credentials = await this.turn;
+        let pending = this.turn ??= this.transport.turnCredentials();
+        let credentials;
+        try {
+          credentials = await pending;
+          if (credentials.expiresAt <= Date.now() + 15_000) {
+            pending = this.turn = this.transport.turnCredentials();
+            credentials = await pending;
+          }
+        } catch (error) {
+          if (this.turn === pending) this.turn = null;
+          throw error;
         }
         this.relayLimit = Math.min(this.relayLimit, credentials.quotaBytes);
         iceServers = credentials.iceServers;

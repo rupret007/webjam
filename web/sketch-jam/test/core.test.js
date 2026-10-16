@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createInvite, desktopSlotAad, fromBase64Url, fromHex, inviteFragment, mailboxId, mailboxKey, open, readInvite, roomAddress, seal, toBase64Url, toHex, turnToken } from "../crypto.js";
 import { MUSIC_CONSTRAINTS, acquireMusicStream, constraintWarnings, latencyMs, musicSdp, tuneReceiver } from "../audio.js";
-import { BUSY_MESSAGE, MailboxTransport, delay } from "../room.js";
+import { BUSY_MESSAGE, MailboxTransport, SketchRoom, delay } from "../room.js";
 
 const vectors = JSON.parse(await readFile(new URL("../../../tests/fixtures/mailbox-crypto-vectors.json", import.meta.url)));
 for (const vector of vectors) {
@@ -186,6 +186,65 @@ test("web TURN request uses a separated capability and enforces short-lived boun
   ttl = 3601;
   await assert.rejects(transport.turnCredentials(), new RegExp(BUSY_MESSAGE.replaceAll(".", "\\.")));
 });
+
+for (const refreshing of [false, true]) {
+  test(`later peers retry a rejected TURN ${refreshing ? "refresh" : "request"} and reuse successful credentials`, async (t) => {
+    const original = globalThis.RTCPeerConnection;
+    t.after(() => {
+      if (original === undefined) delete globalThis.RTCPeerConnection;
+      else globalThis.RTCPeerConnection = original;
+    });
+    globalThis.RTCPeerConnection = class extends EventTarget {
+      constructor({ iceServers }) {
+        super();
+        this.iceServers = iceServers;
+        this.iceGatheringState = "complete";
+        this.connectionState = "new";
+      }
+      addTrack() {}
+      async createOffer() { return { type: "offer", sdp: audioSdp }; }
+      async setLocalDescription(description) { this.localDescription = description; }
+      async setRemoteDescription() {}
+      getReceivers() {
+        queueMicrotask(() => {
+          this.connectionState = this.iceServers[0].urls.startsWith("turn:") ? "connected" : "failed";
+          this.dispatchEvent(new Event("connectionstatechange"));
+        });
+        return [];
+      }
+      close() { this.connectionState = "closed"; }
+    };
+    const track = { stop() {} };
+    const room = new SketchRoom({
+      origin: "https://relay.example", invite: createInvite(),
+      stream: { getAudioTracks: () => [track], getTracks: () => [track] },
+      audioContext: { baseLatency: 0 }, onStatus() {}, onPeer() {}, onTrack() {}, onError() {},
+    });
+    t.after(() => room.close());
+    room.index = 3;
+    const credentials = { iceServers: [{ urls: "turn:relay.example" }], expiresAt: Date.now() + 60_000, quotaBytes: 1024 };
+    if (refreshing) room.turn = Promise.resolve({ ...credentials, expiresAt: Date.now() });
+    const unavailable = new Error("TURN temporarily unavailable");
+    let requests = 0;
+    room.transport.turnCredentials = async () => {
+      if (++requests === 1) throw unavailable;
+      return credentials;
+    };
+    room.transport.sendDescription = async () => {};
+    room.transport.receiveDescription = async () => ({ type: "answer", sdp: audioSdp });
+    room.transport.put = async () => true;
+
+    await assert.rejects(room.connectPeer(0, { name: "First peer" }), (error) => error === unavailable);
+    await room.connectPeer(1, { name: "Second peer" });
+    assert.equal(requests, 2);
+    assert.equal(room.connections.get(1).connectionState, "connected");
+    assert.deepEqual(room.connections.get(1).iceServers, credentials.iceServers);
+
+    await room.connectPeer(2, { name: "Third peer" });
+    assert.equal(requests, 2);
+    assert.equal(room.connections.get(2).connectionState, "connected");
+  });
+}
 
 test("closing a room cancels pending pacing without sending another request", async () => {
   const controller = new AbortController();
