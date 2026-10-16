@@ -78,9 +78,17 @@ function applyQuotaEnv(env) {
   const quotaEnv = {
     TURN_RATE_LIMIT_PER_MINUTE: env.TURN_RATE_LIMIT_PER_MINUTE,
     MAILBOX_RATE_LIMIT_PER_MINUTE: env.MAILBOX_RATE_LIMIT_PER_MINUTE,
+    MAILBOX_NEW_BUCKETS_PER_MINUTE: env.MAILBOX_NEW_BUCKETS_PER_MINUTE,
     MAILBOX_DAILY_REQUESTS: env.MAILBOX_DAILY_REQUESTS,
     MAILBOX_DAILY_ROW_WRITES: env.MAILBOX_DAILY_ROW_WRITES,
     MAILBOX_DAILY_GB_S: env.MAILBOX_DAILY_GB_S,
+    MAILBOX_PREFIX_DAILY_REQUESTS: env.MAILBOX_PREFIX_DAILY_REQUESTS,
+    MAILBOX_PREFIX_DAILY_ROW_WRITES: env.MAILBOX_PREFIX_DAILY_ROW_WRITES,
+    MAILBOX_PREFIX_DAILY_GB_S: env.MAILBOX_PREFIX_DAILY_GB_S,
+    MAILBOX_NET_DAILY_REQUESTS: env.MAILBOX_NET_DAILY_REQUESTS,
+    MAILBOX_NET_DAILY_ROW_WRITES: env.MAILBOX_NET_DAILY_ROW_WRITES,
+    MAILBOX_NET_DAILY_GB_S: env.MAILBOX_NET_DAILY_GB_S,
+    MAILBOX_RATE_PREFIX_DAILY: env.MAILBOX_RATE_PREFIX_DAILY,
   };
   globalThis.WEBJAM_QUOTA_ENV = quotaEnv;
   return quotaEnv;
@@ -97,9 +105,9 @@ function requireHttps(request) {
   return errorResponse(403, "https");
 }
 
-async function enforceAccess(request, env, deps, nowMs, rowWrites) {
+async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all") {
   if (typeof deps.enforceAccess === "function") {
-    return deps.enforceAccess(request, nowMs, rowWrites);
+    return deps.enforceAccess(request, nowMs, rowWrites, charge);
   }
   const ip = clientIP(request.headers);
   const scope = quotaScope(new URL(request.url).pathname);
@@ -114,6 +122,7 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites) {
             "X-WebJam-Now": String(nowMs),
             "X-WebJam-Row-Writes": String(rowWrites),
             "X-WebJam-Quota-Scope": scope,
+            "X-WebJam-Quota-Charge": charge,
           },
         }),
       );
@@ -127,11 +136,32 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites) {
     nowMs,
     rowWrites,
     limits: quotaLimits(applyQuotaEnv(env), scope),
+    charge,
   });
   if (decision.allow) {
     return null;
   }
   return errorResponse(decision.status, decision.code);
+}
+
+function isWebsocketUpgrade(request) {
+  return String(request.headers.get("Upgrade") || "").toLowerCase() === "websocket";
+}
+
+function mailboxCountsDaily(status) {
+  return status === 101 || (status >= 200 && status < 300);
+}
+
+function closeAcceptedSocket(response) {
+  const socket = response && response.webSocket;
+  if (!socket || typeof socket.close !== "function") {
+    return;
+  }
+  try {
+    socket.close(1013, "quota");
+  } catch {
+    // The Durable Object waiter can already be gone.
+  }
 }
 
 async function handleMailbox(request, env, deps, mailbox, nowMs) {
@@ -140,24 +170,43 @@ async function handleMailbox(request, env, deps, mailbox, nowMs) {
   }
   const writes =
     request.method === "POST" || request.method === "DELETE" ? 1 : 0;
-  const denied = await enforceAccess(request, env, deps, nowMs, writes);
+  // Only a non-mutating handshake must accept before the daily charge.
+  // POST/DELETE that merely carry Upgrade still mutate if they run first.
+  const websocket = isWebsocketUpgrade(request) && writes === 0;
+  const denied = await enforceAccess(
+    request,
+    env,
+    deps,
+    nowMs,
+    websocket ? 0 : writes,
+    websocket ? "rate" : "all",
+  );
   if (denied) {
     return denied;
   }
+  let response;
   if (typeof deps.mailboxFetch === "function") {
-    return deps.mailboxFetch(request, mailbox, nowMs);
+    response = await deps.mailboxFetch(request, mailbox, nowMs);
+  } else if (!env.MAILBOX || typeof env.MAILBOX.idFromName !== "function") {
+    response = errorResponse(503, "misconfigured");
+  } else {
+    const headers = new Headers(request.headers);
+    headers.set("X-WebJam-Now", String(nowMs));
+    try {
+      const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailbox.id));
+      response = await stub.fetch(new Request(request, { headers }));
+    } catch {
+      response = errorResponse(503, "unavailable");
+    }
   }
-  if (!env.MAILBOX || typeof env.MAILBOX.idFromName !== "function") {
-    return errorResponse(503, "misconfigured");
+  if (websocket && mailboxCountsDaily(response.status)) {
+    const charged = await enforceAccess(request, env, deps, nowMs, writes, "daily");
+    if (charged) {
+      closeAcceptedSocket(response);
+      return charged;
+    }
   }
-  const headers = new Headers(request.headers);
-  headers.set("X-WebJam-Now", String(nowMs));
-  try {
-    const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailbox.id));
-    return await stub.fetch(new Request(request, { headers }));
-  } catch {
-    return errorResponse(503, "unavailable");
-  }
+  return response;
 }
 
 export async function handleRequest(request, env, deps = {}) {

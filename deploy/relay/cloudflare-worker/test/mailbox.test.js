@@ -13,14 +13,36 @@ import {
 } from "../src/mailbox.js";
 import {
   applyQuota,
+  compactQuotaState,
   DEFAULT_DAILY_GB_S,
   DEFAULT_DAILY_REQUESTS,
   DEFAULT_DAILY_ROW_WRITES,
+  DEFAULT_MAILBOX_RATE_LIMIT,
+  DEFAULT_NET_DAILY_GB_S,
+  DEFAULT_NET_DAILY_REQUESTS,
+  DEFAULT_NET_DAILY_ROW_WRITES,
+  DEFAULT_NEW_BUCKETS_PER_MINUTE,
+  DEFAULT_PREFIX_DAILY_REQUESTS,
+  DEFAULT_RATE_LIMIT,
+  DEFAULT_RATE_PREFIX_DAILY,
   emptyQuotaState,
   ESTIMATED_GB_S_PER_REQUEST,
+  EXPIRE_NET_SQL,
+  EXPIRE_PREFIX_SQL,
+  MailboxQuota,
   MAX_IP_BUCKETS,
+  MAX_QUOTA_VALUE_BYTES,
+  NET_SCHEMA_SQL,
+  PREFIX_SCHEMA_SQL,
+  prefix48,
+  prefixNet,
   quotaLimits,
+  RATE_WINDOW_MS,
   rateKey,
+  SELECT_NET_SQL,
+  SELECT_PREFIX_SQL,
+  UPSERT_NET_SQL,
+  UPSERT_PREFIX_SQL,
 } from "../src/quota.js";
 import { handleRequest, resetWorkerState } from "../src/worker.js";
 
@@ -56,6 +78,113 @@ function memoryMailbox() {
       JSON.stringify(result.payload ? { payload: result.payload } : { error: result.code }),
       { status: result.status, headers: { "content-type": "application/json" } },
     );
+  };
+}
+
+function sqlCursor(rows) {
+  return {
+    *[Symbol.iterator]() {
+      yield* rows;
+    },
+    toArray() {
+      return rows.slice();
+    },
+  };
+}
+
+function memoryQuotaSql(prefixRows, netRows) {
+  const keyOf = (scope, id) => `${scope}\t${id}`;
+  return {
+    exec(query, ...params) {
+      if (query === PREFIX_SCHEMA_SQL || query === NET_SCHEMA_SQL) {
+        return sqlCursor([]);
+      }
+      if (query === SELECT_PREFIX_SQL) {
+        const [scope, prefix, day] = params;
+        const row = prefixRows.get(keyOf(scope, prefix));
+        if (!row || row.day !== day) {
+          return sqlCursor([]);
+        }
+        return sqlCursor([row]);
+      }
+      if (query === UPSERT_PREFIX_SQL) {
+        const [scope, prefix, day, at, requests, row_writes, gb_s] = params;
+        prefixRows.set(keyOf(scope, prefix), {
+          at,
+          requests,
+          row_writes,
+          gb_s,
+          day,
+          scope,
+          prefix,
+        });
+        return sqlCursor([]);
+      }
+      if (query === EXPIRE_PREFIX_SQL) {
+        const [scope, day] = params;
+        for (const [key, row] of prefixRows) {
+          if (row.scope === scope && row.day !== day) {
+            prefixRows.delete(key);
+          }
+        }
+        return sqlCursor([]);
+      }
+      if (query === SELECT_NET_SQL) {
+        const [scope, net, day] = params;
+        const row = netRows.get(keyOf(scope, net));
+        if (!row || row.day !== day) {
+          return sqlCursor([]);
+        }
+        return sqlCursor([row]);
+      }
+      if (query === UPSERT_NET_SQL) {
+        const [scope, net, day, requests, row_writes, gb_s] = params;
+        netRows.set(keyOf(scope, net), {
+          requests,
+          row_writes,
+          gb_s,
+          day,
+          scope,
+          net,
+        });
+        return sqlCursor([]);
+      }
+      if (query === EXPIRE_NET_SQL) {
+        const [scope, day] = params;
+        for (const [key, row] of netRows) {
+          if (row.scope === scope && row.day !== day) {
+            netRows.delete(key);
+          }
+        }
+        return sqlCursor([]);
+      }
+      throw new Error("unsupported sql");
+    },
+  };
+}
+
+function memoryQuotaStorage() {
+  const data = new Map();
+  const prefixRows = new Map();
+  const netRows = new Map();
+  let puts = 0;
+  return {
+    data,
+    prefixRows,
+    netRows,
+    get puts() {
+      return puts;
+    },
+    storage: {
+      async get(key) {
+        return data.get(key);
+      },
+      async put(key, value) {
+        puts += 1;
+        data.set(key, value);
+      },
+      sql: memoryQuotaSql(prefixRows, netRows),
+    },
   };
 }
 
@@ -136,7 +265,21 @@ test("daily counters keep at least 4x headroom under the free plan", () => {
 
 test("per-IP rate limit lives in durable quota state", () => {
   const state = emptyQuotaState();
-  for (let i = 0; i < 10; i += 1) {
+  assert.equal(LIMITS.perMinute, DEFAULT_MAILBOX_RATE_LIMIT);
+  assert.equal(DEFAULT_MAILBOX_RATE_LIMIT, 30);
+  assert.equal(quotaLimits({}, "turn").perMinute, DEFAULT_RATE_LIMIT);
+  assert.equal(LIMITS.newBucketsPerMinute, DEFAULT_NEW_BUCKETS_PER_MINUTE);
+  assert.equal(DEFAULT_PREFIX_DAILY_REQUESTS, 200);
+  assert.equal(LIMITS.prefixDailyRequests, 200);
+  assert.equal(DEFAULT_RATE_PREFIX_DAILY, 2_000);
+  assert.equal(LIMITS.ratePrefixDaily, 2_000);
+  assert.equal(DEFAULT_NET_DAILY_REQUESTS, 2_000);
+  assert.equal(DEFAULT_NET_DAILY_ROW_WRITES, 2_000);
+  assert.equal(DEFAULT_NET_DAILY_GB_S, 200);
+  assert.equal(LIMITS.netDailyRequests, 2_000);
+  assert.equal(LIMITS.netDailyRowWrites, 2_000);
+  assert.equal(LIMITS.netDailyGbS, 200);
+  for (let i = 0; i < DEFAULT_MAILBOX_RATE_LIMIT; i += 1) {
     assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: LIMITS }).allow, true);
   }
   assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: LIMITS }).code, "rate");
@@ -158,23 +301,135 @@ test("IPv6 addresses in the same /64 share a rate bucket", () => {
   const state = emptyQuotaState();
   const tight = { ...LIMITS, perMinute: 2 };
   assert.equal(rateKey("2001:db8:1:2:aaaa::1"), "2001:db8:1:2::/64");
+  assert.equal(prefix48("2001:db8:1:2:aaaa::1"), "2001:db8:1::/48");
+  assert.equal(prefixNet("2001:db8:1:2:aaaa::1"), "2001:db8::/32");
+  assert.equal(prefixNet("203.0.113.10"), "203.0.113.0/24");
   assert.equal(rateKey("::ffff:203.0.113.10"), "203.0.113.10");
+  assert.equal(prefixNet("::ffff:203.0.113.10"), "203.0.113.0/24");
   assert.equal(applyQuota(state, { ip: "2001:db8:1:2:aaaa::1", nowMs: 1, limits: tight }).allow, true);
   assert.equal(applyQuota(state, { ip: "2001:db8:1:2:bbbb::2", nowMs: 1, limits: tight }).allow, true);
   assert.equal(applyQuota(state, { ip: "2001:db8:1:2:cccc::3", nowMs: 1, limits: tight }).code, "rate");
-  assert.equal(applyQuota(state, { ip: "2001:db8:1:3::1", nowMs: 1, limits: tight }).allow, true);
+});
+
+test("IPv6 addresses in the same /48 share a rate bucket", () => {
+  const state = emptyQuotaState();
+  const tight = { ...LIMITS, perMinute: 2 };
+  assert.equal(applyQuota(state, { ip: "2001:db8:1:2::1", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "2001:db8:1:3::2", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "2001:db8:1:4::3", nowMs: 1, limits: tight }).code, "rate");
+  assert.equal(applyQuota(state, { ip: "2001:db8:2::1", nowMs: 1, limits: tight }).allow, true);
 });
 
 test("a flood of new IPs does not block a legitimate user", () => {
   const state = emptyQuotaState();
+  const roomy = { ...LIMITS, newBucketsPerMinute: 1_000 };
   const legit = "203.0.113.10";
-  assert.equal(applyQuota(state, { ip: legit, nowMs: 1, limits: LIMITS }).allow, true);
+  assert.equal(applyQuota(state, { ip: legit, nowMs: 1, limits: roomy }).allow, true);
   for (let i = 0; i < MAX_IP_BUCKETS + 64; i += 1) {
     const ip = `198.51.${(i >> 8) & 255}.${i & 255}`;
-    assert.equal(applyQuota(state, { ip, nowMs: 1, limits: LIMITS }).allow, true);
+    assert.equal(applyQuota(state, { ip, nowMs: 1, limits: roomy }).allow, true);
   }
-  assert.equal(applyQuota(state, { ip: legit, nowMs: 1, limits: LIMITS }).allow, true);
+  assert.equal(applyQuota(state, { ip: legit, nowMs: 1, limits: roomy }).allow, true);
   assert.ok(Object.keys(state.ipBuckets).length <= MAX_IP_BUCKETS);
+  assert.ok(legit in state.knownPrefixes);
+});
+
+test("a cap on new buckets stops rotating addresses from burning the daily cap", () => {
+  const state = emptyQuotaState();
+  const tight = { ...LIMITS, newBucketsPerMinute: 2, dailyRequests: 10_000 };
+  assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "203.0.113.11", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "203.0.113.12", nowMs: 1, limits: tight }).code, "rate");
+  assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(state.requests, 3);
+  assert.equal(
+    applyQuota(state, { ip: "2001:db8:1:2::1", nowMs: 1, limits: tight }).allow,
+    true,
+  );
+  const rotator = emptyQuotaState();
+  const oneNew = { ...LIMITS, newBucketsPerMinute: 1, perMinute: 30 };
+  assert.equal(applyQuota(rotator, { ip: "2001:db8:9:1::1", nowMs: 1, limits: oneNew }).allow, true);
+  assert.equal(applyQuota(rotator, { ip: "2001:db8:9:2::2", nowMs: 1, limits: oneNew }).allow, true);
+  assert.equal(applyQuota(rotator, { ip: "2001:db8:a::1", nowMs: 1, limits: oneNew }).code, "rate");
+  assert.equal(rotator.requests, 2);
+});
+
+test("a known prefix is still allowed after the new-bucket cap fills next minute", () => {
+  for (const scope of ["mailbox", "turn"]) {
+    const state = emptyQuotaState();
+    const limits = { ...quotaLimits({}, scope), newBucketsPerMinute: 2 };
+    assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits }).allow, true);
+    assert.equal(applyQuota(state, { ip: "203.0.113.11", nowMs: 1, limits }).allow, true);
+    const nextMinute = 1 + RATE_WINDOW_MS;
+    assert.equal(applyQuota(state, { ip: "198.51.100.1", nowMs: nextMinute, limits }).allow, true);
+    assert.equal(applyQuota(state, { ip: "198.51.100.2", nowMs: nextMinute, limits }).allow, true);
+    assert.equal(applyQuota(state, { ip: "198.51.100.3", nowMs: nextMinute, limits }).code, "rate");
+    assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: nextMinute, limits }).allow, true);
+    assert.equal(applyQuota(state, { ip: "203.0.113.11", nowMs: nextMinute, limits }).allow, true);
+  }
+});
+
+test("an idle known prefix is still served after 300 rotating prefixes", () => {
+  for (const scope of ["mailbox", "turn"]) {
+    const state = emptyQuotaState();
+    const limits = quotaLimits({}, scope);
+    const legit = "203.0.113.10";
+    const seenAt = 1;
+    const later = seenAt + 10 * RATE_WINDOW_MS;
+    assert.equal(applyQuota(state, { ip: legit, nowMs: seenAt, limits }).allow, true);
+    let added = 0;
+    for (let i = 0; i < 300; i += 1) {
+      const ip = `198.${(i >> 8) & 255}.${i & 255}.10`;
+      const result = applyQuota(state, { ip, nowMs: later, limits });
+      if (result.allow) {
+        added += 1;
+      }
+    }
+    assert.ok(added >= 300);
+    assert.ok(Object.keys(state.knownPrefixes).length >= 301);
+    assert.equal(applyQuota(state, { ip: legit, nowMs: later, limits }).allow, true);
+    assert.ok(legit in state.knownPrefixes);
+  }
+});
+
+test("one prefix cannot drain the daily cap", () => {
+  const state = emptyQuotaState();
+  const tight = {
+    ...LIMITS,
+    dailyRequests: 100,
+    prefixDailyRequests: 2,
+  };
+  assert.ok(DEFAULT_PREFIX_DAILY_REQUESTS <= DEFAULT_DAILY_REQUESTS);
+  assert.ok(LIMITS.prefixDailyRequests <= LIMITS.dailyRequests);
+  assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits: tight }).code, "cap");
+  assert.equal(applyQuota(state, { ip: "203.0.113.11", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(state.requests, 3);
+});
+
+test("one /24 or /32 cannot drain the daily cap", () => {
+  assert.ok(DEFAULT_NET_DAILY_REQUESTS <= DEFAULT_DAILY_REQUESTS);
+  assert.ok(LIMITS.netDailyRequests <= LIMITS.dailyRequests);
+  assert.ok(DEFAULT_PREFIX_DAILY_REQUESTS * 50 <= DEFAULT_DAILY_REQUESTS);
+  const v4 = emptyQuotaState();
+  const tight = {
+    ...LIMITS,
+    dailyRequests: 100,
+    prefixDailyRequests: 50,
+    netDailyRequests: 2,
+  };
+  assert.equal(applyQuota(v4, { ip: "203.0.113.10", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(v4, { ip: "203.0.113.11", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(v4, { ip: "203.0.113.12", nowMs: 1, limits: tight }).code, "cap");
+  assert.equal(applyQuota(v4, { ip: "198.51.100.1", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(v4.requests, 3);
+  const v6 = emptyQuotaState();
+  assert.equal(applyQuota(v6, { ip: "2001:db8:1::1", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(v6, { ip: "2001:db8:2::1", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(applyQuota(v6, { ip: "2001:db8:3::1", nowMs: 1, limits: tight }).code, "cap");
+  assert.equal(applyQuota(v6, { ip: "2001:db9::1", nowMs: 1, limits: tight }).allow, true);
+  assert.equal(v6.requests, 3);
 });
 
 test("a 60s mailbox wait at the 10s poll interval does not 429", () => {
@@ -311,6 +566,500 @@ test("mailbox polling does not consume the TURN rate counter", async () => {
     },
   );
   assert.equal(minted.status, 200);
+});
+
+test("a websocket that fails immediately is not charged", async () => {
+  resetWorkerState();
+  const mailboxFetch = async (request) => {
+    if (String(request.headers.get("Upgrade") || "").toLowerCase() === "websocket") {
+      return new Response(JSON.stringify({ error: "rate" }), {
+        status: 429,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(null, { status: 204 });
+  };
+  const env = { MAILBOX_DAILY_REQUESTS: "1" };
+  const failed = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, {
+      "CF-Connecting-IP": "203.0.113.10",
+      Upgrade: "websocket",
+    }),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(failed.status, 429);
+  const got = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(got.status, 204);
+});
+
+test("a websocket upgrade that succeeds is charged", async () => {
+  resetWorkerState();
+  const mailboxFetch = async (request) => {
+    if (String(request.headers.get("Upgrade") || "").toLowerCase() === "websocket") {
+      // Node's Response rejects 101; the Worker only reads `.status` here.
+      return { status: 101 };
+    }
+    return new Response(null, { status: 204 });
+  };
+  const env = { MAILBOX_DAILY_REQUESTS: "1" };
+  const accepted = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, {
+      "CF-Connecting-IP": "203.0.113.10",
+      Upgrade: "websocket",
+    }),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(accepted.status, 101);
+  const blocked = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(blocked.status, 429);
+  const body = await blocked.json();
+  assert.equal(body.error, "cap");
+});
+
+test("a failed websocket upgrade is still rate limited before the mailbox", async () => {
+  resetWorkerState();
+  let forwarded = 0;
+  const mailboxFetch = async () => {
+    forwarded += 1;
+    return new Response(JSON.stringify({ error: "rate" }), {
+      status: 429,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  const env = { MAILBOX_RATE_LIMIT_PER_MINUTE: "2" };
+  const headers = { "CF-Connecting-IP": "203.0.113.10", Upgrade: "websocket" };
+  const first = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, headers),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  const second = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, headers),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  const third = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, headers),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(first.status, 429);
+  assert.equal(second.status, 429);
+  assert.equal(third.status, 429);
+  assert.equal(forwarded, 2);
+});
+
+test("a denied charge after a 101 closes the accepted socket", async () => {
+  resetWorkerState();
+  let closed = null;
+  const mailboxFetch = async (request) => {
+    if (String(request.headers.get("Upgrade") || "").toLowerCase() === "websocket") {
+      return {
+        status: 101,
+        webSocket: {
+          close(code, reason) {
+            closed = { code, reason };
+          },
+        },
+      };
+    }
+    return new Response(null, { status: 204 });
+  };
+  const env = { MAILBOX_DAILY_REQUESTS: "1" };
+  const emptied = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(emptied.status, 204);
+  const denied = await handleRequest(
+    mailboxRequest("GET", "answer", undefined, {
+      "CF-Connecting-IP": "203.0.113.10",
+      Upgrade: "websocket",
+    }),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(denied.status, 429);
+  assert.equal(closed.code, 1013);
+  assert.equal(closed.reason, "quota");
+});
+
+test("a successful non-101 mailbox operation with an Upgrade header is charged daily", async () => {
+  resetWorkerState();
+  const mailboxFetch = memoryMailbox();
+  const env = { MAILBOX_DAILY_REQUESTS: "1" };
+  const posted = await handleRequest(
+    mailboxRequest("POST", "answer", { payload: PAYLOAD }, {
+      "CF-Connecting-IP": "203.0.113.10",
+      Upgrade: "websocket",
+    }),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(posted.status, 201);
+  const blocked = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(blocked.status, 429);
+  assert.equal((await blocked.json()).error, "cap");
+});
+
+test("Upgrade plus POST or DELETE cannot mutate after the daily cap is exhausted", async () => {
+  resetWorkerState();
+  let forwarded = 0;
+  const inner = memoryMailbox();
+  const mailboxFetch = async (request, mailbox, nowMs) => {
+    forwarded += 1;
+    return inner(request, mailbox, nowMs);
+  };
+  const env = { MAILBOX_DAILY_REQUESTS: "1" };
+  const drained = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(drained.status, 204);
+  assert.equal(forwarded, 1);
+
+  const posted = await handleRequest(
+    mailboxRequest("POST", "answer", { payload: PAYLOAD }, {
+      "CF-Connecting-IP": "203.0.113.10",
+      Upgrade: "websocket",
+    }),
+    env,
+    { mailboxFetch, nowMs: 1 },
+  );
+  assert.equal(posted.status, 429);
+  assert.equal((await posted.json()).error, "cap");
+  assert.equal(forwarded, 1);
+
+  resetWorkerState();
+  const leaked = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    env,
+    { mailboxFetch, nowMs: 2 },
+  );
+  assert.equal(leaked.status, 204);
+
+  const seeded = memoryMailbox();
+  resetWorkerState();
+  forwarded = 0;
+  const seedFetch = async (request, mailbox, nowMs) => {
+    forwarded += 1;
+    return seeded(request, mailbox, nowMs);
+  };
+  const roomy = { MAILBOX_DAILY_REQUESTS: "2" };
+  const stored = await handleRequest(
+    mailboxRequest("POST", "answer", { payload: PAYLOAD }),
+    roomy,
+    { mailboxFetch: seedFetch, nowMs: 3 },
+  );
+  assert.equal(stored.status, 201);
+  const filled = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    roomy,
+    { mailboxFetch: seedFetch, nowMs: 3 },
+  );
+  assert.equal(filled.status, 200);
+  assert.equal(forwarded, 2);
+  const deleted = await handleRequest(
+    mailboxRequest("DELETE", "answer", undefined, {
+      "CF-Connecting-IP": "203.0.113.10",
+      Upgrade: "websocket",
+    }),
+    roomy,
+    { mailboxFetch: seedFetch, nowMs: 3 },
+  );
+  assert.equal(deleted.status, 429);
+  assert.equal((await deleted.json()).error, "cap");
+  assert.equal(forwarded, 2);
+
+  resetWorkerState();
+  const remaining = await handleRequest(
+    mailboxRequest("GET", "answer"),
+    roomy,
+    { mailboxFetch: seedFetch, nowMs: 4 },
+  );
+  assert.equal(remaining.status, 200);
+  assert.deepEqual(await remaining.json(), { payload: PAYLOAD });
+});
+
+test("failed upgrades cannot grow or rewrite known-prefix state without a daily bound", () => {
+  const state = emptyQuotaState();
+  const limits = {
+    ...LIMITS,
+    perMinute: 100,
+    newBucketsPerMinute: 100,
+    ratePrefixDaily: 2,
+  };
+  const first = applyQuota(state, {
+    ip: "203.0.113.10",
+    nowMs: 1,
+    limits,
+    charge: "rate",
+  });
+  assert.equal(first.allow, true);
+  const storedAt = state.knownPrefixes["203.0.113.10"].at;
+  assert.equal(
+    applyQuota(state, {
+      ip: "203.0.113.11",
+      nowMs: 2,
+      limits,
+      charge: "rate",
+    }).allow,
+    true,
+  );
+  assert.equal(Object.keys(state.knownPrefixes).length, 2);
+  const denied = applyQuota(state, {
+    ip: "198.51.100.1",
+    nowMs: 3,
+    limits,
+    charge: "rate",
+  });
+  assert.equal(denied.allow, false);
+  assert.equal(denied.status, 429);
+  assert.equal(denied.code, "cap");
+  assert.equal(Object.keys(state.knownPrefixes).length, 2);
+  assert.equal("198.51.100.1" in state.knownPrefixes, false);
+
+  const repeat = applyQuota(state, {
+    ip: "203.0.113.10",
+    nowMs: 4,
+    limits,
+    charge: "rate",
+  });
+  assert.equal(repeat.allow, true);
+  assert.equal(state.knownPrefixes["203.0.113.10"].at, storedAt);
+  assert.equal(Object.keys(state.knownPrefixes).length, 2);
+});
+
+test("rate-only allows count toward the daily row-write cap", () => {
+  const state = emptyQuotaState();
+  const limits = {
+    ...LIMITS,
+    dailyRowWrites: 2,
+    perMinute: 100,
+    newBucketsPerMinute: 100,
+  };
+  assert.equal(
+    applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits, charge: "rate" }).allow,
+    true,
+  );
+  assert.equal(
+    applyQuota(state, { ip: "203.0.113.10", nowMs: 1, limits, charge: "rate" }).allow,
+    true,
+  );
+  const denied = applyQuota(state, {
+    ip: "203.0.113.10",
+    nowMs: 1,
+    limits,
+    charge: "rate",
+  });
+  assert.equal(denied.allow, false);
+  assert.equal(denied.status, 429);
+  assert.equal(denied.code, "cap");
+  assert.equal(state.rowWrites, 2);
+});
+
+test("MailboxQuota fails closed before a rate-only storage put that would exceed daily row writes", async () => {
+  const memory = memoryQuotaStorage();
+  const quota = new MailboxQuota(
+    { storage: memory.storage },
+    {
+      MAILBOX_DAILY_ROW_WRITES: "2",
+      MAILBOX_RATE_LIMIT_PER_MINUTE: "100",
+      MAILBOX_NEW_BUCKETS_PER_MINUTE: "100",
+    },
+  );
+  const check = (nowMs) =>
+    quota.fetch(
+      new Request("https://quota/check", {
+        method: "POST",
+        headers: {
+          "CF-Connecting-IP": "203.0.113.10",
+          "X-WebJam-Now": String(nowMs),
+          "X-WebJam-Row-Writes": "0",
+          "X-WebJam-Quota-Scope": "mailbox",
+          "X-WebJam-Quota-Charge": "rate",
+        },
+      }),
+    );
+  const first = await check(1);
+  const second = await check(1);
+  const third = await check(1);
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(third.status, 429);
+  assert.equal((await third.json()).error, "cap");
+  assert.equal(memory.puts, 2);
+});
+
+test("MailboxQuota fails closed when quota storage get throws", async () => {
+  const memory = memoryQuotaStorage();
+  memory.storage.get = async () => {
+    throw new Error("unreadable");
+  };
+  const quota = new MailboxQuota({ storage: memory.storage }, {});
+  const response = await quota.fetch(
+    new Request("https://quota/check", {
+      method: "POST",
+      headers: {
+        "CF-Connecting-IP": "203.0.113.10",
+        "X-WebJam-Now": "1",
+        "X-WebJam-Row-Writes": "0",
+        "X-WebJam-Quota-Scope": "mailbox",
+        "X-WebJam-Quota-Charge": "all",
+      },
+    }),
+  );
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).error, "unavailable");
+  assert.equal(memory.puts, 0);
+  assert.equal(memory.data.size, 0);
+});
+
+test("more than 512 networks in a day still serve a new network", async () => {
+  const memory = memoryQuotaStorage();
+  const quota = new MailboxQuota(
+    { storage: memory.storage },
+    {
+      MAILBOX_DAILY_REQUESTS: "10000",
+      MAILBOX_DAILY_ROW_WRITES: "10000",
+      MAILBOX_RATE_LIMIT_PER_MINUTE: "1000",
+      MAILBOX_NEW_BUCKETS_PER_MINUTE: "1000",
+    },
+  );
+  const check = (ip) =>
+    quota.fetch(
+      new Request("https://quota/check", {
+        method: "POST",
+        headers: {
+          "CF-Connecting-IP": ip,
+          "X-WebJam-Now": "1",
+          "X-WebJam-Row-Writes": "0",
+          "X-WebJam-Quota-Scope": "mailbox",
+          "X-WebJam-Quota-Charge": "all",
+        },
+      }),
+    );
+  const seen = 520;
+  for (let i = 0; i < seen; i += 1) {
+    const ip = `198.${(i >> 8) & 255}.${i & 255}.10`;
+    const response = await check(ip);
+    assert.notEqual(response.status, 503);
+    assert.equal(response.status, 200);
+  }
+  const next = await check("203.0.113.10");
+  assert.notEqual(next.status, 503);
+  assert.equal(next.status, 200);
+  const stored = memory.data.get("quota:mailbox");
+  assert.equal("netShares" in stored, false);
+  assert.ok(memory.netRows.size > 512);
+  assert.ok(memory.netRows.size >= seen + 1);
+});
+
+test("MailboxQuota counts prefix, net, and KV persists toward daily row writes", async () => {
+  const memory = memoryQuotaStorage();
+  const quota = new MailboxQuota(
+    { storage: memory.storage },
+    {
+      MAILBOX_DAILY_ROW_WRITES: "3",
+      MAILBOX_RATE_LIMIT_PER_MINUTE: "100",
+      MAILBOX_NEW_BUCKETS_PER_MINUTE: "100",
+    },
+  );
+  const check = () =>
+    quota.fetch(
+      new Request("https://quota/check", {
+        method: "POST",
+        headers: {
+          "CF-Connecting-IP": "203.0.113.10",
+          "X-WebJam-Now": "1",
+          "X-WebJam-Row-Writes": "0",
+          "X-WebJam-Quota-Scope": "mailbox",
+          "X-WebJam-Quota-Charge": "all",
+        },
+      }),
+    );
+  const first = await check();
+  const second = await check();
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 429);
+  assert.equal((await second.json()).error, "cap");
+  assert.equal(memory.puts, 1);
+  assert.equal(memory.data.get("quota:mailbox").rowWrites, 3);
+});
+
+test("30k prefixes from one /32 still serve other users and never 503", async () => {
+  const memory = memoryQuotaStorage();
+  const quota = new MailboxQuota(
+    { storage: memory.storage },
+    {
+      MAILBOX_DAILY_REQUESTS: "100000",
+      MAILBOX_DAILY_ROW_WRITES: "100000",
+      MAILBOX_DAILY_GB_S: "100000",
+      MAILBOX_NET_DAILY_REQUESTS: "100000",
+      MAILBOX_NET_DAILY_ROW_WRITES: "100000",
+      MAILBOX_NET_DAILY_GB_S: "100000",
+      MAILBOX_PREFIX_DAILY_REQUESTS: "2",
+      MAILBOX_RATE_LIMIT_PER_MINUTE: "100000",
+      MAILBOX_NEW_BUCKETS_PER_MINUTE: "100000",
+      MAILBOX_RATE_PREFIX_DAILY: "100000",
+    },
+  );
+  const check = (ip, nowMs) =>
+    quota.fetch(
+      new Request("https://quota/check", {
+        method: "POST",
+        headers: {
+          "CF-Connecting-IP": ip,
+          "X-WebJam-Now": String(nowMs),
+          "X-WebJam-Row-Writes": "0",
+          "X-WebJam-Quota-Scope": "mailbox",
+          "X-WebJam-Quota-Charge": "all",
+        },
+      }),
+    );
+  const flood = 30_000;
+  const other = "198.51.100.50";
+  for (let i = 0; i < flood; i += 1) {
+    const ip = `2001:db8:${i.toString(16)}::1`;
+    const response = await check(ip, 1);
+    assert.notEqual(response.status, 503);
+    assert.equal(response.status, 200);
+  }
+  const stored = memory.data.get("quota:mailbox");
+  assert.equal(stored.knownPrefixes, undefined);
+  assert.equal(stored.netShares, undefined);
+  const encoded = JSON.stringify(stored);
+  assert.ok(encoded.length < MAX_QUOTA_VALUE_BYTES);
+  assert.ok(encoded.length < 32 * 1024);
+  assert.equal("knownPrefixes" in stored, false);
+  assert.equal("netShares" in stored, false);
+  assert.deepEqual(stored, compactQuotaState(stored));
+  assert.ok(memory.prefixRows.size >= flood);
+  const outsider = await check(other, 1);
+  assert.notEqual(outsider.status, 503);
+  assert.equal(outsider.status, 200);
+  const firstAgain = await check("2001:db8::1", 1);
+  assert.notEqual(firstAgain.status, 503);
+  assert.equal(firstAgain.status, 200);
+  assert.equal(prefixNet("2001:db8:1::1"), "2001:db8::/32");
+  assert.equal(prefixNet("2001:db8:7530::1"), "2001:db8::/32");
+  assert.notEqual(prefixNet(other), "2001:db8::/32");
 });
 
 test("http mailbox requests are rejected", async () => {
