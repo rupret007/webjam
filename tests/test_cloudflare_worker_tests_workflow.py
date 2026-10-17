@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import re
-import urllib.request
 from pathlib import Path
 
 
@@ -20,14 +19,23 @@ _NODE_VERSION = re.search(
     WORKFLOW,
 )
 
+# Curated Node.js release tags from nodejs.org/dist; extend when bumping CI node-version.
+_PUBLISHED_NODE_VERSIONS: frozenset[str] = frozenset(
+    {
+        "v22.22.0",
+        "v22.22.1",
+        "v22.22.2",
+        "v22.22.3",
+        "v22.23.0",
+        "v22.23.1",
+        "v22.23.2",
+        "v22.23.3",
+    }
+)
+
 
 def _published_node_versions() -> set[str]:
-    with urllib.request.urlopen(
-        "https://nodejs.org/dist/index.json",
-        timeout=30,
-    ) as response:
-        payload = json.load(response)
-    return {entry["version"] for entry in payload}
+    return set(_PUBLISHED_NODE_VERSIONS)
 
 
 def test_workflow_runs_worker_tests_on_pr_push_and_dispatch() -> None:
@@ -49,6 +57,11 @@ def test_workflow_pins_node_installs_dependencies_then_runs_node_test() -> None:
     test_index = WORKFLOW.index("node --test")
     setup_index = WORKFLOW.index("actions/setup-node@")
     assert setup_index < install_index < test_index
+
+
+def test_published_node_version_catalog_is_static_and_well_formed() -> None:
+    for entry in _PUBLISHED_NODE_VERSIONS:
+        assert re.fullmatch(r"v\d+\.\d+\.\d+", entry)
 
 
 def test_pinned_node_version_is_a_published_release() -> None:
