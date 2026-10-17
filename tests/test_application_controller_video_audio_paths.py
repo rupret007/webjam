@@ -76,9 +76,15 @@ class _ControllerTestBase(unittest.TestCase):
         c.window.set_status_audio = MagicMock()
         c.window.session_strip.set_video_state = MagicMock()
         c.window.session_strip.set_audio_state = MagicMock()
-        # Replace the lightweight launch card with a mock; these tests only
-        # assert controller call routing.
-        c.window.webex_embed = MagicMock()
+        # Keep real child widgets for deferred Qt tab-order updates. Mock
+        # only the controller calls asserted here, restoring them per test.
+        for method in (
+            "setVisible", "focus_primary_action", "set_launch_status",
+            "load_meeting", "leave_meeting",
+        ):
+            mocked_method = patch.object(c.window.webex_embed, method)
+            mocked_method.start()
+            self.addCleanup(mocked_method.stop)
         c.bridge.webex_state = "Not opened"
         c.bridge.jamulus_state = "Not launched"
         c.audio.stopping = False
@@ -704,7 +710,7 @@ class TestLaunchStopAudio(_ControllerTestBase):
         self.assertFalse(c._rpc_hang_banner_shown)
         self.assertEqual(c.participants, {})
         self.assertEqual(
-            c.window.participant_grid._empty_title.text(), "Ready when you are"
+            c.window.participant_grid._empty_title.text(), "Start when you are"
         )
 
     def test_stop_warns_when_server_recording_is_active(self):

@@ -229,12 +229,15 @@ def test_launch_default_leaves_physical_title_bar_room_at_760_by_600(
         _destroy(dialog)
 
 
+@pytest.mark.parametrize("start_key", ["talk_and_make", "paint_along"])
 def test_art_door_keeps_two_starts_and_host_join_inside_760_by_600(
     styled_qapp,
     tmp_path,
+    start_key,
 ):
     settings = _settings(tmp_path)
     settings.last_creator_profile_key = "art"
+    settings.last_creator_start_key = start_key
     with patch.object(sys, "platform", "darwin"):
         dialog = LaunchDialog(settings)
     dialog._menu_bar.setNativeMenuBar(False)
@@ -246,8 +249,11 @@ def test_art_door_keeps_two_starts_and_host_join_inside_760_by_600(
         assert dialog.rect().contains(_rect_in(dialog._menu_bar, dialog))
         assert dialog.width() <= 760
         assert dialog.height() + 40 <= 600
-        assert dialog._choice_helper.isVisibleTo(dialog)
-        assert dialog.rect().contains(_rect_in(dialog._choice_helper, dialog))
+        assert dialog._choice_helper.isVisibleTo(dialog) is (start_key == "paint_along")
+        if start_key == "paint_along":
+            assert dialog.rect().contains(_rect_in(dialog._choice_helper, dialog))
+        else:
+            assert dialog._choice_helper.text() == ""
         for control in (
             dialog._art_profile_card,
             dialog._music_profile_card,
@@ -523,12 +529,14 @@ def test_invalid_invite_error_does_not_echo_sensitive_or_technical_text(tmp_path
     assert dialog.accept_invite(value) is False
     message = dialog._join_error.text()
     assert (
-        message == "That invitation is malformed. Copy a new invitation from your host."
+        message
+        == "That's not a WebJam invite. Ask your host to press Copy Invite "
+        "and send you the whole message."
     )
     assert "SUPER-SECRET" not in message
     assert "10.0.0.2" not in message
     assert dialog._invite_input.text() == value  # preserve editable user input
-    assert dialog._join_status.text() == "Needs attention"
+    assert dialog._join_status.text() == "That invite didn't work"
     assert dialog._submitting is False
     _destroy(dialog)
 
@@ -656,7 +664,7 @@ def test_stage_can_be_passive_when_hud_owns_primary_action(styled_qapp):
     window.participant_grid.set_session_state(
         SessionUiState(
             SessionPhase.NOT_CONNECTED,
-            "Ready when you are",
+            "Start when you are",
             "Start from the session bar when your band is ready.",
             show_primary=False,
             show_ready_check=False,
@@ -664,7 +672,7 @@ def test_stage_can_be_passive_when_hud_owns_primary_action(styled_qapp):
         )
     )
     window.session_hud.set_state(
-        "Ready when you are",
+        "Start when you are",
         "Start when your band is ready.",
         action_text="Start Session",
         action_kind="primary",

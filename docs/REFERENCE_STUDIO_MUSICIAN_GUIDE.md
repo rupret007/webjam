@@ -42,10 +42,10 @@ even if a caller bypasses a disabled visible action.
 
 ## Start a project
 
-On WebJam's launch screen, choose **File → New Music Project…** to open
-Reference Studio. If a live Music session is open, end or leave it, quit
-WebJam, and relaunch to reach that menu. The live session's **Studio** button
-opens completed-take review.
+Art and Music's live launch doors offer **Host** and **Join**. Their File menu
+keeps **Session library…** and hides standalone project starts. The live
+Music session's **Studio** button still opens completed-take review.
+The standalone Reference Studio workflow retains these project controls:
 
 - Choose **Play Along / Record**, select a local backing track, then choose
   where to create its `.webjam` project folder.
@@ -110,6 +110,16 @@ evidence associated with the commit. If capture completed but the project
 could not finish publication, WebJam presents an explicit recovery candidate
 on the next open. Recover or discard it deliberately; do not assume an
 interrupted commit is already part of the arrangement.
+
+If finishing takes longer than expected, the status says **Recording is still
+finishing. Press Stop to retry.** Keep the project open and press **Stop**
+again. WebJam keeps the same capture until it can verify the result; another
+recording and project edits stay blocked while it finishes. A timeout does
+not mean the take has been added to the project.
+
+If the Studio input device cannot close, WebJam keeps it available for cleanup
+retries and blocks another input start until close succeeds. A failed stop
+does not mean the device has been released.
 
 Count-in is pre-roll and is not represented as recorded program material.
 Punch limits the kept performance range. Cycle recording creates bounded

@@ -686,6 +686,23 @@ QSlider:focus {
     font-size: ${FONT_SIZE_SM}px;
 }
 
+#SessionHudNotice {
+    background-color: ${COLOR_BG_CARD};
+    color: ${COLOR_TEXT_PRIMARY};
+    border: 1px solid ${COLOR_ACCENT_PRIMARY};
+    border-radius: ${RADIUS_MD}px;
+    padding: ${SPACE_SM}px ${SPACE_MD}px;
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#SessionHudDisclosure {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+    border: none;
+    background: transparent;
+    padding: 0;
+}
+
 #SessionCanvas {
     background-color: ${COLOR_BG_PANEL};
     border-left: 1px solid ${COLOR_BORDER_SUBTLE};
@@ -816,6 +833,7 @@ QLineEdit#CanvasChatInput {
     color: ${COLOR_TEXT_MUTED};
     font-size: ${FONT_SIZE_SM}px;
     padding-top: ${SPACE_XS}px;
+    padding-bottom: 0px;
 }
 
 QPushButton#LaunchMoreRooms {
@@ -916,12 +934,12 @@ QPushButton#LaunchSecondary:disabled:hover {
     border-color: ${COLOR_BORDER_SUBTLE};
 }
 
-/* Orange marks the selected profile/activity. Keyboard focus on a different
-   choice is white, so moving focus never looks like changing the room. */
+/* Profile selection is a filled surface; keyboard focus is a white outline,
+   including on the selected profile. Reserve its width to avoid text shifts. */
 QCommandLinkButton#LaunchProfileCard {
     background-color: ${COLOR_BG_INPUT};
     color: ${COLOR_TEXT_PRIMARY};
-    border: 1px solid ${COLOR_BORDER_SUBTLE};
+    border: 2px solid ${COLOR_BORDER_SUBTLE};
     border-radius: ${RADIUS_LG}px;
     text-align: left;
     padding: ${SPACE_XS}px ${SPACE_MD}px;
@@ -934,13 +952,13 @@ QCommandLinkButton#LaunchProfileCard:hover {
 }
 
 QCommandLinkButton#LaunchProfileCard:checked {
-    background-color: ${COLOR_BG_CARD};
+    background-color: ${COLOR_ACCENT_PRIMARY};
     color: ${COLOR_TEXT_PRIMARY};
-    border: 2px solid ${COLOR_ACCENT_PRIMARY};
+    border-color: ${COLOR_ACCENT_PRIMARY};
 }
 
-QCommandLinkButton#LaunchProfileCard:focus:!checked {
-    border: 2px solid ${COLOR_TEXT_PRIMARY};
+QCommandLinkButton#LaunchProfileCard:focus {
+    border-color: ${COLOR_TEXT_PRIMARY};
 }
 
 QCommandLinkButton#LaunchProfileCard:disabled {
@@ -1929,7 +1947,7 @@ QPushButton#StudioRecordButton {
  * recording-status text at the compact floor; only horizontal padding changes. */
 #SessionControlBar[followAlongCompact="true"] QPushButton#GhostButton,
 #SessionControlBar[followAlongCompact="true"] QToolButton#GhostButton {
-    padding: 0 6px;
+    padding: 0 4px;
 }
 
 #SessionControlBar[followAlongCompact="true"] QPushButton#StudioRecordButton {
@@ -1943,7 +1961,7 @@ QPushButton#StudioRecordButton {
 #SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QPushButton#GhostButton,
 #SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QToolButton#GhostButton,
 #SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QPushButton#StudioRecordButton {
-    padding: 0 4px;
+    padding: 0 3px;
 }
 
 #SessionControlBar[followAlongCompact="true"][helpPreviewCompact="true"] QPushButton#AudioButton[destructive="true"] {

@@ -125,6 +125,10 @@ type referenceFabricOperation struct {
 
 func (o *referenceFabricOperation) Updates() <-chan fabricUpdate { return o.updates }
 
+func (o *referenceFabricOperation) ApplyGuestSignal(context.Context, []byte) error {
+	return ErrProtocol
+}
+
 func (o *referenceFabricOperation) Close(ctx context.Context) error {
 	if o == nil || ctx == nil {
 		return ErrProtocol

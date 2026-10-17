@@ -70,7 +70,8 @@ class JamulusNamePreview(QLabel):
             label = "Others see" if self._plain_words else "Jamulus mixer"
             text = f"{label}: {preview} ({layout})"
         else:
-            text = f"{self._help}\nMixer preview: {preview}"
+            label = "Others see" if self._plain_words else "Mixer preview"
+            text = f"{self._help}\n{label}: {preview}"
         self.setText(text)
         if self._plain_words:
             self.setAccessibleDescription(f"{self._help} Others see: {name.preview}")

@@ -7,10 +7,14 @@ statically linked transitive modules are listed in `DEPENDENCIES.md`.
 |---|---:|---|
 | `github.com/pion/ice/v4` | `v4.3.0` | MIT |
 | `github.com/pion/logging` | `v0.2.4` | MIT |
+| `github.com/pion/rtp` | `v1.10.1` | MIT |
+| `github.com/pion/sdp/v3` | `v3.0.18` | MIT |
 | `github.com/pion/stun/v3` | `v3.1.6` | MIT |
 | `github.com/pion/transport/v4` | `v4.0.2` | MIT |
 | `github.com/pion/turn/v5` | `v5.0.12` | MIT |
+| `github.com/pion/webrtc/v4` | `v4.2.12` | MIT |
 | `github.com/quic-go/quic-go` | `v0.60.0` | MIT |
+| `golang.org/x/text` | `v0.41.0` | BSD-3-Clause |
 
 The Pion projects use the text in `licenses/PION-MIT.txt`. quic-go uses
 `licenses/QUIC-GO-MIT.txt`. Google UUID uses

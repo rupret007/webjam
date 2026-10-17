@@ -136,3 +136,13 @@ Build and verify with Go 1.26.9 (CI toolchain; go.mod minimum stays 1.25.13):
 make check
 make build-all VERSION=<source-build-id>
 ```
+
+## Optional browser guest
+
+The Pion Web Join endpoint is disabled until an explicit `web_join_open` host
+command. It shares the compiled free-tier credential service and uses sealed
+mailbox signaling; the host-local Python bridge converts standard Opus to
+Jamulus Opus Custom. See [Web Join](../docs/web-join.md) for session controls,
+fixed IPC shapes, enrollment/candidate restrictions, build prerequisites and
+lab checks. No browser media or local Jamulus client is admitted before the
+certificate-bound enrollment proof succeeds.

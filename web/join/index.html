@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https://webjam-turn-credentials.jeffstory007.workers.dev; media-src 'self' blob:; base-uri 'none'; form-action 'none'">
+  <title>Web Join · WebJam</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">WebJam</p>
+    <h1>Join your band from the browser</h1>
+    <p><strong>Web Join, higher delay (about 60–120 ms).</strong> Desktop players keep their low-latency app connection. For tight rehearsals use the WebJam app.</p>
+    <p id="status" role="status">Open the invite link from your desktop host.</p>
+    <label class="headphones"><input id="headphones" type="checkbox"> Wear headphones. Echo cancelling is off for music quality.</label>
+    <div class="actions"><button id="join" disabled>Join with microphone</button><button id="leave" hidden>Leave session</button></div>
+    <p id="latency">Estimated listening delay: available after connecting.</p>
+    <p id="warnings" role="status"></p>
+    <details><summary>Browser and iPhone notes</summary><p>Tap Join to start audio. On iPhone and iPad: listen and play along, best effort. Safari may play mono and add playback buffering; WebRTC and WebAudio have a history of stuttering (WebKit 225880). Keep this page visible. Firefox may send a lower audio bitrate.</p></details>
+    <audio id="host-audio" autoplay playsinline></audio>
+    <p class="privacy">The invite stays in this page’s URL fragment. Signaling is encrypted. No analytics or third-party scripts.</p>
+  </main>
+</body>
+</html>

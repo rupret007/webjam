@@ -3,8 +3,8 @@
 The native process owns networking and the loopback UDP proxy. This module
 keeps the Qt/controller boundary small: typed invitations and bounded help
 text go in; only allowlisted connection facts and ephemeral help events come
-back. The built-in profile is deliberately lab-only until a public rendezvous
-profile is provisioned.
+back. Ordinary packaged Host uses compiled ``direct-stun`` when the sidecar binary
+is present. ``reference-local`` remains the explicit lab opt-in.
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ from services.transport_runtime import (
     TransportProcessError,
     TransportPeerProtocolError,
     TransportRoomRateLimitedError,
+    TransportTimeoutError,
 )
 
 REFERENCE_LOCAL_OPT_IN = "WEBJAM_ENABLE_REFERENCE_LOCAL"
@@ -54,6 +55,43 @@ def reference_local_host_requested() -> bool:
     """Return the explicit developer/lab opt-in, never a saved user setting."""
 
     return str(os.environ.get(REFERENCE_LOCAL_OPT_IN, "")).strip() == "1"
+
+
+def transport_sidecar_available() -> bool:
+    """Return whether this checkout or package has a usable fabric binary."""
+
+    try:
+        path = transport_binary_path()
+        return path.is_file() and os.access(path, os.X_OK)
+    except OSError:
+        return False
+
+
+def ordinary_native_host_profile() -> str | None:
+    """Select the compiled v3 profile for ordinary Host, or LAN fallback.
+
+    Lab opt-in keeps ``reference-local``. Packaged apps with a sidecar use
+    ``direct-stun`` (public STUN, no user port forwarding). Source checkouts
+    without a compiled sidecar stay on v2 LAN. The isolated sidecar CI job
+    sets ``WEBJAM_RUN_REMOTE_SIDECAR_INTEGRATION`` and must not flip ordinary
+    Host onto the Internet path.
+    """
+
+    if reference_local_host_requested():
+        return "reference-local"
+    if str(os.environ.get("WEBJAM_RUN_REMOTE_SIDECAR_INTEGRATION", "")).strip() == "1":
+        return None
+    if transport_sidecar_available():
+        return "direct-stun"
+    return None
+
+
+def _session_transport_path(profile_id: str, session_path: str) -> TransportPath:
+    if profile_id == "direct-stun" and session_path == "relay":
+        return TransportPath.SECURE_RELAY
+    if profile_id == "direct-stun":
+        return TransportPath.INTERNET_DIRECT
+    return TransportPath.SECURE_RELAY
 
 
 def transport_binary_path() -> Path:
@@ -192,6 +230,8 @@ class NativeGuestTransportBackend:
         self._generation = 0
         self._process_generation = 0
         self._retired_guest_generation = 0
+        self._guest_reply = b""
+        self._session_path = ""
 
     def start_guest(
         self,
@@ -207,6 +247,7 @@ class NativeGuestTransportBackend:
                     raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE)
                 if self._process is not None:
                     raise RemoteBackendError(RemoteSessionErrorCode.UNAVAILABLE)
+                self._guest_reply = b""
                 process = TransportProcess(
                     self._binary,
                     expected_build=self._expected_build,
@@ -253,6 +294,9 @@ class NativeGuestTransportBackend:
         except TransportPeerProtocolError:
             self._discard_failed_process(process)
             raise RemoteBackendError(RemoteSessionErrorCode.PEER_PROTOCOL_UNSUPPORTED) from None
+        except TransportTimeoutError:
+            self._discard_failed_process(process)
+            raise RemoteBackendError(RemoteSessionErrorCode.TIMED_OUT) from None
         except Exception:  # noqa: BLE001 - preserve no sidecar detail
             self._discard_failed_process(process)
             raise RemoteBackendError(
@@ -269,9 +313,12 @@ class NativeGuestTransportBackend:
             raise RemoteBackendError(
                 RemoteSessionErrorCode.INVITATION_UNUSABLE
             ) from None
+        session_path = str(getattr(connected, "session_path", "") or "")
+        with self._lock:
+            self._session_path = session_path
         return RemoteGuestConnection(
             loopback_port=connected.loopback_port,
-            path=TransportPath.SECURE_RELAY,
+            path=_session_transport_path(invitation.profile_id, session_path),
             quality=ConnectionQuality.UNKNOWN,
             generation=connected.generation,
         )
@@ -293,7 +340,9 @@ class NativeGuestTransportBackend:
 
     def _mark_connection_lost(self, source: TransportProcess) -> None:
         with self._lock:
-            if source is not self._process or self._phase not in {"enrolling", "connected"}:
+            # Enrollment failures stay typed (timed_out vs invitation_unusable).
+            # A stop/error while still joining must not become transport_failed.
+            if source is not self._process or self._phase != "connected":
                 return
             self._phase = "failed"
             self._room_identity = None
@@ -357,9 +406,27 @@ class NativeGuestTransportBackend:
                 raise RemoteBackendError(RemoteSessionErrorCode.TRANSPORT_FAILED)
         return accepted
 
+    @property
+    def guest_reply(self) -> bytes:
+        with self._lock:
+            return bytes(self._guest_reply)
+
+    @property
+    def session_path(self) -> str:
+        with self._lock:
+            return str(self._session_path or "")
+
     def _handle_event(self, event: TransportEvent, *, source: TransportProcess) -> None:
         with self._lock:
             if source is not self._process:
+                return
+            if (
+                event.event_type == "guest_signal"
+                and event.mode == "guest"
+                and event.generation == self._generation
+                and event.signal
+            ):
+                self._guest_reply = bytes(event.signal)
                 return
             lost = (
                 event.event_type == "stopped"
@@ -502,11 +569,19 @@ class NativeHostTransportOwner:
         self._pending_connected: TransportEvent | None = None
         self._owner: RemoteInvitationOwner | None = None
         self._stopped = False
+        self._host_signal = b""
+        self._share_route = ""
+        self._session_path = ""
+        self._guest_reply_applied = False
         self._snapshot = RemoteSessionSnapshot(
             phase=RemoteSessionPhase.PREPARING,
             role=SessionRole.HOST,
             generation=1,
-            path=TransportPath.SECURE_RELAY,
+            path=(
+                TransportPath.INTERNET_DIRECT
+                if self._profile_id == "direct-stun"
+                else TransportPath.SECURE_RELAY
+            ),
         )
         transport_binary = (
             Path(binary) if binary is not None else transport_binary_path()
@@ -538,6 +613,10 @@ class NativeHostTransportOwner:
             raise
 
     @property
+    def profile_id(self) -> str:
+        return self._profile_id
+
+    @property
     def invitation_available(self) -> bool:
         owner = self._owner
         with self._lock:
@@ -560,13 +639,57 @@ class NativeHostTransportOwner:
         with self._lock:
             return self._snapshot
 
+    def apply_guest_reply(self, envelope: bytes) -> None:
+        """Apply the friend's sealed reply so both sides can punch at once."""
+
+        raw = bytes(envelope or b"")
+        with self._lock:
+            if (
+                self._stopped
+                or self._close_pending
+                or self._process is None
+                or self._profile_id != "direct-stun"
+                or self._snapshot.phase is RemoteSessionPhase.FAILED
+            ):
+                raise RuntimeError("No remote invitation is active.")
+            process = self._process
+            generation = self._generation
+        try:
+            process.apply_guest_signal(raw, generation=generation)
+        except TransportProcessError:
+            with self._lock:
+                if self._snapshot.phase is RemoteSessionPhase.CONNECTED:
+                    return
+            raise
+        with self._lock:
+            self._guest_reply_applied = True
+
     def copy_for_clipboard(self) -> str:
         owner = self._owner
         if (owner is None or self._stopped or self._close_pending
                 or self._active_invitation is None
                 or self.snapshot.phase is RemoteSessionPhase.FAILED):
             raise RuntimeError("No remote invitation is active.")
-        return owner.copy_for_clipboard()
+        text = owner.copy_for_clipboard()
+        with self._lock:
+            envelope = self._host_signal
+        if envelope:
+            from core.direct_stun_invite import encode_host_signal_line
+
+            text = f"{text}\n{encode_host_signal_line(envelope)}"
+        return text
+
+    @property
+    def share_reaches_internet(self) -> bool:
+        with self._lock:
+            if self._profile_id != "direct-stun":
+                return True
+            return self._share_route == "public"
+
+    @property
+    def session_path(self) -> str:
+        with self._lock:
+            return str(self._session_path or "")
 
     def reset(self) -> None:
         owner = self._owner
@@ -775,14 +898,21 @@ class NativeHostTransportOwner:
                 raise TransportProcessError("The transport process was stopped.")
             self._registering_generation = 0
             self._active_invitation = invitation
+            self._host_signal = bytes(getattr(registered, "signal", b"") or b"")
+            self._share_route = str(getattr(registered, "route", "") or "")
             self._room_identity = RoomIdentity.from_invitation(invitation)
             self._room_sent_revision = 0
+            path = (
+                TransportPath.INTERNET_DIRECT
+                if self._profile_id == "direct-stun"
+                else TransportPath.SECURE_RELAY
+            )
             self._snapshot = RemoteSessionSnapshot(
                 phase=RemoteSessionPhase.PREPARING,
                 role=SessionRole.HOST,
                 generation=registered.generation,
                 loopback_port=registered.loopback_port,
-                path=TransportPath.SECURE_RELAY,
+                path=path,
                 quality=ConnectionQuality.UNKNOWN,
             )
             snapshot = self._snapshot
@@ -801,6 +931,8 @@ class NativeHostTransportOwner:
             # until the native process acknowledges close or is reaped.
             self._close_pending = True
             self._active_invitation = None
+            self._host_signal = b""
+            self._share_route = ""
             self._room_identity = None
             self._room_state = None
             self._room_sent_revision = 0
@@ -930,6 +1062,12 @@ class NativeHostTransportOwner:
                 self._schedule_help_callback(deliver)
             return
         if event.event_type in {"stopped", "peer_closed"}:
+            if event.event_type == "peer_closed":
+                LOGGER.info(
+                    "session_path=%s relay_bytes=%s",
+                    getattr(event, "session_path", "") or "n/a",
+                    getattr(event, "relay_bytes", 0),
+                )
             with self._lock:
                 if self._stopped:
                     return
@@ -996,12 +1134,18 @@ class NativeHostTransportOwner:
                     or self._active_invitation is not consumed_invitation
                 ):
                     return
+                session_path = str(getattr(event, "session_path", "") or "")
+                self._session_path = session_path
+                LOGGER.info(
+                    "session_path=%s relay_bytes=0",
+                    session_path or "n/a",
+                )
                 self._snapshot = RemoteSessionSnapshot(
                     phase=RemoteSessionPhase.CONNECTED,
                     role=SessionRole.HOST,
                     generation=event.generation,
                     loopback_port=event.loopback_port,
-                    path=TransportPath.SECURE_RELAY,
+                    path=_session_transport_path(self._profile_id, session_path),
                     quality=ConnectionQuality.UNKNOWN,
                 )
                 snapshot = self._snapshot
@@ -1028,6 +1172,8 @@ class NativeHostTransportOwner:
 __all__ = [
     "NativeGuestTransportBackend",
     "NativeHostTransportOwner",
+    "ordinary_native_host_profile",
     "reference_local_host_requested",
     "transport_binary_path",
+    "transport_sidecar_available",
 ]

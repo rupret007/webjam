@@ -12,6 +12,55 @@
 > macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
 > gates remain **NOT RUN**. A source checkout is not a published package.
 
+This is the one complete creator how-to. Other pages point here instead of
+repeating the same steps.
+
+## Start here
+
+1. **Get the app** from [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
+   Choose the download for your computer.
+2. **Open it.**
+   - **Windows:** if Windows says it protected your PC, choose **More info**,
+     then **Run anyway**. A work PC may still block it; ask IT.
+   - **Mac:** drag WebJam into Applications. If macOS blocks the first launch,
+     open **System Settings → Privacy & Security**, click **Open Anyway** for
+     WebJam, and confirm **Open**.
+   - **Ubuntu:** unzip the folder, keep it together, and start `WebJam`.
+3. **Start or join.** Choose **Art** or **Music**, then **Host** or **Join**.
+   The host uses **Copy Invite** and sends the whole message. The friend
+   pastes it on **Join**. Stay on the **same Wi-Fi or local network**. Keep
+   the host's window open.
+
+**Music Host is Mac-only.** Windows and Linux can Join a Music jam; they
+cannot start one. Any computer can Host or Join Art.
+
+**What Host does:** opens your room (Art) or starts the private band server
+and Jamulus (Music). When the room is ready, **Copy Invite** appears.
+
+**What Join does:** you paste the whole invite. WebJam does not save it.
+**You’re in** (Art) or hearing each other (Music) means the room connected.
+
+**Talking or video** uses your own meeting. Open **Conversation**, add a
+public link, then **Join / Open Meeting**. Drawpile is only for an optional
+shared Art canvas. Art does not record a Music take.
+
+**Where recordings go (Music):** the host chooses **Record Session**. When
+the take says **Ready**, use **More → Recording Setup… → Show Folder**.
+Mac hosts keep takes under
+`Library/Application Support/WebJam/JamulusServer/Recordings`. Windows and
+Linux hosts default to `WebJam Recordings` in the home folder. Guests often
+see `Music/WebJam Takes`.
+
+**Leave:** host **End Session** / **End Room**; guest **Leave Jam** /
+**Leave Room**. The others stay. Your meeting and drawing app stay open.
+**Session library** notes stay on this computer.
+
+## Install the included music component on Windows
+
+When **Help → Music setup…** is available at launch, choose
+**Install the music component** to open the installer included with WebJam.
+Finish the installer, then choose **Back** to continue.
+
 ## Save a session and continue later
 
 In v0.29.0, open **File → Session library…** at launch,
@@ -25,6 +74,11 @@ copy…** makes a separate workspace. Close the Library with its window button,
 **Close**, or Escape; reopening shows your current saved or pending work.
 If saving fails, the Library stays open with your draft so you can retry.
 Invitations and meeting credentials are not a reusable workspace template.
+
+If saving fails, keep the workspace open and choose **Save** to retry. WebJam
+can confirm an interrupted save without making a separate workspace, including
+edits made while you waited. Changes made by another writer still require
+review or **Save as copy…**.
 
 For Music, **More → Session library… → Rehearsal plan** opens the ordered setlist. Add song titles,
 key, tempo, goals, notes, and next steps. **Previous** / **Next** selects a song;
@@ -41,6 +95,11 @@ clock and room timer do not certify recording time. **Open in take** rechecks
 the saved take before navigation; a moved or changed recording needs attention.
 The **Summary** tab and **Export summary** collect progress and next steps;
 ending a rehearsal retains its recap with the workspace.
+**Export summary** includes the latest live Notes and saved recap even if the
+library editor has no new edits. Conflicting drafts must be resolved before export.
+Choose a new filename for each export; existing files are never overwritten.
+If export fails after creating a file, that file is left in place and may be
+incomplete. Retry with a new filename.
 
 For Art, open **More → Session library… → Art project**. Keep a **Project brief**, **Progress**,
 and **Next steps** alongside references added with **Add file…** or **Add
@@ -108,7 +167,8 @@ moment's **Open in take** also continues the imported workspace directly.
 If its saved context or media changes before Studio opens, select and open it again.
 
 In **Art project**, select a local file and choose **Verify reference**.
-**Open reference** checks it before opening its external app. **Relink…** locates
+**Open reference** checks it before opening its external app. Keep the filename
+you already use, including everyday Mac names. **Relink…** locates
 the same content while preserving the brief and bookmarks. A metadata-only file
 without an original checksum can be checked for availability, but cannot be
 proven to be the original or relinked as matching content.
@@ -192,6 +252,13 @@ creator profile and distinguish session takes from standalone local projects.
 An open Help window updates when the profile changes, keeping your search
 without taking focus from your work.
 
+Music Help opens with **Host. Share. Join. Play.**: choose **Music** or **Art**
+(**Make together** / **Paint along**), then **Host** or **Join**; the host uses
+**Copy Invite**; play in WebJam and talk in the meeting. For setup details,
+select **Paint along and play along with sound**
+or **Live audio and Music room controls**. Room controls and shortcuts are in
+the live-audio topic.
+
 Selecting a topic only changes the instructions. Its explicit button, such
 as **Open Session library**, **Open Rehearsal plan**, **Open Art project** or
 **Open Studio**, navigates to an existing workspace. It does not start a room,
@@ -236,10 +303,14 @@ WebJam's operational status. For example, typing “recording finished” cannot
 create a take or unlock export.
 
 At launch, choose **Art** or **Music**. Those are the equal first clicks.
+The selected profile has an orange fill. A white outline shows keyboard focus;
+arrow keys move the selection between profiles.
 Art is **Make together** or **Paint along**, then **Host** or **Join**. Music
-is **Host** or **Join** only. The launch **File** menu opens **New Music
-Project…**, **Podcast & Voice…**, or **Review & Rehearsal…** before a live session
-starts. The profile follows the
+is **Host** or **Join** only. On these live doors, **File → Session library…**
+opens saved work; File does not offer Music projects, Podcast, or Review as
+additional starts. **Help → Music setup…** appears only for Music when a
+verified Windows installer is available. In a Music room, **Studio** still
+opens completed-take review. The profile follows the
 launch, live session, recording, Studio, local session metadata, and new
 standalone projects. Legacy content without a saved profile opens as Music.
 Review & Rehearsal allows live WebJam-audio Host/Join, Record Session, local
@@ -248,6 +319,10 @@ standalone projects, take editing/comp/mix mutation, track export, shared
 notes, visual sync, and media timecode. Art is a room for artists in any
 medium; see [Art](#art) below. No profile directly or automatically taps a
 meeting app, browser, or system output.
+
+If a file-access error prevents WebJam from reading your saved profile titles
+and modes, it leaves that file untouched. Your title edit stays visible; a
+later successful save keeps the other profiles' saved titles and modes.
 
 Local notes save shortly after an edit. If a save fails, choose **Save Notes**.
 The Notes notice names retained workspaces, including a draft outside the one
@@ -316,6 +391,12 @@ connection is current, not that a meeting or drawing app has joined.
 The banner keeps that status brief; making guidance appears once in the room
 overview beside **Set Up Conversation** (or **Conversation** with a saved link).
 
+Opening another invitation while Art is active asks **Join this room?** before
+ending the current room. If cleanup fails, use **Try End Room** (host) or
+**Try Leave Room** (guest), then reopen the invitation.
+If cleanup finishes but the new invitation cannot be applied, **Start Session**
+stays disabled. Quit and reopen WebJam, then open the invitation again.
+
 If the full invitation includes an optional conversation link, **Conversation**
 uses that link for this room. You do not need to paste it again. Joining never
 opens it automatically: choose **Join / Open Meeting** when ready. An invitation
@@ -325,7 +406,9 @@ its guest. Your personal meeting stays saved for later; leaving the room restore
 it. Any meeting already open stays open until you leave it in that service.
 
 The room view shows whether you are waiting for artists or connected to the
-host. It does not show a full artist list yet. Without a shared activity,
+host. It does not show a full artist list yet. When a shared activity action
+is available, the connection explanation stays short so the action fits in
+an 800×600 window. Without a shared activity,
 **Make from your own space** is a complete place to start: you do not need an
 art app. Use paper, your usual tools, or just talk while the room stays open
 beside you.
@@ -337,10 +420,20 @@ and video recovery does not hide **Open canvas**. If you hid the video, return
 through **Open Paint along**, then choose **Show video** when you want it
 visible again. Your existing local copy stays open.
 
-When the room offers a shared canvas or Paint along, its next step still
-includes paper, your usual tools, or just talk. Shared activities
-are optional. You only need Drawpile to use the shared canvas; artists using
-their own tools can keep making together.
+Art **Settings** opens with “Your name and optional meeting link.” Edit
+**Your name**, optionally add a meeting link, then choose **Save**. Art Settings
+shows how your name wraps under **Others see** and does not offer **Verify Sound**.
+While a Paint along host waits for artists in Room, **Copy Invite** is the
+orange action. **Open Paint along** stays available as a quiet button below
+it to choose a local file or lesson link. Guest **Open my copy…** recovery
+keeps its emphasis.
+
+When Paint along is the room's next action, its activity and Open button
+follow the connection status without an extra own-tools paragraph. Make
+together and rooms whose next action is the shared canvas keep the guidance
+that you do not need an art app: use paper, your usual tools, or just talk.
+Shared activities are optional. You only need Drawpile to use the shared
+canvas; artists using their own tools can keep making together.
 
 In **Notes** or Paint along, choose **Back to room** to see the full room and
 its current activities or recovery action. Your notes, selection and undo
@@ -349,6 +442,8 @@ copy and hidden-video choice also stay as they were.
 
 Joining borrows the host's room context. After **Leave Room** finishes,
 WebJam returns to your saved workspace, activity, personal title, and notes.
+Your saved Art card applies the next time you choose **Host**. While joining,
+WebJam waits for the host's room details before offering its activity.
 A native invitation carries no title, so its room is called **Room** until
 you choose another title. A title you type yourself is saved for that workspace.
 
@@ -388,8 +483,10 @@ Make together is complete with everyone working in their own space: paint,
 clay, paper, a printer, or the software they already know. A shared canvas is
 optional and is not a setup requirement.
 
-Open **Conversation** to talk and show your work. Until a meeting link is
-saved the room's button reads **Set Up Conversation**; it opens the same
+While a Make together host waits with no meeting link or shared activity,
+**Copy Invite** is the next action. **Conversation** stays in the footer.
+Open it to talk and show your work. When the room body offers a conversation
+button before a meeting link is saved, it reads **Set Up Conversation**; it opens the same
 panel, where you add a public HTTPS link. Once saved it reads
 **Conversation**. Use **Join / Open Meeting** to open the saved link, then
 share a demonstration or process video in Webex or the selected meeting app.
@@ -448,8 +545,13 @@ when a local copy or embedded YouTube lesson cannot play. The focused action is 
 Link**, **Join / Open Meeting**, or the available meeting-app action. Merely
 showing these controls does not join a meeting or start a lesson.
 
+Below that action, **Choose a silent reference** offers a local process video
+or YouTube link for silent playback inside WebJam.
+
 For a YouTube lesson, such as a Bob Ross mountain painting, the host chooses
 **Choose YouTube…**, pastes its video link, then chooses **Open in browser**.
+Use an individual video link; playlist and channel-live embed links are rejected
+with “Paste a YouTube video link, such as youtube.com/watch?v=….”
 An existing embedded lesson supplies its current reference link and position;
 **Change YouTube…** selects a different browser lesson. Choosing a link starts
 nothing. Add the meeting link if needed, then **Join / Open Meeting**.
@@ -491,7 +593,9 @@ volume and microphone details. Use **Conversation** to return after Notes;
 your selected lesson stays available. Changing the meeting link retires old
 pause requests. In a supported LAN Art room, **Restart pause requests**
 creates fresh controls without leaving the setup. Rejoining another room
-does not revive old request authority. Small windows and larger text scroll;
+does not revive old request authority. After a brief connection problem, use
+**Restart pause requests** when it appears; old requests are not resent.
+You can still ask the host aloud. Small windows and larger text scroll;
 Tab reveals the focused control and End/Leave remains outside that scroll.
 
 ### Playing along to a song
@@ -545,17 +649,25 @@ available only after continuing into the workspace.
 
 ### Silent Paint Along references
 
+For an embedded YouTube lesson, **Play** works while Paint along and its video
+surface are shown, including when a compact window clips the picture. Return
+to Paint along and restore the window before starting a hidden lesson.
+
 For the existing **silent local-file option**, the host chooses one video file:
 
 1. When a host chose **Paint along**, WebJam opens the large Paint along
    workspace once the room exists. It replaces the conductor surface inside
    the existing WebJam window; it does not create a third window beside WebJam
    and an optional meeting app. If you returned to the room, choose its
-   **Paint along** line to come back.
+   **Paint along** line to come back. The session status banner stays hidden
+   while Paint along is open; **Back to room** restores current room guidance.
 2. The host chooses **Choose process video…** and picks a local video file they
    have the right to play. WebJam does not ship, bundle, download, or fetch any
    video, and it will not open anything from a streaming service.
 3. If Room shows **Paint along is starting**, choose **Open Paint along**.
+   Guests on the same network also see this when the host chose Paint along,
+   even before the host shares a video. Joining uses the host's start without
+   changing your saved start choice.
    Before the host shares, the panel shows **Optional silent reference**.
    If you already have the video, choose **Open my copy…**. **Your copy is
    open** means it is waiting locally: WebJam still needs to check it against
@@ -579,12 +691,19 @@ For the existing **silent local-file option**, the host chooses one video file:
 
 Things worth knowing:
 
+- If sharing, pausing, or stopping the shared video is not confirmed, Paint
+  along says **WebJam is retrying**. Local controls still work. The message
+  clears when the current room update succeeds; it does not confirm what
+  guests are watching.
 - If the host's chosen file changes or moves after sharing, WebJam checks it
   again on the next refresh or Play, stops using its old sharing identity, and
   offers **Choose process video…** to open it again. This also applies while
   the video is ready or paused.
 - **Only the host controls playback.** Guests have no play, pause, stop, or
   scrub control, by design.
+- If this computer cannot move the video, Paint along shows that it needs
+  attention instead of remaining **Paused.** Choose **Choose process video…**
+  to open a local video again. Guests wait until the host recovers it.
 - **The video is silent from its first frame.** Use an optional meeting app
   for conversation. Art does not start Jamulus, and Paint along adds no
   soundtrack.
@@ -726,8 +845,11 @@ separately if that is required.
 
 ## Host a live session
 
-For an Art room, follow [Art](#art) above. For Music, Podcast & Voice, or Review
-& Rehearsal, choose **Host**, **Host Remote Recording**, or **Host Review**.
+For an Art room, follow [Art](#art) above. For Music on a Mac, choose **Host**.
+Windows and Linux cannot Host Music — they show that Hosting is available in
+the macOS app, and **Join** stays available. Podcast & Voice and Review &
+Rehearsal live under **File** and show **Host Remote Recording** or
+**Host Review**.
 That action authorizes the private session—there is no extra Start
 Session click. WebJam starts the server first, then opens a
 visible Jamulus client against it. Set up sound in Jamulus; once WebJam sees
@@ -736,12 +858,18 @@ extra setup, sound-confirmation, or Enter Jam click. Play a note and make sure
 you can hear each other—WebJam never treats a meter or connection as proof of
 that. Use Music's **Band Check**, Podcast's **Sound Check**, or Review's
 **Session Check (Preview)** if you need help.
+Copy Invite sends the whole message to people on the same Wi-Fi. Keep this
+room open.
 
 If setup is interrupted, WebJam keeps only a private, bounded recovery record.
 It reuses progress only when the role and dedicated Jamulus profile fingerprint
 still match. Otherwise it returns safely to native Jamulus setup.
 
 ## Join a live session
+
+In Unreleased builds, a same-network join waits for pending Library media
+work to finish before switching to the host's Art or Music room. During that
+wait, WebJam keeps “Contacting the host” visible and does not start audio.
 
 Choose **Join**, **Join Recording**, or **Join Review**, then paste one WebJam
 invite—or open it from Finder. WebJam parses it at ingress,
@@ -751,7 +879,9 @@ preserved only while it is safe to retry; WebJam never pretends an uncertain
 invitation succeeded.
 
 The Join door contains one masked invitation field, one **Join** button, and a
-privacy reminder. Paste the complete invitation copied from the host. Harmless
+privacy reminder. When the field is empty, “Paste an invite to continue” explains
+why Join is unavailable. Keyboard order stays **Invite → Join → Back**.
+Paste the complete invitation copied from the host. Harmless
 message whitespace and surrounding punctuation are accepted; incomplete,
 expired, malformed, incompatible, and unsupported invitations are rejected
 with a plain explanation. If the invitation says same network, use the
@@ -759,11 +889,14 @@ host's Wi-Fi or local network first. After a paste error, the invitation
 field keeps keyboard focus so you can paste again. Private invitation values
 are never saved in settings or logs and are not echoed back after a private-link error.
 
-WebJam waits for the host's profile before choosing the room or audio path.
+For room invitations, WebJam waits for the host's profile before choosing the
+room or audio path. Older Music invitations start the Music guest journey even
+if you chose Art at the door; your saved Art preference stays unchanged.
 An Art invitation follows the waiting and connection states described in
-[Art](#art), without Jamulus. For a remote Music invitation, the normal visible
+[Art](#art), without Jamulus. For a Music invitation, the normal visible
 sequence is **Checking invite → Contacting host → Securing connection → Opening
-Jamulus → Connected**. A remote attempt has a bounded timeout; Music requires
+Jamulus → Connected**. If the invitation says same network, stay on the host's
+Wi-Fi. A Join attempt has a bounded timeout; Music requires
 fresh authenticated Jamulus evidence. At **Needs attention**, use the single
 action shown:
 
@@ -787,6 +920,8 @@ to prepare a level; it stays silent until you unmute it. **Solo** lets you
 listen to one channel. Other channels stay suppressed even when you adjust
 their faders. Turning Solo off, or the soloed musician leaving, restores your
 chosen levels and mute choices. A new arrival stays suppressed during Solo.
+If the same seat shows a different name, that person starts with a fresh mix
+and does not keep the previous occupant's Solo, mute, or fader.
 
 **Save Mix** (Ctrl+S) keeps your current listening balance; **Load Mix**
 (Ctrl+O) restores it. Use Ctrl+Shift+S / Ctrl+Shift+O for named mixes.
@@ -827,7 +962,7 @@ route to each.
 | Audio Settings in Jamulus | Brings the owned Jamulus window forward; use its Audio/Network Settings menu |
 | Conversation | Routes to the same panel as the direct action; it has no launch side effect |
 | Jamulus Updates… | Checks WebJam's signed compatibility catalog, downloads an approved update, waits until the session is idle, and offers explicit OS approval; managed previous-version rollback is macOS-only |
-| Recording Setup | Sets Local Originals and takes storage; it does not alter Jamulus music routing |
+| Recording Setup | Sets Local Originals and takes storage; host takes stay in WebJam's host folder. It does not alter Jamulus music routing |
 | Shared Track… | Routes to the same host-only transport; source loading is independent, and current-source Play becomes eligible only after the Mac proves the required local BlackHole route |
 | Use iPhone as Pocket Stage… | Starts an explicit, private-Wi-Fi developer-preview pairing window; it does not put phone audio in the live session |
 | Notes | Opens session notes |
@@ -1182,7 +1317,13 @@ tools are for and WebJam never starts, requests, or requires it.
 
 ## Record Session
 
-The host controls the shared multitrack take. At the first **Record Session**
+The host controls the shared multitrack take. When a take says **Ready**,
+**More → Recording Setup… → Show Folder** opens the saved files. Mac hosts
+keep takes under `Library/Application Support/WebJam/JamulusServer/Recordings`.
+Windows and Linux hosts default to `WebJam Recordings` in the home folder.
+Guests often see `Music/WebJam Takes`.
+
+At the first **Record Session**
 click, choose the profile's shared-only action—**Record Shared Jam Only**,
 **Record Shared Voice Take Only**, or **Record Shared WebJam Audio Only**—or
 choose **Also Keep This Mac’s Inputs**. A shared-only choice begins the take.
@@ -1202,6 +1343,10 @@ choice or wait for a Studio export. If the session changes while a recording
 choice is open, review Studio and choose **Record Session** again. Returning
 through **New live take** shows the current live recording guidance; a save
 failure keeps the selected take open until its choices are safe.
+
+If WebJam shows a recording started outside WebJam, **Stop Recording** can
+stop it using the host's current recording connection. After confirmation,
+the controls return to idle; WebJam does not create a take for that recording.
 
 Before any recorder starts, WebJam freezes one take-scoped plan with the exact
 roster/server stem IDs, Shared Track fingerprint and playback generation, host
@@ -1232,6 +1377,12 @@ not start audio. Setup explains when a launch override must be changed before
 restarting WebJam. Start Session and Band Check use the saved setup; choose
 **Record Session** again for a fresh plan and input checks. Jamulus manages its
 live audio settings separately.
+
+If the session settings change while Recording Setup is open, Save asks you
+to close and reopen Setup to review them. Setup scrolls the message into view.
+Your edits stay visible until you close it; review and reapply them after
+reopening. You can still turn off Local Originals during an active session
+when its settings have not changed.
 
 When supported guests report input failures, the host sees their names and
 the specific problems. Older guests retain generic Setup guidance. Fresh guest
@@ -1314,6 +1465,12 @@ does not record a session at all, so it has no take and no Studio.
    completed receipt; keep the original take and retry. Changing takes or
    editing the mix or arrangement clears the previous receipt.
 
+If recording starts during an export, Studio stops the export and checks
+whether its folder already finished. **Show Unverified Export** keeps that
+folder available for inspection; it has no verified receipt. Cancellation
+before completion removes only temporary export files. The original take
+stays unchanged.
+
 The receipt confirms the package bytes at export completion. Listening and
 importing into another editor remain separate checks; WebJam does not open
 or control that editor for you.
@@ -1350,9 +1507,14 @@ or control that editor for you.
 Track Export produces equal-length 24-bit edited stems, aligned unity originals,
 and a rough mix, plus markers, import instructions, the exact Studio document,
 source manifests, provenance, and checksums. It fails closed if a source or
-manifest changed instead of guessing. Importing that package in an external
-editor is still a separate physical workflow gate; it is **NOT RUN** for the
-current source.
+manifest changed instead of guessing, including a same-format rewrite of a
+source WAV while aligned originals are being prepared. Validation hashes
+the same open file the renderer reads, so a path replacement after that
+handle is bound cannot publish. In that case WebJam publishes no export
+folder, leaves the take files as they are, and does not show a success or
+an export receipt. Reopen the take, then export again.
+Importing that package in an external editor is still a separate physical
+workflow gate; it is **NOT RUN** for the current source.
 
 For a standalone Podcast & Voice episode, use the 48 kHz Host-mono +
 Guest-stereo preset, record the first pass, add a chapter marker, set a cycle

@@ -26,6 +26,7 @@ const (
 	CodeIdentityNotPrepared     = "identity_not_prepared"
 	CodeUnsupportedProfile      = "unsupported_profile"
 	CodeEnrollmentInvalid       = "enrollment_invalid"
+	CodeTimedOut                = "timed_out"
 	CodeHelpNotReady            = "help_not_ready"
 	CodeRoomNotReady            = "room_state_not_ready"
 	CodeRoomInvalid             = "room_state_invalid"
@@ -86,6 +87,7 @@ type fabricUpdateKind uint8
 
 const (
 	updateHostRegistered fabricUpdateKind = iota + 1
+	updateGuestSignal
 	updatePeerConnected
 	updateHelpReceived
 	updateHelpDelivered
@@ -99,12 +101,16 @@ type fabricUpdate struct {
 	helpRequestID uint64
 	helpText      []byte
 	roomState     *room.State
+	signal        []byte
+	route         string
+	sessionPath   string
 }
 
 type fabricOperation interface {
 	Updates() <-chan fabricUpdate
 	SendHelp(context.Context, uint64, string) error
 	PublishRoomState(context.Context, *room.State) error
+	ApplyGuestSignal(context.Context, []byte) error
 	Close(context.Context) error
 }
 
@@ -166,6 +172,7 @@ type enrollmentConfig struct {
 	ExpiresAtUnix        uint64
 	HostSPKISHA256       PublicPin
 	SessionID            SessionID
+	HostSignal           []byte
 }
 
 func enrollmentFromCommand(command *Command, hostPin PublicPin) *enrollmentConfig {
@@ -174,7 +181,7 @@ func enrollmentFromCommand(command *Command, hostPin PublicPin) *enrollmentConfi
 		Generation: command.Generation, SessionReference: command.SessionReference,
 		InviteReference: command.InviteReference, EnrollmentCapability: command.EnrollmentCapability,
 		ExpiresAtUnix: command.ExpiresAtUnix, HostSPKISHA256: command.HostSPKISHA256,
-		SessionID: command.SessionID,
+		SessionID: command.SessionID, HostSignal: append([]byte(nil), command.HostSignal...),
 	}
 	if command.Mode == "host" {
 		configuration.HostSPKISHA256 = hostPin
@@ -191,6 +198,8 @@ func (c *enrollmentConfig) clear() {
 	clear(c.EnrollmentCapability[:])
 	clear(c.HostSPKISHA256[:])
 	clear(c.SessionID[:])
+	clear(c.HostSignal)
+	c.HostSignal = nil
 	c.Profile = profile.Profile{}
 	c.Mode = ""
 	c.TargetPort = 0
@@ -204,9 +213,18 @@ type peerMetadata struct {
 	profileID    string
 	generation   uint32
 	loopbackPort int
+	sessionPath  string
+	relayBytes   uint64
+}
+
+type sessionAccounting interface {
+	SessionPath() string
+	RelayBytes() uint64
 }
 
 type runnerState struct {
+	webJoin        *webJoinOperation
+	webJoinUsed    bool
 	active         *peerMetadata
 	recentlyClosed *peerMetadata
 	hostRegistered bool
@@ -238,6 +256,18 @@ func (s *runnerState) stateName() string {
 	default:
 		return "idle"
 	}
+}
+
+func closedPeerEvent(id uint64, metadata peerMetadata) Event {
+	event := Event{
+		ID: id, Type: "peer_closed", Code: CodeOK, State: "closed",
+		Mode: metadata.mode, ProfileID: metadata.profileID, Generation: metadata.generation,
+	}
+	if metadata.profileID == profile.DirectStunID {
+		event.SessionPath = metadata.sessionPath
+		event.RelayBytes = metadata.relayBytes
+	}
+	return event
 }
 
 func (s *runnerState) metadataEvent(id uint64, eventType, state string) Event {
@@ -279,6 +309,12 @@ func (s *runnerState) closeActive(preserveHostIdentity bool) (peerMetadata, erro
 		s.openCancel = nil
 	}
 	operation := s.operation
+	if accounting, ok := operation.(sessionAccounting); ok {
+		if path := accounting.SessionPath(); path != "" {
+			metadata.sessionPath = path
+		}
+		metadata.relayBytes = accounting.RelayBytes()
+	}
 	// Retire callbacks and application authority immediately, but retain the
 	// owned operation and identity until bounded local teardown is confirmed.
 	// A failed Close can then be retried without opening a second operation.
@@ -311,6 +347,7 @@ func (s *runnerState) destroyIdentity() {
 }
 
 func (s *runnerState) destroy() error {
+	s.closeWebJoin()
 	if _, err := s.closeActive(false); err != nil {
 		return err
 	}
@@ -321,8 +358,35 @@ func (s *runnerState) destroy() error {
 
 func Run(ctx context.Context, input io.Reader, output io.Writer, build string) error {
 	return runWithFactoryAndClock(
-		ctx, input, output, build, systemEndpointFactory{}, newReferenceFabricOrchestrator(time.Now), time.Now,
+		ctx, input, output, build, systemEndpointFactory{}, newShippedOrchestrator(time.Now), time.Now,
 	)
+}
+
+type shippedOrchestrator struct {
+	now func() time.Time
+}
+
+func newShippedOrchestrator(now func() time.Time) fabricOrchestrator {
+	return shippedOrchestrator{now: now}
+}
+
+func (s shippedOrchestrator) Start(
+	ctx context.Context,
+	configuration *enrollmentConfig,
+	identity *icequic.Identity,
+	endpoint loopback.Endpoint,
+) (fabricOperation, error) {
+	if configuration == nil {
+		return nil, ErrEnrollmentInvalid
+	}
+	switch configuration.Profile.ID {
+	case profile.ReferenceLocalID:
+		return newReferenceFabricOrchestrator(s.now).Start(ctx, configuration, identity, endpoint)
+	case profile.DirectStunID:
+		return newDirectStunOrchestrator(s.now).Start(ctx, configuration, identity, endpoint)
+	default:
+		return nil, ErrUnsupportedProfile
+	}
 }
 
 func runWithFactoryAndClock(
@@ -366,6 +430,20 @@ func runWithFactoryAndClock(
 			}
 		}
 		select {
+		case <-state.webJoinEnrolled():
+			state.webJoin.connected = true
+			if !state.webJoin.endpoint.Authorized() {
+				continue
+			}
+			if err := events.emit(Event{Type: "web_join_connected", Code: CodeOK, State: "connected", Generation: state.webJoin.generation}); err != nil {
+				return err
+			}
+		case <-state.webJoinDone():
+			generation := state.webJoin.generation
+			state.closeWebJoin()
+			if err := events.emit(Event{Type: "web_join_closed", Code: CodeOK, State: "closed", Generation: generation}); err != nil {
+				return err
+			}
 		case <-ctx.Done():
 			if err := state.destroy(); err != nil {
 				_ = events.emit(Event{ID: 0, Type: "error", Code: CodeProtocolViolation, State: "failed"})
@@ -430,6 +508,9 @@ func (s *runnerState) handle(
 	build string,
 	now func() time.Time,
 ) (bool, error) {
+	if command.WebJoin != nil {
+		return false, s.handleWebJoin(ctx, command, events)
+	}
 	switch command.Type {
 	case CommandHello:
 		event := Event{ID: command.ID, Type: "hello", Code: CodeOK, State: s.stateName(), Build: build}
@@ -457,6 +538,19 @@ func (s *runnerState) handle(
 		})
 	case CommandOpenPeer:
 		return false, s.openPeer(ctx, command, events, now)
+	case CommandApplySignal:
+		if s.operation == nil || s.active == nil || !s.hostRegistered || s.connected ||
+			s.active.mode != "host" || command.Generation != s.active.generation ||
+			s.active.profileID != profile.DirectStunID || len(command.HostSignal) == 0 {
+			return false, events.emit(Event{ID: command.ID, Type: "error", Code: CodePeerNotOpen, State: s.stateName()})
+		}
+		applyCtx, cancel := context.WithTimeout(ctx, limits.HelpOperationLimit)
+		err := s.operation.ApplyGuestSignal(applyCtx, command.HostSignal)
+		cancel()
+		if err != nil {
+			return false, events.emit(Event{ID: command.ID, Type: "error", Code: CodeEnrollmentInvalid, State: s.stateName()})
+		}
+		return false, events.emit(s.metadataEvent(command.ID, "signal_applied", "host_waiting"))
 	case CommandSendHelp:
 		if s.operation == nil || s.active == nil || !s.connected ||
 			command.Generation != s.active.generation {
@@ -505,10 +599,7 @@ func (s *runnerState) handle(
 				// application error.
 				metadata := *s.recentlyClosed
 				s.recentlyClosed = nil
-				return false, events.emit(Event{
-					ID: command.ID, Type: "peer_closed", Code: CodeOK, State: "closed",
-					Mode: metadata.mode, ProfileID: metadata.profileID, Generation: metadata.generation,
-				})
+				return false, events.emit(closedPeerEvent(command.ID, metadata))
 			}
 			return false, events.emit(Event{ID: command.ID, Type: "error", Code: CodePeerNotOpen, State: s.stateName()})
 		}
@@ -523,10 +614,7 @@ func (s *runnerState) handle(
 			// Keep the prepared identity and pin for the next invitation.
 			s.openConsumed = false
 		}
-		return false, events.emit(Event{
-			ID: command.ID, Type: "peer_closed", Code: CodeOK, State: "closed",
-			Mode: metadata.mode, ProfileID: metadata.profileID, Generation: metadata.generation,
-		})
+		return false, events.emit(closedPeerEvent(command.ID, metadata))
 	case CommandShutdown:
 		if err := s.destroy(); err != nil {
 			return false, events.emit(Event{ID: command.ID, Type: "error", Code: CodeProtocolViolation, State: "failed"})
@@ -634,17 +722,35 @@ func (s *runnerState) handleFabricUpdate(update fabricUpdate, events *emitter) e
 			return s.failFabric(events, ErrProtocol)
 		}
 		s.hostRegistered = true
-		return events.emit(s.metadataEvent(s.active.commandID, "host_registered", "host_waiting"))
+		event := s.metadataEvent(s.active.commandID, "host_registered", "host_waiting")
+		if len(update.signal) != 0 {
+			event.Signal = encodeHostSignal(update.signal)
+		}
+		event.Route = update.route
+		clear(update.signal)
+		return events.emit(event)
+	case updateGuestSignal:
+		if update.err != nil || s.active.mode != "guest" || s.connected || len(update.signal) == 0 {
+			clear(update.signal)
+			return s.failFabric(events, ErrProtocol)
+		}
+		event := s.metadataEvent(0, "guest_signal", "connecting")
+		event.Signal = encodeHostSignal(update.signal)
+		clear(update.signal)
+		return events.emit(event)
 	case updatePeerConnected:
 		if update.err != nil || s.connected || (s.active.mode == "host" && !s.hostRegistered) {
 			return s.failFabric(events, ErrProtocol)
 		}
 		s.connected = true
+		s.active.sessionPath = update.sessionPath
 		id := s.active.commandID
 		if s.active.mode == "host" {
 			id = 0
 		}
-		return events.emit(s.metadataEvent(id, "peer_connected", "connected"))
+		event := s.metadataEvent(id, "peer_connected", "connected")
+		event.SessionPath = update.sessionPath
+		return events.emit(event)
 	case updateHelpReceived:
 		if update.err != nil || !s.connected || update.helpRequestID == 0 ||
 			len(update.helpText) == 0 {
@@ -717,6 +823,9 @@ func (s *runnerState) failFabric(events *emitter, failure error) error {
 	}
 	if errors.Is(failure, ErrEnrollmentInvalid) {
 		code = CodeEnrollmentInvalid
+	}
+	if errors.Is(failure, ErrUnreachable) {
+		code = CodeTimedOut
 	}
 	metadata, closeErr := s.closeActive(true)
 	mode := metadata.mode

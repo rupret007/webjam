@@ -202,6 +202,28 @@ class _ToggleAttempt:
 
 
 @dataclass(frozen=True, repr=False)
+class _ObservedRecorder:
+    """Authority for one observed cycle, never ownership of a WebJam take."""
+
+    settings_owner: object
+    server_owner: object
+    server_process: object | None
+    configuration: tuple[object, ...]
+    server_rpc_port: int
+    server_rpc_secret_file: str
+    server_rpc_secret_identity: tuple[int, int, int, int]
+
+
+@dataclass(frozen=True, repr=False)
+class _ObservedStopAttempt:
+    observed: _ObservedRecorder
+
+    @property
+    def target_armed(self) -> bool:
+        return False
+
+
+@dataclass(frozen=True, repr=False)
 class _RosterObservationContext:
     """One take-bound, address-free roster correlation request."""
 
@@ -398,6 +420,8 @@ class RecordingCoordinator:
         # identity through that wrapper without a mutable global slot that a
         # later Stop could overwrite while a Start worker is still in flight.
         self._toggle_worker_context = threading.local()
+        self._observed_recorder: _ObservedRecorder | None = None
+        self._observed_stop_attempt: object | None = None
         self._local_participant_id = new_project_id()
         self.last_completed_take: Path | None = None
         self.last_validation: TakeValidationResult | None = None
@@ -5554,6 +5578,20 @@ class RecordingCoordinator:
             )
             return
         self._set_phase(RecorderPhase.STOPPING)
+        # An observed external cycle is the only empty-take Stop that uses
+        # captured authority. An unconfirmed owned start still retries Stop
+        # through the take-bound worker even when take_id is not yet bound.
+        observed = self._observed_recorder if not self._take_id else None
+        if observed is not None:
+            attempt = _ObservedStopAttempt(observed)
+            self._observed_stop_attempt = attempt
+            threading.Thread(
+                target=self._run_toggle_attempt,
+                args=(attempt, secret_file),
+                daemon=True,
+                name="observed-record-stop",
+            ).start()
+            return
         rpc_binding = self._recording_rpc_binding_for_take(self._take_id)
         attempt = _ToggleAttempt(
             take_id=self._take_id,
@@ -5866,13 +5904,122 @@ class RecordingCoordinator:
         )
         return recovery_dir
 
+    def _capture_observed_recorder(self) -> _ObservedRecorder | None:
+        """Capture the configured RPC authority when an external cycle starts."""
+        try:
+            settings = self._c.settings
+            server = self._c.bridge
+            process = server.hosted_server_process
+            if process is not None and process.poll() is not None:
+                return None
+            port = int(settings.server_rpc_port)
+            path = str(settings.server_rpc_secret_file or "").strip()
+            if port <= 0 or not path:
+                return None
+            return _ObservedRecorder(
+                settings_owner=settings,
+                server_owner=server,
+                server_process=process,
+                configuration=(
+                    settings.host_server_enabled,
+                    settings.jamulus_server,
+                    settings.jamulus_port,
+                    server.hosted_server_adopted(),
+                    server.hosted_server_generation,
+                ),
+                server_rpc_port=port,
+                server_rpc_secret_file=path,
+                server_rpc_secret_identity=_private_secret_file_identity(path),
+            )
+        except (AttributeError, OSError, TypeError, ValueError):
+            return None
+
+    def _observed_recorder_is_current(self, observed: _ObservedRecorder) -> bool:
+        current = self._capture_observed_recorder()
+        return bool(
+            current is not None
+            and current.settings_owner is observed.settings_owner
+            and current.server_owner is observed.server_owner
+            and current.server_process is observed.server_process
+            and current.configuration == observed.configuration
+            and current.server_rpc_port == observed.server_rpc_port
+            and current.server_rpc_secret_file == observed.server_rpc_secret_file
+            and current.server_rpc_secret_identity == observed.server_rpc_secret_identity
+        )
+
+    def _stop_observed_recorder(
+        self, observed: _ObservedRecorder, attempt: object
+    ) -> None:
+        """Stop only the captured external cycle; never use a take fallback."""
+        from core.jamulus_server_rpc import JamulusServerRpc, ServerRpcError
+
+        message = ""
+        try:
+            if (
+                self._take_id
+                or self._observed_recorder is not observed
+                or self._observed_stop_attempt is not attempt
+                or not self._observed_recorder_is_current(observed)
+            ):
+                raise ServerRpcError("Recorder authority changed")
+            secret = _read_exact_secret_file(
+                observed.server_rpc_secret_file,
+                observed.server_rpc_secret_identity,
+            )
+            with JamulusServerRpc(port=observed.server_rpc_port, secret=secret) as rpc:
+                # Authentication may have blocked while the UI retired the server.
+                if (
+                    self._take_id
+                    or self._observed_recorder is not observed
+                    or self._observed_stop_attempt is not attempt
+                    or not self._observed_recorder_is_current(observed)
+                ):
+                    raise ServerRpcError("Recorder authority changed")
+                if not rpc.stop_recording():
+                    raise ServerRpcError("Recorder did not acknowledge Stop")
+                deadline = time.monotonic() + 4.0
+                while time.monotonic() < deadline:
+                    if not rpc.get_recorder_status()["enabled"]:
+                        break
+                    time.sleep(0.25)
+                else:
+                    raise ServerRpcError("Recorder stop was not confirmed")
+        except Exception:  # noqa: BLE001 - RPC errors can contain private endpoints
+            message = "WebJam couldn't confirm the band server's recording state."
+        self._c._ui_invoker.invoke(
+            lambda: self._apply_observed_stop(observed, attempt, message)
+        )
+
+    def _apply_observed_stop(
+        self, observed: _ObservedRecorder, attempt: object, message: str
+    ) -> None:
+        if (
+            self._take_id
+            or self._observed_recorder is not observed
+            or self._observed_stop_attempt is not attempt
+        ):
+            return
+        self._observed_stop_attempt = None
+        if message or not self._observed_recorder_is_current(observed):
+            self.apply_toggle_failure(
+                message or "The captured recorder configuration is no longer available."
+            )
+            return
+        self._c.session_health.mark_rpc_result("recorder", True)
+        # The authenticated false status is authoritative even if the ordinary
+        # notification never arrives. This path cannot create or validate a take.
+        self.on_server_state(False)
+
     def _run_toggle_attempt(
         self,
-        attempt: _ToggleAttempt,
+        attempt: _ToggleAttempt | _ObservedStopAttempt,
         secret_file: str = "",
     ) -> None:
-        """Carry one request's take identity through the legacy worker hook."""
+        """Dispatch one explicit take-bound or observed-recorder request."""
 
+        if isinstance(attempt, _ObservedStopAttempt):
+            self._stop_observed_recorder(attempt.observed, attempt)
+            return
         self._toggle_worker_context.attempt = attempt
         try:
             selected_secret_file = attempt.server_rpc_secret_file or str(
@@ -6128,13 +6275,19 @@ class RecordingCoordinator:
         self._set_phase(
             RecorderPhase.STOP_FAILED if still_armed else RecorderPhase.ERROR
         )
+        # Explain the attempted start, not the possibly-armed recovery latch.
+        start_unconfirmed = ambiguous_start or not self._c._recorder_armed
         self._c._show_actionable_error(
-            "Recording Could Not Start"
-            if not self._c._recorder_armed
-            else "Recording Could Not Stop",
+            "Recording Start Unconfirmed"
+            if ambiguous_start
+            else (
+                "Recording Could Not Start"
+                if start_unconfirmed
+                else "Recording Could Not Stop"
+            ),
             what_failed=(
                 "WebJam couldn't confirm that recording started."
-                if not self._c._recorder_armed
+                if start_unconfirmed
                 else "WebJam couldn't confirm that recording stopped."
             ),
             likely_cause=(
@@ -6165,6 +6318,12 @@ class RecordingCoordinator:
             if not unobserved_stop:
                 return
         prior_phase = self.phase
+        self._observed_stop_attempt = None
+        self._observed_recorder = (
+            self._capture_observed_recorder()
+            if recording and not self._take_id
+            else None
+        )
         self._c._server_recording = recording
         self._c.session_health.mark_recorder(
             armed=self._c._recorder_armed, recording=recording
@@ -6945,6 +7104,9 @@ class RecordingCoordinator:
         )
         self.last_validation = result
         self.last_completed_take = refreshed.path
+        library = getattr(self._c, "session_library", None)
+        if library is not None:
+            library.recording_completed(refreshed, validated=not needs_attention)
         if needs_attention != previous_attention:
             self._set_phase(
                 RecorderPhase.NEEDS_ATTENTION

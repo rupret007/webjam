@@ -46,8 +46,8 @@ class HostShareReadiness:
     def detail(self) -> str:
         if self.shareable:
             return (
-                "WebJam found a private Wi-Fi address and a live band server. "
-                "Share the link with musicians on this same network."
+                "WebJam found a private network address and a live band server. "
+                "This invite only works on this Mac's local network."
             )
         if self.status is HostShareReadinessStatus.NETWORK_UNAVAILABLE:
             return (

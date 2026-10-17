@@ -6,6 +6,7 @@ from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QAccessible, QAccessibleEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QBoxLayout,
     QFrame,
     QHBoxLayout,
@@ -182,7 +183,11 @@ class ArtRoomOverviewWidget(QScrollArea):
         label.setTextFormat(Qt.TextFormat.PlainText)
         label.setWordWrap(True)
         label.setMinimumWidth(0)
-        label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        # Wrapped text needs the height for its actual width, not the taller
+        # natural size hint as a minimum that can force needless scrolling.
+        policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
+        policy.setHeightForWidth(True)
+        label.setSizePolicy(policy)
         return label
 
     def clear_room_connections(self) -> None:
@@ -244,7 +249,27 @@ class ArtRoomOverviewWidget(QScrollArea):
             label.setText(text)
             label.setAccessibleDescription(text)
             label.setVisible(bool(text))
+        if overview.connection_note:
+            # The caveat stays out of the short visible paragraph but is
+            # still spoken by screen readers focused on this label.
+            self._connection_detail.setAccessibleDescription(
+                f"{overview.connection_detail} {overview.connection_note}".strip()
+            )
         offered = bool(overview.activity_action and overview.activity_action_label)
+        # The waiting host's HUD owns Copy Invite. Keep Paint along available
+        # without a second orange action; connected rooms and guest recovery
+        # still emphasize their activity.
+        invite_owns_primary = (
+            overview.phase == "waiting"
+            and overview.role_label == "Host"
+            and overview.activity_action == "video"
+        )
+        button_style = "GhostButton" if invite_owns_primary else "PrimaryButton"
+        if self._activity_button.objectName() != button_style:
+            self._activity_button.setObjectName(button_style)
+            self._activity_button.style().unpolish(self._activity_button)
+            self._activity_button.style().polish(self._activity_button)
+            self._activity_button.update()
         self._activity_button.setText(overview.activity_action_label.replace("&", "&&"))
         self._activity_button.setAccessibleName(overview.activity_action_label)
         self._activity_button.setAccessibleDescription(overview.activity_detail)
@@ -277,6 +302,29 @@ class ArtRoomOverviewWidget(QScrollArea):
             "or change its audio."
         )
         self._conversation_button.setEnabled(overview.conversation_enabled)
+        # NEEDS_FILE recovery owns the body even when canvas is also offered.
+        # Conversation stays in the footer. A first video offer must not hide
+        # or rebuild that GhostButton while a menu or dialog owns the UI.
+        popup_owns_ui = (
+            QApplication.activeModalWidget() is not None
+            or QApplication.activePopupWidget() is not None
+        )
+        recovery_enabled = (
+            overview.activity_enabled or overview.secondary_activity_enabled
+        )
+        # With no activity or saved meeting, the waiting host's next click
+        # is HUD Copy Invite. Conversation remains available in the footer.
+        waiting_for_invite = (
+            overview.phase == "waiting"
+            and overview.role_label == "Host"
+            and not offered
+            and not secondary_offered
+            and overview.conversation_action_label == "Set Up Conversation"
+        )
+        if not popup_owns_ui:
+            self._conversation_button.setVisible(
+                not (waiting_for_invite or (recovery_enabled and overview.open_my_copy_recovery))
+            )
         secondary_description = (
             (overview.secondary_activity_label, overview.secondary_activity_detail)
             if secondary_offered else ()
@@ -286,6 +334,7 @@ class ArtRoomOverviewWidget(QScrollArea):
                 overview.phase_label, overview.role_label,
                 overview.title if overview.making_detail else "",
                 overview.connection_label, overview.connection_detail,
+                overview.connection_note,
                 overview.making_detail,
                 overview.activity_label, overview.activity_detail,
                 *secondary_description,
@@ -301,6 +350,8 @@ class ArtRoomOverviewWidget(QScrollArea):
                     )
                 except (RuntimeError, TypeError):
                     pass
+        if popup_owns_ui:
+            return
         self._sync_density()
 
     def _open_activity(self) -> None:
@@ -402,16 +453,17 @@ class ArtRoomOverviewWidget(QScrollArea):
         ):
             layout.setDirection(direction)
         if self._overview is not None:
-            if self._overview.making_detail:
-                # The actionable own-tools sentence replaces this display
-                # heading, keeping both optional actions on compact screens.
+            has_activity = bool(self._overview.activity_actions)
+            if self._overview.making_detail or has_activity:
+                # The activity is the next step; removing its own-tools
+                # preamble must not bring back an extra display heading.
                 self._title.hide()
             # The connection heading still names the confirmed room fact.
             # Its longer explanation remains in the accessible description;
             # compact rooms keep the making step and activity actions visible.
             self._connection_detail.setVisible(bool(
                 self._overview.connection_detail
-                and not (compact and self._overview.making_detail)
+                and not (compact and (self._overview.making_detail or has_activity))
             ))
         # Resizing for Conversation may move a button that already owns
         # focus, so it will not receive another FocusIn event. Wait until

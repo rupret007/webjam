@@ -37,6 +37,7 @@ from core.creative_modes import (
     canonical_creator_profile_key,
     get_creator_profile_by_key_or_default,
     get_mode_by_key_or_default,
+    session_title_for_start,
 )
 from core.reference_video import (
     FILE_UNAVAILABLE_MESSAGE,
@@ -57,11 +58,13 @@ from core.recording_readiness_presentation import (
     local_capture_shared_recovery_detail,
 )
 from core.host_startup_checklist import (
+    HOST_STARTUP_HEAR_YOURSELF,
     HOST_STARTUP_PROFILE_NOTE,
     format_host_startup_checklist,
     host_startup_checklist_current_step,
 )
 from core.meeting_companion import (
+    art_room_hud_active_start_detail,
     ART_NO_SKILL_NEEDED,
     ART_OWN_TOOLS_LINE,
     build_invite_message,
@@ -135,7 +138,12 @@ from webjam_qt.controllers.recording_coordinator import RecordingCoordinator
 from webjam_qt.controllers.session_persistence import SessionPersistence
 from webjam_qt.controllers.ui_thread import UiThreadInvoker
 from webjam_qt.controllers.video_coordinator import VideoCoordinator
-from webjam_qt.session_state import SessionPhase, SessionUiState
+from webjam_qt.session_state import (
+    SessionPhase,
+    SessionUiState,
+    USED_ONE_USE_INVITE_HOST,
+)
+from webjam_qt.widgets.session_hud import INVITE_COPIED_NOTICE, WIFI_NEEDED_NOTICE
 from webjam_qt.widgets.participant_card import ParticipantPresentation
 from webjam_qt.windows.conductor_window import ConductorWindow
 
@@ -377,10 +385,21 @@ class ApplicationController(QObject):
             or "music"
         )
         self._creator_profile_host_owned = False
+        if (
+            session_invite is not None
+            and not session_invite.peer_enabled
+            and self._active_creator_profile_key == "art"
+        ):
+            # Art's join path reopens paste when there is no peer. A v1
+            # invite has only a Music endpoint, so borrow that journey
+            # without changing the saved Art door choice. Podcast and
+            # other local profiles keep their own route.
+            self._active_creator_profile_key = "music"
+            self._creator_profile_host_owned = True
         self._chat_profile_generation = 0
         creator_setter = getattr(self.window, "set_creator_profile", None)
         if callable(creator_setter):
-            creator_setter(self.creator_profile, locked=False)
+            creator_setter(self.creator_profile, locked=self._creator_profile_host_owned)
         if not isinstance(offline_reference_studio, bool):
             raise TypeError("offline_reference_studio must be true or false")
         self._offline_reference_studio = offline_reference_studio
@@ -418,6 +437,12 @@ class ApplicationController(QObject):
         self._remote_invitation_requires_replacement = False
         self._remote_session = None
         self._remote_invite_owner = None
+        self._mailbox_answer_posted = False
+        self._mailbox_wait_started = False
+        self._mailbox_wait_stop = threading.Event()
+        self._mailbox_invitation = None
+        self._direct_stun_invite_copied = False
+        self._direct_stun_guest_reply_copied = False
         self._remote_host_preparing = False
         self._remote_route_base_settings: AppSettings | None = None
         self._remote_route_generation = 0
@@ -528,10 +553,10 @@ class ApplicationController(QObject):
         self.host_peer = HostPeerSession(
             on_take_updated=self._on_peer_take_updated,
         )
-        # A v2 invite credential is intentionally memory-only for the active
-        # join. A successful Leave/End clears it with the peer runtime, so a
-        # stale bearer cannot silently reopen on a later Start.
-        self._guest_invite = None
+        # Keep the accepted Music (v1) or peer (v2) invitation for routing
+        # and retries. Leave/End clears it with the peer runtime; v2 bearer
+        # credentials remain memory-only.
+        self._guest_invite = session_invite
         self._guest_peer_configuration_failed = False
         self.guest_peer: GuestPeerSession | None = None
         self._shared_track_peer_publish_failed = False
@@ -541,7 +566,6 @@ class ApplicationController(QObject):
         if session_invite is not None and bool(
             getattr(session_invite, "peer_enabled", False)
         ):
-            self._guest_invite = session_invite
             self._room_participant.probing = True
             self._room_participant.role = "guest"
 
@@ -672,9 +696,10 @@ class ApplicationController(QObject):
         self._pocket_stage_session_end_stop_confirmed = True
         self._invite_switch_generation = 0
         self._invite_switch_in_flight = False
-        # Deep links can arrive while the one authorized switch worker is
-        # still retiring the old jam. Keep only the newest typed invitation:
-        # cleanup remains single-flight and no serialized link is retained.
+        self._invite_confirmation_generation: int | None = None
+        # Deep links can arrive during confirmation or while the authorized
+        # switch worker is retiring the old jam. Keep only the newest typed
+        # invitation: cleanup remains single-flight; no serialized link is retained.
         self._pending_invitation: BandInvite | RemoteInvitation | None = None
         self._pending_invitation_meeting_url = ""
         # A busy BandInvite switch may be replaced by a v3 RemoteInvitation.
@@ -888,6 +913,9 @@ class ApplicationController(QObject):
         from webjam_qt.controllers.workflow_help import WorkflowHelpCoordinator
 
         self.workflow_help = WorkflowHelpCoordinator(self)
+        from webjam_qt.controllers.web_join import WebJoinControls
+
+        self._web_join_controls = WebJoinControls(self)
         self._start_routing_scan()
         # Give the visible shell one event-loop turn before surfacing any
         # interrupted local recording or private evidence checkpoint.  The
@@ -1214,6 +1242,9 @@ class ApplicationController(QObject):
         return False
 
     def _shutdown_once(self) -> bool:
+        # A question has not begun teardown. Retire it before shutdown takes
+        # ownership, so a late Yes cannot resume against a closed session.
+        ApplicationController._cancel_invitation_confirmation(self)
         if self._shutdown:
             return True  # closeEvent + app.py both call this; run teardown once
         if not ApplicationController._prepare_workspace_close(self):
@@ -1266,6 +1297,12 @@ class ApplicationController(QObject):
         if not getattr(self, "_shutdown_cleanup_pending", False):
             self._shutdown_art_room_role = getattr(self, "_art_room_role", "")
         self._shutdown_cleanup_pending = True
+        web_join = getattr(self, "_web_join_controls", None)
+        if web_join is not None and web_join.stop() is False:
+            return self._show_shutdown_cleanup_retry(
+                "Web Join is still stopping",
+                "The web guest's audio bridge has not finished closing. Retry Quit to finish cleanup.",
+            )
         ApplicationController._clear_shared_lesson_context(self)
         room_help = getattr(self, "_room_help", None)
         if room_help is not None:
@@ -1619,15 +1656,20 @@ class ApplicationController(QObject):
         room = getattr(self, "_room_participant", None)
         return room.host_publisher() if room is not None else getattr(self, "host_peer", None)
 
-    def _configure_guest_peer(self, invite) -> bool:
+    def _configure_guest_peer(self, invite, *, preserve_room_profile: bool = False) -> bool:
         """Install a replacement v2 transfer peer without orphaning its owner.
 
         Construction failure remains an optional Local Originals limitation,
         but an unconfirmed stop is an ownership failure: retain the old peer
         and invitation so End/Leave can retry it.
+
+        Only an admitted LAN discovery handoff preserves the host profile;
+        ordinary peer replacement still restores the personal room context.
         """
 
-        if not self._stop_session_peer(clear_invite=True):
+        if not self._stop_session_peer(
+            clear_invite=True, preserve_room_profile=preserve_room_profile,
+        ):
             return False
         self._guest_invite = invite
         self._guest_peer_configuration_failed = False
@@ -1791,7 +1833,9 @@ class ApplicationController(QObject):
 
         QTimer.singleShot(0, reopen_for_current_settings)
 
-    def _stop_session_peer(self, *, clear_invite: bool = False) -> bool:
+    def _stop_session_peer(
+        self, *, clear_invite: bool = False, preserve_room_profile: bool = False,
+    ) -> bool:
         cleanup_ok = True
         room = getattr(self, "_room_participant", None)
         guest = getattr(self, "guest_peer", None)
@@ -1862,6 +1906,11 @@ class ApplicationController(QObject):
                         invoke(clear_projection)
                     else:
                         clear_projection()
+                # LAN discovery already adopted the host profile. Its handoff
+                # to the recording peer continues that room, so do not restore
+                # the personal profile between admission and audio startup.
+                if preserve_room_profile:
+                    return
                 # Entry can borrow a title before the first authenticated
                 # profile arrives. Leaving that pending join must restore the
                 # personal title too, even though no profile was adopted.
@@ -1907,7 +1956,14 @@ class ApplicationController(QObject):
                                 set_session_title = getattr(strip, "set_session_title", None)
                                 if callable(set_session_title):
                                     set_session_title(
-                                        _creator_profile_for_controller(self).default_template
+                                        session_title_for_start(
+                                            _creator_profile_for_controller(self),
+                                            getattr(
+                                                self.settings,
+                                                "last_creator_start_key",
+                                                "",
+                                            ),
+                                        )
                                     )
                                 load_metadata = getattr(
                                     persistence,
@@ -2117,18 +2173,28 @@ class ApplicationController(QObject):
 
     @property
     def creator_start(self):
-        """Return the start card this artist chose, or ``None``.
+        """Return the host's room start, or the local card outside a guest room.
 
         The value is re-resolved against the active profile every time, so a
         key saved under another profile can never arm a capability this one
-        does not have; it falls back to the profile's room-first door.
+        does not have. Guests have no start until the host publishes one.
+        An empty host start stays empty while the guest is still in the room;
+        leaving restores the saved card. Only local choices fall back to the
+        profile's room-first door.
         """
 
         room = getattr(self, "_room_participant", None)
-        borrowed = room.borrowed_start if room is not None else ""
-        return self.creator_profile.start_or_default(
-            borrowed or getattr(getattr(self, "settings", None), "last_creator_start_key", "")
-        )
+        saved = getattr(getattr(self, "settings", None), "last_creator_start_key", "")
+        if room is not None and room.role == "guest":
+            borrowed = getattr(room, "borrowed_start", "")
+            if borrowed:
+                return self.creator_profile.get_start(borrowed)
+            return None
+        return self.creator_profile.start_or_default(saved)
+
+    def _art_room_active_start_key(self) -> str:
+        start = self.creator_start
+        return start.key if start is not None else ""
 
     def _art_room_runs_paint_along(self) -> bool:
         """True when this computer's authenticated room state says the room
@@ -2606,14 +2672,22 @@ class ApplicationController(QObject):
             takes_root / "WebJam Local Originals"
         )
 
+    @staticmethod
+    def _band_invite_is_legacy_music(invite) -> bool:
+        """True for a parsed v1 BandInvite with no same-LAN recording peer."""
+
+        return isinstance(invite, BandInvite) and not invite.peer_enabled
+
     def _local_originals_available(self) -> bool:
         """Whether this session has a real host or v2 guest capture path."""
 
+        invite = getattr(self, "_guest_invite", None)
         return bool(
             getattr(self.settings, "host_server_enabled", False)
             or getattr(self, "guest_peer", None) is not None
             or (
-                getattr(self, "_guest_invite", None) is not None
+                invite is not None
+                and not ApplicationController._band_invite_is_legacy_music(invite)
                 and not getattr(self, "_guest_peer_configuration_failed", False)
             )
         )
@@ -5068,21 +5142,40 @@ class ApplicationController(QObject):
             )
             return True
         if bool(getattr(self.settings, "host_server_enabled", False)):
-            from services.native_remote_transport import reference_local_host_requested
-
+            native_profile = self._ordinary_remote_host_profile()
             if (
-                reference_local_host_requested()
+                native_profile is not None
                 and getattr(self, "_remote_invite_owner", None) is None
             ):
                 self._begin_remote_host(
                     startup_authorization_generation=authorization_generation,
+                    profile_id=native_profile,
                 )
                 return True
 
         room = getattr(self, "_room_participant", None)
+        invite = getattr(self, "_guest_invite", None)
+        if (
+            ApplicationController._band_invite_is_legacy_music(invite)
+            and self.creator_profile.key == "art"
+        ):
+            # Art would reopen Join for a non-peer invite. Borrow Music
+            # without replacing the saved Art preference. A media-operation
+            # veto must retain the invite for a later retry.
+            self._apply_creator_profile_key("music", host_owned=True)
+            if self.creator_profile.key != "music":
+                self.window.flash_message(
+                    "This invite is for a music jam. Finish the workspace "
+                    "operation, then join again.",
+                    ms=7000,
+                )
+                return False
         if room is not None:
-            invite = getattr(self, "_guest_invite", None)
-            if invite is not None and invite is not room.music_invite:
+            if (
+                invite is not None
+                and not ApplicationController._band_invite_is_legacy_music(invite)
+                and invite is not room.music_invite
+            ):
                 return room.start_lan_guest(invite)
             if self.creator_profile.key == "art":
                 if getattr(self, "_remote_invite_owner", None) is not None:
@@ -5516,7 +5609,11 @@ class ApplicationController(QObject):
             return
         guest = getattr(self, "guest_peer", None)
         invite = getattr(self, "_guest_invite", None)
-        if guest is None and invite is not None:
+        if (
+            guest is None
+            and invite is not None
+            and not ApplicationController._band_invite_is_legacy_music(invite)
+        ):
             self._configure_guest_peer(invite)
             guest = getattr(self, "guest_peer", None)
         # A broken optional Local Originals path must never retry in a poll
@@ -6239,19 +6336,15 @@ class ApplicationController(QObject):
             )
         elif phase in {"launching_client", "native_sound_setup"}:
             checklist = ApplicationController._host_startup_checklist_fields(phase)
-            guidance = ApplicationController._startup_guidance_override(
-                attempt,
-                self.creator_profile.key,
-            )
             self.window.session_hud.set_state(
-                guidance.title,
-                checklist["plain"],
+                HOST_STARTUP_HEAR_YOURSELF,
+                "",
                 action_text="Bring Jamulus Forward",
                 action_visible=True,
                 action_kind="bring_jamulus",
-                checklist_current_step=checklist["current_step"],
-                checklist_detail_rich=checklist["rich"],
-                checklist_note=HOST_STARTUP_PROFILE_NOTE,
+                sound_help_plain=str(checklist["plain"]),
+                sound_help_rich=str(checklist["rich"]),
+                sound_help_note=HOST_STARTUP_PROFILE_NOTE,
             )
         elif phase == "verifying_music":
             self.window.session_hud.set_state(
@@ -6312,13 +6405,17 @@ class ApplicationController(QObject):
                     attempt,
                     self.creator_profile.key,
                 )
+                paste_ready = bool(
+                    self._remote_paste_reply_available()
+                    and getattr(self, "_direct_stun_invite_copied", False)
+                )
                 self.window.session_hud.set_state(
                     guidance.title,
                     checklist["plain"],
                     invite_available=True,
-                    action_text="Copy Invite",
+                    action_text="Paste reply" if paste_ready else "Copy Invite",
                     action_visible=True,
-                    action_kind="copy_invite",
+                    action_kind="paste_reply" if paste_ready else "copy_invite",
                     ready=True,
                     secondary_action_text=enter_label,
                     secondary_action_visible=True,
@@ -6327,6 +6424,7 @@ class ApplicationController(QObject):
                     checklist_detail_rich=checklist["rich"],
                 )
             else:
+                copy_ready = self._guest_reply_copy_available()
                 self.window.session_hud.set_state(
                     creator_copy["guest_ready_title"],
                     creator_copy["guest_ready_detail"],
@@ -6334,6 +6432,9 @@ class ApplicationController(QObject):
                     action_visible=True,
                     action_kind="enter_jam",
                     ready=True,
+                    secondary_action_text="Copy reply" if copy_ready else "",
+                    secondary_action_visible=copy_ready,
+                    secondary_action_kind="copy_reply",
                 )
         elif phase == "cancelling":
             self.window.session_hud.set_state(
@@ -6352,7 +6453,9 @@ class ApplicationController(QObject):
                 action_kind="cancel_startup" if close_setup else "retry_startup",
             )
         self._focus_initial_hud_action()
+        ApplicationController._sync_invite_share_notice(self)
         self._persist_startup_attempt(attempt)
+        self._overlay_direct_stun_reply_actions()
         if not isinstance(snapshot, SessionConductorSnapshot):
             return
         override = practice_override or self._startup_guidance_override(
@@ -6400,11 +6503,10 @@ class ApplicationController(QObject):
 
     @staticmethod
     def _startup_checklist_message(phase: str) -> str:
-        fields = ApplicationController._host_startup_checklist_fields(phase)
-        plain = str(fields["plain"])
         if phase in {"launching_client", "native_sound_setup"}:
-            return f"{plain}\n\n{HOST_STARTUP_PROFILE_NOTE}"
-        return plain
+            return HOST_STARTUP_HEAR_YOURSELF
+        fields = ApplicationController._host_startup_checklist_fields(phase)
+        return str(fields["plain"])
 
     @staticmethod
     def _startup_guidance_override(
@@ -6434,13 +6536,13 @@ class ApplicationController(QObject):
                 SessionPrimaryAction.WAIT,
             ),
             "launching_client": GuidanceDisplayOverride(
-                creator_copy["setup_title"],
+                HOST_STARTUP_HEAR_YOURSELF,
                 ApplicationController._startup_checklist_message("launching_client"),
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
             ),
             "native_sound_setup": GuidanceDisplayOverride(
-                creator_copy["setup_title"],
+                HOST_STARTUP_HEAR_YOURSELF,
                 ApplicationController._startup_checklist_message("native_sound_setup"),
                 SessionPrimaryAction.OPEN_AUDIO_SETTINGS,
                 "Bring Jamulus Forward",
@@ -6533,15 +6635,12 @@ class ApplicationController(QObject):
             return
 
         if bool(getattr(self.settings, "host_server_enabled", False)):
-            from services.native_remote_transport import (
-                reference_local_host_requested,
-            )
-
+            native_profile = self._ordinary_remote_host_profile()
             if (
-                reference_local_host_requested()
+                native_profile is not None
                 and getattr(self, "_remote_invite_owner", None) is None
             ):
-                self._begin_remote_host()
+                self._begin_remote_host(profile_id=native_profile)
                 return
 
         if (
@@ -7338,7 +7437,11 @@ class ApplicationController(QObject):
                 return
             guest = getattr(self, "guest_peer", None)
             invite = getattr(self, "_guest_invite", None)
-            if guest is None and invite is not None:
+            if (
+                guest is None
+                and invite is not None
+                and not ApplicationController._band_invite_is_legacy_music(invite)
+            ):
                 self._configure_guest_peer(invite)
                 guest = getattr(self, "guest_peer", None)
             if guest is not None:
@@ -7419,6 +7522,9 @@ class ApplicationController(QObject):
         """Revoke v3 invitation state and clear mode after server ownership ends."""
 
         ApplicationController._invalidate_room_help(self)
+        self._stop_mailbox_wait()
+        self._direct_stun_invite_copied = False
+        self._direct_stun_guest_reply_copied = False
         # A constructor may already own a sidecar without having returned it.
         # Keep End/Leave retryable until its worker delivers and retires it.
         if getattr(self, "_remote_host_preparing", False):
@@ -7475,7 +7581,12 @@ class ApplicationController(QObject):
     def _stop_remote_transport(self, *, restore_route: bool = True) -> bool:
         """Stop v3 only after Jamulus has released its loopback proxy."""
 
+        web_join = getattr(self, "_web_join_controls", None)
+        if web_join is not None and web_join.stop() is False:
+            return False
         ApplicationController._invalidate_room_help(self)
+        self._stop_mailbox_wait()
+        self._direct_stun_guest_reply_copied = False
         cleanup_ok = True
         runtime = getattr(self, "_remote_session", None)
         runtime_stopped = True
@@ -7875,6 +7986,11 @@ class ApplicationController(QObject):
                 self._request_reference_track_teardown()
         self.recording.on_record_requested()
 
+    def _paste_direct_stun_guest_reply(self) -> None:
+        """Paste the friend's sealed reply so both homes can punch together."""
+
+        self._paste_guest_reply()
+
     def _copy_band_invite(self) -> None:
         """Copy one complete invitation; never make a musician parse it."""
         from PySide6.QtWidgets import QApplication
@@ -7896,11 +8012,9 @@ class ApplicationController(QObject):
             readiness = self._host_share_readiness()
             invite_url = self._current_invite_url(readiness=readiness)
         if not invite_url:
-            self._update_session_hud()
-            self.window.flash_message(
-                "Connect this Mac to Wi-Fi, then try again.",
-                ms=6000,
-            )
+            ApplicationController._publish_invite_share_notice(self, WIFI_NEEDED_NOTICE)
+            if hasattr(self, "_session_conductor_facts"):
+                self._update_session_hud()
             return
         # One paste, not two. A bandmate gets the jam link and, when the host
         # has configured one, the meeting link in the same message with a line
@@ -7918,10 +8032,18 @@ class ApplicationController(QObject):
             # A successful LAN share above is the topology evidence. A native
             # owner must not inherit same-network or public-service claims
             # from the invitation's serialized shape.
-            same_network_required=owner is None,
+            same_network_required=(
+                owner is None
+                or not bool(getattr(owner, "share_reaches_internet", True))
+            ),
         )
         QApplication.clipboard().setText(invite_message.text)
+        paste_available = getattr(self, "_remote_paste_reply_available", None)
+        if callable(paste_available) and paste_available(owner):
+            self._direct_stun_invite_copied = True
         invite_url = ""
+        if owner is not None and str(getattr(owner, "profile_id", "") or "") == "direct-stun":
+            self._direct_stun_invite_copied = True
         if owner is None:
             # Mark the address only after the complete link was copied. A
             # failed link generation must not suppress the Wi-Fi-change
@@ -7931,30 +8053,30 @@ class ApplicationController(QObject):
             # The legacy invitation is intentionally still usable, but the
             # host must never miss why automatic originals are unavailable.
             self._update_session_hud()
-        participant = _creator_profile_for_controller(
-            self
-        ).vocabulary.participant_singular
-        link_noun = "room" if _creator_profile_for_controller(self).key == "art" else "jam"
-        if owner is None:
-            recipient = (
-                "an artist"
-                if _creator_profile_for_controller(self).key == "art"
-                else f"another {participant}"
+        if bool(getattr(self, "_direct_stun_invite_copied", False)):
+            ApplicationController._publish_invite_share_notice(
+                self,
+                "Copied. Send it to your friend. When they send a reply, "
+                "press Paste Reply.",
             )
-            copied_detail = (
-                f"Invitation copied. Send the whole message to {recipient} on "
-                "your same Wi-Fi or local network. Keep this room open."
-            )
+            self._update_session_hud()
         else:
-            copied_detail = (
-                (
-                    f"One invite copied — {link_noun} link and meeting link. Send it to "
-                    f"another {participant}."
-                )
-                if invite_message.includes_meeting
-                else f"Invite link copied — send it to another {participant}."
-            )
-        self.window.flash_message(copied_detail, ms=7000)
+            ApplicationController._publish_invite_share_notice(self, INVITE_COPIED_NOTICE)
+
+    @staticmethod
+    def _publish_invite_share_notice(controller, text: str) -> None:
+        """Keep Copy Invite / Wi-Fi guidance on the HUD instead of a 7s bar."""
+
+        notice = str(text or "").strip()
+        controller._invite_share_notice = notice
+        ApplicationController._sync_invite_share_notice(controller)
+
+    @staticmethod
+    def _sync_invite_share_notice(controller) -> None:
+        hud = getattr(getattr(controller, "window", None), "session_hud", None)
+        setter = getattr(hud, "set_notice", None)
+        if callable(setter):
+            setter(str(getattr(controller, "_invite_share_notice", "") or ""))
 
     def accept_invite_url(self, value: str) -> bool:
         """Compatibility boundary for an explicit in-app paste.
@@ -8009,15 +8131,19 @@ class ApplicationController(QObject):
         if bool(getattr(self, "_invite_switch_in_flight", False)):
             if not isinstance(invitation, (BandInvite, RemoteInvitation)):
                 raise TypeError("invitation must be a BandInvite or RemoteInvitation")
-            # The current worker remains the only teardown owner. Replacing
-            # this one-item memory slot gives OS deep-link delivery
+            # The current confirmation/worker remains the only switch owner.
+            # Replacing this one-item memory slot gives OS deep-link delivery
             # deterministic latest-wins behavior without spawning a second
             # worker or persisting private invitation material.
             self._pending_invitation = invitation
             self._pending_invitation_meeting_url = meeting_url
             self.window.flash_message(
-                "WebJam received a newer invitation. It will use that one "
-                "after the current jam finishes closing.",
+                (
+                    "WebJam received a newer invitation. Choose Yes to join that one."
+                    if getattr(self, "_invite_confirmation_generation", None) is not None
+                    else "WebJam received a newer invitation. It will use that one "
+                    "after the current jam finishes closing."
+                ),
                 ms=7000,
             )
             return True
@@ -8099,6 +8225,8 @@ class ApplicationController(QObject):
         self._set_session_meeting_url(meeting_url)
         self._set_session_entry_title("Room", borrowed=True)
         self._remote_invitation = invitation
+        self._mailbox_invitation = invitation
+        self._mailbox_answer_posted = False
         self.window.session_strip.set_invite_available(False)
         self.window.session_strip.set_reset_invite_available(False)
         self.window.session_hud.set_state(
@@ -8108,13 +8236,54 @@ class ApplicationController(QObject):
         self._begin_remote_join()
         return True
 
+    def _cancel_invitation_confirmation(self) -> None:
+        """Retire only a question's ownership; a teardown worker owns itself."""
+        generation = getattr(self, "_invite_confirmation_generation", None)
+        if generation is None:
+            return
+        self._invite_confirmation_generation = None
+        if generation == self._invite_switch_generation:
+            self._invite_switch_generation += 1
+            self._invite_switch_in_flight = False
+            self._pending_invitation = None
+            self._pending_invitation_meeting_url = ""
+
+    def _invitation_confirmation_context(self) -> tuple:
+        """Facts authorizing teardown must survive the modal event loop."""
+        room = getattr(self, "_room_participant", None)
+        startup = getattr(self, "_startup_attempt", None) or {}
+        return (
+            id(self.settings), bool(self.settings.host_server_enabled),
+            self.creator_profile.key,
+            id(self.recording), getattr(self.recording, "_session_id", None),
+            getattr(self.recording, "_take_id", None),
+            bool(getattr(
+                self.recording, "take_in_progress", self.recording.is_recording_active,
+            )),
+            id(self.bridge), id(getattr(self.bridge, "jamulus_process", None)),
+            id(getattr(self.bridge, "hosted_server_process", None)),
+            self._is_jamulus_running(), self.bridge.hosted_server_alive(),
+            self.bridge.hosted_server_owned(),
+            getattr(self, "_startup_generation", None), startup.get("phase"),
+            getattr(self, "_reference_track_session_generation", None),
+            id(getattr(self, "_remote_invite_owner", None)),
+            id(getattr(self, "_guest_invite", None)),
+            id(room), getattr(room, "generation", None),
+            getattr(room, "native_generation", None), self._art_room_role,
+        )
+
     def _accept_band_invitation(self, invite: BandInvite, *, meeting_url: str = "") -> bool:
         """Preserve the existing v1/v2 same-LAN join flow."""
 
+        # Keep the current room's vocabulary through asynchronous cleanup,
+        # even if applying the incoming invitation replaces the profile.
+        switch_is_art = bool(
+            _creator_profile_for_controller(self).key == "art" or self._art_room_active()
+        )
+        session_noun = "room" if switch_is_art else "jam"
         busy = bool(self._is_jamulus_running() or self.bridge.hosted_server_alive()
                     or self._room_is_busy_for_invitation())
         switch_was_hosting = bool(getattr(self.settings, "host_server_enabled", False))
-        switch_was_art = bool(self.creator_profile.key == "art" or self._art_room_active())
         if (
             busy
             and bool(
@@ -8135,30 +8304,55 @@ class ApplicationController(QObject):
             )
             return False
         if busy:
-            reply = QMessageBox.question(
-                self.window,
-                "Join this room?" if switch_was_art else "Join this jam?",
-                (
-                    "WebJam will safely end your current room, then join the new one."
-                    if switch_was_art
-                    else "WebJam will safely end your current jam, then join the new one."
-                ),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return False
-            # Freeze the outgoing jam's Library recap before any teardown
-            # starts, exactly as normal End/Leave does, so the replacement
-            # jam below does not inherit this run's ID or live take set.
-            switch_library = getattr(self, "session_library", None)
-            if switch_library is not None:
-                switch_library.capture_summary()
+            # QMessageBox runs a nested Qt event loop. Claim the switch before
+            # opening it so reentrant OS invitations replace the pending slot
+            # instead of creating another question and teardown worker.
+            confirmation_context = self._invitation_confirmation_context()
             self._invite_switch_generation += 1
             switch_generation = self._invite_switch_generation
             self._invite_switch_in_flight = True
+            self._invite_confirmation_generation = switch_generation
             self._pending_invitation = None
             self._pending_invitation_meeting_url = ""
+            confirmed = False
+            try:
+                reply = QMessageBox.question(
+                    self.window,
+                    f"Join this {session_noun}?",
+                    f"WebJam will safely end your current {session_noun}, then join the new one.",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if reply != QMessageBox.StandardButton.Yes:
+                    return False
+                if (
+                    switch_generation != self._invite_switch_generation
+                    or not self._invite_switch_in_flight
+                    or self._shutdown
+                    or getattr(self, "_shutdown_in_progress", False)
+                    or getattr(self, "_shutdown_cleanup_pending", False)
+                    or getattr(self, "_workspace_transition_pending", False)
+                    or getattr(self, "_primary_recovery_retire_inflight", False)
+                    or self.audio.stopping or self.audio.cleanup_retry_required
+                    or confirmation_context != self._invitation_confirmation_context()
+                ):
+                    self.window.flash_message(
+                        "The current room changed. Open the invitation again when you’re ready.",
+                        ms=7000,
+                    )
+                    return False
+                # Freeze the outgoing Library recap only after the question
+                # and its ownership checks, before any teardown starts.
+                switch_library = getattr(self, "session_library", None)
+                if switch_library is not None:
+                    switch_library.capture_summary()
+                confirmed = True
+            finally:
+                if self._invite_confirmation_generation == switch_generation:
+                    if confirmed:
+                        self._invite_confirmation_generation = None
+                    else:
+                        self._cancel_invitation_confirmation()
             # A failed switch is retried through AudioCoordinator after the
             # invitation closure has returned. Preserve the role that owns the
             # unresolved services; the replacement invite must never turn a
@@ -8173,10 +8367,12 @@ class ApplicationController(QObject):
             switch_generation = self._invite_switch_generation
 
         self.window.session_hud.set_state(
-            "Joining your jam…",
-            "WebJam is switching the band connection safely."
+            f"Joining your {session_noun}…",
+            ("WebJam is switching the room connection safely."
+             if switch_is_art else "WebJam is switching the band connection safely.")
             if busy
-            else "WebJam is connecting your music.",
+            else ("WebJam is connecting your room."
+                  if switch_is_art else "WebJam is connecting your music."),
         )
 
         def _apply_and_launch(invitation: BandInvite, conversation_url: str) -> bool:
@@ -8196,7 +8392,7 @@ class ApplicationController(QObject):
                         "connection. Try ending or leaving again, then reopen "
                         "the invitation."
                     ),
-                    title="WebJam couldn’t open the new jam safely",
+                    title=f"WebJam couldn’t open the new {session_noun} safely",
                     detail=(
                         "The previous private connection is still protected. "
                         "Finish cleanup before opening the new invitation."
@@ -8242,10 +8438,14 @@ class ApplicationController(QObject):
                 self.recording.on_audio_session_stopped()
                 self.window.session_strip.reset_session_clock()
             self._reconfigure_services_after_settings(old_settings)
+            self._guest_invite = invitation
             if bool(getattr(invitation, "peer_enabled", False)):
-                self._guest_invite = invitation
                 self._room_participant.probing = True
                 self._room_participant.role = "guest"
+            elif self.creator_profile.key == "art":
+                # As on cold entry, a legacy endpoint starts the existing
+                # Music guest journey instead of Art's paste-invite prompt.
+                self._apply_creator_profile_key("music", host_owned=True)
             # The invitation's name labels this session, but it belongs to
             # whoever sent it. Marking it borrowed keeps it out of the
             # musician's persisted default, so a joined session's name cannot
@@ -8300,49 +8500,32 @@ class ApplicationController(QObject):
             self._complete_pocket_stage_session_end(succeeded=not cleanup_unresolved)
             self.window.participant_grid.set_session_state(SessionUiState.stop_failed())
             self.window.session_hud.set_state(
-                (
-                    "WebJam couldn’t open the new room safely"
-                    if switch_was_art
-                    else "WebJam couldn’t open the new jam safely"
-                ),
+                f"WebJam couldn’t open the new {session_noun} safely",
                 (
                     "Some previous session services still need to stop. Try "
                     "ending or leaving again before opening the invitation."
                     if cleanup_unresolved
-                    else (
-                        "The previous room connection was stopped, but the "
-                        "new invitation could not be applied safely. Quit and "
-                        "reopen WebJam, then open the invitation again."
-                        if switch_was_art
-                        else "The previous music connection was stopped, but the "
-                        "new invitation could not be applied safely. Quit and "
-                        "reopen WebJam, then open the invitation again."
-                    )
+                    else f"The previous {'room' if switch_is_art else 'music'} "
+                    "connection was stopped, but the "
+                    "new invitation could not be applied safely. Quit and "
+                    "reopen WebJam, then open the invitation again."
                 ),
             )
             self.window.session_strip.set_audio_state(
-                ("Try End Session" if switch_was_hosting else "Try Leave Jam")
+                (("Try End Room" if switch_was_hosting else "Try Leave Room")
+                 if switch_is_art
+                 else ("Try End Session" if switch_was_hosting else "Try Leave Jam"))
                 if cleanup_unresolved
                 else "Start Session",
                 enabled=cleanup_unresolved,
             )
             self.window.flash_message(
                 (
-                    (
-                        "The room switch did not finish safely. Try ending or "
-                        "leaving again, then reopen the invitation."
-                        if switch_was_art
-                        else "The jam switch did not finish safely. Try ending or "
-                        "leaving again, then reopen the invitation."
-                    )
+                    f"The {session_noun} switch did not finish safely. Try ending or "
+                    "leaving again, then reopen the invitation."
                     if cleanup_unresolved
-                    else (
-                        "The room switch did not finish. Quit and reopen "
-                        "WebJam, then open the invitation again."
-                        if switch_was_art
-                        else "The jam switch did not finish. Quit and reopen "
-                        "WebJam, then open the invitation again."
-                    )
+                    else f"The {session_noun} switch did not finish. Quit and reopen "
+                    "WebJam, then open the invitation again."
                 ),
                 ms=8000,
             )
@@ -8627,12 +8810,29 @@ class ApplicationController(QObject):
         )
         return True
 
+    def _ordinary_remote_host_profile(self) -> str | None:
+        """Return the compiled Host profile, or None to keep LAN Jamulus."""
+
+        from services.native_remote_transport import ordinary_native_host_profile
+
+        return ordinary_native_host_profile()
+
+    def _remote_paste_reply_available(self, owner: object | None = None) -> bool:
+        owner = owner if owner is not None else getattr(self, "_remote_invite_owner", None)
+        return (
+            bool(getattr(self.settings, "host_server_enabled", False))
+            and owner is not None
+            and callable(getattr(owner, "apply_guest_reply", None))
+            and str(getattr(owner, "profile_id", "") or "") == "direct-stun"
+        )
+
     def _begin_remote_host(
         self,
         *,
         startup_authorization_generation: int = 0,
+        profile_id: str | None = None,
     ) -> None:
-        """Prepare the opt-in local reference host before Band Check starts."""
+        """Prepare the compiled Host path (direct-stun, or lab reference-local)."""
 
         if getattr(self, "_remote_host_preparing", False):
             return
@@ -8647,6 +8847,9 @@ class ApplicationController(QObject):
         self.window.session_hud.set_state(
             "Preparing your jam",
             "WebJam is creating one private invitation.",
+        )
+        chosen_profile = (
+            profile_id or self._ordinary_remote_host_profile() or "reference-local"
         )
 
         def worker() -> None:
@@ -8669,6 +8872,7 @@ class ApplicationController(QObject):
 
                 owner = NativeHostTransportOwner(
                     target_port=int(self.settings.jamulus_port),
+                    profile_id=chosen_profile,
                     on_snapshot=on_snapshot,
                     schedule_callback=self._ui_invoker.invoke,
                     **(
@@ -8736,6 +8940,7 @@ class ApplicationController(QObject):
                             connected=False,
                         )
                 self._update_session_hud()
+                self._start_host_mailbox_wait()
                 if self.creator_profile.key == "art":
                     self._room_participant.tick()
                 else:
@@ -8819,7 +9024,9 @@ class ApplicationController(QObject):
             self._render_room_guidance(override)
             return
         if snapshot.phase is RemoteSessionPhase.CONNECTED:
+            self._publish_guest_reply_if_ready()
             if self._room_participant.connected_native(source, snapshot):
+                self._overlay_direct_stun_reply_actions()
                 return
             if snapshot.role.value == "guest":
                 self._activate_remote_guest_route(snapshot, source=source)
@@ -8895,6 +9102,7 @@ class ApplicationController(QObject):
             "Opening Jamulus",
             "The private connection is secure. Jamulus is opening your music connection.",
         )
+        self._overlay_direct_stun_reply_actions()
         self._continue_startup_from_remote(source)
 
     def _show_remote_session_failure(
@@ -8929,8 +9137,11 @@ class ApplicationController(QObject):
             flash_message = "Choose Try Again to start the private connection."
         elif guest_enrollment:
             # The sidecar entered open_guest(), so the reference service may
-            # have atomically consumed this one-use capability. Remove the
-            # controller copy before any generic start path can see it.
+            # have atomically consumed this one-use capability. Capture the
+            # profile before clearing so NAT timeouts keep distinct copy.
+            profile_id = getattr(
+                getattr(self, "_remote_invitation", None), "profile_id", ""
+            )
             self._remote_invitation = None
             self._remote_invitation_requires_replacement = True
             self._reference_track_remote_route_pre_retired = False
@@ -8939,9 +9150,16 @@ class ApplicationController(QObject):
             )
             self._render_remote_fresh_invitation_hud()
             if getattr(error_code, "value", "") == "timed_out":
-                flash_message = (
-                    "The connection timed out. Choose Paste New Invite."
-                )
+                if profile_id == "direct-stun":
+                    flash_message = (
+                        "WebJam couldn't reach the host. Use home Wi-Fi on both "
+                        "computers, not a phone hotspot. Ask the host for a "
+                        "fresh invitation."
+                    )
+                else:
+                    flash_message = (
+                        "The connection timed out. Choose Paste New Invite."
+                    )
             elif getattr(error_code, "value", "") == "expired":
                 flash_message = (
                     "That invitation expired. Choose Paste New Invite."
@@ -8993,7 +9211,7 @@ class ApplicationController(QObject):
         """Offer retry only after a proven pre-enrollment failure."""
 
         self.window.session_hud.set_state(
-            "Needs attention",
+            "Try again",
             "Choose Try Again to start the private connection.",
             action_text="Try Again",
             action_visible=True,
@@ -9035,12 +9253,178 @@ class ApplicationController(QObject):
         """Keep a consumed-or-uncertain v3 invite out of generic retry paths."""
 
         self.window.session_hud.set_state(
-            "Needs attention",
+            "Ask your host for a new invite",
             self._remote_fresh_invitation_detail(),
             action_text="Paste New Invite",
             action_visible=True,
             action_kind="paste_invite",
         )
+
+    def _guest_reply_copy_available(self) -> bool:
+        runtime = getattr(self, "_remote_session", None)
+        return bool(bytes(getattr(runtime, "guest_reply", b"") or b""))
+
+    def _guest_reply_delivery_text(self) -> str:
+        """Post the sealed reply to the mailbox; return the hidden paste line."""
+
+        runtime = getattr(self, "_remote_session", None)
+        raw = bytes(getattr(runtime, "guest_reply", b"") or b"")
+        if not raw:
+            return ""
+        from core.direct_stun_invite import publish_guest_reply
+
+        invitation = getattr(self, "_mailbox_invitation", None) or getattr(
+            self, "_remote_invitation", None
+        )
+        try:
+            return publish_guest_reply(raw, invitation)
+        except ValueError:
+            return ""
+
+    def _publish_guest_reply_if_ready(self) -> None:
+        if bool(getattr(self, "_mailbox_answer_posted", False)):
+            return
+        if not self._guest_reply_delivery_text():
+            return
+        self._mailbox_answer_posted = True
+
+    def _copy_guest_reply(self) -> None:
+        """Visible guest fallback: copy the sealed reply to the clipboard."""
+
+        if self._shutdown_cleanup_blocks_action():
+            return
+        line = self._guest_reply_delivery_text()
+        if not line:
+            return
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.clipboard().setText(line)
+        self.window.flash_message(
+            "Send this reply to the host. Keep this window open.",
+            ms=7000,
+        )
+
+    def _stop_mailbox_wait(self) -> None:
+        stop = getattr(self, "_mailbox_wait_stop", None)
+        if stop is not None:
+            stop.set()
+        self._mailbox_wait_started = False
+        self._mailbox_answer_posted = False
+        self._mailbox_invitation = None
+
+    def _start_host_mailbox_wait(self) -> None:
+        """Poll the mailbox about every 10s for the guest answer."""
+
+        if bool(getattr(self, "_mailbox_wait_started", False)):
+            return
+        owner = getattr(self, "_remote_invite_owner", None)
+        invitation = getattr(owner, "invitation", None)
+        if invitation is None or not self._remote_paste_reply_available(owner):
+            return
+        stop = getattr(self, "_mailbox_wait_stop", None)
+        if stop is None:
+            stop = threading.Event()
+            self._mailbox_wait_stop = stop
+        stop.clear()
+        self._mailbox_wait_started = True
+        signal = bytes(getattr(invitation, "host_signal", b"") or b"")
+
+        def worker() -> None:
+            from core.signaling_mailbox import (
+                MailboxUnavailable,
+                ack_answer,
+                poll_answer,
+                post_offer,
+            )
+
+            if signal:
+                try:
+                    post_offer(invitation, signal)
+                except (MailboxUnavailable, ValueError):
+                    pass
+            try:
+                envelope = poll_answer(
+                    invitation,
+                    should_stop=stop.is_set,
+                    timeout_seconds=90,
+                )
+            except (MailboxUnavailable, ValueError):
+                return
+            if not envelope or stop.is_set():
+                return
+            try:
+                ack_answer(invitation)
+            except MailboxUnavailable:
+                pass
+
+            def deliver() -> None:
+                if stop.is_set():
+                    return
+                self._apply_guest_reply_envelope(envelope)
+
+            try:
+                self._ui_invoker.invoke(deliver)
+            except RuntimeError:
+                return
+
+        threading.Thread(
+            target=worker,
+            daemon=True,
+            name="webjam-mailbox-wait",
+        ).start()
+
+    def _apply_guest_reply_envelope(self, envelope: bytes) -> bool:
+        owner = getattr(self, "_remote_invite_owner", None)
+        apply_reply = getattr(owner, "apply_guest_reply", None)
+        if owner is None or not callable(apply_reply) or not envelope:
+            return False
+        try:
+            apply_reply(envelope)
+        except Exception:  # noqa: BLE001 - never expose private transport detail
+            self.window.flash_message(
+                "That reply could not be used. Ask your friend to copy it again.",
+                ms=7000,
+            )
+            return False
+        self._update_session_hud()
+        return True
+
+    def _apply_guest_reply_paste(self, text: object) -> bool:
+        """Hidden paste fallback when the mailbox is missing or expired."""
+
+        from core.direct_stun_invite import accept_guest_reply
+
+        try:
+            envelope = accept_guest_reply(text)
+        except ValueError:
+            envelope = b""
+        if not envelope:
+            self.window.flash_message(
+                "That reply could not be used. Ask your friend to copy it again.",
+                ms=7000,
+            )
+            return False
+        return self._apply_guest_reply_envelope(envelope)
+
+    def _paste_guest_reply(self) -> None:
+        """Visible fallback: read the clipboard first, then a typed paste."""
+
+        if self._shutdown_cleanup_blocks_action():
+            return
+        from PySide6.QtWidgets import QApplication, QInputDialog
+
+        clipboard = QApplication.clipboard()
+        text = clipboard.text() if clipboard is not None else ""
+        if self._apply_guest_reply_paste(text):
+            return
+        typed, accepted = QInputDialog.getMultiLineText(
+            self.window,
+            "Paste reply",
+            "Paste the reply your friend copied after they joined.",
+        )
+        if not accepted:
+            return
+        self._apply_guest_reply_paste(typed)
 
     def _paste_new_invitation(self) -> None:
         """Reopen Join without changing the current invitation's retry policy."""
@@ -9092,6 +9476,13 @@ class ApplicationController(QObject):
             self.window.flash_message(
                 "Start a remote jam before resetting its invitation.",
                 ms=5000,
+            )
+            return
+        web_join = getattr(self, "_web_join_controls", None)
+        if web_join is not None and web_join.stop() is False:
+            self.window.flash_message(
+                "Web Join is still stopping. Use Kick web guest to retry, then reset the invite.",
+                ms=7000,
             )
             return
         ApplicationController._invalidate_room_help(self)
@@ -9521,7 +9912,7 @@ class ApplicationController(QObject):
         if self._remote_join_retry_pending():
             self._render_remote_retry_hud()
             return GuidanceDisplayOverride(
-                "Needs attention",
+                "Try again",
                 "Choose Try Again to start the private connection.",
                 SessionPrimaryAction.TRY_RECONNECT,
                 "Try Again",
@@ -9529,7 +9920,7 @@ class ApplicationController(QObject):
         if bool(getattr(self, "_remote_invitation_requires_replacement", False)):
             self._render_remote_fresh_invitation_hud()
             return GuidanceDisplayOverride(
-                "Needs attention",
+                "Ask your host for a new invite",
                 self._remote_fresh_invitation_detail(),
                 SessionPrimaryAction.PASTE_NEW_INVITE,
                 "Paste New Invite",
@@ -9549,7 +9940,7 @@ class ApplicationController(QObject):
         if self.audio.connection_timed_out:
             self.window.session_hud.set_state(
                 "Something needs attention",
-                "Make sure you’re on the same Wi-Fi, then use Try Again below.",
+                "Use home Wi-Fi on both computers, not a phone hotspot. Then use Try Again below.",
                 action_visible=False,
             )
             return
@@ -9565,7 +9956,7 @@ class ApplicationController(QObject):
             and self.bridge.jamulus_state in {"Not launched", "Not running"}
         ):
             self.window.session_hud.set_state(
-                "Ready when you are",
+                "Start when you are",
                 "WebJam will handle the connection automatically.",
             )
             return
@@ -9651,25 +10042,19 @@ class ApplicationController(QObject):
                 )
             if not invite_available:
                 if remote_owner is not None:
-                    # Same one-liner on HUD and guidance: name the visible
-                    # Reset Invite button. Do not send hosts into More when
-                    # that button is already the primary recovery action.
-                    detail = (
-                        "Choose Reset Invite to create a fresh invitation, "
-                        "then copy the new link."
-                    )
+                    detail = USED_ONE_USE_INVITE_HOST
                     self.window.session_hud.set_state(
-                        "Create a fresh invitation",
                         detail,
-                        action_text="Reset Invite",
+                        detail,
+                        action_text="Copy Invite",
                         action_visible=True,
                         action_kind="reset_invite",
                     )
                     return GuidanceDisplayOverride(
-                        "Create a fresh invitation",
+                        detail,
                         detail,
                         SessionPrimaryAction.RESET_INVITE,
-                        "Reset Invite",
+                        "Copy Invite",
                     )
                 if share_readiness is not None:
                     self._transition_lifecycle(
@@ -9746,18 +10131,12 @@ class ApplicationController(QObject):
             else:
                 detail = (
                     (
-                        "Your input is detected. Invite a bandmate on the same Wi-Fi."
-                        if remote_owner is None and self._local_audio_seen
-                        else "Your input is detected. Invite your bandmate."
+                        "Your input is detected. Invite your friend."
                         if self._local_audio_seen
-                        else "Play a note to check your input, then invite your bandmate."
+                        else "Play a note to check your input, then invite your friend."
                     )
                     if connected
-                    else (
-                        "Share this link with a bandmate on the same Wi-Fi."
-                        if remote_owner is None
-                        else "Share this private link with your bandmate."
-                    )
+                    else "Share this invite with your friend."
                 )
                 self.window.session_hud.set_state(
                     "Ready to share",
@@ -10458,9 +10837,22 @@ class ApplicationController(QObject):
                 presentation,
                 headline=display_override.title,
             )
+            ApplicationController._sync_invite_share_notice(self)
+            self._overlay_direct_stun_reply_actions()
             return
 
         action = presentation.primary_action
+        action_text = presentation.action_label
+        action_kind = self._conductor_action_kind(action)
+        paste_ready = bool(
+            self._remote_paste_reply_available()
+            and getattr(self, "_direct_stun_invite_copied", False)
+            and action is SessionPrimaryAction.COPY_INVITE
+        )
+        if paste_ready:
+            action_text = "Paste reply"
+            action_kind = "paste_reply"
+        copy_ready = self._guest_reply_copy_available()
         header_owned = action in {
             SessionPrimaryAction.RECORD,
             SessionPrimaryAction.STOP_RECORDING,
@@ -10486,7 +10878,14 @@ class ApplicationController(QObject):
         )
         detail = presentation.message
         if presentation.preservation:
-            detail = f"{detail} {presentation.preservation}"
+            detail = f"{detail} {presentation.preservation}".strip()
+        if (
+            not detail
+            and display_override is None
+            and self.creator_profile.key == "art"
+            and facts.art_room is ArtRoomState.CONNECTED
+        ):
+            detail = art_room_hud_active_start_detail(self._art_room_active_start_key())
         # Explain what this profile allows without claiming a recorder or
         # a completed setup. The HUD remains the only startup action.
         stage_hint = ""
@@ -10503,19 +10902,21 @@ class ApplicationController(QObject):
             presentation.title,
             detail,
             invite_available=action is SessionPrimaryAction.COPY_INVITE,
-            action_text=presentation.action_label,
-            action_visible=action_visible,
-            action_kind=self._conductor_action_kind(action),
+            action_text=action_text,
+            action_visible=action_visible or paste_ready or copy_ready,
+            action_kind=action_kind,
             ready=presentation.phase is SessionConductorPhase.TAKE_READY
             or (
                 presentation.phase is SessionConductorPhase.LIVE
                 and facts.human_two_way_audibility is EvidenceState.VERIFIED
             ),
+            secondary_action_text="Copy reply" if copy_ready else "",
+            secondary_action_visible=copy_ready,
+            secondary_action_kind="copy_reply",
         )
         self._focus_initial_hud_action()
-        # The HUD owns the focused action.  The empty stage stays explanatory
-        # so an initial 760x600 window never presents a Start/Check/Practice
-        # pile alongside the same action in the HUD.
+        # The HUD owns the focused action and Music's idle guidance. Hide the
+        # redundant idle card; other phases retain their stage explanation.
         self.window.participant_grid.set_session_state(
             SessionUiState(
                 self._conductor_stage_phase(presentation.phase, facts),
@@ -10528,6 +10929,10 @@ class ApplicationController(QObject):
                 show_practice=False,
                 hint=stage_hint,
                 primary_action="start",
+                show_empty_state=not (
+                    self.creator_profile.key == "music"
+                    and presentation.phase is SessionConductorPhase.IDLE
+                ),
             )
         )
         self._sync_session_status_chip_from_conductor(presentation)
@@ -10535,6 +10940,8 @@ class ApplicationController(QObject):
         # reset command remains under More when a v3 host owns that invite.
         if action is SessionPrimaryAction.COPY_INVITE:
             self.window.session_strip.set_invite_available(False)
+        ApplicationController._sync_invite_share_notice(self)
+        self._overlay_direct_stun_reply_actions()
 
     def _publish_musician_guidance(
         self,
@@ -10607,14 +11014,45 @@ class ApplicationController(QObject):
 
         QTimer.singleShot(0, deliver)
 
+    def _overlay_direct_stun_reply_actions(self) -> None:
+        """Keep Copy reply / Paste reply visible as the mailbox fallback."""
+
+        hud = getattr(getattr(self, "window", None), "session_hud", None)
+        overlay = getattr(hud, "overlay_actions", None)
+        if not callable(overlay):
+            return
+        snapshot = getattr(getattr(self, "_remote_session", None), "snapshot", None)
+        connected = getattr(getattr(snapshot, "phase", None), "name", "") == "CONNECTED"
+        updates: dict[str, object] = {}
+        if self._remote_paste_reply_available() and not connected:
+            copied = bool(getattr(self, "_direct_stun_invite_copied", False))
+            label = "Paste reply" if copied else "Copy Invite"
+            updates["action_text"] = label
+            updates["action_kind"] = "paste_reply" if copied else "copy_invite"
+            updates["action_visible"] = True
+        if self._guest_reply_copy_available():
+            updates["secondary_action_text"] = "Copy reply"
+            updates["secondary_action_kind"] = "copy_reply"
+            updates["secondary_action_visible"] = True
+        if updates:
+            overlay(**updates)
+
+    def _copy_direct_stun_guest_reply_if_ready(self) -> None:
+        """Copy reply is a visible HUD action; never overwrite the clipboard."""
+
+        return
+
     def _update_session_hud(self) -> None:
         """Refresh legacy exceptional copy, then the canonical conductor."""
 
+        self._publish_guest_reply_if_ready()
+        self._copy_direct_stun_guest_reply_if_ready()
         if bool(getattr(self, "_shutdown_cleanup_pending", False)):
             self._render_shutdown_cleanup_pending()
             return
         if getattr(self, "_startup_attempt", None) is not None:
             self._render_startup_journey()
+            self._overlay_direct_stun_reply_actions()
             return
         room = getattr(self, "_room_participant", None)
         if room is not None and (self.creator_profile.key == "art" or self._art_room_active()):
@@ -10632,7 +11070,8 @@ class ApplicationController(QObject):
             override = room.guidance()
             if getattr(self, "_remote_invitation_requires_replacement", False):
                 override = GuidanceDisplayOverride(
-                    "Needs attention", self._remote_fresh_invitation_detail(),
+                    "Ask your host for a new invite",
+                    self._remote_fresh_invitation_detail(),
                     SessionPrimaryAction.PASTE_NEW_INVITE,
                 )
             if self.audio.stopping or self.audio.cleanup_retry_required:
@@ -10696,6 +11135,8 @@ class ApplicationController(QObject):
             secondary_action_visible=replace_lan_invite,
             secondary_action_kind="replace_lan_invite",
         )
+        ApplicationController._sync_invite_share_notice(self)
+        self._overlay_direct_stun_reply_actions()
 
     def _on_conductor_action_requested(self, action_kind: str) -> None:
         """Route the one visible conductor action to its real owner."""
@@ -10748,6 +11189,10 @@ class ApplicationController(QObject):
             self._enter_startup_jam()
         elif action in {"invite", "copy_invite"}:
             self._copy_band_invite()
+        elif action == "paste_reply":
+            self._paste_guest_reply()
+        elif action == "copy_reply":
+            self._copy_guest_reply()
         elif action == "reset_invite":
             self._reset_remote_invite()
         elif action in {"retry", "try_reconnect", "check_session"}:
@@ -10812,6 +11257,8 @@ class ApplicationController(QObject):
             self._skip_startup_webex()
         elif action == "enter_jam":
             self._enter_startup_jam()
+        elif action == "copy_reply":
+            self._copy_guest_reply()
         elif action == "cancel_startup":
             self._cancel_startup_journey()
 
@@ -13267,14 +13714,20 @@ class ApplicationController(QObject):
         """Open the focused Studio preferences without exposing RPC plumbing."""
         from core.settings import load_settings
         from copy import deepcopy
-        from webjam_qt.windows.recording_setup import RecordingSetupDialog
+        from webjam_qt.windows.recording_setup import (
+            SESSION_CHANGE_REVIEW_GUIDANCE,
+            RecordingSetupDialog,
+        )
 
         if self._shutdown_cleanup_blocks_action():
             return
         local_originals_available = self._local_originals_available()
         session_running = self._is_jamulus_running()
-        takes_folder_editable = not session_running and not bool(
-            getattr(self.host_peer, "active", False)
+        hosting = bool(getattr(self.settings, "host_server_enabled", False))
+        takes_folder_editable = (
+            not session_running
+            and not bool(getattr(self.host_peer, "active", False))
+            and not hosting
         )
         old_settings = self.settings
         settings_path = self.settings.config_file
@@ -13283,14 +13736,19 @@ class ApplicationController(QObject):
         opening_generation = getattr(self, "_settings_generation", 0)
         opening_guest = getattr(self, "guest_peer", None)
 
-        def format_change_guard() -> str:
+        def session_change_guard() -> str:
             if (
                 self.settings != opening_settings
                 or getattr(self, "_settings_generation", 0) != opening_generation
                 or getattr(self, "guest_peer", None) is not opening_guest
             ):
-                return "The session setup changed. Close and reopen Recording Setup to review it."
-            return ApplicationController._recording_format_change_blocker(self)
+                return SESSION_CHANGE_REVIEW_GUIDANCE
+            return ""
+
+        def format_change_guard() -> str:
+            return session_change_guard() or (
+                ApplicationController._recording_format_change_blocker(self)
+            )
 
         dialog = RecordingSetupDialog(
             self.settings,
@@ -13299,11 +13757,24 @@ class ApplicationController(QObject):
             takes_folder_editable=takes_folder_editable,
             creator_profile=self.creator_profile,
             format_change_guard=format_change_guard,
+            session_change_guard=session_change_guard,
         )
         if dialog.exec() != RecordingSetupDialog.DialogCode.Accepted:
             return
         format_repaired = getattr(dialog, "format_repair_requested", False) is True
         committed = load_settings(settings_path)
+        stale = session_change_guard()
+        if stale:
+            self.window.flash_message(
+                (
+                    "Format preferences were saved but not applied to the current session. "
+                    + stale
+                )
+                if format_repaired
+                else stale,
+                ms=8000,
+            )
+            return
         if format_repaired:
             blocker = format_change_guard()
             if blocker or (committed.audio_samplerate, committed.audio_blocksize) != (48000, 0):
@@ -13321,6 +13792,7 @@ class ApplicationController(QObject):
         if (
             not session_running
             and retained_invite is not None
+            and not ApplicationController._band_invite_is_legacy_music(retained_invite)
             and self.settings.takes_directory != old_settings.takes_directory
         ):
             # GuestPeerSession owns a concrete transfer queue/root. Rebuild it
@@ -14139,12 +14611,37 @@ class ApplicationController(QObject):
                 # control, so keyboard focus stays inside Paint along.
                 dialog.set_room_available(video_available)
             dialog.set_watch_lesson_available(room_available)
+            invite_owns = False
+            if coordinator.hosting:
+                presentation = getattr(self, "_last_session_conductor", None)
+                action = getattr(presentation, "primary_action", None)
+                invite_owns = action is SessionPrimaryAction.COPY_INVITE
+                attempt = getattr(self, "_startup_attempt", None)
+                if (
+                    isinstance(attempt, dict)
+                    and attempt.get("role") == "host"
+                    and attempt.get("phase") == "invite_ready"
+                ):
+                    invite_owns = True
+            set_invite_owns_primary = getattr(dialog, "set_invite_owns_primary", None)
+            if callable(set_invite_owns_primary):
+                set_invite_owns_primary(invite_owns)
             if not coordinator.hosting:
                 dialog.set_room_available(video_available)
                 if video_available and coordinator.following:
                     dialog.set_follow_snapshot(coordinator.follow_snapshot)
         if not room_available:
-            self._clear_shared_lesson_context()
+            room = getattr(self, "_room_participant", None)
+            if (
+                coordinator.following and room is not None
+                and self._reference_video_binding == self._reference_video_identity()
+                and room._lesson_current(room._lesson_binding)
+            ):
+                # A temporary observation loss disables requests without
+                # retiring this guest's same-room lesson ownership.
+                room.project_lesson_requests()
+            else:
+                self._clear_shared_lesson_context()
         if not video_available:
             self._clear_reference_video_notice()
         return video_available

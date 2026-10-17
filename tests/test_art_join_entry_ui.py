@@ -80,8 +80,15 @@ def test_all_entry_profiles_explain_whole_message_and_conditional_network(
     dialog = join_door(profile)
     guidance = dialog._join_subtitle.text()
     assert "whole message" in guidance
-    assert "If your invitation says “same network,”" in guidance
-    assert "your host’s Wi-Fi or local network" in guidance
+    assert guidance == "Paste the invite or the whole message."
+    with patch("webjam_qt.windows.launch_dialog.QMessageBox.information") as help_box:
+        dialog._join_help_action.trigger()
+    help_box.assert_called_once()
+    help_text = help_box.call_args.args[2]
+    assert guidance in help_text
+    assert "A friend in another house can Join" in help_text
+    assert "only works on the host's Wi-Fi or local" in help_text
+    assert "join from that network" in help_text
     assert dialog._invite_input.accessibleDescription() == guidance
     assert dialog._invite_input.echoMode() == QLineEdit.EchoMode.Password
     assert dialog._invite_input.hasFocus()
@@ -111,6 +118,7 @@ def test_paste_does_not_parse_or_claim_a_network_type(join_door, profile):
         parse.assert_not_called()
     dialog._invite_input.clear()
     assert dialog._join_status.text() == LaunchDialog._EMPTY_JOIN_PROMPT
+    assert dialog._join_status.text() == "Paste an invite to continue"
     assert dialog._join_subtitle.text() == guidance
 
 
@@ -145,7 +153,7 @@ def test_join_keyboard_route_keeps_field_action_and_back_reachable(
     assert field.isEnabled()
     assert field.hasFocus()
     assert dialog._invite_input.accessibleDescription() == dialog._join_subtitle.text()
-    assert dialog._join_status.text() == "Needs attention"
+    assert dialog._join_status.text() == "That invite didn't work"
     assert dialog._join_error.isVisibleTo(dialog)
     assert not dialog.showing_choices
     assert dialog._join_error.accessibleDescription() == dialog._join_error.text()

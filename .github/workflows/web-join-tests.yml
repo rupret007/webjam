@@ -1,0 +1,47 @@
+name: Web Join browser tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  web-join-unit-tests:
+    name: Web Join and Worker unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.22.3"
+
+      - name: Install Cloudflare Worker dependencies
+        working-directory: deploy/relay/cloudflare-worker
+        run: npm ci
+
+      - name: Run Cloudflare Worker unit tests
+        working-directory: deploy/relay/cloudflare-worker
+        run: node --test
+
+      - name: Install Web Join browser dependencies
+        working-directory: web/join
+        run: npm ci --ignore-scripts
+
+      - name: Run Web Join browser unit tests
+        working-directory: web/join
+        run: npm test

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import os
+import stat
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,14 +17,14 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication, QDialog, QInputDialog, QPushButton  # noqa: E402
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QInputDialog, QPushButton  # noqa: E402
 from core.creative_modes import get_creator_profile_by_key_or_default  # noqa: E402
 from core.session_library import SessionLibrary  # noqa: E402
 from webjam_qt.controllers.session_library import (  # noqa: E402
     SessionLibraryCoordinator, import_legacy_workspaces,
 )
 from webjam_qt.windows.conductor_window import ConductorWindow  # noqa: E402
-from webjam_qt.windows.session_library import SessionLibraryDialog  # noqa: E402
+from webjam_qt.windows.session_library import SessionLibraryDialog, workspace_summary  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
@@ -55,6 +57,158 @@ def library_coordinator(tmp_path):
     window.deleteLater()
     owner.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+@pytest.mark.parametrize("failure", ["write", "flush", "fsync", "close"])
+@pytest.mark.parametrize("replacement", [False, True])
+def test_summary_export_io_failure_preserves_output_and_reports_uncertainty(
+        library_coordinator, tmp_path, failure, replacement):
+    coordinator, window = library_coordinator
+    window.session_canvas.set_notes("Decision: keep these notes")
+    coordinator.show()
+    dialog = coordinator.dialog
+    destination = tmp_path / "summary.md"
+    other_bytes = b"Completed work from another writer\x00\xff\n"
+    real_fdopen = os.fdopen
+    failures = []
+
+    def fail():
+        failures.append(failure)
+        if replacement:
+            other = tmp_path / "other-writer.md"
+            other.write_bytes(other_bytes)
+            os.replace(other, destination)
+        raise OSError("injected export failure")
+
+    @contextmanager
+    def failing_fdopen(*args, **kwargs):
+        with real_fdopen(*args, **kwargs) as handle:
+            proxy = Mock(wraps=handle)
+
+            def write(text):
+                handle.write(text[:12])
+                handle.flush()
+                fail()
+
+            if failure == "write":
+                proxy.write.side_effect = write
+            elif failure == "flush":
+                proxy.flush.side_effect = fail
+            yield proxy
+        if failure == "close":
+            fail()
+
+    with ExitStack() as stack:
+        def choose_path(*_args):
+            # Install only after workspace reconciliation has saved its files.
+            stack.enter_context(patch("os.fdopen", side_effect=failing_fdopen))
+            if failure == "fsync":
+                stack.enter_context(patch("os.fsync", side_effect=lambda _fd: fail()))
+            return str(destination), ""
+
+        stack.enter_context(patch.object(QFileDialog, "getSaveFileName", side_effect=choose_path))
+        dialog._export()
+
+    assert failures == [failure]
+    assert destination.exists()
+    if replacement:
+        assert destination.read_bytes() == other_bytes
+    else:
+        assert destination.read_bytes()
+    assert dialog.status.text() == (
+        "Summary export failed. The chosen file may be incomplete. Retry with a new filename."
+    )
+    assert coordinator.library.load(dialog.record.id).notes == "Decision: keep these notes"
+
+
+@pytest.mark.parametrize("kind", ["file", "hardlink", "symlink", "dangling_symlink"])
+def test_summary_export_refuses_existing_destination(library_coordinator, tmp_path, kind):
+    coordinator, _window = library_coordinator
+    coordinator.show()
+    dialog = coordinator.dialog
+    destination = tmp_path / "summary.md"
+    original = tmp_path / "original.md"
+    original_bytes = b"Original work\x00\xff\n"
+    if kind != "dangling_symlink":
+        original.write_bytes(original_bytes)
+    if kind == "file":
+        destination.write_bytes(original_bytes)
+    elif kind == "hardlink":
+        os.link(original, destination)
+    else:
+        destination.symlink_to(original)
+    before = destination.lstat()
+
+    with patch.object(QFileDialog, "getSaveFileName", return_value=(str(destination), "")):
+        dialog._export()
+
+    assert destination.lstat() == before
+    if kind == "dangling_symlink":
+        assert destination.is_symlink()
+        assert not original.exists()
+    else:
+        assert destination.read_bytes() == original_bytes
+        assert original.read_bytes() == original_bytes
+    assert dialog.status.text() == "Summary was not exported. Choose a new filename in a writable folder."
+
+
+def test_summary_export_stream_open_failure_closes_descriptor(library_coordinator, tmp_path):
+    coordinator, _window = library_coordinator
+    coordinator.show()
+    dialog = coordinator.dialog
+    destination = tmp_path / "summary.md"
+    descriptors = []
+
+    def fail_open(fd, *_args, **_kwargs):
+        descriptors.append(fd)
+        raise OSError("injected stream open failure")
+
+    with ExitStack() as stack:
+        def choose_path(*_args):
+            stack.enter_context(patch("os.fdopen", side_effect=fail_open))
+            return str(destination), ""
+
+        stack.enter_context(patch.object(QFileDialog, "getSaveFileName", side_effect=choose_path))
+        dialog._export()
+
+    assert len(descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(descriptors[0])
+    assert destination.read_bytes() == b""
+    assert "may be incomplete" in dialog.status.text()
+    assert "Summary exported" not in dialog.status.text()
+
+
+def test_summary_export_creates_owner_only_file_under_permissive_umask(library_coordinator, tmp_path):
+    coordinator, _window = library_coordinator
+    coordinator.show()
+    dialog = coordinator.dialog
+    destination = tmp_path / "summary.md"
+    previous = os.umask(0)
+    try:
+        with patch.object(QFileDialog, "getSaveFileName", return_value=(str(destination), "")):
+            dialog._export()
+    finally:
+        os.umask(previous)
+
+    assert destination.read_text(encoding="utf-8")
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+    assert dialog.status.text() == "Summary exported. Original work is unchanged."
+
+
+def test_summary_export_nul_path_is_not_exported_and_creates_nothing(library_coordinator, tmp_path):
+    coordinator, _window = library_coordinator
+    coordinator.show()
+    dialog = coordinator.dialog
+    before = sorted(tmp_path.iterdir())
+    bad_path = str(tmp_path / "sum\x00mary.md")
+
+    with patch.object(QFileDialog, "getSaveFileName", return_value=(bad_path, "")):
+        dialog._export()
+
+    assert dialog.status.text() == "Summary was not exported. Choose a new filename in a writable folder."
+    assert sorted(tmp_path.iterdir()) == before
+    assert not (tmp_path / "sum").exists()
 
 
 @pytest.mark.parametrize("action", ["window", "escape", "button"])
@@ -181,6 +335,81 @@ class TestSessionLibraryCoordinator(TestCase):
         _app.processEvents()
         self.temp.cleanup()
 
+    def test_post_publication_create_retry_reuses_one_workspace(self):
+        from tests.support.workspace_save_faults import fail_create_sync
+
+        with fail_create_sync():
+            self.assertFalse(self.coordinator.ensure_current())
+        self.assertIsNone(self.coordinator.current)
+        listed = self.library.list()
+        self.assertEqual(len(listed), 1)
+        flashes = [call.args[0] for call in self.window.flash_message.call_args_list]
+        self.assertTrue(any("not confirmed" in text or "could not be saved" in text for text in flashes))
+        self.assertTrue(self.coordinator.ensure_current())
+        self.assertEqual(self.coordinator.current.id, listed[0].id)
+        self.assertEqual(self.coordinator.current.title, "Wednesday")
+        self.assertEqual(len(self.library.list()), 1)
+        other = self.library.create("music", "Separate explicit workspace")
+        self.assertNotEqual(other.id, listed[0].id)
+        self.assertEqual(len(self.library.list()), 2)
+
+    def test_post_primary_sync_failure_retries_latest_live_draft(self):
+        from tests.support.workspace_save_faults import fail_primary_sync
+
+        self.assertTrue(self.coordinator.ensure_current())
+        base = self.coordinator.current
+        self.window.session_canvas.set_notes("Attempted live notes")
+        with fail_primary_sync():
+            self.assertFalse(self.coordinator.flush())
+        self.assertEqual(self.coordinator.current.revision, base.revision)
+        self.assertEqual(self.library.load(base.id).notes, "Attempted live notes")
+        self.window.session_canvas.set_notes("Newer live notes")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(base.id)
+        self.assertEqual(saved.notes, "Newer live notes")
+        self.assertEqual(self.coordinator.current._store_token, saved._store_token)
+        self.assertNotIn(base.id, self.coordinator._pending)
+        self.assertEqual(len(self.library.list()), 1)
+
+    def test_post_primary_sync_failure_editor_retry_keeps_late_facts(self):
+        from tests.support.workspace_save_faults import fail_primary_sync
+
+        self.coordinator.start_session()
+        self.coordinator.recording_started("late-take", "recording-session")
+        base = self.coordinator.current
+        editor = self._editor()
+        editor.notes.setPlainText("Attempted editor notes")
+        with fail_primary_sync():
+            self.assertFalse(editor.save_current())
+        editor.notes.setPlainText("Newer editor notes")
+        self._late_take_and_recap()
+        self.assertTrue(editor.save_current())
+        saved = self.library.load(base.id)
+        self.assertEqual(saved.notes, "Newer editor notes")
+        self.assertEqual(saved.take_links[0]["status"], "complete")
+        self.assertEqual(saved.recaps[0]["take_ids"], ["late-take"])
+        self.assertEqual(self.coordinator.current._store_token, saved._store_token)
+        self.assertNotIn(base.id, self.coordinator._pending)
+        self.assertEqual(len(self.library.list()), 1)
+
+    def test_post_primary_sync_failure_external_change_keeps_editor_conflict(self):
+        from tests.support.workspace_save_faults import fail_primary_sync
+
+        self.assertTrue(self.coordinator.ensure_current())
+        base = self.coordinator.current
+        editor = self._editor()
+        editor.notes.setPlainText("My editor draft")
+        with fail_primary_sync():
+            self.assertFalse(editor.save_current())
+        other = SessionLibrary(self.library.root)
+        other.save(replace(other.load(base.id), title="Other owner's title"))
+        self.assertFalse(editor.save_current())
+        self.assertEqual(editor.notes.toPlainText(), "My editor draft")
+        self.assertTrue(editor._dirty)
+        self.assertIn("Save as copy", editor.status.text())
+        self.assertEqual(self.library.load(base.id).title, "Other owner's title")
+        self.assertEqual(self.coordinator.current.revision, base.revision)
+
     def _editor(self):
         editor = SessionLibraryDialog(self.library, self.window,
             current_id=self.coordinator.current.id, pending_records=self.coordinator._pending,
@@ -251,6 +480,141 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertEqual(saved.recaps[0]["take_ids"], ["late-take"])
         self.assertNotIn(saved.id, self.coordinator._pending)
         self.assertEqual(self.window.session_canvas.current_notes(), saved.notes)
+
+    def test_summary_export_reconciles_saved_and_pending_live_notes_with_clean_editor(self):
+        self.window.session_canvas.set_notes("Decision: initial")
+        self.coordinator.start_session()
+        self.assertTrue(self.coordinator.flush())
+        editor = self._editor()
+        baseline = editor._base_record
+        self.window.session_canvas.set_notes("Decision: NEW LIVE DECISION")
+        self.assertTrue(self.coordinator.flush())
+        self.coordinator.capture_summary()
+        self.coordinator.finish_session()
+        self.assertEqual(len(self.library.load(baseline.id).recaps), 1)
+        # Another live edit has not reached the canvas autosave timer yet.
+        self.window.session_canvas.set_notes("Decision: newest pending decision")
+        self.assertFalse(editor._dirty)
+        destination = self.root / "summary.md"
+        with patch.object(QFileDialog, "getSaveFileName", return_value=(str(destination), "")):
+            editor._export()
+        summary = destination.read_text()
+        self.assertIn("newest pending decision", summary)
+        self.assertIn("## Session history", summary)
+        self.assertIn("NEW LIVE DECISION", summary)
+        self.assertEqual(summary, workspace_summary(self.library.load(baseline.id)))
+        self.assertEqual(editor.status.text(), "Summary exported. Original work is unchanged.")
+        self.assertEqual(self.library.load(baseline.id).notes, "Decision: newest pending decision")
+        # Export must not advance the baseline behind unchanged controls (W04).
+        self.assertEqual(editor._base_record, baseline)
+        self.assertEqual(editor.notes.toPlainText(), baseline.notes)
+        self.assertFalse(editor._dirty)
+        editor.title.setText("Renamed after export")
+        self.assertTrue(editor.save_current())
+        self.assertEqual(self.library.load(baseline.id).notes, "Decision: newest pending decision")
+
+    def test_summary_export_includes_late_pending_take_and_recap(self):
+        self.coordinator.start_session()
+        self.coordinator.recording_started("late-take", "recording-session")
+        editor = self._editor()
+        self.window.session_canvas.set_notes("Decision: keep the late take")
+        self._late_take_and_recap()
+        self.assertFalse(editor._dirty)
+        destination = self.root / "summary.md"
+        with patch.object(QFileDialog, "getSaveFileName", return_value=(str(destination), "")):
+            editor._export()
+        self.assertIn("keep the late take", destination.read_text().split("## Session history")[1])
+        saved = self.library.load(editor.record.id)
+        self.assertEqual(saved.take_links[0]["status"], "complete")
+        self.assertEqual(saved.recaps[0]["take_ids"], ["late-take"])
+
+    def test_summary_export_conflict_retains_both_drafts_without_opening_picker(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        baseline = editor._base_record
+        editor.notes.setPlainText("Decision: editor draft")
+        self.window.session_canvas.set_notes("Decision: live draft")
+        with patch.object(QFileDialog, "getSaveFileName") as picker:
+            editor._export()
+        picker.assert_not_called()
+        self.assertEqual(editor.notes.toPlainText(), "Decision: editor draft")
+        self.assertTrue(editor._dirty)
+        self.assertEqual(editor._base_record, baseline)
+        self.assertEqual(self.coordinator._pending[baseline.id].notes, "Decision: live draft")
+        self.assertEqual(self.library.load(baseline.id).notes, baseline.notes)
+        self.assertIn("both retained", editor.status.text())
+
+    def test_summary_export_stays_bound_to_selection_before_picker(self):
+        self.window.session_canvas.set_notes("Decision: export this workspace")
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        other = self.library.create("music", "Other workspace", notes="Do not export this")
+        editor.refresh()
+        destination = self.root / "summary.md"
+
+        def choose_path(*_args):
+            editor.select_id(other.id)
+            return str(destination), ""
+
+        with patch.object(QFileDialog, "getSaveFileName", side_effect=choose_path):
+            editor._export()
+        self.assertEqual(editor.record.id, other.id)
+        self.assertIn("export this workspace", destination.read_text())
+        self.assertNotIn("Do not export this", destination.read_text())
+
+    def test_summary_export_canceled_picker_creates_nothing(self):
+        self.window.session_canvas.set_notes("Decision: initial")
+        self.assertTrue(self.coordinator.ensure_current())
+        self.assertTrue(self.coordinator.flush())
+        editor = self._editor()
+        files_before = set(self.root.rglob("*"))
+        with patch.object(QFileDialog, "getSaveFileName", return_value=("", "")):
+            editor._export()
+        self.assertEqual(set(self.root.rglob("*")), files_before)
+        self.assertNotIn("Summary exported", editor.status.text())
+
+    def test_summary_export_of_browsed_workspace_can_repeat_and_save_later_edits(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        other = self.library.create("music", "Browsed workspace")
+        editor = self._editor()
+        editor.select_id(other.id)
+        editor.notes.setPlainText("Decision: keep this draft")
+        for name in ("first.md", "second.md"):
+            destination = self.root / name
+            with patch.object(QFileDialog, "getSaveFileName", return_value=(str(destination), "")):
+                editor._export()
+            self.assertTrue(destination.exists(), editor.status.text())
+            self.assertIn("keep this draft", destination.read_text())
+        editor.title.setText("Renamed browsed workspace")
+        self.assertTrue(editor.save_current(), editor.status.text())
+        saved = self.library.load(other.id)
+        self.assertEqual(saved.title, "Renamed browsed workspace")
+        self.assertEqual(saved.notes, "Decision: keep this draft")
+
+    def test_summary_export_still_blocks_unknown_external_write_after_export(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        other = self.library.create("music", "Browsed workspace")
+        editor = self._editor()
+        editor.select_id(other.id)
+        with patch.object(QFileDialog, "getSaveFileName", return_value=(str(self.root / "first.md"), "")):
+            editor._export()
+        external = self.library.save(replace(self.library.load(other.id), notes="External edit"))
+        with patch.object(QFileDialog, "getSaveFileName") as picker:
+            editor._export()
+        picker.assert_not_called()
+        self.assertIn("changed since it was opened", editor.status.text())
+        self.assertEqual(self.library.load(other.id), external)
+
+    def test_summary_export_write_failure_retains_live_notes_and_blocks_picker(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        editor = self._editor()
+        self.window.session_canvas.set_notes("Decision: retained live draft")
+        with patch.object(self.library, "save", side_effect=OSError("write unavailable")), \
+                patch.object(QFileDialog, "getSaveFileName") as picker:
+            editor._export()
+        picker.assert_not_called()
+        self.assertIn("not saved", editor.status.text())
+        self.assertEqual(self.coordinator._pending[editor.record.id].notes, "Decision: retained live draft")
 
     def test_second_unrelated_save_cannot_revert_notes_merged_from_live_canvas(self):
         self.window.session_canvas.set_notes("Original notes")
@@ -464,6 +828,45 @@ class TestSessionLibraryCoordinator(TestCase):
         self.owner.audio.start.assert_not_called()
         self.owner.recording.start.assert_not_called()
 
+    def test_borrowed_strip_title_does_not_rename_existing_workspace_on_flush(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        workspace_id = self.coordinator.current.id
+        self.owner._persistence = SimpleNamespace(_borrowed_title="Guest room")
+        self.window.session_strip.set_session_title("Guest room")
+        self.window.session_canvas.set_notes("Decision: keep the bridge")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(workspace_id)
+        self.assertEqual(saved.title, "Wednesday")
+        self.assertEqual(saved.notes, "Decision: keep the bridge")
+
+    def test_reverted_notes_after_failed_autosave_keep_workspace_title_while_borrowed(self):
+        self.window.session_canvas.set_notes("Decision: keep the bridge")
+        self.assertTrue(self.coordinator.ensure_current())
+        workspace_id = self.coordinator.current.id
+        self.owner._persistence = SimpleNamespace(_borrowed_title="Guest room")
+        self.window.session_strip.set_session_title("Guest room")
+        self.window.session_canvas.set_notes("Decision: discard this draft")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        pending = self.coordinator._pending[workspace_id]
+        self.assertEqual(pending.title, "Wednesday")
+        self.assertEqual(pending.decisions, ("discard this draft",))
+        self.window.session_canvas.set_notes("Decision: keep the bridge")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(workspace_id)
+        self.assertEqual(saved.title, "Wednesday")
+        self.assertEqual(saved.notes, "Decision: keep the bridge")
+        self.assertEqual(saved.decisions, ("keep the bridge",))
+
+    def test_explicit_title_change_still_renames_workspace_on_flush(self):
+        self.assertTrue(self.coordinator.ensure_current())
+        workspace_id = self.coordinator.current.id
+        self.owner._persistence = SimpleNamespace(_borrowed_title=None)
+        self.window.session_strip.set_session_title("Thursday")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(workspace_id)
+        self.assertEqual(saved.title, "Thursday")
+
     def test_failed_save_blocks_switch_and_keeps_draft(self):
         self.coordinator.ensure_current()
         other = self.library.create("music", "Other")
@@ -490,6 +893,76 @@ class TestSessionLibraryCoordinator(TestCase):
         self.assertTrue(self.coordinator.flush())
         self.assertEqual(self.window.session_canvas.current_notes(), "Original notes")
         self.assertEqual(self.library.load(record_id).notes, "Original notes")
+
+    def test_retry_save_after_notes_undo_to_saved_baseline_persists_visible_notes(self):
+        # W18: flush fail on Changed notes, undo to Original notes, retry must
+        # persist the visible baseline rather than the abandoned failed draft.
+        canvas = self.window.session_canvas
+        canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.ensure_current())
+        record_id = self.coordinator.current.id
+        self.assertEqual(self.library.load(record_id).notes, "Original notes")
+        canvas._notes.selectAll()
+        canvas._notes.insertPlainText("Changed notes")
+        self.assertEqual(canvas.current_notes(), "Changed notes")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        self.assertEqual(self.coordinator._pending[record_id].notes, "Changed notes")
+        self.assertTrue(canvas._notes.document().isUndoAvailable())
+        canvas._notes.undo()
+        self.assertEqual(canvas.current_notes(), "Original notes")
+        self.assertTrue(self.coordinator.flush())
+        self.assertEqual(canvas.current_notes(), "Original notes")
+        self.assertEqual(self.library.load(record_id).notes, "Original notes")
+        self.assertNotIn(record_id, self.coordinator._pending)
+        other = self.library.create("music", "Other", notes="other notes")
+        self.assertTrue(self.coordinator.continue_record(other))
+        original = self.library.load(record_id)
+        self.assertTrue(self.coordinator.continue_record(original))
+        self.assertEqual(canvas.current_notes(), "Original notes")
+
+    def test_notes_undo_to_saved_baseline_preserves_pending_take_and_recap(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.ensure_current())
+        record_id = self.coordinator.current.id
+        self.window.session_canvas.set_notes("Changed notes")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush())
+        pending = self.coordinator._pending[record_id]
+        self.assertEqual(pending.notes, "Changed notes")
+        self.assertEqual(self.coordinator.current.notes, "Original notes")
+        take_ref = {"take_id": "late-take", "take_path": str(self.root / "take"),
+                    "title": "Late completed take", "status": "complete"}
+        recap = {"run_id": "run-one", "summary": "Keep this recap", "take_ids": ["late-take"]}
+        self.coordinator._pending[record_id] = replace(
+            pending, take_links=(take_ref,), recaps=(recap,))
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(record_id)
+        self.assertEqual(saved.notes, "Original notes")
+        self.assertEqual(saved.take_links[0]["take_id"], "late-take")
+        self.assertEqual(saved.take_links[0]["status"], "complete")
+        self.assertEqual(saved.recaps[0]["take_ids"], ["late-take"])
+        self.assertEqual(self.window.session_canvas.current_notes(), "Original notes")
+
+    def test_notes_undo_to_saved_baseline_keeps_competing_editor_draft(self):
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertTrue(self.coordinator.ensure_current())
+        record_id = self.coordinator.current.id
+        editor = self._editor()
+        editor.notes.setPlainText("Editor draft")
+        editor.timer.stop()
+        self.window.session_canvas.set_notes("Changed notes")
+        with patch.object(self.library, "save", side_effect=OSError("temporary write failure")):
+            self.assertFalse(self.coordinator.flush(include_editor=False))
+        self.assertEqual(self.coordinator._pending[record_id].notes, "Changed notes")
+        self.window.session_canvas.set_notes("Original notes")
+        self.assertFalse(self.coordinator.flush(include_editor=False))
+        self.assertEqual(editor.notes.toPlainText(), "Editor draft")
+        self.assertTrue(editor._dirty)
+        self.assertEqual(self.window.session_canvas.current_notes(), "Original notes")
+        self.assertEqual(self.library.load(record_id).notes, "Original notes")
+        self.assertEqual(self.coordinator._pending[record_id].notes, "Original notes")
 
     def test_reverted_title_edit_overrides_failed_autosave_draft(self):
         self.coordinator.ensure_current()
@@ -523,6 +996,86 @@ class TestSessionLibraryCoordinator(TestCase):
             picker.setCurrentIndex(picker.findData("music_jam"))
             self.assertTrue(coordinator.flush())
             self.assertEqual(library.load(record_id).mode_key, "music_jam")
+        finally:
+            coordinator.timer.stop()
+            window.close()
+            window.deleteLater()
+            owner.deleteLater()
+            _app.processEvents()
+
+    def test_first_flush_derives_facts_from_live_notes(self):
+        self.window.session_canvas.set_notes(
+            "Decision: Keep the chorus\nAction: Send chart"
+        )
+        self.assertTrue(self.coordinator.ensure_current())
+        self.assertEqual(self.coordinator.current.decisions, ())
+        self.assertEqual(self.coordinator.current.actions, ())
+        self.assertTrue(self.coordinator.flush())
+        saved = self.library.load(self.coordinator.current.id)
+        self.assertEqual(saved.notes, "Decision: Keep the chorus\nAction: Send chart")
+        self.assertEqual(saved.decisions, ("Keep the chorus",))
+        self.assertEqual(saved.actions, ("Send chart",))
+
+    def test_mode_only_edit_preserves_imported_workspace_facts(self):
+        window = ConductorWindow(mode_entries=[("music_jam", "Music"), ("music_cover", "Covers")],
+                                  initial_mode_key="music_jam", initial_title="Wednesday")
+        window.flash_message = Mock()
+        owner = Owner(window)
+        library = SessionLibrary(self.root / "imported_facts")
+        coordinator = SessionLibraryCoordinator(owner, library=library)
+        coordinator._imported = True
+        facts = (("Play in D",), ("Send chart",), ("Missing player",))
+        try:
+            record = library.create(
+                "music", "Wednesday rehearsal", notes="Practice Wednesday",
+                mode_key="music_jam", decisions=facts[0], actions=facts[1],
+                blockers=facts[2],
+            )
+            self.assertTrue(coordinator.continue_record(record))
+            picker = window.session_strip._mode_picker
+            picker.setCurrentIndex(picker.findData("music_cover"))
+            self.assertTrue(coordinator.flush())
+            saved = library.load(record.id)
+            self.assertEqual(saved.mode_key, "music_cover")
+            self.assertEqual(saved.notes, "Practice Wednesday")
+            self.assertEqual(saved.decisions, facts[0])
+            self.assertEqual(saved.actions, facts[1])
+            self.assertEqual(saved.blockers, facts[2])
+        finally:
+            coordinator.timer.stop()
+            window.close()
+            window.deleteLater()
+            owner.deleteLater()
+            _app.processEvents()
+
+    def test_mode_only_edit_preserves_imported_crlf_and_nbsp_workspace_facts(self):
+        window = ConductorWindow(mode_entries=[("music_jam", "Music"), ("music_cover", "Covers")],
+                                  initial_mode_key="music_jam", initial_title="Wednesday")
+        window.flash_message = Mock()
+        owner = Owner(window)
+        library = SessionLibrary(self.root / "imported_crlf_facts")
+        coordinator = SessionLibraryCoordinator(owner, library=library)
+        coordinator._imported = True
+        facts = (("Play in D",), ("Send chart",), ("Missing player",))
+        notes = "Practice\u00a0Wednesday\r\nBring charts"
+        try:
+            record = library.create(
+                "music", "Wednesday rehearsal", notes=notes,
+                mode_key="music_jam", decisions=facts[0], actions=facts[1],
+                blockers=facts[2],
+            )
+            self.assertTrue(coordinator.continue_record(record))
+            live_notes = window.session_canvas.current_notes()
+            self.assertEqual(coordinator._captured[3], live_notes)
+            picker = window.session_strip._mode_picker
+            picker.setCurrentIndex(picker.findData("music_cover"))
+            self.assertTrue(coordinator.flush())
+            saved = library.load(record.id)
+            self.assertEqual(saved.mode_key, "music_cover")
+            self.assertEqual(saved.notes, notes)
+            self.assertEqual(saved.decisions, facts[0])
+            self.assertEqual(saved.actions, facts[1])
+            self.assertEqual(saved.blockers, facts[2])
         finally:
             coordinator.timer.stop()
             window.close()

@@ -180,8 +180,9 @@ def test_direct_remote_route_activation_retires_reference_track_once(
     controller.shutdown()
 
 
+@pytest.mark.parametrize("arrival", ["confirmation", "teardown"])
 def test_busy_legacy_switch_latest_remote_invite_reuses_reference_retirement(
-    qapp, tmp_path, monkeypatch
+    qapp, tmp_path, monkeypatch, arrival
 ) -> None:
     class Backend(_AuthenticatedMusicRoomBackend):
         def start_guest(self, invitation, *, generation):
@@ -229,12 +230,17 @@ def test_busy_legacy_switch_latest_remote_invite_reuses_reference_retirement(
         Backend,
     )
 
+    def answer(*args):
+        if arrival == "confirmation" and question.call_count == 1:
+            assert controller.accept_invitation(remote)
+        return QMessageBox.StandardButton.Yes
+
     with (
         mock.patch.object(
             QMessageBox,
             "question",
-            return_value=QMessageBox.StandardButton.Yes,
-        ),
+            side_effect=answer,
+        ) as question,
         mock.patch(
             "webjam_qt.controllers.application_controller.threading.Thread",
             side_effect=thread_factory,
@@ -249,7 +255,9 @@ def test_busy_legacy_switch_latest_remote_invite_reuses_reference_retirement(
             create_invite_link("192.168.1.42", session_name="Legacy Replacement")
         )
         assert controller._invite_switch_in_flight is True
-        assert controller.accept_invitation(remote)
+        if arrival == "teardown":
+            assert controller.accept_invitation(remote)
+        assert question.call_count == 1
         assert controller._pending_invitation is remote
 
         switch_worker["target"]()
@@ -462,7 +470,8 @@ def test_v3_guest_enrollment_failure_requires_fresh_invitation_and_never_falls_t
             controller._remote_session.snapshot.phase is RemoteSessionPhase.FAILED
             and controller._remote_invitation is None
             and controller._remote_invitation_requires_replacement
-            and "Needs attention" in controller.window.session_hud._status.text()
+            and "Ask your host for a new invite"
+            in controller.window.session_hud._status.text()
         ),
     )
 
@@ -511,7 +520,7 @@ def test_v3_guest_pre_enrollment_failure_stage_and_hud_retry_same_invitation(
         lambda: (
             controller._remote_session.snapshot.phase is RemoteSessionPhase.FAILED
             and controller._remote_invitation is invitation
-            and "Needs attention" in controller.window.session_hud._status.text()
+            and "Try again" in controller.window.session_hud._status.text()
         ),
     )
 
@@ -695,6 +704,8 @@ def test_remote_fresh_invitation_detail_names_paste_new_invite_button(
         assert "paste it here" not in detail.casefold(), (error_code, detail)
         assert needle in detail.casefold(), (error_code, detail)
     state = SessionUiState.remote_session_fresh_invitation_required()
+    assert state.title == "Ask your host for a new invite"
+    assert "Needs attention" not in state.title
     assert "Paste New Invite" in state.message
     assert "paste it here" not in state.message.casefold()
     assert state.primary_text == "Paste New Invite"
@@ -766,6 +777,28 @@ def test_guest_enrollment_failure_flash_names_paste_new_invite_button(
         assert controller.window.session_hud._action_kind == "paste_invite"
         assert controller._remote_invitation is None
         assert controller._remote_invitation_requires_replacement
+    controller.shutdown()
+
+
+def test_direct_stun_timeout_flash_names_home_wifi(qapp, tmp_path) -> None:
+    controller = _controller(tmp_path)
+    controller.window.flash_message = mock.MagicMock()
+    controller._remote_invitation = issue_remote_invitation(
+        "direct-stun",
+        allowed_profiles={"direct-stun"},
+        host_spki_sha256=bytes.fromhex("44" * 32),
+    ).invitation
+    controller._show_remote_session_failure(
+        guest_enrollment=True,
+        retry_safe=False,
+        error_code=RemoteSessionErrorCode.TIMED_OUT,
+    )
+    flash = controller.window.flash_message.call_args.args[0]
+    assert "couldn't reach the host" in flash
+    assert "phone hotspot" in flash
+    assert "already be used" not in flash.casefold()
+    assert controller.window.session_hud._action.text() == "Paste New Invite"
+    assert controller._remote_invitation is None
     controller.shutdown()
 
 
@@ -1163,13 +1196,9 @@ def test_host_hud_hides_consumed_copy_but_keeps_reset_available(
 def test_host_consumed_invite_recovery_names_reset_invite_button(
     qapp, tmp_path,
 ) -> None:
-    """When a private invite is used up, name the visible Reset Invite button.
+    """When a private invite is used up, tell the host to press Copy Invite."""
+    from webjam_qt.session_state import USED_ONE_USE_INVITE_HOST
 
-    The host HUD previously said "Open More and choose Reset Invite" beside a
-    primary button already labeled Reset Invite, and Notes/guidance used a
-    different sentence that never named that button. Sibling recovery
-    one-liners already say "Choose Reset Invite…".
-    """
     class Owner:
         invitation_available = False
 
@@ -1180,17 +1209,19 @@ def test_host_consumed_invite_recovery_names_reset_invite_button(
 
     override = controller._update_session_hud_legacy()
     detail = controller.window.session_hud._detail.text()
-    assert controller.window.session_hud._action.text() == "Reset Invite"
+    assert detail == USED_ONE_USE_INVITE_HOST
+    assert detail == "They need a new invite — press Copy Invite again."
+    assert controller.window.session_hud._status.text() == USED_ONE_USE_INVITE_HOST
+    assert controller.window.session_hud._action.text() == "Copy Invite"
     assert controller.window.session_hud._action_kind == "reset_invite"
-    assert "Reset Invite" in detail
     assert "Open More" not in detail
     from core.session_conductor import SessionPrimaryAction
 
     assert override is not None
     assert override.primary_action is SessionPrimaryAction.RESET_INVITE
-    assert override.action_label == "Reset Invite"
+    assert override.action_label == "Copy Invite"
     assert override.message == detail
-    assert "Reset Invite" in override.message
+    assert "Copy Invite" in override.message
     assert "Open More" not in override.message
     # Drop live-host probes so shutdown does not wait on a fake server.
     controller._jamulus_connected = False

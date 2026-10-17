@@ -31,6 +31,7 @@ var (
 	ErrEventTooLarge      = errors.New("IPC event exceeds limit")
 	ErrUnsupportedProfile = errors.New("unsupported compiled profile")
 	ErrEnrollmentInvalid  = errors.New("invalid enrollment configuration")
+	ErrUnreachable        = errors.New("peer unreachable")
 )
 
 type CommandType string
@@ -39,6 +40,7 @@ const (
 	CommandHello            CommandType = "hello"
 	CommandPrepareHost      CommandType = "prepare_host"
 	CommandOpenPeer         CommandType = "open_peer"
+	CommandApplySignal      CommandType = "apply_signal"
 	CommandSendHelp         CommandType = "send_help"
 	CommandPublishRoomState CommandType = "publish_room_state"
 	CommandClosePeer        CommandType = "close_peer"
@@ -66,6 +68,7 @@ func (SessionID) MarshalJSON() ([]byte, error)  { return nil, ErrProtocol }
 // Command never retains the JSON spellings of enrollment values. Profile is
 // a compiled value selected by exact ID, not desktop-provided configuration.
 type Command struct {
+	WebJoin              *webJoinCommand
 	Version              int
 	ID                   uint64
 	Type                 CommandType
@@ -80,6 +83,7 @@ type Command struct {
 	HostSPKISHA256       PublicPin
 	HasHostSPKI          bool
 	SessionID            SessionID
+	HostSignal           []byte
 	HelpText             []byte
 	RoomState            *room.State
 }
@@ -92,11 +96,17 @@ func (c *Command) ClearSensitive() {
 	if c == nil {
 		return
 	}
+	if c.WebJoin != nil {
+		c.WebJoin.clear()
+		c.WebJoin = nil
+	}
 	clear(c.SessionReference[:])
 	clear(c.InviteReference[:])
 	clear(c.EnrollmentCapability[:])
 	clear(c.HostSPKISHA256[:])
 	clear(c.SessionID[:])
+	clear(c.HostSignal)
+	c.HostSignal = nil
 	clear(c.HelpText)
 	c.HelpText = nil
 	if c.RoomState != nil {
@@ -120,6 +130,7 @@ type wireCommand struct {
 	EnrollmentCapability *strictString   `json:"enrollment_capability,omitempty"`
 	ExpiresAtUnix        *uint64         `json:"expires_at_unix,omitempty"`
 	HostSPKISHA256       *strictString   `json:"host_spki_sha256,omitempty"`
+	HostSignal           *strictString   `json:"host_signal,omitempty"`
 	HelpText             *string         `json:"text,omitempty"`
 	RoomState            json.RawMessage `json:"room_state,omitempty"`
 }
@@ -127,7 +138,7 @@ type wireCommand struct {
 func (w *wireCommand) clearStrings() {
 	w.Type = ""
 	for _, value := range []*strictString{
-		w.Mode, w.ProfileID, w.SessionReference, w.InviteReference, w.EnrollmentCapability, w.HostSPKISHA256,
+		w.Mode, w.ProfileID, w.SessionReference, w.InviteReference, w.EnrollmentCapability, w.HostSPKISHA256, w.HostSignal,
 	} {
 		if value != nil {
 			*value = ""
@@ -139,6 +150,7 @@ func (w *wireCommand) clearStrings() {
 	w.InviteReference = nil
 	w.EnrollmentCapability = nil
 	w.HostSPKISHA256 = nil
+	w.HostSignal = nil
 	if w.HelpText != nil {
 		*w.HelpText = ""
 	}
@@ -178,6 +190,11 @@ type Event struct {
 	Build          string      `json:"build,omitempty"`
 	RequestID      uint64      `json:"request_id,omitempty"`
 	Text           string      `json:"text,omitempty"`
+	Signal         string      `json:"signal,omitempty"`
+	Route          string      `json:"route,omitempty"`
+	SessionPath    string      `json:"session_path,omitempty"`
+	RelayBytes     uint64      `json:"relay_bytes,omitempty"`
+	ExpiresAtUnix  int64       `json:"expires_at_unix,omitempty"`
 	RoomState      *room.State `json:"room_state,omitempty"`
 }
 
@@ -188,6 +205,9 @@ func (e Event) String() string {
 	}
 	if e.Text != "" {
 		text = " [help-text redacted]"
+	}
+	if e.Signal != "" {
+		text += " [signal redacted]"
 	}
 	return fmt.Sprintf(
 		"ipc.Event{id=%d type=%s code=%s state=%s request_id=%d%s}",
@@ -216,6 +236,9 @@ func ParseCommandAt(line []byte, now time.Time) (Command, error) {
 	if err := rejectDuplicateFields(line); err != nil {
 		return Command{}, ErrProtocol
 	}
+	if command, recognized, err := parseWebJoinCommand(line, now); recognized {
+		return command, err
+	}
 	decoder := json.NewDecoder(bytes.NewReader(line))
 	decoder.DisallowUnknownFields()
 	decoder.UseNumber()
@@ -239,6 +262,8 @@ func ParseCommandAt(line []byte, now time.Time) (Command, error) {
 		return command, nil
 	case CommandOpenPeer:
 		return parseOpenCommand(command, wire, now)
+	case CommandApplySignal:
+		return parseApplySignalCommand(command, wire)
 	case CommandSendHelp:
 		return parseHelpCommand(command, wire)
 	case CommandPublishRoomState:
@@ -320,7 +345,8 @@ func hasEscapedTopLevelKey(encoded []byte) bool {
 func (w wireCommand) noPeerFields() bool {
 	return w.Mode == nil && w.TargetPort == nil && w.Generation == nil && w.ProfileID == nil &&
 		w.SessionReference == nil && w.InviteReference == nil && w.EnrollmentCapability == nil &&
-		w.ExpiresAtUnix == nil && w.HostSPKISHA256 == nil && w.HelpText == nil && w.RoomState == nil
+		w.ExpiresAtUnix == nil && w.HostSPKISHA256 == nil && w.HostSignal == nil &&
+		w.HelpText == nil && w.RoomState == nil
 }
 
 func parseOpenCommand(command Command, wire wireCommand, now time.Time) (Command, error) {
@@ -341,11 +367,18 @@ func parseOpenCommand(command Command, wire wireCommand, now time.Time) (Command
 	mode := string(*wire.Mode)
 	switch mode {
 	case "host":
-		if wire.TargetPort == nil || *wire.TargetPort < 1 || *wire.TargetPort > 65_535 || wire.HostSPKISHA256 != nil || wire.RoomState != nil {
+		if wire.TargetPort == nil || *wire.TargetPort < 1 || *wire.TargetPort > 65_535 || wire.HostSPKISHA256 != nil || wire.RoomState != nil || wire.HostSignal != nil {
 			return command, ErrEnrollmentInvalid
 		}
 	case "guest":
 		if wire.TargetPort != nil || wire.HostSPKISHA256 == nil || *wire.HostSPKISHA256 == "" {
+			return command, ErrEnrollmentInvalid
+		}
+		if compiledProfile.ID == profile.DirectStunID {
+			if wire.HostSignal == nil || *wire.HostSignal == "" {
+				return command, ErrEnrollmentInvalid
+			}
+		} else if wire.HostSignal != nil {
 			return command, ErrEnrollmentInvalid
 		}
 	default:
@@ -385,8 +418,34 @@ func parseOpenCommand(command Command, wire wireCommand, now time.Time) (Command
 			return command, ErrEnrollmentInvalid
 		}
 		command.HasHostSPKI = true
+		if wire.HostSignal != nil {
+			envelope, err := decodeSignalEnvelope(string(*wire.HostSignal))
+			if err != nil {
+				command.ClearSensitive()
+				return command, ErrEnrollmentInvalid
+			}
+			command.HostSignal = envelope
+		}
 	}
 	command.SessionID = deriveSessionID(command.SessionReference, command.InviteReference)
+	return command, nil
+}
+
+func parseApplySignalCommand(command Command, wire wireCommand) (Command, error) {
+	if wire.Generation == nil || *wire.Generation == 0 || wire.HostSignal == nil || *wire.HostSignal == "" ||
+		wire.Mode != nil || wire.TargetPort != nil || wire.ProfileID != nil ||
+		wire.SessionReference != nil || wire.InviteReference != nil ||
+		wire.EnrollmentCapability != nil || wire.ExpiresAtUnix != nil ||
+		wire.HostSPKISHA256 != nil || wire.HelpText != nil || wire.RoomState != nil {
+		return command, ErrProtocol
+	}
+	envelope, err := decodeSignalEnvelope(string(*wire.HostSignal))
+	if err != nil {
+		command.ClearSensitive()
+		return command, ErrEnrollmentInvalid
+	}
+	command.Generation = *wire.Generation
+	command.HostSignal = envelope
 	return command, nil
 }
 
@@ -395,7 +454,7 @@ func parseHelpCommand(command Command, wire wireCommand) (Command, error) {
 		wire.Mode != nil || wire.TargetPort != nil || wire.ProfileID != nil ||
 		wire.SessionReference != nil || wire.InviteReference != nil ||
 		wire.EnrollmentCapability != nil || wire.ExpiresAtUnix != nil ||
-		wire.HostSPKISHA256 != nil || wire.RoomState != nil {
+		wire.HostSPKISHA256 != nil || wire.HostSignal != nil || wire.RoomState != nil {
 		return command, ErrProtocol
 	}
 	normalized, err := help.NormalizeText(*wire.HelpText)
@@ -408,7 +467,7 @@ func parseHelpCommand(command Command, wire wireCommand) (Command, error) {
 }
 
 func parseRoomCommand(command Command, wire wireCommand) (Command, error) {
-	if wire.Generation == nil || *wire.Generation == 0 || wire.RoomState == nil || wire.HelpText != nil || wire.Mode != nil || wire.TargetPort != nil || wire.ProfileID != nil || wire.SessionReference != nil || wire.InviteReference != nil || wire.EnrollmentCapability != nil || wire.ExpiresAtUnix != nil || wire.HostSPKISHA256 != nil {
+	if wire.Generation == nil || *wire.Generation == 0 || wire.RoomState == nil || wire.HelpText != nil || wire.Mode != nil || wire.TargetPort != nil || wire.ProfileID != nil || wire.SessionReference != nil || wire.InviteReference != nil || wire.EnrollmentCapability != nil || wire.ExpiresAtUnix != nil || wire.HostSPKISHA256 != nil || wire.HostSignal != nil {
 		return command, ErrProtocol
 	}
 	state, err := room.Decode(wire.RoomState)
@@ -418,6 +477,33 @@ func parseRoomCommand(command Command, wire wireCommand) (Command, error) {
 	command.Generation = *wire.Generation
 	command.RoomState = state
 	return command, nil
+}
+
+func encodeHostSignal(envelope []byte) string {
+	return base64.RawURLEncoding.EncodeToString(envelope)
+}
+
+func decodeSignalEnvelope(encoded string) ([]byte, error) {
+	if encoded == "" || len(encoded) > limits.MaxSignalEnvelopeBytes*2 {
+		return nil, ErrEnrollmentInvalid
+	}
+	for index := 0; index < len(encoded); index++ {
+		character := encoded[index]
+		if !((character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') ||
+			(character >= '0' && character <= '9') || character == '-' || character == '_') {
+			return nil, ErrEnrollmentInvalid
+		}
+	}
+	decoded, err := base64.RawURLEncoding.Strict().DecodeString(encoded)
+	if err != nil || len(decoded) < 8 || len(decoded) > limits.MaxSignalEnvelopeBytes {
+		clear(decoded)
+		return nil, ErrEnrollmentInvalid
+	}
+	if string(decoded[:4]) != "WJSE" {
+		clear(decoded)
+		return nil, ErrEnrollmentInvalid
+	}
+	return decoded, nil
 }
 
 func decodeFixed(encoded string, destination []byte) error {
@@ -481,6 +567,9 @@ func MarshalEvent(event Event) ([]byte, error) {
 	if event.Type == "room_state_received" || event.Type == "room_state_accepted" {
 		limit = limits.MaxRoomEventLineBytes
 	}
+	if event.Type == "web_join_offer" {
+		limit = limits.MaxRoomEventLineBytes
+	}
 	if len(encoded)+1 > limit {
 		return nil, ErrEventTooLarge
 	}
@@ -488,6 +577,12 @@ func MarshalEvent(event Event) ([]byte, error) {
 }
 
 func validateEvent(event *Event) error {
+	if isWebJoinEvent(event.Type) {
+		return validateWebJoinEvent(event)
+	}
+	if event.ExpiresAtUnix != 0 {
+		return ErrProtocol
+	}
 	if _, ok := allowedEventTypes[event.Type]; !ok {
 		return ErrProtocol
 	}
@@ -526,17 +621,22 @@ func validateEvent(event *Event) error {
 	}
 	peerFieldsEmpty := event.Mode == "" && event.ProfileID == "" && event.Generation == 0 && event.LoopbackPort == 0
 	helpFieldsEmpty := event.RequestID == 0 && event.Text == ""
+	signalEmpty := event.Signal == "" && event.Route == ""
+	accountingEmpty := event.SessionPath == "" && event.RelayBytes == 0
+	if event.SessionPath != "" && event.SessionPath != "direct" && event.SessionPath != "relay" {
+		return ErrProtocol
+	}
 	if event.RoomState != nil && event.Type != "room_state_received" {
 		return ErrProtocol
 	}
 	switch event.Type {
 	case "ready":
 		if event.ID != 0 || event.Code != CodeOK || event.State != "idle" || event.Build == "" ||
-			!peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty {
+			!peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty || !accountingEmpty {
 			return ErrProtocol
 		}
 	case "hello":
-		if event.ID == 0 || event.Code != CodeOK || event.Build == "" || event.HostSPKISHA256 != "" || !helpFieldsEmpty {
+		if event.ID == 0 || event.Code != CodeOK || event.Build == "" || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty || !accountingEmpty {
 			return ErrProtocol
 		}
 		if event.State == "connecting" || event.State == "host_waiting" || event.State == "connected" {
@@ -548,7 +648,7 @@ func validateEvent(event *Event) error {
 		}
 	case "host_prepared":
 		if event.ID == 0 || event.Code != CodeOK || event.State != "identity_ready" || event.Build != "" ||
-			!peerFieldsEmpty || event.HostSPKISHA256 == "" || !helpFieldsEmpty {
+			!peerFieldsEmpty || event.HostSPKISHA256 == "" || !helpFieldsEmpty || !signalEmpty || !accountingEmpty {
 			return ErrProtocol
 		}
 	case "host_registered":
@@ -557,10 +657,38 @@ func validateEvent(event *Event) error {
 			event.HostSPKISHA256 != "" || !helpFieldsEmpty {
 			return ErrProtocol
 		}
+		if event.ProfileID == profile.DirectStunID {
+			if _, err := decodeSignalEnvelope(event.Signal); err != nil {
+				return ErrProtocol
+			}
+			if event.Route != "local" && event.Route != "public" {
+				return ErrProtocol
+			}
+		} else if !signalEmpty {
+			return ErrProtocol
+		}
+		if !accountingEmpty {
+			return ErrProtocol
+		}
+	case "guest_signal":
+		if event.ID != 0 || event.Code != CodeOK || event.State != "connecting" || event.Build != "" ||
+			event.Mode != "guest" || event.ProfileID != profile.DirectStunID || event.Generation == 0 ||
+			event.LoopbackPort == 0 || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !accountingEmpty {
+			return ErrProtocol
+		}
+		if _, err := decodeSignalEnvelope(event.Signal); err != nil {
+			return ErrProtocol
+		}
+	case "signal_applied":
+		if event.ID == 0 || event.Code != CodeOK || event.State != "host_waiting" || event.Build != "" ||
+			event.Mode != "host" || event.ProfileID != profile.DirectStunID || event.Generation == 0 ||
+			event.LoopbackPort == 0 || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty || !accountingEmpty {
+			return ErrProtocol
+		}
 	case "peer_connected":
 		if event.Code != CodeOK || event.State != "connected" || event.Build != "" ||
 			event.Mode == "" || event.ProfileID == "" || event.Generation == 0 || event.LoopbackPort == 0 ||
-			event.HostSPKISHA256 != "" || !helpFieldsEmpty {
+			event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty || event.RelayBytes != 0 {
 			return ErrProtocol
 		}
 		// A host connection completes asynchronously after host_registered, so
@@ -569,16 +697,31 @@ func validateEvent(event *Event) error {
 		if (event.Mode == "host") != (event.ID == 0) {
 			return ErrProtocol
 		}
+		if event.ProfileID == profile.DirectStunID {
+			if event.SessionPath != "direct" && event.SessionPath != "relay" {
+				return ErrProtocol
+			}
+		} else if event.SessionPath != "" {
+			return ErrProtocol
+		}
 	case "peer_closed":
 		if event.ID == 0 || event.Code != CodeOK || event.State != "closed" || event.Build != "" ||
 			event.Mode == "" || event.ProfileID == "" || event.Generation == 0 || event.LoopbackPort != 0 ||
-			event.HostSPKISHA256 != "" || !helpFieldsEmpty {
+			event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty {
+			return ErrProtocol
+		}
+		if event.ProfileID == profile.DirectStunID {
+			if event.SessionPath != "" && event.SessionPath != "direct" && event.SessionPath != "relay" {
+				return ErrProtocol
+			}
+		} else if !accountingEmpty {
 			return ErrProtocol
 		}
 	case "help_accepted", "help_received", "help_delivered":
 		if event.Code != CodeOK || event.State != "connected" || event.Build != "" ||
 			event.Mode == "" || event.ProfileID == "" || event.Generation == 0 ||
-			event.LoopbackPort != 0 || event.HostSPKISHA256 != "" || event.RequestID == 0 {
+			event.LoopbackPort != 0 || event.HostSPKISHA256 != "" || event.RequestID == 0 ||
+			event.Signal != "" || event.Route != "" || !accountingEmpty {
 			return ErrProtocol
 		}
 		switch event.Type {
@@ -597,7 +740,7 @@ func validateEvent(event *Event) error {
 			}
 		}
 	case "room_state_accepted", "room_state_received":
-		if event.Code != CodeOK || event.State != "connected" || event.Build != "" || event.ProfileID == "" || event.Generation == 0 || event.LoopbackPort != 0 || event.HostSPKISHA256 != "" || event.Text != "" {
+		if event.Code != CodeOK || event.State != "connected" || event.Build != "" || event.ProfileID == "" || event.Generation == 0 || event.LoopbackPort != 0 || event.HostSPKISHA256 != "" || event.Text != "" || event.Signal != "" || event.Route != "" || !accountingEmpty {
 			return ErrProtocol
 		}
 		if event.Type == "room_state_accepted" {
@@ -609,12 +752,12 @@ func validateEvent(event *Event) error {
 		}
 	case "stopped":
 		if event.Code != CodeOK || event.State != "stopped" || event.Build != "" ||
-			!peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty {
+			!peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty || !accountingEmpty {
 			return ErrProtocol
 		}
 	case "error":
 		if event.Code == "" || event.Code == CodeOK || event.State == "" || event.State == "stopped" ||
-			event.Build != "" || !peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty {
+			event.Build != "" || !peerFieldsEmpty || event.HostSPKISHA256 != "" || !helpFieldsEmpty || !signalEmpty || !accountingEmpty {
 			return ErrProtocol
 		}
 	default:
@@ -628,12 +771,14 @@ var (
 	profilePattern    = regexp.MustCompile(`\A[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?\z`)
 	allowedEventTypes = map[string]struct{}{
 		"ready": {}, "hello": {}, "host_prepared": {}, "host_registered": {},
+		"guest_signal": {}, "signal_applied": {},
 		"peer_connected": {}, "peer_closed": {}, "help_accepted": {},
 		"help_received": {}, "help_delivered": {}, "room_state_accepted": {}, "room_state_received": {}, "stopped": {}, "error": {},
 	}
 	allowedEventCodes = map[string]struct{}{
 		CodeOK: {}, CodeProtocolViolation: {}, CodePeerAlreadyOpen: {}, CodePeerNotOpen: {},
 		CodeOpenFailed: {}, CodeIdentityNotPrepared: {}, CodeUnsupportedProfile: {}, CodeEnrollmentInvalid: {},
+		CodeTimedOut:     {},
 		CodeRoomNotReady: {}, CodeRoomInvalid: {}, CodeRoomRateLimited: {}, CodePeerProtocolUnsupported: {},
 		CodeHelpNotReady: {}, CodeHelpInvalid: {}, CodeHelpRateLimited: {}, CodeHelpQueueFull: {},
 	}

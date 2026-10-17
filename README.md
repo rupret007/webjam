@@ -2,19 +2,43 @@
 
 ## Native creator collaboration and multitrack recording
 
-WebJam is a creator-first desktop conductor for low-latency collaboration,
-authoritative multitrack recording, arrangement, and review. It brings the
-session lifecycle, Jamulus, provider-neutral meeting handoff, Studio, an
-owner-controlled Pocket Stage iPhone preview, and a separate native Art
-companion guest Join into one understandable workflow—without pretending to
-own systems that remain independent.
+WebJam is a desktop app for people who make music or art together.
+
+- **Music:** play live together. A Mac starts the band (**Host**). Friends
+  **Join** with the invite. Windows and Linux can Join; they cannot Host a
+  Music jam. Live sound uses Jamulus. Talking or video uses your own meeting
+  app when you want it.
+- **Art (Preview):** open a room, talk, and make with your own tools — or
+  follow a silent lesson. Any computer can Host or Join. A shared drawing
+  app is optional. Art does not record a multitrack take.
+
+Friends in another house can Host and Join. No extra setup. Keep the host's
+window open. If a Join cannot connect, use home Wi-Fi on both computers,
+not a phone hotspot.
+
+### Three steps
+
+1. **Get the app** from [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
+   Choose the download for your computer (Windows, Mac, or Ubuntu).
+2. **Open it.** Windows may say the app is unrecognized — choose **More info**,
+   then **Run anyway**. On a Mac, drag WebJam into Applications. If macOS
+   blocks it, open **System Settings → Privacy & Security**, click
+   **Open Anyway** for WebJam, and confirm **Open**.
+3. **Start or join.** Choose **Art** or **Music**, then **Host** or **Join**.
+   The host uses **Copy Invite** and sends the whole message. The friend
+   pastes it on **Join**. If WebJam shows a short reply, they send that
+   back and the host chooses **Paste Reply**. Keep the host's window open.
+
+The [creator guide](USER_GUIDE.md) is the one complete how-to. The
+[simple-language guide](README_SIMPLE.md) is the same story in shorter words.
+[First Session](FIRST_JAM.md) is the shortest live path.
 
 [![WebJam CI](https://github.com/rupret007/webjam/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/rupret007/webjam/actions/workflows/ci.yml)
 [![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/rupret007/webjam?label=Latest%20test%20candidate)](https://github.com/rupret007/webjam/releases/latest)
 
 **Showing WebJam:** use the [show one-pager](SHOW_ONEPAGER.md) and
-[under-ten-minute demo script](DEMO_SCRIPT.md) for Jamulus live band → Play
+[under-ten-minute demo script](DEMO_SCRIPT.md) for live band → Play
 along → Paint along → Record along into Logic. The script includes preparation,
 fallbacks, and an unfilled physical rehearsal receipt.
 
@@ -38,15 +62,15 @@ fallbacks, and an unfilled physical rehearsal receipt.
 > the historical signed catalog remains sealed at exact WebJam v0.22.5.
 > Its deleted release is not a working managed-update channel.
 
-New to WebJam? Start with the [simple-language guide](README_SIMPLE.md) or
-[First Jam](FIRST_JAM.md); this README is the complete technical story. Just
-showing someone the door? See the [two-minute demo script](DEMO.md).
+This README is the technical story. Creators should start with
+[USER_GUIDE.md](USER_GUIDE.md). Just showing someone the door? See the
+[two-minute demo script](DEMO.md).
 
 ## This checkout
 
 The GitHub repository is **public**. This checkout is unreleased source on
-published v0.29.0, including merged PRs #171–#177. The version string stays
-`0.29.0`; these behaviors are **not** in the published packages. Art and
+published v0.29.0, plus later merged work. The version string stays
+`0.29.0`; later source behaviors are **not** all in the published packages. Art and
 Review & Rehearsal remain **Preview**. Physical audio, cameras, signing,
 notarization, and feel remain **NOT RUN**.
 
@@ -60,7 +84,10 @@ notarization, and feel remain **NOT RUN**.
 | Art companion | Phase 1 iPhone/iPad same-LAN guest Join (source / unsigned simulator); not Pocket Stage |
 | Pocket Stage | Owner iPhone mix second-screen behind **More → Use iPhone as Pocket Stage…** |
 
-## Quick start
+## Run from source
+
+Packaged downloads are on [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
+Developers who want the source app:
 
 ```bash
 python3 -m venv .venv
@@ -69,8 +96,7 @@ python3 -m venv .venv
 ```
 
 CI uses Python 3.11. The app requires 3.10+. From source, close the window
-when finished. Packaged downloads are on [GitHub Latest](https://github.com/rupret007/webjam/releases/latest);
-verify that release’s checksum manifest.
+when finished.
 
 ## Build and test
 
@@ -115,8 +141,9 @@ Restored Studio takes retain their declared alternate sources through selection
 and A/B listening. These controls are part of the
 [portability milestone](docs/WORKSPACE_BACKUP_PLAN.md). Local tests exercise two
 controlled recorder completions, Art, backup/import and restart in separate processes;
-the frozen-build hook adds a synthetic portability journey. See [draft #172](https://github.com/rupret007/webjam/pull/172)
-for exact-commit hosted and native package evidence. Use the
+the frozen-build hook adds a synthetic portability journey. Closed draft
+[#172](https://github.com/rupret007/webjam/pull/172) is historical evidence
+only, not a published package. Use the
 [ten-minute portability pilot](docs/WORKSPACE_PORTABILITY_PILOT.md) with an identified test build.
 These changes are not included in
 the published v0.29.0 packages. See
@@ -165,7 +192,8 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    when that is the room you came to make.
 2. For Art, choose **Make together** or **Paint along**, then **Host** /
    **Join**. **Make together** keeps people working locally and lets the host
-   open one shared canvas from inside the room. Music uses **Host** / **Join**; Podcast & Voice
+   open one shared canvas from inside the room. Only **Paint along** adds a
+   door hint: “Then choose a file or lesson link.” Music uses **Host** / **Join**; Podcast & Voice
    and Review & Rehearsal retain their profile-specific Host/Join labels.
 3. For Music ensemble playing, configure interface, channels, headphones, and buffer in Jamulus. Confirm
    the authenticated audio connection, then use the profile-specific
@@ -227,8 +255,8 @@ WebJam is a conductor, not a replacement for the tools creators already trust.
    recording or standalone-project path.
 
 For a first two-person try, use the [short test guide](docs/FOLLOW_ALONG_FIRST_TEST.md)
-and [pilot record](docs/FOLLOW_ALONG_PILOT_RECORD.md). The default Art room
-invitation uses the same Wi-Fi/local network. Physical sound, sharing,
+and [pilot record](docs/FOLLOW_ALONG_PILOT_RECORD.md). Two homes is the
+usual Host/Join story; same-network still works. Physical sound, sharing,
 cameras, reconnects and ensemble latency need separate observations.
 
 ## Creator profiles

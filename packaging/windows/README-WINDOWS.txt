@@ -24,6 +24,16 @@ exact filename and published SHA-256 still require verification.
 Windows SmartScreen or organizational policy may block it; WebJam does not
 bypass those controls.
 
+If Windows says "Windows protected your PC":
+1. Choose More info.
+2. Choose Run anyway.
+A work PC may still block the app; ask IT. WebJam does not turn SmartScreen
+off.
+
+Friends in another house can Join. Keep the host's window open. This
+Windows package can Join a Music jam hosted on a Mac. Hosting a Music jam
+is not supported on Windows. Art Host and Join work on this computer.
+
 This release upgrades cryptography to 50.0.0 for CVE-2026-69247,
 CVE-2026-69248, and CVE-2026-69249 using an exact hash-locked upstream
 Windows wheel.
@@ -35,8 +45,7 @@ After installation, open WebJam from the Start menu. You may also choose the
 optional desktop shortcut during setup. WebJam does not start automatically
 when setup finishes.
 
-The released v0.27.2 Windows package can join a jam hosted by
-the macOS build; physical cross-platform joining remains NOT RUN. Hosting a jam
+Physical cross-platform joining remains NOT RUN. Hosting a jam
 is not supported by the Windows line. Music and Podcast & Voice retain
 standalone Reference Studio for local songwriting, recording, arranging,
 mixing, and WAV/FLAC bounce without joining Jamulus.

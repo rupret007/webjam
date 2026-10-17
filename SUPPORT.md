@@ -39,9 +39,10 @@ assuming that a source test or moving meter proves audibility.
 
 ## When Join needs attention
 
-A remote Join must move through **Checking invite**, **Contacting host**,
+A Join must move through **Checking invite**, **Contacting host**,
 **Securing connection**, and **Opening Jamulus**, or stop at **Needs
 attention**. It does not have an unbounded “trying to connect” state.
+If the invitation says same network, use the host's Wi-Fi first.
 
 - **Try Again** means the failure occurred before WebJam submitted the
   one-use invitation.

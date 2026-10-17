@@ -48,6 +48,12 @@ Changing a take or mix,
 or a failed/cancelled export, clears the current receipt. Byte verification does
 not prove physical listening or a successful Logic/other-editor import.
 
+If recording starts during an export, Studio stops the export and checks
+whether its folder already finished. **Show Unverified Export** keeps that
+folder available for inspection; it has no verified receipt. Cancellation
+before completion removes only temporary export files. The original take
+stays unchanged.
+
 Workspace **Takes** links reopen the intended recording in Studio. Use
 **Locate take…** when its folder moved; identity must still match. Music
 bookmarks navigate only with current verified recording evidence. Art lesson
@@ -91,8 +97,14 @@ available **Record Session** button opens the checks; it is not a readiness
 verdict, and checking free storage does not reserve disk space.
 
 When storage fails during a session, repair free space or write access and
-choose **Try Again**. Changing the Takes folder requires ending the session
-first, choosing the folder in **Recording Setup**, and starting again. A retry
+choose **Try Again**. Host takes stay in WebJam's host folder; Recording Setup
+does not offer a different folder while hosting, and **Show Folder** opens that
+location. On a Mac host that folder is
+`~/Library/Application Support/WebJam/JamulusServer/Recordings`. Windows and
+Linux hosts default to `~/WebJam Recordings`. Guests often see
+`~/Music/WebJam Takes`. See the [creator guide](USER_GUIDE.md#record-session). When you are not hosting, changing the Takes folder requires ending
+the session first, choosing the folder in **Recording Setup**, and starting
+again. A retry
 builds a new take plan from the current participants and inputs before asking
 to record; it does not reuse the failed plan.
 
@@ -182,6 +194,11 @@ A duplicate Record request cannot replace a generation that is preparing,
 recording, stopping, or finalizing. **Stop Recording** is one host action,
 but recorder and Shared Track teardown remain independently proved owners; a
 clean result for one does not manufacture success for the other.
+
+If a start reply times out, **Recording Start Unconfirmed** means WebJam
+couldn't confirm that recording started. The server may still be recording;
+use **Finish Stop** to resolve it. WebJam preserves local capture and retries
+Stop before allowing another recording.
 
 ## Shared Track in a recorded take
 

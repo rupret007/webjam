@@ -18,10 +18,34 @@ from webjam_qt.controllers.workflow_help import WorkflowHelpCoordinator
     ("music", "checksum receipt", "export_receipts"),
     ("art", "moved relink", "art_relink"),
     ("art", "YouTube Bob Ross", "follow_along"),
+    ("art", "Shared Canvas", "art_relink"),
+    ("art", "process video F11", "follow_along"),
     ("music", "play along latency", "follow_along"),
 ])
 def test_search_finds_specific_workflow_offline(profile, query, key):
     assert key in {topic.key for topic in search_topics(workflow_topics(profile), query)}
+
+
+def test_art_follow_along_topic_holds_youtube_process_video_and_keyboard():
+    follow = next(topic for topic in workflow_topics("art") if topic.key == "follow_along")
+    for token in (
+        "Choose process video…",
+        "YouTube link…",
+        "Open my copy…",
+        "Open lesson",
+        "Local files are not transferred",
+        "Back to room",
+        "F11",
+        "Esc",
+    ):
+        assert token in follow.body, token
+
+
+def test_art_relink_topic_holds_shared_canvas_and_end_room():
+    relink = next(topic for topic in workflow_topics("art") if topic.key == "art_relink")
+    assert "Shared Canvas…" in relink.body
+    assert "End Room" in relink.body
+    assert "Leave Room" in relink.body
 
 
 def test_search_is_literal_and_does_not_search_private_workspaces():
@@ -30,6 +54,23 @@ def test_search_is_literal_and_does_not_search_private_workspaces():
     assert search_topics(topics, "[draft]") == search_topics(topics, "draft")
     assert search_topics(topics, "") == topics
     assert all("href=" not in topic.body for topic in topics)
+
+
+@pytest.mark.parametrize("platform,shortcut", [("darwin", "⌘1 / ⌘2 / ⌘3 / ⌘4"),
+                                             ("win32", "Ctrl+1 / Ctrl+2 / Ctrl+3 / Ctrl+4")])
+def test_live_music_details_keep_engine_boundaries_and_shortcuts(monkeypatch, platform, shortcut):
+    monkeypatch.setattr("core.workflow_help.sys.platform", platform)
+    topic = next(t for t in workflow_topics("music") if t.key == "live_audio")
+    assert "routes through Jamulus" in topic.body
+    assert "disconnect meeting audio and keep Webex for faces" in topic.body
+    assert "If Play is not ready" in topic.body
+    assert "Set up the audio device" in topic.body
+    assert "Recheck Route" in topic.body
+    assert shortcut in topic.body
+    assert not topic.route and not topic.action
+    for profile, offline in (("art", False), ("podcast_voice", False),
+                             ("review_rehearsal", False), ("music", True)):
+        assert "live_audio" not in {t.key for t in workflow_topics(profile, offline_studio=offline)}
 
 
 def test_profile_and_standalone_topics_do_not_offer_incompatible_actions():

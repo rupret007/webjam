@@ -34,6 +34,11 @@ on:
         required: false
         type: boolean
         default: false
+      final_build:
+        description: Final build — produce desktop packaging artifacts for all four targets
+        required: false
+        type: boolean
+        default: true
 
 # Default: read-only. Release job overrides to write.
 permissions:
@@ -41,10 +46,10 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  # Only cancel superseded PR runs. Pushes to branches/tags must run to
-  # completion so master always produces a green build + release artifacts
-  # (rapid successive pushes previously cancelled every run, leaving the
-  # branch with no green CI and no downloadable builds).
+  # Only cancel superseded PR runs. Pushes to master/tags must run the
+  # test lane to completion (rapid successive pushes previously cancelled
+  # every run, leaving the branch with no green CI). Desktop packaging is
+  # workflow_dispatch final_build only.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -205,6 +210,12 @@ jobs:
       - name: Run UX smoke gate
         run: python ux_smoke_test.py
 
+      - name: Run compact layout smoke (800x600 and compact door)
+        run: python -m pytest tests/test_compact_layout_smoke.py -q
+
+      - name: Run offline invite-path e2e (paste, validate, join)
+        run: python -m pytest tests/test_offline_invite_path.py -q
+
       # test_elevation_edge.py uses @skipUnless(win32) so runs safely on Linux
       # (skips all tests) — no --ignore needed for it.
       - name: Run test suite
@@ -225,6 +236,49 @@ jobs:
               exit "$status"
             fi
           done
+
+  # ------------------------------------------------------------------
+  # Test-integrity guards (add-only). Fails when global test config fakes
+  # the clock (faketime, LD_PRELOAD/DYLD injection, TZ override, global
+  # freezegun/time-machine or fake timers), or when a change leaves tests
+  # weaker than master (deleted test files, fewer test functions, new
+  # skip/xfail markers). Comparison is always against origin/master.
+  # ------------------------------------------------------------------
+  test-integrity:
+    name: Test integrity guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Fetch master for the comparison base
+        run: git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
+      - name: Reject a global fake clock
+        run: python3 tools/gates/test_integrity_guard.py fake-clock
+      - name: Reject tests weaker than master
+        run: python3 tools/gates/test_integrity_guard.py loosening --base origin/master
+
+  # ------------------------------------------------------------------
+  # Changelog fragment (pull requests only). Each PR adds its entry as
+  # changelog.d/<topic>.md (or a reasoned .skip) and never edits
+  # CHANGELOG.md, so merges stop conflicting. See changelog.d/README.md.
+  # ------------------------------------------------------------------
+  changelog-fragment:
+    name: Changelog fragment
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Fetch master for the comparison base
+        run: git fetch --no-tags origin +refs/heads/master:refs/remotes/origin/master
+      - name: Require a changelog fragment
+        run: python3 tools/changelog_fragments.py check --base origin/master
 
   # ------------------------------------------------------------------
   # Job 1b: Integration against a REAL Jamulus binary.
@@ -773,11 +827,91 @@ jobs:
           exit 1
 
   # ------------------------------------------------------------------
+  # iOS jobs are the only hosted XCTest / simulator UI suites. Keep them
+  # on push to master and on workflow_dispatch. On pull_request, run them
+  # only when ios/ or the shared Python/protocol sources they exercise
+  # change. Packaging stays dispatch final_build (or a signing rehearsal
+  # that needs those artifacts). Signing rehearsals never draft a release.
+  # ------------------------------------------------------------------
+  ios-change-gate:
+    name: iOS change gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ios: ${{ steps.filter.outputs.ios }}
+    steps:
+      - name: Decide whether iOS jobs should run
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          event = os.environ.get("GITHUB_EVENT_NAME", "")
+          # Fail open to running the XCTest suites: a filter error must not
+          # skip the only hosted Swift/simulator jobs.
+          if event != "pull_request":
+              output.open("a", encoding="utf-8").write("ios=true\n")
+              raise SystemExit(0)
+
+          prefixes = (
+              "ios/",
+              "packaging/ios/",
+              "tools/art_companion_simulator",
+              "tests/test_art_companion",
+              "tests/test_pocket_stage",
+              "requirements-lock/pocket-stage-integration-macos-arm64",
+              "core/pocket_stage.py",
+              "core/session_transfer.py",
+              "services/pocket_stage_gateway.py",
+              ".github/workflows/ci.yml",
+          )
+
+          def matches(path: str) -> bool:
+              return any(path == prefix or path.startswith(prefix) for prefix in prefixes)
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          number = os.environ.get("PR_NUMBER", "")
+          try:
+              raw = subprocess.check_output(
+                  [
+                      "gh",
+                      "api",
+                      "--paginate",
+                      f"repos/{repo}/pulls/{number}/files?per_page=100",
+                      "--jq",
+                      ".[].filename",
+                  ],
+                  text=True,
+              )
+          except (subprocess.CalledProcessError, OSError):
+              output.open("a", encoding="utf-8").write("ios=true\n")
+              raise SystemExit(0)
+          ios = any(matches(line.strip()) for line in raw.splitlines() if line.strip())
+          output.open("a", encoding="utf-8").write(f"ios={'true' if ios else 'false'}\n")
+          PY
+
+  # ------------------------------------------------------------------
   # Native Art guest: real LAN transport plus the unsigned iPhone/iPad app.
   # App-hosted tests exercise ATS; UI attachments are finite layout fixtures.
   # ------------------------------------------------------------------
   art-companion-ios:
     name: Art companion (iPhone and iPad)
+    needs: [ios-change-gate]
+    if: >-
+      always() &&
+      !cancelled() &&
+      (needs.ios-change-gate.result != 'success' ||
+       needs.ios-change-gate.outputs.ios == 'true')
     runs-on: macos-14
     timeout-minutes: 40
     env:
@@ -833,6 +967,12 @@ jobs:
   # No Apple signing credential enters either iOS gate.
   pocket-stage-ios:
     name: Pocket Stage (iOS app)
+    needs: [ios-change-gate]
+    if: >-
+      always() &&
+      !cancelled() &&
+      (needs.ios-change-gate.result != 'success' ||
+       needs.ios-change-gate.outputs.ios == 'true')
     runs-on: macos-14
     timeout-minutes: 30
     env:
@@ -1005,10 +1145,21 @@ jobs:
   # Windows: dist/WebJam/ directory → zipped with 7z
   # macOS:   dist/WebJam.app bundle → zipped with ditto
   # Linux:   dist/WebJam/ directory → zipped with zip
+  #
+  # Packaging stays off pull_request and off push to master/tags. The
+  # four targets run only on workflow_dispatch when final_build is on
+  # (the default) or a signing rehearsal needs those artifacts. A tag
+  # draft still needs this job in the same run: dispatch final_build
+  # against the annotated tag so github.ref is refs/tags/v*.
   # ------------------------------------------------------------------
   build-desktop:
     name: Build Desktop (${{ matrix.target }})
     needs: [test, integration-jamulus, jamulus-platform-update-inputs, transport, reference-service, pocket-stage-ios]
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.final_build ||
+       inputs.macos_signing_rehearsal ||
+       inputs.windows_signing_rehearsal)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
@@ -3531,15 +3682,22 @@ jobs:
 
   # ------------------------------------------------------------------
   # GitHub Release
-  # Only runs on tag pushes matching v*.*.* (e.g. v0.3.0).
   # Publishes the exact tested unsigned/ad-hoc cross-platform candidate plus
-  # its checksum manifest as a draft. Existing published tags are immutable,
-  # and no release or asset is pruned or silently replaced by this job.
+  # its checksum manifest as a draft. Packaging is dispatch-only, so a tag
+  # push no longer builds or drafts. Dispatch final_build against the
+  # annotated v*.*.* tag so this job and build-desktop share one run.
+  # macos_signing_rehearsal / windows_signing_rehearsal may still run
+  # build-desktop for trust jobs, but they never draft a GitHub Release.
+  # Existing published tags are immutable, and no release or asset is
+  # pruned or silently replaced by this job.
   # ------------------------------------------------------------------
   release:
     name: Publish GitHub Release
     needs: build-desktop
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      inputs.final_build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

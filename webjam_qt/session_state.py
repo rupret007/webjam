@@ -30,15 +30,18 @@ class SessionUiState:
     show_practice: bool = False
     hint: str = ""
     primary_action: str = "start"
-    # Kept last to preserve existing positional construction of UI snapshots.
+    # Appended flags preserve existing positional construction of UI snapshots.
     # False lets the HUD own the sole primary call to action.
     show_primary: bool = True
+    # The HUD can own idle guidance as well as its action. Retain the snapshot
+    # while hiding the redundant empty-stage card, including on roster refresh.
+    show_empty_state: bool = True
 
     @classmethod
     def idle(cls, server: str = "", hosting: bool = False) -> SessionUiState:
         return cls(
             SessionPhase.NOT_CONNECTED,
-            "Ready when you are",
+            "Start when you are",
             "Start the session and invite others."
             if hosting else "Start the session to play together.",
             primary_text="Start Session",
@@ -101,7 +104,7 @@ class SessionUiState:
         return cls(
             SessionPhase.ERROR,
             "Couldn’t reach the jam",
-            "Make sure you’re on the same Wi-Fi, then try again.",
+            "Use home Wi-Fi on both computers, not a phone hotspot. Then try again.",
             "Try Again",
             show_ready_check=False,
         )
@@ -131,7 +134,7 @@ class SessionUiState:
     def remote_session_retry_available(cls) -> SessionUiState:
         return cls(
             SessionPhase.ERROR,
-            "Needs attention",
+            "Try again",
             "Choose Try Again to start the private connection.",
             "Try Again",
             show_primary=False,
@@ -142,7 +145,7 @@ class SessionUiState:
     def remote_session_fresh_invitation_required(cls) -> SessionUiState:
         return cls(
             SessionPhase.ERROR,
-            "Needs attention",
+            "Ask your host for a new invite",
             "This invitation may already be used. Ask the host for a new one, then choose Paste New Invite.",
             "Paste New Invite",
             show_primary=False,
@@ -206,3 +209,6 @@ class SessionUiState:
             False,
             False,
         )
+
+
+USED_ONE_USE_INVITE_HOST = "They need a new invite — press Copy Invite again."

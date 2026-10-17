@@ -14,11 +14,12 @@
 
 | Need | Use |
 | --- | --- |
+| Open the downloaded app | Windows: **More info** → **Run anyway**. Mac: **System Settings → Privacy & Security → Open Anyway** for WebJam. Ubuntu: start `WebJam` from the unzipped folder |
 | Choose a creator workflow | Launch → **Art** or **Music**. Art is **Make together** / **Paint along**, then **Host** / **Join**. Music is **Host** / **Join** only |
-| Start a live session | Choose **Art** or **Music**, then **Host**; Art chooses a start card first |
-| Join a live session | Choose a profile → **Join**, **Join Recording**, or **Join Review** → paste the complete invite into the one masked field → **Join**; the invite carries whatever the host started |
+| Start a live session | Choose **Art** or **Music**, then **Host**; Art chooses a start card first. Music Host is Mac-only; stay on the same Wi-Fi |
+| Join a live session | Choose a profile → **Join**, **Join Recording**, or **Join Review** → paste the complete invite into the one masked field → **Join**; the invite carries whatever the host started. Stay on the host's Wi-Fi |
 | Fix an invitation error | Copy the complete invitation again. WebJam names incomplete, expired, malformed, incompatible, or unsupported invitations without showing their private values |
-| Stop a remote join that is not finishing | WebJam stops the attempt at **Needs attention**. Choose the one shown action: **Try Again** only when the invite was not used, or **Paste New Invite** after timeout/expiry/uncertain enrollment |
+| Stop a Join that is not finishing | WebJam stops the attempt at **Needs attention**. Choose the one shown action: **Try Again** only when the invite was not used, or **Paste New Invite** after timeout/expiry/uncertain enrollment |
 | Chat with the room | After authenticated Jamulus connection, use the session canvas band chat. It is not available as pre-connection tech support |
 | Talk or make together | Art → **Make together** → **Host** or **Join**; talk, make, or draw together in one room while everyone works locally |
 | Paint on one shared canvas | Art room → **More → Shared Canvas…** → **Host in Drawpile**; keep the Drawpile session **Personal** and paste its invitation back into WebJam |
@@ -29,11 +30,11 @@
 | Start a process video | Art host → **Paint along → Choose process video…** and pick one local file you have the right to play; paint in your usual app or on paper beside WebJam |
 | Follow the host's process video | Art guest → **Paint along → Open my copy…** and pick your own copy of the host's exact file; a different file is refused rather than played |
 | Ignore a process video | Art → **Paint along → Hide video**; you stay in the room and in the conversation |
-| Start a supported local project | Launch → **File → New Music Project…**; or **File → Podcast & Voice… → New Local Recording** |
+| Start a supported local project | On the Art/Music door, **File → Session library…**. New Music Project / Podcast / Review are not extra first-screen starts; see the [creator guide](USER_GUIDE.md) |
 | Follow a demonstration in a meeting | Art room → **Conversation → Join / Open Meeting**; share a demonstration in Webex or your chosen meeting app while everyone uses their own tools. The meeting owns video and sound; Paint along remains a separate silent local-file path |
 | Recover unsaved local notes | **Notes → Save Notes**; retry the save, shorten a retained draft, or **Export Copy…** to another file. This can recover another workspace's draft without changing your joined session |
 | Fix blocked recording inputs | **Record Session Readiness → Recording Setup**; the pending take is retired before setup opens. Fix the inputs, then choose **Record Session** again |
-| Find Podcast or Review | At launch, use **File → Podcast & Voice…** or **File → Review & Rehearsal…** |
+| Find Podcast or Review | They are not extra first-screen starts. The Art/Music door **File** menu opens **Session library…** |
 | Install the included Windows music component | At launch, **Help → Music setup… → Install Jamulus** when offered; finish the installer, then use **Back** |
 | Change live sound | **More → Audio Settings in Jamulus** |
 | Invite a collaborator | Host setup → **Copy Invite** |

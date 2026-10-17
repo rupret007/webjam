@@ -135,6 +135,41 @@ def test_queued_gain_cannot_apply_to_reused_participant_channel(mixer):
     assert levels(socket) == [100]
 
 
+def test_queued_gain_cannot_apply_to_same_id_occupant_replacement(mixer):
+    controller, socket = mixer
+    controller.add_participant("Collaborator", 8)
+    controller.add_participant("My monitor", 9)
+    controller.set_solo(1, True)
+    controller.set_fader_level(1, 40)
+    departed = controller.participants[1]
+    assert departed.solo
+    assert len(HeldWorker.instances) == 1
+
+    controller._on_rpc_participants([
+        {"channel_id": 1, "name": "New guitarist"},
+        {"channel_id": 8, "name": "Collaborator"},
+        {"channel_id": 9, "name": "My monitor"},
+    ])
+    replacement = controller.participants[1]
+    assert replacement is not departed
+    assert replacement.name == "New guitarist"
+    assert not replacement.solo
+    assert replacement.fader_level == 100
+    assert not replacement.muted
+    assert not controller.participants[8].muted
+    assert not controller.participants[9].muted
+
+    HeldWorker.instances[0].run()
+    # 40/127 → 31 was the departed occupant's queued choice.
+    framed = {
+        (row["params"]["channelIndex"], row["params"]["level"])
+        for row in socket.messages
+    }
+    assert (1, 31) not in framed
+    assert (1, 79) in framed
+    assert departed.fader_level == 40
+
+
 def test_many_fader_changes_keep_one_worker_and_latest_effective_gain(mixer):
     controller, socket = mixer
     for level in range(1000):

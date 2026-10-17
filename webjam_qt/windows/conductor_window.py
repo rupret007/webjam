@@ -250,6 +250,7 @@ class ConductorWindow(QMainWindow):
         self.workspace_stack.setCurrentWidget(self.center_splitter)
         self._paint_along_widget: QWidget | None = None
         self._paint_along_return_widget: QWidget = self.center_splitter
+        self.workspace_stack.currentChanged.connect(self._sync_session_hud_visibility)
 
         body_container = QWidget()
         body_layout = QHBoxLayout(body_container)
@@ -366,7 +367,9 @@ class ConductorWindow(QMainWindow):
         """Make space for preview Help without hiding or clipping other actions."""
 
         compact = bool(getattr(self, "_room_help_enabled", False)) and self.width() < 900
-        follow_compact = self.session_strip._creator_profile_key == "music" and self.width() < 900
+        # Full labels return at 900 px, but Music's recording receipt still
+        # needs the denser rail until the wider workspace fits comfortably.
+        follow_compact = self.session_strip._creator_profile_key == "music" and self.width() < 1100
         bar = self.session_controls
         if (bar.property("helpPreviewCompact") == compact
                 and bar.property("followAlongCompact") == follow_compact):
@@ -374,10 +377,15 @@ class ConductorWindow(QMainWindow):
         bar.setProperty("helpPreviewCompact", compact)
         bar.setProperty("followAlongCompact", follow_compact)
         layout = bar.layout()
-        margin = Space.SM if compact else Space.LG
+        # Music also needs compact gaps for the full Conversation label and
+        # recording receipt, even when the optional Help button is absent.
+        compact_spacing = compact or follow_compact
+        # XS side margins recover the width the full Conversation label
+        # takes from the longest recording receipt at 720 px.
+        margin = Space.XS if compact_spacing else Space.LG
         layout.setContentsMargins(margin, Space.SM, margin, Space.SM)
-        layout.setSpacing(Space.XS if compact else Space.SM)
-        end_gap = Space.XS if compact else Space.MD
+        layout.setSpacing(Space.XS if compact_spacing else Space.SM)
+        end_gap = Space.XS if compact_spacing else Space.MD
         self._session_end_gap.changeSize(
             end_gap,
             1,
@@ -651,30 +659,11 @@ class ConductorWindow(QMainWindow):
             body = (
                 f"<b>WebJam v{__version__} — Art</b><br>"
                 "<i>Make together with your own tools.</i><br><br>"
-                "<b>1.</b> At launch, choose <b>Make together</b> or "
-                "<b>Paint along</b>, then <b>Host</b>. Guests choose <b>Join</b> "
-                "with the host's invite.<br>"
-                "<b>2.</b> The host uses <b>Copy Invite</b>. In the room, "
-                "<b>More</b> opens <b>Paint along…</b>; the host can also "
-                "choose the optional <b>Shared Canvas…</b> handoff.<br>"
-                "<b>3.</b> For a lesson with sound, choose <b>Watch a shared lesson</b>. "
-                "The host chooses <b>Choose YouTube…</b>, then <b>Open in browser</b>. "
-                "If the meeting was added after the room invite, the host uses <b>Copy Link</b>; "
-                "guests use <b>Add Link</b> in Conversation without leaving the room. "
-                "Join the meeting and share that lesson with computer sound. Guests listen "
-                "to that one copy and ask the host to pause or resume.<br>"
-                "<b>4.</b> Paint in your usual app or on paper. "
-                "<b>Set Up Conversation</b> or <b>Conversation</b> shows "
-                "optional external meeting controls; <b>Join / Open Meeting</b> "
-                "opens the configured link.<br>"
-                "<b>5.</b> The optional silent reference uses <b>Choose process video…</b> "
-                "or <b>YouTube link…</b>. Guests use <b>Open my copy…</b> or <b>Open lesson</b>. "
-                "Local files are not transferred. <b>Back to room</b> keeps the room open; "
-                "<b>Conversation</b> returns to your lesson setup after Notes.<br>"
-                "<b>6.</b> The host chooses <b>End Room</b>; guests choose "
-                "<b>Leave Room</b>.<br><br>"
-                "F11 — Toggle full screen<br>"
-                "Esc — Back to room from Paint along; otherwise leave full screen"
+                "<b>1.</b> Choose <b>Make together</b> or <b>Paint along</b>, "
+                "then <b>Host</b> or <b>Join</b>.<br>"
+                "<b>2.</b> The host copies the invite. Then keep making in "
+                "your own space, or open the lesson.<br>"
+                "<b>3.</b> Talk in the meeting. Paint along stays silent."
             )
         elif self._reference_studio_only and profile.key == "podcast_voice":
             body = (
@@ -767,70 +756,40 @@ class ConductorWindow(QMainWindow):
                 "<i>Host. Share. Join. Play.</i><br><br>"
                 "<b>1.</b> At launch, choose <b>Music</b> or <b>Art</b> "
                 "(<b>Make together</b> / <b>Paint along</b>), then <b>Host</b> "
-                "or <b>Join</b>.<br>"
-                "<b>2.</b> For a WebJam room, the host presses <b>Copy Invite</b> and sends the link. "
-                "For video practice, continue to <b>Play along</b> even if audio setup needs attention.<br>"
-                "<b>3.</b> For meeting practice, choose <b>Play along</b> and "
-                "<b>Set up video practice</b>. One YouTube presentation plays in "
-                "your meeting with conversation and turn-taking. Use <b>Copy Link</b> "
-                "for the meeting; guests open it in their browser or meeting app. "
-                "This path works without a WebJam room or a finished live-audio setup.<br>"
-                "<b>4.</b> For live ensemble audio, choose <b>Open Shared Track</b>. "
-                "A supported local backing file routes through Jamulus for playing "
-                "together; disconnect meeting audio and keep Webex for faces. "
-                "Each musician tile shows real connection and level truth.<br>"
-                "<b>5.</b> The host presses <b>Record Session</b> for synchronized tracks.<br>"
-                "<b>6.</b> Choose <b>Studio</b> to review completed session "
-                "takes. For a standalone Music project, end or leave the "
-                "session, then choose <b>File → Return to launch…</b>. At launch choose "
-                "<b>File → New Music Project…</b>, then "
-                "<b>Play Along / Record</b> or <b>Open Project…</b>.<br>"
-                "<b>7.</b> Choose <b>Conversation</b> to show meeting controls. "
-                "<b>Show Webex App</b> brings the verified application forward "
-                "without reopening a meeting link; Webex chooses which of its "
-                "windows is shown. Only "
-                "<b>Join / Open Meeting</b> opens the saved meeting link.<br>"
-                "<b>8.</b> The host can choose <b>Shared Track</b> to load "
-                "and inspect a song. If Play is not ready, the strip says "
-                "<b>Set up the audio device</b> and opens Shared Track for "
-                "<b>Set Up Shared Track…</b> and <b>Recheck Route</b>.<br>"
-                "<b>9.</b> Press <b>End Session</b> when the jam is over.<br><br>"
-                "<b>Useful shortcuts</b><br>"
-                "F2 — Band Check<br>"
-                f"{navigation_line}<br>"
-                f"{mix_shortcuts} — Save / load your monitor mix while Live is open<br>"
-                f"{reset_shortcut} — Reset every fader to 0 dB<br>"
-                "F11 / Esc — Enter / leave full screen"
+                "or <b>Join</b>. Music Host is Mac-only. Windows: "
+                "<b>More info → Run anyway</b>. Mac: <b>Open Anyway</b>.<br>"
+                "<b>2.</b> The host uses <b>Copy Invite</b> and sends the whole "
+                "message. A friend in another house can Join. Keep this window "
+                "open. If they send a reply, use <b>Paste Reply</b>.<br>"
+                "<b>3.</b> Play in WebJam. Talk in the meeting."
             )
-        body += (
-            "<br><br><b>Continue your work</b><br>"
-            "Open <b>More → Session library…</b>, or <b>File → Session library…</b> "
-            "at launch. Search saved workspaces, read <b>Summary</b>, and choose "
-            "<b>Continue</b>. Restoring notes does not start a room or recording."
-            " Use <b>File → Return to launch…</b> to choose another workflow after "
-            "unfinished work and session cleanup are resolved."
-        )
-        if profile.key == "music":
-            moment_shortcut = "⌘M" if sys.platform == "darwin" else "Ctrl+M"
+        # Art and live Music open on three door beats; details live in topics.
+        if profile.key != "art" and (
+            profile.key != "music" or self._reference_studio_only
+        ):
             body += (
-                "<br>In <b>Rehearsal plan</b>, order songs and keep each song's notes. "
-                "<b>Save plan…</b> / <b>Add saved plan…</b> reuses the order and goals. "
-                f"<b>Mark moment</b> ({moment_shortcut}) saves a plain note unless a "
-                "recording position is confirmed."
+                "<br><br><b>Continue your work</b><br>"
+                "Open <b>More → Session library…</b>, or <b>File → Session library…</b> "
+                "at launch. Search saved workspaces, read <b>Summary</b>, and choose "
+                "<b>Continue</b>. Restoring notes does not start a room or recording."
+                " Use <b>File → Return to launch…</b> to choose another workflow after "
+                "unfinished work and session cleanup are resolved."
             )
-        elif profile.key == "art":
-            body += (
-                "<br>In <b>Art project</b>, keep your brief, references, progress, "
-                "and next steps. Lesson bookmark positions are entered by you. "
-                "<b>Open reference</b> opens the selected reference only when requested."
-            )
-        if not self._reference_studio_only and profile.key in {"music", "podcast_voice"}:
-            body += (
-                "<br>For completed takes, Studio's <b>Review / Compare</b> keeps "
-                "favorites and private notes. <b>Set A</b> / <b>Set B</b> then "
-                "<b>Listen A</b> / <b>Listen B</b> auditions saved arrangements. "
-                "<b>Export receipt…</b> appears after package checksums verify."
-            )
+            if profile.key == "music":
+                moment_shortcut = "⌘M" if sys.platform == "darwin" else "Ctrl+M"
+                body += (
+                    "<br>In <b>Rehearsal plan</b>, order songs and keep each song's notes. "
+                    "<b>Save plan…</b> / <b>Add saved plan…</b> reuses the order and goals. "
+                    f"<b>Mark moment</b> ({moment_shortcut}) saves a plain note unless a "
+                    "recording position is confirmed."
+                )
+            if not self._reference_studio_only and profile.key in {"music", "podcast_voice"}:
+                body += (
+                    "<br>For completed takes, Studio's <b>Review / Compare</b> keeps "
+                    "favorites and private notes. <b>Set A</b> / <b>Set B</b> then "
+                    "<b>Listen A</b> / <b>Listen B</b> auditions saved arrangements. "
+                    "<b>Export receipt…</b> appears after package checksums verify."
+                )
         screen = QGuiApplication.screenAt(self.frameGeometry().center())
         if screen is None:
             screen = QGuiApplication.primaryScreen()
@@ -1071,6 +1030,18 @@ class ConductorWindow(QMainWindow):
         self.workspace_stack.setCurrentWidget(panel)
         panel.show()
 
+    def _sync_session_hud_visibility(self, *_args) -> None:
+        # Paint along supplies Art's next action. Keep the HUD's state current
+        # underneath it so returning to Room restores the latest guidance.
+        paint_along_active = (
+            self._creator_profile.key == "art"
+            and self._paint_along_widget is not None
+            and self.workspace_stack.currentWidget() is self._paint_along_widget
+        )
+        self.session_hud.setVisible(
+            not self._reference_studio_only and not paint_along_active
+        )
+
     def hide_paint_along(self, panel: QWidget | None = None) -> None:
         """Return from the embedded Paint along surface to the prior workspace."""
 
@@ -1102,7 +1073,11 @@ class ConductorWindow(QMainWindow):
         """Keep private names separate from the public room projection."""
 
         self.art_room_overview.set_overview(overview, room_connections=room_connections)
-        self._setup_tab_order()
+        if (
+            QApplication.activeModalWidget() is None
+            and QApplication.activePopupWidget() is None
+        ):
+            self._setup_tab_order()
 
     def apply_art_notes_layout(self) -> bool:
         """Give compact Art Notes the workspace without changing its meeting."""
@@ -1142,6 +1117,7 @@ class ConductorWindow(QMainWindow):
 
         profile_changed = profile != self._creator_profile
         self._creator_profile = profile
+        self._sync_session_hud_visibility()
         if profile.key != "art":
             self.art_room_overview.clear_room_connections()
         suffix = " · Preview" if profile.is_preview else ""

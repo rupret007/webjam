@@ -1,0 +1,35 @@
+{
+  "case": "same-lan",
+  "conductor_line": "webjam.cross-network-acceptance sha=96bed4140e1af21d87033c840d5176c2a4f128a1 status=PASS case=same-lan",
+  "expect_path": "direct",
+  "git_sha": "96bed4140e1af21d87033c840d5176c2a4f128a1",
+  "invite_host_routable_from_guest": null,
+  "kernel": "6.17.0-1022-azure",
+  "nat_mode": "",
+  "netem": false,
+  "notes": "Proof exchanged.",
+  "port_forwarding": false,
+  "profiles": [
+    {
+      "art_echo": "4a9cb285cedf02c37e9a883b4e849e02",
+      "local_type": "direct",
+      "music_echo": "b278fe84d3145e95589dc15ddde872a3",
+      "remote_type": "direct",
+      "role": "host"
+    },
+    {
+      "art_echo": "4a9cb285cedf02c37e9a883b4e849e02",
+      "local_type": "direct",
+      "music_echo": "b278fe84d3145e95589dc15ddde872a3",
+      "remote_type": "direct",
+      "role": "guest"
+    }
+  ],
+  "relay_bytes": 0,
+  "rendezvous_reachable_from_guest": null,
+  "rendezvous_reachable_from_host": null,
+  "schema": "webjam.cross-network-acceptance.v2",
+  "status": "PASS",
+  "stun_reachable_from_guest": null,
+  "stun_reachable_from_host": null
+}

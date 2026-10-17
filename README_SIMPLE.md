@@ -1,5 +1,94 @@
 # WebJam, simply
 
+WebJam is a desktop app for people who make music or art together.
+
+Friends in another house can play or make together. No extra setup. Keep the
+host's window open. If Join cannot connect, use home Wi-Fi on both computers,
+not a phone hotspot, and ask for a fresh invite.
+
+The [creator guide](USER_GUIDE.md) is the one complete how-to. This page is
+the short version.
+
+## Three steps
+
+1. **Get the app** from [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
+   Pick the file for your computer (Windows, Mac, or Ubuntu).
+2. **Open it.**
+   - **Windows:** Windows may say it protected your PC. Choose **More info**,
+     then **Run anyway**. A work PC may still block it; ask IT. WebJam does
+     not bypass that.
+   - **Mac:** drag WebJam into Applications, then open it from there. If
+     macOS blocks it, open **System Settings → Privacy & Security**, click
+     **Open Anyway** for WebJam, and confirm **Open**.
+   - **Ubuntu:** unzip the folder and start `WebJam` from inside it. Keep the
+     whole folder together.
+3. **Start or join.** Choose **Art** or **Music**, then **Host** or **Join**.
+   The host uses **Copy Invite** and sends the **whole message**. The friend
+   opens WebJam, chooses **Join**, and pastes that whole message.
+
+## Music and Art
+
+- **Music:** play live together. **A Mac starts the band.** Friends on Mac,
+  Windows, or Linux choose **Join**. Windows and Linux cannot Host a Music
+  jam. Music uses Host/Join. When Jamulus opens, pick your interface,
+  headphones, and buffer. Play a note. If you hear each other, you are in.
+- **Art (Preview):** open a room and make with your own tools, or follow a
+  silent lesson. Choose **Make together** or **Paint along**, then **Host**
+  or **Join**. Any computer can Host or Join. You do not need an art app.
+  A shared canvas is optional and needs [Drawpile](https://drawpile.net/download/)
+  only if you want that canvas.
+
+Talking and video use your own meeting app (Webex, Zoom, Teams, Meet, or
+FaceTime). Open **Conversation**, add a public meeting link, then **Join /
+Open Meeting**. Opening Conversation does not start a meeting. Ending WebJam
+leaves the meeting open.
+
+## Invite, record, leave
+
+- **Invite:** send the whole copied message, not just a short code. If
+  WebJam shows a short reply, send that back; the host chooses **Paste
+  Reply**. If Join says the invite was already used, ask the host for a
+  new one and choose **Paste New Invite**.
+- **Record (Music):** the host chooses **Record Session**. When the take
+  says **Ready**, it is saved. On a Mac host, takes live under
+  `Library/Application Support/WebJam/JamulusServer/Recordings`. On Windows
+  or Linux, the default folder is `WebJam Recordings` in your home folder.
+  Guests often see takes under `Music/WebJam Takes`. Use
+  **More → Recording Setup… → Show Folder** to open the folder.
+- **Leave:** the host chooses **End Session** (Music) or **End Room** (Art).
+  A guest chooses **Leave Jam** or **Leave Room**. The others stay. Your
+  meeting and drawing app stay open. Notes in **Session library** stay on
+  this computer.
+
+Podcast & Voice and Review & Rehearsal are not extra buttons on the Art/Music
+door. The door **File** menu opens **Session library…**.
+
+## Create locally
+
+From the launch screen, **File → Session library…** opens saved notes and
+plans without starting a room. If a live session is open, end or leave it
+first. Published v0.29.0 then needs you to quit and relaunch. A later
+test build can use **File → Return to launch** instead. Details for a
+separate local Music project stay in the [creator guide](USER_GUIDE.md).
+
+## If you need help
+
+For the next click, use the [creator guide](USER_GUIDE.md) or press **F1**
+in the app. Common fixes:
+
+- **Music sound:** **More → Audio Settings in Jamulus**.
+- **Talking or video:** **Conversation**, then **Join / Open Meeting**.
+- **Art room:** follow the recovery button on the room. Your meeting and
+  drawing app stay open.
+- **Recording:** wait until the take says **Ready**. Only the host starts
+  and stops **Record Session**.
+
+WebJam uses black, white, gray, and burnt orange. The three-loop mark means
+people making together. It is not a Logic logo.
+
+Developers who want the source app can run `webjam_qt_main.py` after
+installing the listed Python packages. See [Development](DEVELOPMENT.md).
+
 > **Source identity:** v0.29.0 unsigned testing candidate.
 > **Current download and publication status:** [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)
 > identifies the published tag, packages, and checksum manifest.
@@ -12,286 +101,6 @@
 > macOS is ad-hoc signed and unnotarized. Physical, signing, and platform-trust
 > gates remain **NOT RUN**. A source checkout is not a published package.
 
-## Keep working between sessions
-
-v0.29.0 adds **File → Session library…** before a room and
-**More → Session library…** inside it. Save local notes, reuse a Music
-**Rehearsal plan**, or keep an **Art project** with references and next steps.
-**Continue** restores its context without starting audio or a room.
-Music moments are plain notes unless a recording position is confirmed.
-See [the saved-work walkthrough](USER_GUIDE.md#save-a-session-and-continue-later).
-
-Unreleased Session library builds also add **Back up…** and **Import backup…**.
-Those controls are not in the published v0.29.0 download. See
-[the backup walkthrough](USER_GUIDE.md#back-up-and-import-a-workspace-unreleased).
-
-## Unreleased: return and find help
-
-The workflow continuity PR/test build keeps the v0.29.0 version number. Its
-new behavior is not part of the published v0.29.0 download.
-
-After ending or leaving a room, choose **File → Return to launch**. Saving,
-recording finalization and cleanup must finish first. If something cannot
-save or stop, keep the current work open and follow its recovery message.
-At launch, **File → New Music Project…** starts a separate local project;
-returning does not replay your old invitation or start audio.
-
-Press **F1** or choose **More → Help**, search for a task, and select a topic.
-Use its named button only when you want to open that workspace. Help stays
-beside your work so Stop/End remains reachable. It works locally without a
-model or paid API. Follow [the full steps](USER_GUIDE.md#return-to-launch-unreleased)
-or the [ten-minute Music/Art try list](docs/WORKFLOW_CONTINUITY_PILOT.md#ten-minute-first-pass).
-
-## Music and Art
-
-WebJam brings artists together to make, learn, and collaborate across mediums.
-Music supports live audio and separate recorded tracks; Art welcomes people
-working with their own materials and apps. Art is a newer Preview, and the aim
-is to build it out to the same depth as Music.
-
-Jamulus handles low-latency audio for Music. Art rooms do not require Jamulus
-or audio setup. Any meeting platform can be
-optional for talking or video when it provides a public HTTPS meeting link
-that passes WebJam's safety checks. WebJam never directly or automatically taps
-the meeting app, browser, or system output. Local Originals record only the
-input devices you explicitly select, so do not route meeting or system audio
-into those inputs.
-
-The current v0.29.0 source keeps Music and Podcast & Voice as GA
-creator profiles. Art and Review & Rehearsal are visibly Preview. Art offers
-**Make together**—a live room where people work locally and the host may open
-one shared canvas—or host-clocked **Paint along**, but no recording or
-standalone audio project. Review
-& Rehearsal supports live WebJam-audio
-Host/Join, Record Session, local notes, and playback/read-only review of a
-completed session take. It blocks standalone projects, take editing/comp/mix
-mutation, track export, shared notes, visual sync, and media timecode. No
-profile directly or automatically taps a meeting app, browser, or system
-output.
-
-Find the current published private test release on [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
-Verify the exact selected package with that release’s attached checksum
-manifest before installing.
-The four-platform release covers
-Windows, Ubuntu 22.04, Intel Mac, and
-Apple-silicon Mac packages. Windows is unsigned; Mac packages are ad-hoc
-signed and not notarized. The current line uses `cryptography` 50.0.0 for three
-audited CVE fixes. Intel macOS uses the one documented, hash-locked native
-x86_64 source-build exception because upstream no longer publishes that wheel;
-the other targets remain hash-locked to upstream wheels.
-The Mac downloads use drag-to-Applications as the primary path and include
-optional verified Terminal helpers, including a separately labeled advanced
-helper that removes quarantine from WebJam only.
-
-## Start creating
-
-1. Choose **Art** or **Music**. The launch **File** menu contains local Music
-   projects, Podcast & Voice, and Review & Rehearsal.
-2. In Art, choose **Make together** or **Paint along**, then **Host** or
-   **Join**. Make from your own space; a shared canvas is optional.
-3. An Art host waits for **Your room is open**, then chooses **Copy Invite**.
-   A guest pastes the complete invitation and waits for the room to respond.
-   **You’re in** means the Art room is connected; no Music audio proof is
-   needed. In Make together, choose **Set Up Conversation** to reach **Add
-   Link** when you want to talk or show your work. With a saved meeting link,
-   choose **Conversation**, then **Join / Open Meeting**. Opening the panel
-   alone opens no meeting. Choose **End Room** as host or **Leave Room** as
-   guest when finished.
-4. Music uses Host/Join; Podcast & Voice uses Host Remote Recording/Join
-   Recording; Review & Rehearsal uses Host Review/Join Review. Set your
-   interface, channels, headphones, and buffer when Jamulus opens. WebJam enters the
-   session after an authenticated Jamulus connection. The host then copies the
-   invitation. Make sound and check that participants can hear each other.
-
-For a short teammate walkthrough of the door and first room action, use
-[Show WebJam](DEMO.md).
-
-Join has one private invitation field and one button. Paste the full invitation
-copied by the host. WebJam checks the host's profile before choosing Art or the
-Music audio path. Art shows waiting, connected, or reconnecting room status;
-Music continues through **Opening Jamulus** and requires fresh authenticated
-Jamulus roster evidence. Use **Try Again** when WebJam says the one-use
-invitation was not submitted. If it may have been used, choose **Paste New Invite** with a fresh invitation from the host. Older peers must update
-WebJam and use a fresh invitation. A failed room cleanup keeps **Try End Room**
-or **Try Leave Room** available until it finishes.
-
-In **Paint along**, WebJam turns its existing window into a silent video
-companion once the room exists. Paint in Procreate, Clip Studio Paint, Krita,
-or on paper beside it. The host chooses **Choose process video…** for a local
-file or **YouTube link…** for a lesson, then controls play/pause. A guest
-chooses **Open my copy…** for the same local file, or **Open lesson** to stream
-the host's YouTube lesson silently. **Back to room** or Escape returns to the
-conductor without ending the room. There is no third preview window.
-
-For a demonstration with sound through a meeting, **Watch a shared lesson**
-opens **Conversation**. Choose **Join / Open Meeting** or **Show Webex App**,
-then use the meeting app's own share. That media is played by the meeting
-service. Make together works with everyone's own tools, including clay and
-printers; opening a shared canvas is optional.
-
-If a host first offers Paint along while a guest is using Notes, Conversation,
-or a dialog, that work stays visible. The guest can choose **Open Paint along**
-in Room, or use the offered Paint along line, when ready. Returning to Room
-does not open the deferred video automatically. A first offer from the untouched
-Room still opens Paint along directly; the guest's next action matches the
-host's source: **Open my copy…** or **Open lesson**.
-
-While a host's process video opens, **Cancel opening** stops the attempt.
-**Play** appears when the file is ready; a missing or failed file offers
-**Choose process video…** again. Ending the room or starting another one
-discards the old attempt. Guests continue to follow the host's controls.
-
-After a guest chooses a file, **Opening your copy** describes the local check.
-Another file chooser is unavailable during that attempt. The latest room
-action returns when it finishes; a failed copy offers **Open my copy…** again.
-
-In Art, **Conversation** highlights **Add Link** when no meeting is saved,
-or **Join / Open Meeting** for the saved link. Opening the panel starts nothing.
-While a link opens, its status holds keyboard focus. After a Webex handoff,
-the verified **Show Webex App** action can bring that app forward; another
-meeting provider keeps its own **Open Again** action.
-
-WebJam keeps a known-good Jamulus copy for offline use. **More → Jamulus
-Updates** checks only WebJam-approved, signed update information. Downloads do
-not interrupt a live session, and installation waits until audio, recording, practice,
-reconnection, and Shared Track are stopped. The operating system still asks
-before installation. If an update fails, WebJam keeps the current and previous
-managed copies available on macOS. On Windows and Linux, the operating system
-owns installation and WebJam retains its embedded 3.12.2 fallback instead of
-claiming it can roll back the system package.
-
-The exact baked Jamulus 3.12.2 and 3.12.3 records are approved through unsigned
-v0.29.0, so live Host/Join is source-eligible. This checkout is still not
-package evidence or a physical-test result.
-
-Jamulus displays a name on a second line after eight characters and accepts no
-more than 16 UTF-16 units. WebJam shows that preview anywhere you enter your
-Jamulus display name, so it will not be silently shortened later.
-
-## Create locally
-
-From the launch screen, choose **File → New Music Project…**, then
-**Play Along / Record**, **New Project**, or **Open Project…**. If a live
-session is open, end or leave it, then use **File → Return to launch** in this
-Unreleased test build. Published v0.29.0 requires quitting and relaunching
-after ending the session. The live
-**Studio** button opens completed-take review.
-
-Music and Podcast & Voice can use their local-project actions to play with
-reference audio, record ideas, rearrange sections/chapters, mix, or bounce a
-WAV/FLAC result without joining
-a live session. Reference Studio owns a separate local project and audio path; it
-does not start, stop, configure, or feed Jamulus. Review & Rehearsal keeps this
-action unavailable in Preview.
-
-## If you need help
-
-- **Music sound needs attention:** choose **More → Audio Settings in Jamulus**.
-- **Talking/video:** choose the direct **Conversation** action (or **More →
-  Conversation**). It does not open a meeting. Save a public HTTPS meeting link,
-  then use **Join / Open Meeting** for the explicit handoff. Webex, Zoom,
-  Microsoft Teams, Google Meet, and FaceTime receive friendly labels; any
-  other accepted provider stays neutrally labeled. On macOS, the separate
-  Webex-only **Show Webex App** action
-  re-verifies and activates the exact Cisco process when running. If stopped,
-  it launches the verified app itself with no URL or browser; Webex chooses its
-  own screen. Only **Join / Open Meeting** performs the one explicit
-  meeting-link handoff. Use the meeting app's own microphone and sharing
-  controls. To watch a movie or demo together, that share is the path—WebJam
-  does not play the movie. Art has no Music mute control. Ending
-  or leaving WebJam leaves that meeting open, and leaving or closing the
-  meeting does not end the WebJam session; each app ends only itself.
-  FaceTime links are Mac-only. Windows and Linux use **Join / Open Meeting**
-  because their current packages
-  do not verify the native app publisher. If the app is missing, WebJam can
-  open Cisco's official installer page after you confirm; it does not save a
-  Webex password or install silently.
-- **Art room needs attention:** follow the room's shown recovery action. Ending
-  or leaving the room keeps your meeting and drawing app open.
-- **Live audio needs attention:** use the profile's **Band Check**, **Sound Check**, or
-  **Session Check** and the
-  support/diagnostics action. The report includes bounded Jamulus updater and
-  Webex app state without local paths, meeting links, provider hostnames,
-  names, or credentials.
-- **Recording:** the host chooses **Record Session**. The first time, choose
-  shared recording only or also keep this Mac’s separate Local Originals.
-  WebJam then shows one readiness sheet with every exact server, Local
-  Original, and Shared Track source; mono/stereo format; required/optional
-  status; storage; Shared Track status; and any blocker. Start stays disabled
-  until required facts are ready, and WebJam privately rechecks the same plan
-  before it arms capture. Each required guest then opens the exact planned
-  Local Original stream and returns an authenticated, take-scoped
-  acknowledgement; Jamulus recording stays off until every ACK and a final
-  authority check succeed. Zero-track guest opt-outs do not block, and a
-  missing or stale ACK starts no recorder. Each mono input row becomes one mono file;
-  each stereo row becomes one true two-channel file. One stable source ID keeps
-  that identity through capture, transfer, recovery, Studio, and repeated
-  takes. WebJam freezes the exact server stems, Shared Track, host input
-  topology, and guest Local Original obligations before capture and rechecks
-  them before Ready. WebJam does not directly tap meeting-app,
-  browser, or system-output audio. Local Originals record the selected input
-  devices, so do not route meeting or system audio into those inputs.
-  Wait through Preparing, Count-in, Recording, Stopping, and Finalizing; only
-  Ready means the take finished safely.
-- **Shared Track:** during a hosted session choose **Shared Track**, select
-  **Add Track…**, or drop a supported file onto the live surface. You can load
-  and inspect WAV/WAVE, AIFF, or FLAC even when the playback route is not
-  ready; MP3 is shown
-  only when this package proves decoder support. **Recheck
-  Route** starts no playback. Downloaded v0.22.2 remains locked before route
-  scanning. In published v0.22.5 on Mac, an official 48-kHz BlackHole 16ch/64ch
-  route may make Play available only after machine certification; choosing
-  Play still performs exact live isolation checks and fails closed on
-  uncertainty. The live deck also shows a progressive
-  waveform, count-in, dropouts, and cleanup; Replace/Remove stay stopped-only.
-  Guests receive bounded, path-free host state without transport authority;
-  older peer state may show only the dedicated channel. Neither is physical
-  synchronization or audibility proof.
-- **Review a take:** choose the direct **Studio** action and select a playback
-  output there. Review & Rehearsal Preview permits playback, scrubbing, and
-  source inspection only. In Music or Podcast & Voice, you can also move or
-  trim regions, use Undo/Redo, add a safely matched take lane, and comp a range.
-  A new completed take automatically stacks only earlier lanes with the exact
-  same session, stable source identity, sample rate, source kind, mono/stereo
-  format, and verified timing. Anything uncertain is skipped.
-- **Make a voice episode:** Podcast & Voice starts with a 48 kHz Host-mono +
-  Guest-stereo layout. Record, loop-overdub, add chapter markers, save/reopen,
-  then use **Bounce Episode** for a verified stereo 24-bit WAV. Review Preview
-  cannot create/open that local project or reach an edit, mix, save, bounce, or
-  export action.
-- **Export for another editor:** in Music or Podcast & Voice, Track Export makes
-  edited and original 24-bit stems, a rough mix, markers, instructions,
-  provenance, and checksums. Review & Rehearsal Preview has no Track Export.
-  The recording manifest and WAVs are never rewritten. Edited Studio packages
-  use the secure macOS/Linux path; Windows clearly offers aligned originals and
-  a reference mix without region edits, fades, comps, sections, master
-  processing, or attached/repeated take lanes.
-- **Verify an already-live session:** choose the profile's **Band Check**,
-  **Sound Check**, or **Session Check**.
-  It observes the session and does not replace Jamulus setup.
-
-WebJam uses black, white, neutral gray, and burnt orange. The three-loop mark
-means creators collaborating; it does not represent a Logic integration.
-
-For the technical overview, evidence boundary, architecture, and roadmap, see
-the [project brief](docs/PROJECT_BRIEF.md) and [documentation index](docs/README.md).
-
-Waveforms load in the background and recorded gaps remain silence. Studio
-autosaves choices to a separate file; a failed save keeps the edit pending and
-the recorded take safe. Real two-Mac output, hardware interruption/recovery,
-external-editor import, physical Reference Studio audio, and signed-install
-gates remain **NOT RUN** throughout v0.28.0, and for earlier v0.27,
-v0.27.1, and v0.27.2 private test releases. Publishing a private candidate does not
-convert them to PASS. The
-[v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-is the all-NOT-RUN physical ledger for that earlier published package; do not
-execute it against this checkout. The
-[v0.25 physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
-remains immutable historical evidence. The
-[v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
-immutable historical evidence for the prior package.
-
-
 ## Historical release evidence
 
 The superseded v0.28.1 download record is release `393030220`, published
@@ -302,3 +111,12 @@ The superseded v0.28.1 download record is release `393030220`, published
 Older release entries (v0.28.0, v0.27.2, Jamulus catalog v1–v3) were deleted by
 owner; git tags remain. Those records do not verify the current show candidate.
 Physical observations remain **NOT RUN** until recorded against exact bytes.
+
+The
+[v0.26 physical checklist](V026_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
+is the all-NOT-RUN physical ledger for that earlier published package; do not
+execute it against this checkout. The
+[v0.25 physical checklist](V025_CREATOR_MULTITRACK_PHYSICAL_TEST_CHECKLIST.md)
+remains immutable historical evidence. The
+[v0.24 checklist](V024_RECORDING_FIRST_PHYSICAL_TEST_CHECKLIST.md) remains
+immutable historical evidence for the prior package.

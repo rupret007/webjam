@@ -14,8 +14,10 @@ import os
 import re
 import shutil
 import stat
+import threading
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +31,15 @@ if TYPE_CHECKING:
 
 class TakeExportError(RuntimeError):
     """Raised when a take cannot be exported without compromising alignment."""
+
+
+class TakeExportCancelled(TakeExportError):
+    """Raised when cancellation stops an unpublished track package."""
+
+
+def _check_cancelled(cancel_event: threading.Event | None) -> None:
+    if cancel_event is not None and cancel_event.is_set():
+        raise TakeExportCancelled("Track export was cancelled.")
 
 
 @dataclass(frozen=True)
@@ -75,11 +86,22 @@ _PEER_ALIGNMENT_MIN_CONFIDENCE = 0.85
 _PEER_ALIGNMENT_MAX_RESIDUAL_MS = 2.0
 _PEER_ALIGNMENT_MIN_ANCHORS = 3
 _MAX_TAKE_MANIFEST_BYTES = 16 * 1024 * 1024
+SOURCE_CHANGED_MESSAGE = (
+    "A source recording changed after validation. Reopen the take and export again."
+)
+_SOURCE_CHANGED_AFTER_VALIDATION = SOURCE_CHANGED_MESSAGE
 
 
 @dataclass(frozen=True)
 class _TakeManifestSnapshot:
     identity: tuple[int, int, int, int, int]
+    sha256: str
+
+
+@dataclass(frozen=True)
+class _ExportSourceSnapshot:
+    path: Path
+    info: os.stat_result
     sha256: str
 
 
@@ -195,6 +217,8 @@ def _publish_track_package(
     destination: Path,
     take_root: Path,
     snapshot: _TakeManifestSnapshot | None,
+    cancel_event: threading.Event | None = None,
+    source_snapshots: Sequence[_ExportSourceSnapshot] = (),
 ) -> None:
     from core.take_project import take_project_manifest_lock
 
@@ -202,6 +226,9 @@ def _publish_track_package(
     # Rendering stays outside this short lock so recording updates can proceed.
     with take_project_manifest_lock(take_root):
         _require_unchanged_take_manifest(take_root, snapshot)
+        for source_snapshot in source_snapshots:
+            _require_unchanged_export_source(source_snapshot)
+        _check_cancelled(cancel_event)
         temporary.rename(destination)
 
 
@@ -228,6 +255,7 @@ def _write_aligned_stem(
     total_frames: int,
     samplerate: int,
     chunk_frames: int,
+    cancel_event: threading.Event | None = None,
 ) -> int:
     """Render one source file onto the common take timeline."""
     import numpy as np
@@ -252,6 +280,7 @@ def _write_aligned_stem(
             if offset_frames > 0:
                 remaining = min(offset_frames, total_frames)
                 while remaining:
+                    _check_cancelled(cancel_event)
                     count = min(chunk_frames, remaining)
                     writer.write(np.zeros((count, channels), dtype="float32"))
                     timeline_pos += count
@@ -260,6 +289,7 @@ def _write_aligned_stem(
                 reader.seek(min(len(reader), -offset_frames))
 
             while timeline_pos < total_frames:
+                _check_cancelled(cancel_event)
                 count = min(chunk_frames, total_frames - timeline_pos)
                 block = reader.read(count, dtype="float32", always_2d=True)
                 if block.shape[0] == 0:
@@ -268,6 +298,7 @@ def _write_aligned_stem(
                 timeline_pos += int(block.shape[0])
 
             while timeline_pos < total_frames:
+                _check_cancelled(cancel_event)
                 count = min(chunk_frames, total_frames - timeline_pos)
                 writer.write(np.zeros((count, channels), dtype="float32"))
                 timeline_pos += count
@@ -304,6 +335,7 @@ def _write_rough_mix(
     samplerate: int,
     total_frames: int,
     chunk_frames: int,
+    cancel_event: threading.Event | None = None,
 ) -> None:
     import numpy as np
     import soundfile as sf  # type: ignore
@@ -321,6 +353,7 @@ def _write_rough_mix(
         ) as writer:
             remaining = total_frames
             while remaining:
+                _check_cancelled(cancel_event)
                 count = min(chunk_frames, remaining)
                 mix = np.zeros((count, 2), dtype="float32")
                 for reader, state in zip(readers, settings):
@@ -344,18 +377,100 @@ def _write_rough_mix(
     os.chmod(destination, 0o600)
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
+def _sha256(path: Path, cancel_event: threading.Event | None = None) -> str:
     with path.open("rb") as handle:
-        while True:
-            block = handle.read(1024 * 1024)
-            if not block:
-                break
-            digest.update(block)
+        return _sha256_handle(handle, cancel_event)
+
+
+def _sha256_handle(handle, cancel_event: threading.Event | None = None) -> str:
+    digest = hashlib.sha256()
+    handle.seek(0)
+    while True:
+        _check_cancelled(cancel_event)
+        block = handle.read(1024 * 1024)
+        if not block:
+            break
+        digest.update(block)
     return digest.hexdigest()
 
 
-def _inspect_audio(path: Path) -> dict:
+def _export_source_path(take_root: Path, segment, track_name: str) -> Path:
+    source = (take_root / segment.path).resolve()
+    try:
+        source.relative_to(take_root)
+    except ValueError as exc:
+        raise TakeExportError(
+            f"{track_name} points outside its take folder."
+        ) from exc
+    if not source.is_file():
+        raise TakeExportError(f"{track_name} is missing {segment.path}.")
+    return source
+
+
+def _require_unchanged_export_source(snapshot: _ExportSourceSnapshot) -> None:
+    try:
+        current = snapshot.path.lstat()
+        if (not stat.S_ISREG(current.st_mode)
+                or _manifest_identity(current) != _manifest_identity(snapshot.info)):
+            raise TakeExportError(SOURCE_CHANGED_MESSAGE)
+    except OSError as exc:
+        raise TakeExportError(SOURCE_CHANGED_MESSAGE) from exc
+
+
+@contextmanager
+def _open_export_source(
+    source: Path, segment, track_name: str,
+    cancel_event: threading.Event | None = None,
+):
+    """Hash and render one descriptor; reject path or in-place changes."""
+    import soundfile as sf  # type: ignore
+
+    descriptor = -1
+    try:
+        info = source.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            raise TakeExportError(SOURCE_CHANGED_MESSAGE)
+        if segment.size_bytes and info.st_size != segment.size_bytes:
+            raise TakeExportError(f"{track_name} changed size after validation.")
+        descriptor = os.open(
+            source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_BINARY", 0),
+        )
+        with os.fdopen(descriptor, "rb") as handle:
+            descriptor = -1
+            opened = os.fstat(handle.fileno())
+            if not _manifest_open_metadata_matches(info, opened):
+                raise TakeExportError(SOURCE_CHANGED_MESSAGE)
+            digest = _sha256_handle(handle, cancel_event)
+            if segment.sha256 and digest != segment.sha256:
+                raise TakeExportError(SOURCE_CHANGED_MESSAGE)
+            snapshot = _ExportSourceSnapshot(source, info, digest)
+
+            def require_unchanged():
+                try:
+                    if not _manifest_read_metadata_unchanged(
+                        info, opened, os.fstat(handle.fileno()), source.lstat()
+                    ):
+                        raise TakeExportError(SOURCE_CHANGED_MESSAGE)
+                except OSError as exc:
+                    raise TakeExportError(SOURCE_CHANGED_MESSAGE) from exc
+
+            require_unchanged()
+            handle.seek(0)
+            # Virtual I/O reads the exact handle that supplied the digest, and
+            # avoids passing Python CRT descriptors to libsndfile on Windows.
+            with sf.SoundFile(handle) as reader:
+                require_unchanged()
+                yield reader, snapshot
+            if _sha256_handle(handle, cancel_event) != digest:
+                raise TakeExportError(SOURCE_CHANGED_MESSAGE)
+            require_unchanged()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _inspect_audio(path: Path, cancel_event: threading.Event | None = None) -> dict:
     """Return bounded-streaming evidence for an independently playable WAV."""
     import numpy as np
     import soundfile as sf  # type: ignore
@@ -369,6 +484,7 @@ def _inspect_audio(path: Path) -> dict:
         channels = int(reader.channels)
         frames = len(reader)
         while True:
+            _check_cancelled(cancel_event)
             block = reader.read(65_536, dtype="float32", always_2d=True)
             if not len(block):
                 break
@@ -386,7 +502,7 @@ def _inspect_audio(path: Path) -> dict:
         "peak": round(peak, 9),
         "rms": round((sum_squares / samples) ** 0.5 if samples else 0.0, 9),
         "clipped_samples": clipped,
-        "sha256": _sha256(path),
+        "sha256": _sha256(path, cancel_event),
     }
 
 
@@ -397,6 +513,7 @@ def _write_processed_stem(
     *,
     samplerate: int,
     chunk_frames: int,
+    cancel_event: threading.Event | None = None,
 ) -> None:
     import numpy as np
     import soundfile as sf  # type: ignore
@@ -413,6 +530,7 @@ def _write_processed_stem(
         ) as writer,
     ):
         while True:
+            _check_cancelled(cancel_event)
             block = reader.read(chunk_frames, dtype="float32", always_2d=True)
             if not len(block):
                 break
@@ -496,6 +614,8 @@ def _write_project_track(
     project_rate: int,
     total_frames: int,
     chunk_frames: int,
+    cancel_event: threading.Event | None = None,
+    source_snapshots: list[_ExportSourceSnapshot],
 ) -> int:
     """Render explicit immutable segments through alignment/drift metadata."""
     import numpy as np
@@ -514,24 +634,15 @@ def _write_project_track(
     offset_frames = round(float(track.alignment.effective_offset_s) * project_rate)
     prepared: list[tuple[object, object, int, int]] = []
     intervals: list[tuple[int, int]] = []
-    try:
+    with ExitStack() as source_handles:
         for segment in sorted(
             track.segments, key=lambda item: (item.project_start_frame, item.segment_id)
         ):
-            source = (take_root / segment.path).resolve()
-            try:
-                source.relative_to(take_root)
-            except ValueError as exc:
-                raise TakeExportError(
-                    f"{track.name} points outside its take folder."
-                ) from exc
-            if not source.is_file():
-                raise TakeExportError(f"{track.name} is missing {segment.path}.")
-            if segment.size_bytes and source.stat().st_size != segment.size_bytes:
-                raise TakeExportError(f"{track.name} changed size after validation.")
-            if segment.sha256 and _sha256(source) != segment.sha256:
-                raise TakeExportError(f"{track.name} changed after validation.")
-            reader = sf.SoundFile(str(source))
+            source = _export_source_path(take_root, segment, track.name)
+            reader, snapshot = source_handles.enter_context(
+                _open_export_source(source, segment, track.name, cancel_event)
+            )
+            source_snapshots.append(snapshot)
             observed = (
                 int(reader.samplerate),
                 int(reader.channels),
@@ -543,7 +654,6 @@ def _write_project_track(
                 int(segment.frame_count),
             )
             if observed != declared:
-                reader.close()
                 raise TakeExportError(
                     f"{track.name} media facts changed after validation."
                 )
@@ -556,7 +666,6 @@ def _write_project_track(
                 )
             end = start + max(0, rendered_frames)
             if intervals and start < intervals[-1][1]:
-                reader.close()
                 raise TakeExportError(
                     f"{track.name} contains overlapping reconnect segments."
                 )
@@ -573,6 +682,7 @@ def _write_project_track(
         ) as writer:
             output_start = 0
             while output_start < total_frames:
+                _check_cancelled(cancel_event)
                 count = min(chunk_frames, total_frames - output_start)
                 block = np.zeros((count, channel_count), dtype=np.float32)
                 for segment, reader, start, end in prepared:
@@ -595,9 +705,6 @@ def _write_project_track(
                         )
                 writer.write(block)
                 output_start += count
-    finally:
-        for _segment, reader, _start, _end in prepared:
-            reader.close()
     os.chmod(destination, 0o600)
     return channel_count
 
@@ -823,12 +930,14 @@ def validated_project_export_tracks(
     return selected
 
 
-def _write_checksum_manifest(folder: Path, destination: Path) -> None:
+def _write_checksum_manifest(
+    folder: Path, destination: Path, cancel_event: threading.Event | None = None
+) -> None:
     files = sorted(
         path for path in folder.iterdir() if path.is_file() and path != destination
     )
     destination.write_text(
-        "".join(f"{_sha256(path)}  {path.name}\n" for path in files),
+        "".join(f"{_sha256(path, cancel_event)}  {path.name}\n" for path in files),
         encoding="utf-8",
     )
     os.chmod(destination, 0o600)
@@ -860,6 +969,7 @@ def _export_project_track_package(
     destination_root: Path | None,
     mix_settings: MixSettings | None,
     chunk_frames: int,
+    cancel_event: threading.Event | None = None,
     selected_track_ids: set[str] | None,
     include_processed_stems: bool,
     manifest_snapshot: _TakeManifestSnapshot,
@@ -881,6 +991,7 @@ def _export_project_track_package(
             "No audio remains on the project timeline after alignment."
         )
     project_rate = int(project.project_sample_rate)
+    _check_cancelled(cancel_event)
     root = Path(destination_root or (take.path / "Track Exports")).expanduser()
     # The selected folder may already be shared. Only directories/files that
     # this export creates receive private permissions.
@@ -902,6 +1013,7 @@ def _export_project_track_package(
     track_evidence: list[dict] = []
     used_names: set[str] = set()
     reference_indexes: list[int] = []
+    source_snapshots: list[_ExportSourceSnapshot] = []
     try:
         for export_index, track in enumerate(selected):
             base = _safe_name(track.name, f"Track {export_index + 1}")
@@ -912,6 +1024,7 @@ def _export_project_track_package(
                 suffix += 1
             used_names.add(candidate.casefold())
             output = temporary / f"{export_index + 1:02d} {candidate}.wav"
+            track_sources: list[_ExportSourceSnapshot] = []
             channels = _write_project_track(
                 take.path.resolve(),
                 track,
@@ -919,7 +1032,11 @@ def _export_project_track_package(
                 project_rate=project_rate,
                 total_frames=total_frames,
                 chunk_frames=chunk_frames,
+                cancel_event=cancel_event,
+                source_snapshots=track_sources,
             )
+            source_snapshots.extend(track_sources)
+            rendered_sources = {snapshot.path: snapshot for snapshot in track_sources}
             state = _project_track_mix_settings(
                 settings_map,
                 track_id=track.track_id,
@@ -931,8 +1048,16 @@ def _export_project_track_package(
                 reference_indexes.append(export_index)
             person = participant_map.get(track.participant_id)
             source_files = []
+            take_root = take.path.resolve()
             for segment in track.segments:
-                source_path = take.path / segment.path
+                source_path = _export_source_path(take_root, segment, track.name)
+                source_snapshot = rendered_sources[source_path]
+                _require_unchanged_export_source(source_snapshot)
+                # Evidence describes the bytes read by the renderer, not a later
+                # unbound pathname hash that might describe another recording.
+                observed_sha256 = source_snapshot.sha256
+                if segment.sha256 and observed_sha256 != segment.sha256:
+                    raise TakeExportError(SOURCE_CHANGED_MESSAGE)
                 source_files.append(
                     {
                         "segment_id": segment.segment_id,
@@ -943,7 +1068,7 @@ def _export_project_track_package(
                         "project_start_frame": segment.project_start_frame,
                         "media_status": segment.media_status.value,
                         "declared_sha256": segment.sha256,
-                        "observed_sha256": _sha256(source_path),
+                        "observed_sha256": observed_sha256,
                         "gaps": [gap.to_dict() for gap in segment.gaps],
                     }
                 )
@@ -959,7 +1084,7 @@ def _export_project_track_package(
                 "source_quality": track.quality.value,
                 "media_status": track.media_status.value,
                 "output_filename": output.name,
-                "output_sha256": _sha256(output),
+                "output_sha256": _sha256(output, cancel_event),
                 "output_channels": channels,
                 "sample_rate": project_rate,
                 "automatic_offset_s": track.alignment.automatic_offset_s,
@@ -995,10 +1120,11 @@ def _export_project_track_package(
                     state,
                     samplerate=project_rate,
                     chunk_frames=chunk_frames,
+                    cancel_event=cancel_event,
                 )
                 processed.append(processed_path)
                 evidence["processed_filename"] = processed_path.name
-                evidence["processed_sha256"] = _sha256(processed_path)
+                evidence["processed_sha256"] = _sha256(processed_path, cancel_event)
 
         mixdown = temporary / "WebJam Studio Reference.wav"
         _write_rough_mix(
@@ -1008,6 +1134,7 @@ def _export_project_track_package(
             samplerate=project_rate,
             total_frames=total_frames,
             chunk_frames=chunk_frames,
+            cancel_event=cancel_event,
         )
 
         reference_mix: Path | None = None
@@ -1023,6 +1150,7 @@ def _export_project_track_package(
                 samplerate=project_rate,
                 total_frames=total_frames,
                 chunk_frames=chunk_frames,
+                cancel_event=cancel_event,
             )
 
         source_manifest = temporary / "webjam-project-source.json"
@@ -1104,7 +1232,7 @@ def _export_project_track_package(
         analysis_payload = {
             "schema_version": 1,
             "method": "bounded-full-file-rms-peak-v1",
-            "files": [_inspect_audio(path) for path in audio_files],
+            "files": [_inspect_audio(path, cancel_event) for path in audio_files],
         }
         analysis.write_text(
             json.dumps(analysis_payload, indent=2, sort_keys=True) + "\n",
@@ -1183,8 +1311,11 @@ def _export_project_track_package(
         os.chmod(instructions, 0o600)
 
         checksums = temporary / "CHECKSUMS.sha256"
-        _write_checksum_manifest(temporary, checksums)
-        _publish_track_package(temporary, final_folder, take.path, manifest_snapshot)
+        _write_checksum_manifest(temporary, checksums, cancel_event)
+        _publish_track_package(
+            temporary, final_folder, take.path, manifest_snapshot,
+            cancel_event=cancel_event, source_snapshots=source_snapshots
+        )
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
@@ -1217,6 +1348,7 @@ def export_track_package(
     chunk_frames: int = 65536,
     selected_track_ids: set[str] | None = None,
     include_processed_stems: bool = False,
+    cancel_event: threading.Event | None = None,
 ) -> TrackExportResult:
     """Create an atomic, zero-aligned track package for ``take``.
 
@@ -1224,7 +1356,12 @@ def export_track_package(
     negative WebJam offset trims the local pre-roll; a positive offset becomes
     leading silence.  This lets a musician import every stem together at 0:00
     in an editor without manually interpreting the WebJam manifest.
+
+    Cancellation removes unpublished temporary files. Once the folder is
+    published, return it even if cancellation arrives so callers can retain
+    and surface the completed folder instead of claiming it was canceled.
     """
+    _check_cancelled(cancel_event)
     if not take.tracks:
         raise TakeExportError("This take has no audio tracks to export.")
     if chunk_frames < 1024:
@@ -1250,6 +1387,7 @@ def export_track_package(
             destination_root=destination_root,
             mix_settings=mix_settings,
             chunk_frames=chunk_frames,
+            cancel_event=cancel_event,
             selected_track_ids=selected_track_ids,
             include_processed_stems=include_processed_stems,
             manifest_snapshot=manifest_snapshot,
@@ -1260,6 +1398,7 @@ def export_track_package(
     rates: set[int] = set()
     source_info: list[tuple[int, int, int]] = []
     for track in take.tracks:
+        _check_cancelled(cancel_event)
         try:
             info = sf.info(str(track.path))
         except Exception as exc:
@@ -1284,6 +1423,7 @@ def export_track_package(
     if total_frames <= 0:
         raise TakeExportError("No audio remains on the take timeline after alignment.")
 
+    _check_cancelled(cancel_event)
     root = Path(destination_root or (take.path / "Track Exports")).expanduser()
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     final_folder = _next_export_folder(root)
@@ -1313,6 +1453,7 @@ def export_track_package(
                 total_frames=total_frames,
                 samplerate=samplerate,
                 chunk_frames=chunk_frames,
+                cancel_event=cancel_event,
             )
             state = settings_map.get(index, TrackMixSettings())
             stem_paths.append(output)
@@ -1342,6 +1483,7 @@ def export_track_package(
             samplerate=samplerate,
             total_frames=total_frames,
             chunk_frames=chunk_frames,
+            cancel_event=cancel_event,
         )
 
         manifest = temporary / "webjam-track-export.json"
@@ -1384,8 +1526,10 @@ def export_track_package(
         )
         os.chmod(instructions, 0o600)
         checksums = temporary / "CHECKSUMS.sha256"
-        _write_checksum_manifest(temporary, checksums)
-        _publish_track_package(temporary, final_folder, take.path, manifest_snapshot)
+        _write_checksum_manifest(temporary, checksums, cancel_event)
+        _publish_track_package(
+            temporary, final_folder, take.path, manifest_snapshot, cancel_event
+        )
     except Exception:
         shutil.rmtree(temporary, ignore_errors=True)
         raise
@@ -1410,6 +1554,7 @@ def export_logic_package(
     chunk_frames: int = 65536,
     selected_track_ids: set[str] | None = None,
     include_processed_stems: bool = False,
+    cancel_event: threading.Event | None = None,
 ) -> TrackExportResult:
     """Backward-compatible alias for :func:`export_track_package`.
 
@@ -1421,6 +1566,7 @@ def export_logic_package(
         destination_root=destination_root,
         mix_settings=mix_settings,
         chunk_frames=chunk_frames,
+        cancel_event=cancel_event,
         selected_track_ids=selected_track_ids,
         include_processed_stems=include_processed_stems,
     )

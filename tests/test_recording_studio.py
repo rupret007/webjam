@@ -71,6 +71,7 @@ from webjam_qt.widgets.recording_studio import (
     RecordingStudio,
     _composite_waveform_peaks,
     _CompositeWaveformSpec,
+    _ExportWorkerOutcome,
     _studio_document_differs_from_default,
     _studio_export_failure_message,
     _track_export_failure_message,
@@ -2409,13 +2410,19 @@ def test_export_failure_copy_never_echoes_raw_worker_text():
             assert fragment not in message
         assert "take is safe" in message.lower() or "are safe" in message.lower()
 
-    # The two recognised, actionable export reasons still keep their guidance.
+    # Recognised, actionable export reasons still keep their guidance.
     silent = _studio_export_failure_message(
         "WebJam found explicitly silent segments in selected performance tracks: "
         "/Users/musician/Music/WebJam Takes/take-01/media/server.wav"
     )
     assert "explicitly silent segment" in silent
     assert "/Users/musician" not in silent
+    changed = _track_export_failure_message(
+        "A source recording changed after validation. Reopen the take and export again."
+    )
+    assert "source recording changed" in changed
+    assert "no export was published" in changed.lower()
+    assert "/Users/musician" not in changed
 
 
 def test_arrange_edit_rejection_leaves_document_and_history_untouched(tmp_path):
@@ -3456,6 +3463,10 @@ def test_track_export_failure_keeps_take_available_and_actionable():
             "original before export.",
             "no verified timeline alignment",
         ),
+        (
+            "A source recording changed after validation. Reopen the take and export again.",
+            "source recording changed",
+        ),
     ),
 )
 def test_track_export_safety_blocks_are_actionable_without_raw_details(error, expected):
@@ -3481,6 +3492,39 @@ def test_track_export_safety_blocks_are_actionable_without_raw_details(error, ex
             assert studio._export_btn.isEnabled()
         finally:
             studio.shutdown()
+
+
+def test_changed_source_export_failure_has_no_success_or_receipt(tmp_path):
+    take = tmp_path / "Take 01"
+    take.mkdir()
+    _wav(take / "guitar.wav")
+    _mark_verified(take, "guitar.wav")
+    studio = RecordingStudio(
+        str(tmp_path),
+        player=TakePlayer(samplerate=RATE, sink=_SilentSink()),
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        finished: list[bool] = []
+        studio.export_finished.connect(finished.append)
+        studio._exporting = True
+        studio._finish_export(
+            None,
+            "A source recording changed after validation. Reopen the take and export again.",
+        )
+
+        hint = studio._hint.text().lower()
+        assert "source recording changed" in hint
+        assert "no export was published" in hint
+        assert "original take is safe" in hint
+        assert studio._review_dialog.receipt_button.isEnabled() is False
+        assert "no verified receipt" in studio._review_dialog.status.text().lower()
+        assert studio._reveal_btn.text() == "Show Take"
+        assert finished == [False]
+        assert "aligned originals ready" not in hint
+        assert "track export ready" not in hint
+    finally:
+        studio.shutdown()
 
 
 def test_published_but_unsynced_export_remains_revealable(tmp_path):
@@ -4861,4 +4905,252 @@ def test_long_arrange_names_offer_recovery_without_changing_recording(tmp_path, 
         assert [(m.label, m.kind.value) for m in markers] == [("A better name", kind)]
         assert {path: path.read_bytes() for path in truth} == truth
     finally:
+        studio.shutdown()
+
+
+@pytest.mark.parametrize("phase", ["render", "published", "verification", "queued"])
+def test_legacy_export_recording_cancel_keeps_finalized_folder_recovery(
+    tmp_path, monkeypatch, phase
+):
+    from core.take_export import export_track_package
+    from core.export_receipt import verify_export_receipt
+
+    take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+    observed_cancel = []
+    published = []
+
+    def export(*args, **kwargs):
+        observed_cancel.append(kwargs.get("cancel_event"))
+        if phase == "render":
+            started.set()
+            assert release.wait(3.0)
+        result = export_track_package(*args, **kwargs)
+        published.append(result.folder)
+        if phase == "published":
+            started.set()
+            assert release.wait(3.0)
+        return result
+
+    def verify(folder):
+        receipt = verify_export_receipt(folder)
+        if phase == "verification":
+            started.set()
+            assert release.wait(3.0)
+        return receipt
+
+    monkeypatch.setattr("webjam_qt.widgets.recording_studio.studio_export_supported", lambda: False)
+    monkeypatch.setattr("webjam_qt.widgets.recording_studio.export_track_package", export)
+    monkeypatch.setattr("webjam_qt.widgets.recording_studio.verify_export_receipt", verify)
+    studio = RecordingStudio(str(tmp_path), player=TakePlayer(samplerate=RATE, sink=_SilentSink()))
+    finished = []
+    studio.export_finished.connect(finished.append)
+    try:
+        studio._take_list.setCurrentRow(0)
+        studio.set_can_record(True)
+        studio._export_tracks()
+        worker = studio._export_thread
+        assert worker is not None
+        if phase == "queued":
+            assert _wait_without_qt_events(lambda: not worker.is_alive())
+        else:
+            assert _wait_without_qt_events(started.is_set)
+        studio.set_recording_phase("recording")
+        assert observed_cancel[0] is not None
+        assert observed_cancel[0].is_set()
+        assert "canceled" not in studio._review_dialog.status.text().lower()
+        assert studio._viewing_live
+        assert studio._record_btn.text() == "■ Stop Recording"
+        assert finished == [False]
+        release.set()
+        assert _wait_without_qt_events(lambda: not worker.is_alive())
+        studio._drain_export_results()
+        assert finished == [False]
+        if phase == "render":
+            assert not published
+            assert not list(take_dir.glob("Track Exports/*"))
+            assert "canceled" in studio._review_dialog.status.text().lower()
+        else:
+            assert len(published) == 1
+            assert published[0].is_dir()
+            assert studio._reveal_path == published[0]
+            assert studio._reveal_btn.text() == "Show Unverified Export"
+            assert studio._reveal_btn.isVisibleTo(studio)
+            assert studio._reveal_btn.accessibleName() == "Show Unverified Export"
+            assert studio._reveal_btn.isEnabled()
+            assert "canceled" not in studio._review_dialog.status.text().lower()
+            assert "No verified receipt" in studio._review_dialog.status.text()
+    finally:
+        release.set()
+        studio.shutdown()
+
+
+def test_late_cancelled_export_cannot_clobber_newer_export_folder_or_recovery(
+    tmp_path,
+):
+    from core.take_export import TrackExportResult
+    from webjam_qt.widgets.accessible import set_labeled_action
+
+    take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    older_folder = tmp_path / "older-cancelled-export"
+    newer_folder = tmp_path / "newer-export"
+    older_folder.mkdir()
+    newer_folder.mkdir()
+    studio = RecordingStudio(
+        str(tmp_path), player=TakePlayer(samplerate=RATE, sink=_SilentSink())
+    )
+    try:
+        studio._take_list.setCurrentRow(0)
+        studio._export_generation = 1
+        studio._export_ui_generation = 1
+        studio._recording_cancelled_exports.add(1)
+
+        studio._export_generation = 2
+        studio._export_ui_generation = 2
+        studio._reveal_path = newer_folder
+        set_labeled_action(studio._reveal_btn, "Show Track Export")
+        studio._reveal_btn.show()
+        studio._reveal_btn.setEnabled(True)
+        studio._hint.setText(
+            "Track export ready · 2 aligned 24-bit stems · 8 kHz. "
+            "Import the numbered WAVs together at 0:00 in your editor."
+        )
+        studio._review_dialog.status.setText(
+            "Export verified: 3 files. Open Export receipt for sources, "
+            "settings and destination."
+        )
+        newer_hint = studio._hint.text()
+        newer_status = studio._review_dialog.status.text()
+
+        studio._export_results.put(
+            _ExportWorkerOutcome(
+                generation=1,
+                take_path=take_dir.resolve(),
+                result=TrackExportResult(
+                    folder=older_folder,
+                    stems=(),
+                    mixdown=older_folder / "mix.wav",
+                    manifest=older_folder / "webjam-track-export.json",
+                    instructions=older_folder / "IMPORT.txt",
+                    samplerate=RATE,
+                    frames=RATE,
+                ),
+                published_folder=older_folder,
+            )
+        )
+        studio._drain_export_results()
+
+        assert studio._reveal_path == newer_folder
+        assert studio._reveal_btn.text() == "Show Track Export"
+        assert studio._reveal_btn.accessibleName() == "Show Track Export"
+        assert studio._hint.text() == newer_hint
+        assert studio._review_dialog.status.text() == newer_status
+        assert 1 not in studio._recording_cancelled_exports
+    finally:
+        studio.shutdown()
+
+
+@pytest.mark.parametrize("newer_phase", ["in_progress", "completed"])
+def test_late_cancelled_legacy_worker_cannot_clobber_newer_export(
+    tmp_path, monkeypatch, newer_phase
+):
+    from core.take_export import export_track_package
+    from core.export_receipt import verify_export_receipt
+
+    take_dir, _track_ids = _schema2_studio_take(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+    first_folder = []
+
+    def first_export(*args, **kwargs):
+        result = export_track_package(*args, **kwargs)
+        first_folder.append(result.folder)
+        started.set()
+        assert release.wait(3.0)
+        return result
+
+    monkeypatch.setattr(
+        "webjam_qt.widgets.recording_studio.studio_export_supported", lambda: False
+    )
+    monkeypatch.setattr(
+        "webjam_qt.widgets.recording_studio.export_track_package", first_export
+    )
+    monkeypatch.setattr(
+        "webjam_qt.widgets.recording_studio.verify_export_receipt",
+        verify_export_receipt,
+    )
+    studio = RecordingStudio(
+        str(tmp_path), player=TakePlayer(samplerate=RATE, sink=_SilentSink())
+    )
+    finished = []
+    studio.export_finished.connect(finished.append)
+    newer_started = threading.Event()
+    newer_release = threading.Event()
+    try:
+        studio._take_list.setCurrentRow(0)
+        studio.set_can_record(True)
+        studio._export_tracks()
+        worker = studio._export_thread
+        assert worker is not None
+        assert _wait_without_qt_events(started.is_set)
+        studio.set_recording_phase("recording")
+        assert studio._export_ui_generation == 1
+        assert 1 in studio._recording_cancelled_exports
+
+        def later_export(*args, **kwargs):
+            if newer_phase == "in_progress":
+                newer_started.set()
+                assert newer_release.wait(3.0)
+            return export_track_package(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "webjam_qt.widgets.recording_studio.export_track_package", later_export
+        )
+        studio.set_recording_phase("idle")
+        studio._take_list.setCurrentRow(0)
+        studio._export_tracks()
+        newer_worker = studio._export_thread
+        assert newer_worker is not None
+        assert studio._export_ui_generation == 3
+        if newer_phase == "completed":
+            assert _wait_without_qt_events(lambda: not newer_worker.is_alive())
+            studio._drain_export_results()
+            newer_folder = studio._reveal_path
+            newer_label = studio._reveal_btn.text()
+            newer_hint = studio._hint.text()
+            newer_status = studio._review_dialog.status.text()
+            assert newer_folder is not None
+            assert newer_folder != (first_folder[0] if first_folder else None)
+            assert finished[-1] is True
+        else:
+            assert _wait_without_qt_events(newer_started.is_set)
+            newer_folder = studio._reveal_path
+            newer_label = studio._reveal_btn.text()
+            newer_hint = studio._hint.text()
+            newer_status = studio._review_dialog.status.text()
+            assert "Export in progress" in newer_status
+
+        release.set()
+        assert _wait_without_qt_events(lambda: not worker.is_alive())
+        studio._drain_export_results()
+
+        assert studio._reveal_path == newer_folder
+        assert studio._reveal_btn.text() == newer_label
+        assert studio._hint.text() == newer_hint
+        assert studio._review_dialog.status.text() == newer_status
+        assert studio._reveal_btn.text() != "Show Unverified Export"
+        if newer_phase == "completed":
+            assert "canceled" not in studio._review_dialog.status.text().lower()
+            assert "Unverified" not in studio._hint.text()
+        else:
+            newer_release.set()
+            assert _wait_without_qt_events(lambda: not newer_worker.is_alive())
+            studio._drain_export_results()
+            assert studio._reveal_path is not None
+            assert studio._reveal_path != first_folder[0]
+            assert studio._reveal_btn.text() != "Show Unverified Export"
+    finally:
+        release.set()
+        newer_release.set()
         studio.shutdown()

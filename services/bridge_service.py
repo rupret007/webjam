@@ -691,6 +691,8 @@ class BridgeService:
         # JamulusServer through the configured recorder secret. Adopted
         # servers are observed, never terminated by WebJam.
         self._hosted_server_adopted = False
+        # Recorder requests must not outlive detach/re-adopt of the same endpoint.
+        self.hosted_server_generation = 0
         self._hosted_caffeinate_process: subprocess.Popen | None = None
         self._hosted_log_file: object | None = None
         self._hosted_lifecycle_lock = threading.RLock()
@@ -4000,6 +4002,7 @@ class BridgeService:
                 if verified:
                     return True, "authenticated external server adopted"
                 self._hosted_server_adopted = False
+            self.hosted_server_generation += 1
             # Clear a dead owned process plus its stale caffeinate/log handles
             # before attempting a replacement.
             if self.hosted_server_process is not None:
@@ -4357,6 +4360,7 @@ class BridgeService:
         # its cancellation callback must be able to observe Stop and unwind.
         self._cancel_pending_hosted_restart()
         with self._hosted_lifecycle_lock:
+            self.hosted_server_generation += 1
             # Detach from an externally managed server without sending it a
             # signal. Only the subprocess in hosted_server_process is owned.
             self._hosted_server_adopted = False
