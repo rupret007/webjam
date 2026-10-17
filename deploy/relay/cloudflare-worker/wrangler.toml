@@ -10,6 +10,31 @@ compatibility_date = "2026-09-01"
 TURN_MONTHLY_CAP_GB = "800"
 TURN_CREDENTIAL_TTL_SECONDS = "600"
 TURN_RATE_LIMIT_PER_MINUTE = "10"
+MAILBOX_TTL_SECONDS = "600"
+MAILBOX_RATE_LIMIT_PER_MINUTE = "30"
+MAILBOX_NEW_BUCKETS_PER_MINUTE = "32"
+MAILBOX_DAILY_REQUESTS = "10000"
+MAILBOX_DAILY_ROW_WRITES = "10000"
+MAILBOX_DAILY_GB_S = "1000"
+MAILBOX_PREFIX_DAILY_REQUESTS = "200"
+MAILBOX_PREFIX_DAILY_ROW_WRITES = "200"
+MAILBOX_PREFIX_DAILY_GB_S = "20"
+MAILBOX_NET_DAILY_REQUESTS = "2000"
+MAILBOX_NET_DAILY_ROW_WRITES = "2000"
+MAILBOX_NET_DAILY_GB_S = "200"
+MAILBOX_RATE_PREFIX_DAILY = "2000"
+
+[[durable_objects.bindings]]
+name = "MAILBOX"
+class_name = "Mailbox"
+
+[[durable_objects.bindings]]
+name = "MAILBOX_QUOTA"
+class_name = "MailboxQuota"
+
+[[migrations]]
+tag = "v1-mailbox"
+new_sqlite_classes = ["Mailbox", "MailboxQuota"]
 
 # Required secrets (do not put values here):
 #   wrangler secret put TURN_KEY_ID

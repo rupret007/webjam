@@ -13,5 +13,5 @@
   reply back and the host presses Paste Reply. Source checkouts without the
   sidecar stay on LAN. When the direct pair fails, Host/Join uses a $0 TURN
   relay (self-hosted coturn or Cloudflare Realtime). The HUD still says
-  WebJam couldn't reach the host if both paths fail. Plan:
-  `docs/REMOTE-SESSIONS-PLAN.md`.
+  WebJam couldn't reach the host if both paths fail. The operator plan
+  remains on #372 until it fits a later slice.

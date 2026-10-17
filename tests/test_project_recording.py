@@ -918,7 +918,9 @@ def test_concurrent_finish_cannot_change_stop_to_cancel(tmp_path):
             assert release.wait(5)
 
     backend = SlowStopBackend()
-    recorder = ProjectMultitrackRecorder(backend, join_timeout_s=0.1)
+    # This test owns cancel-vs-stop, not the 0.1s drain-timeout retry.
+    # Give the writer time to publish after backend.stop() returns.
+    recorder = ProjectMultitrackRecorder(backend, join_timeout_s=5.0)
     recorder.start(
         tmp_path / "take",
         schedule=ProjectRecordingSchedule(punch_in_frame=0, punch_out_frame=4),

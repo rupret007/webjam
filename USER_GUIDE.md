@@ -100,6 +100,9 @@ The **Summary** tab and **Export summary** collect progress and next steps;
 ending a rehearsal retains its recap with the workspace.
 **Export summary** includes the latest live Notes and saved recap even if the
 library editor has no new edits. Conflicting drafts must be resolved before export.
+Choose a new filename for each export; existing files are never overwritten.
+If export fails after creating a file, that file is left in place and may be
+incomplete. Retry with a new filename.
 
 For Art, open **More → Session library… → Art project**. Keep a **Project brief**, **Progress**,
 and **Next steps** alongside references added with **Add file…** or **Add
@@ -483,8 +486,10 @@ Make together is complete with everyone working in their own space: paint,
 clay, paper, a printer, or the software they already know. A shared canvas is
 optional and is not a setup requirement.
 
-Open **Conversation** to talk and show your work. Until a meeting link is
-saved the room's button reads **Set Up Conversation**; it opens the same
+While a Make together host waits with no meeting link or shared activity,
+**Copy Invite** is the next action. **Conversation** stays in the footer.
+Open it to talk and show your work. When the room body offers a conversation
+button before a meeting link is saved, it reads **Set Up Conversation**; it opens the same
 panel, where you add a public HTTPS link. Once saved it reads
 **Conversation**. Use **Join / Open Meeting** to open the saved link, then
 share a demonstration or process video in Webex or the selected meeting app.
@@ -920,6 +925,8 @@ to prepare a level; it stays silent until you unmute it. **Solo** lets you
 listen to one channel. Other channels stay suppressed even when you adjust
 their faders. Turning Solo off, or the soloed musician leaving, restores your
 chosen levels and mute choices. A new arrival stays suppressed during Solo.
+If the same seat shows a different name, that person starts with a fresh mix
+and does not keep the previous occupant's Solo, mute, or fader.
 
 **Save Mix** (Ctrl+S) keeps your current listening balance; **Load Mix**
 (Ctrl+O) restores it. Use Ctrl+Shift+S / Ctrl+Shift+O for named mixes.

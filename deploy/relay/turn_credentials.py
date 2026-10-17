@@ -105,8 +105,9 @@ def allow_rate(ip: str, now: float, limit: int = RATE_LIMIT) -> bool:
         return False
     with _lock:
         _prune_rate_locked(now)
-        stamps = list(_rate.get(ip, []))
+        stamps = [stamp for stamp in _rate.get(ip, []) if now - stamp < RATE_WINDOW_SECONDS]
         if len(stamps) >= limit:
+            _rate[ip] = stamps
             return False
         stamps.append(now)
         _rate[ip] = stamps

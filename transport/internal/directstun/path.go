@@ -121,8 +121,15 @@ func ParseDialTarget(encoded string) (*net.UDPAddr, error) {
 // ParseRelayTarget accepts a sealed relay candidate only when its IPv4 equals
 // the credentialed TURN server. That is the exact-pair bound: CreatePermission
 // and QUIC dial use this address, never an arbitrary peer-supplied relay.
+func relayAllowedIPv4(address netip.Addr) bool {
+	if stunMappedIPv4(address) {
+		return true
+	}
+	return harnessTURN() && address.Is4() && address.IsLoopback()
+}
+
 func ParseRelayTarget(encoded string, allowed netip.Addr) (*net.UDPAddr, error) {
-	if !stunMappedIPv4(allowed) {
+	if !relayAllowedIPv4(allowed) {
 		return nil, errRejectedCandidate
 	}
 	candidate, err := ice.UnmarshalCandidate(encoded)
@@ -137,7 +144,7 @@ func ParseRelayTarget(encoded string, allowed netip.Addr) (*net.UDPAddr, error) 
 		return nil, errRejectedCandidate
 	}
 	address = address.Unmap()
-	if !stunMappedIPv4(address) || address != allowed.Unmap() ||
+	if !relayAllowedIPv4(address) || address != allowed.Unmap() ||
 		candidate.Port() < 1 || candidate.Port() > 65_535 {
 		return nil, errRejectedCandidate
 	}

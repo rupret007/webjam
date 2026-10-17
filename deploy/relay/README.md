@@ -3,7 +3,16 @@
 Musicians do **zero setup**. The packaged sidecar fetches short-lived TURN
 credentials from a public HTTPS URL compiled in at release (`-ldflags
 -X github.com/rupret007/webjam/transport/internal/directstun.turnCredentialURL=…`).
-Direct ICE is tried first; TURN is used only when that pair fails.
+Direct ICE is tried first; TURN is used only when that pair fails. The
+compiled Host accepts on **both** the direct mux and the TURN listener at
+once. Join probes the host's published candidates first, then dials the
+host's relay candidate. The host does not wait for a guest reply before
+accepting. The guest reply travels on the same Worker through a
+one-invite Durable Object mailbox; paste is only a hidden fallback.
+
+TURN credentials start in parallel with STUN gather. A LAN-only host
+(no public mapping) does not wait for that fetch. The sidecar client
+timeout is the Worker worst case (two 5s upstreams) plus 2s headroom.
 
 The cross-network relay is **Cloudflare Realtime TURN** (key name
 `webjam-relay`). A Cloudflare Worker mints `iceServers`. The TURN key ID
@@ -56,6 +65,18 @@ Free-plan Worker at `deploy/relay/cloudflare-worker/`.
 `POST /turn-credentials` requires a WebJam session/invite **token shape**
 (canonical UUID or 64-hex `session_id`, plus `invite_token` matching
 `^[A-Za-z0-9_-]{32,256}$`) and rate-limits per IP.
+
+The same Worker hosts one SQLite-backed Durable Object mailbox per
+session (`new_sqlite_classes`). Clients send only an HKDF mailbox id and
+AEAD ciphertext. Do not deploy from this PR; redeploy after review.
+Daily request, row-write, and GB-s counters fail closed at 10k / 10k /
+1k, at least 4× under the free 100k / 13k GB-s / 100k row-write limits.
+Per-IP rate limits live in DO storage, not a per-isolate map. The
+packaged desktop uses
+`https://webjam-turn-credentials.jeffstory007.workers.dev` the same way
+the compiled TURN URL does. `WEBJAM_SIGNAL_MAILBOX_URL` remains the
+override (https only; `http://127.0.0.1` and `http://localhost` are
+allowed for local harnesses).
 
 ### Deploy
 

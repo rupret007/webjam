@@ -6,6 +6,8 @@ import {
   DEFAULT_TTL_SECONDS,
   FETCH_TIMEOUT_MS,
   FREE_ALLOWANCE_GB,
+  UPSTREAM_FETCHES_PER_REQUEST,
+  WORKER_WORST_CASE_MS,
   GIGABYTE_BYTES,
   MAX_RATE_STORE_ENTRIES,
   allowRate,
@@ -271,6 +273,20 @@ test("analytics token is preferred for GraphQL and unused for iceServers", () =>
 test("default credential TTL is 600 seconds", () => {
   assert.equal(DEFAULT_TTL_SECONDS, 600);
   assert.equal(FETCH_TIMEOUT_MS, 5000);
+  assert.equal(UPSTREAM_FETCHES_PER_REQUEST, 2);
+  assert.equal(WORKER_WORST_CASE_MS, 10_000);
+});
+
+test("outbound fetch timeout still applies while the body is read", async () => {
+  const headersThenHang = async () => ({
+    status: 200,
+    statusText: "OK",
+    headers: new Headers(),
+    arrayBuffer: () => new Promise(() => {}),
+  });
+  await assert.rejects(() =>
+    fetchWithTimeout(headersThenHang, "https://example.test", {}, 20),
+  );
 });
 
 test("worker uses analytics secret only on GraphQL and TURN token on generate", async () => {

@@ -321,9 +321,18 @@ class ArtRoomOverviewWidget(QScrollArea):
         recovery_enabled = (
             overview.activity_enabled or overview.secondary_activity_enabled
         )
+        # With no activity or saved meeting, the waiting host's next click
+        # is HUD Copy Invite. Conversation remains available in the footer.
+        waiting_for_invite = (
+            overview.phase == "waiting"
+            and overview.role_label == "Host"
+            and not offered
+            and not secondary_offered
+            and overview.conversation_action_label == "Set Up Conversation"
+        )
         if not popup_owns_ui:
             self._conversation_button.setVisible(
-                not (recovery_enabled and overview.open_my_copy_recovery)
+                not (waiting_for_invite or (recovery_enabled and overview.open_my_copy_recovery))
             )
         secondary_description = (
             (overview.secondary_activity_label, overview.secondary_activity_detail)
