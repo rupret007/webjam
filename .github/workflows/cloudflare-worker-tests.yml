@@ -30,7 +30,10 @@ jobs:
         with:
           node-version: "22.22.3"
 
+      - name: Install Worker dependencies
+        working-directory: deploy/relay/cloudflare-worker
+        run: npm ci
+
       - name: Run Worker tests
         working-directory: deploy/relay/cloudflare-worker
-        run: |
-          node --test
+        run: node --test
