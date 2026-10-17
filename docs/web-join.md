@@ -1,11 +1,11 @@
 # Web Join (spec A from #385)
 
-This draft implements a browser guest in a desktop-hosted Jamulus session.
-It starts disabled. While hosting an owned Jamulus server, choose **Web Join →
+This draft implements a browser guest in a desktop-hosted music session.
+It starts disabled. While hosting an owned server, choose **Web Join →
 Allow a web guest**, then **Copy web invite**. A guest opens the link, confirms
 headphones, and starts audio with a tap. The UI labels the connection **Web Join,
 higher delay (about 60–120 ms)**; that is an expectation, not a WAN measurement.
-Safari/iOS is labelled best effort. Desktop players continue using Jamulus.
+Safari/iOS is labelled best effort. Desktop players continue using the WebJam app.
 
 One web guest is admitted at a time. **Kick web guest**, clearing permission,
 resetting the native invitation, stopping the session, replacing the owned
@@ -16,8 +16,8 @@ endpoint last at most ten minutes, also bounded by TURN credential expiry.
 ## Host and browser boundary
 
 `webjam-fabric` includes the Pion endpoint in `transport/internal/webjoin`.
-`services/web_join_host.py` owns a separate sidecar and one host-local Jamulus
-bridge. The bridge converts browser standard Opus to Jamulus Opus Custom and
+`services/web_join_host.py` owns a separate sidecar and one host-local audio
+bridge. The bridge converts browser standard Opus to custom-mode Opus and
 returns that client's server mix; see [native bridge setup](web-join-bridge.md).
 Missing codec support fails closed before the host can issue a usable invite.
 
@@ -128,7 +128,7 @@ are reviewable sources only; live use requires a separately authorized release
 that includes this native dependency, static page and Worker web quota scope.
 Tests use local fixtures, never the live TURN credential service.
 
-See `web/join/README.md` and the bridge document for browser and real Jamulus
+See `web/join/README.md` and the bridge document for browser and native bridge
 lab commands. Cross-network Mac host + Windows Chrome + iPhone Safari remains
 manual acceptance work: record selected ICE path, observed audio settings,
 RTT/jitter estimates and measured audible latency. Lab measurements do not

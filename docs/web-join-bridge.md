@@ -1,8 +1,8 @@
 # Host-local Web Join audio bridge
 
-`services.web_join_bridge.WebJoinBridge` owns one Jamulus client and one codec
+`services.web_join_bridge.WebJoinBridge` owns one live-audio UDP client and one codec
 pair for each enrolled guest. It has no sound-device, directory-server, or public
-UDP listener. The host supplies a numeric Jamulus port; both UDP endpoints use
+UDP listener. The host supplies a numeric server port; both UDP endpoints use
 `127.0.0.1`. Browser signaling cannot supply addresses or native-library paths.
 
 The host creates and starts the bridge, then passes its `port` and random
@@ -15,25 +15,25 @@ also call `close()`; `closed` and `close_reason` expose asynchronous failures.
 Never put these local credentials in a browser offer.
 
 Native libopus decodes browser 48 kHz stereo, 10/20 ms Opus. PCM is repacketized
-into Jamulus custom Opus frames of 128 samples and paced at 48 kHz. The guest's
-Jamulus mix is decoded and encoded as standard stereo Opus at 128 kbit/s, 20 ms,
-with DTX disabled and FEC enabled. Jamulus control framing is based on the
+into custom-mode Opus frames of 128 samples and paced at 48 kHz. The guest's
+server mix is decoded and encoded as standard stereo Opus at 128 kbit/s, 20 ms,
+with DTX disabled and FEC enabled. Control framing is based on the
 [pinned 3.12.2 protocol](https://github.com/jamulussoftware/jamulus/blob/r3_12_2/src/protocol.cpp).
 The existing monitoring adapter uses a different wire format, so this audio
 client only reuses its CRC calculation.
 
 The worker bounds incoming PCM at 60 ms, drops duplicate/stale RTP sequence
 numbers, rejects oversized and malformed RTP, and stops on queue overload.
-Defaults are a 180-second dormant authentication deadline, a 5-second Jamulus
+Defaults are a 180-second dormant authentication deadline, a 5-second server
 media deadline, a 15-second browser media deadline, and a one-hour lifetime.
 The bridge independently caps combined RTP input/output at 256 MiB; the Pion
 endpoint independently enforces the cap for the one web guest supported by
 this implementation. Failure closes sockets,
-releases native codec states, and sends Jamulus's disconnect message.
+releases native codec states, and sends the server's disconnect message.
 
 ## Native dependency
 
-Ordinary libopus packages can omit custom modes and cannot encode Jamulus's
+Ordinary libopus packages can omit custom modes and cannot encode the bridge's
 128-sample frames. Missing custom APIs make `start()` fail before opening any
 socket. There is no runtime download or package-manager fallback.
 
@@ -65,7 +65,7 @@ python -m pytest tests/test_web_join_bridge.py
 ```
 
 The explicit native lab requires both real dependencies and fails if either is
-missing. It never silently replaces a Jamulus server or codec with a fake:
+missing. It never silently replaces a server process or codec with a fake:
 
 ```sh
 WEBJAM_WEB_JOIN_OPUS=/absolute/libwebjoin_opus.dylib \
@@ -75,15 +75,15 @@ python -m pytest tests/labs/web_join_loopback_lab.py -s
 
 The lab starts its own headless server bound to loopback with directory
 registration disabled. It sends synthetic standard-Opus stereo sine through
-the complete bridge, verifies the frequency and amplitude of the real Jamulus
+the complete bridge, verifies the frequency and amplitude of the real server
 return mix, and records `WEB_JOIN_LAB` JSON with added loopback latency. Arrival
 measurement polls at 20 ms, so results include up to 20 ms measurement granularity.
 This isolates bridge overhead; browser audio devices, ICE/TURN, and WAN buffering
 need separate end-to-end measurement.
 
-A local macOS run against the bundled Jamulus 3.12.2 server and the pinned
+A local macOS run against the bundled 3.12.2 server and the pinned
 custom-mode Opus 1.5.2 library passed all 27 bridge contract tests and both native
-lab tests on 2026-10-16. The complete browser-codec/Jamulus-codec/server-mix path
+lab tests on 2026-10-16. The complete browser-codec/server-codec/server-mix path
 returned 124 stereo packets with a 440 Hz peak and measured 39.52 ms added
 loopback delay. This measurement excludes WAN and browser audio-device delay.
 

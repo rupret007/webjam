@@ -371,6 +371,74 @@ func TestPionKickGenerationExpiryAndQuotaClose(t *testing.T) {
 		})
 	}
 }
+func iceCandidate(t *testing.T, line string) *webrtc.ICECandidate {
+	t.Helper()
+	parsed, err := ice.UnmarshalCandidate(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var typ webrtc.ICECandidateType
+	switch parsed.Type() {
+	case ice.CandidateTypeHost:
+		typ = webrtc.ICECandidateTypeHost
+	case ice.CandidateTypeServerReflexive:
+		typ = webrtc.ICECandidateTypeSrflx
+	case ice.CandidateTypeRelay:
+		typ = webrtc.ICECandidateTypeRelay
+	default:
+		t.Fatalf("unsupported candidate type %v", parsed.Type())
+	}
+	candidate := &webrtc.ICECandidate{
+		Foundation: parsed.Foundation(),
+		Priority:   parsed.Priority(),
+		Address:    parsed.Address(),
+		Protocol:   webrtc.ICEProtocolUDP,
+		Port:       uint16(parsed.Port()),
+		Typ:        typ,
+		Component:  parsed.Component(),
+	}
+	if related := parsed.RelatedAddress(); related != nil {
+		candidate.RelatedAddress = related.Address
+		candidate.RelatedPort = uint16(related.Port)
+	}
+	return candidate
+}
+
+func TestRejectedCandidatePairFailsClosed(t *testing.T) {
+	relay := map[netip.Addr]bool{netip.MustParseAddr("141.101.90.1"): true}
+	e := &Endpoint{relays: relay, lab: false}
+	pair := &webrtc.ICECandidatePair{
+		Local:  iceCandidate(t, "1 1 udp 1 8.8.8.8 4000 typ srflx raddr 0.0.0.0 rport 0"),
+		Remote: iceCandidate(t, "1 1 udp 1 8.8.8.8 4000 typ host"),
+	}
+	if e.allowedPair(pair) {
+		t.Fatal("disallowed host candidate in selected pair")
+	}
+}
+
+func TestAuthorizeReturnsErrReplayAfterSuccessfulEnrollment(t *testing.T) {
+	p := newLabPeer(t, nil)
+	if err := p.apply(t); err != nil {
+		t.Fatal(err)
+	}
+	dc := p.dataChannel(t)
+	proof, err := EnrollmentProof(p.cfg.Capability, p.cfg.SessionID, p.answer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dc.Send(proof); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-p.host.Enrolled():
+	case <-time.After(3 * time.Second):
+		t.Fatal("first enrollment did not complete")
+	}
+	if err := p.host.authorize(proof, time.Now()); !errors.Is(err, ErrReplay) {
+		t.Fatalf("second authorize: got %v, want %v", err, ErrReplay)
+	}
+}
+
 func TestCandidatePolicy(t *testing.T) {
 	relay := map[netip.Addr]bool{netip.MustParseAddr("141.101.90.1"): true}
 	tests := []struct {

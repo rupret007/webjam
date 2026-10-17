@@ -65,8 +65,8 @@ cross-language AEAD/proof vectors, bad-pin cleanup, and browser-to-Pion
 enrollment plus returned audio. The production candidate policy has separate
 reject/accept unit coverage and no browser runtime bypass.
 
-The echo fixture does not prove Jamulus mixing or cross-network TURN reachability.
-The Python Jamulus lab covers the host-local codec/UDP bridge independently.
+The echo fixture does not prove live server mixing or cross-network TURN reachability.
+The Python loopback lab covers the host-local codec/UDP bridge independently.
 Manual Mac host + Windows Chrome + iPhone Safari sessions on separate networks
 remain required before release; record measured latency and confirm TURN
 fallback, kick, generation reset, quota closure, and iOS foreground recovery.
