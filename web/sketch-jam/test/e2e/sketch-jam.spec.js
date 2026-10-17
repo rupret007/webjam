@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { installFakeAudio } from "./fake-audio.js";
+import { createInvite, inviteFragment } from "../../crypto.js";
 
 let nextParticipant = 0;
 
@@ -67,6 +68,23 @@ test("Sketch Jam label and headphones consent precede microphone capture", async
       video: false,
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2, sampleRate: 48000 },
     });
+  } finally {
+    await close();
+  }
+});
+
+test("same-tab hashchange reloads the invite and re-enables join", async ({ browser }) => {
+  const { close, page } = await participant(browser, "Navigator");
+  try {
+    const first = await page.locator("#invite").inputValue();
+    const nextHash = `#${inviteFragment(createInvite())}`;
+    await page.evaluate((hash) => {
+      location.hash = hash;
+    }, nextHash);
+    await expect.poll(() => page.locator("#invite").inputValue()).not.toBe(first);
+    await expect(page.locator("#invite")).toHaveValue(new RegExp(`${nextHash.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
+    await page.locator("#headphones").check();
+    await expect(page.locator("#join")).toBeEnabled();
   } finally {
     await close();
   }

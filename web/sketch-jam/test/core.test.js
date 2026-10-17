@@ -50,6 +50,9 @@ test("invite stays entirely in the fragment and expires at ten minutes", async (
   assert.throws(() => readInvite(url.hash, now + 600000), /expired/);
   assert.throws(() => readInvite(`${url.hash}&k=AAAA`, now), /Invalid/);
   assert.throws(() => readInvite(`${url.hash}&relay=https://evil.example`, now), /Invalid/);
+  assert.throws(() => readInvite(url.hash.replace(/t=\d+/, "t="), 1000), /Invalid invite link/);
+  const params = new URLSearchParams(url.hash.replace(/^#/, ""));
+  assert.throws(() => readInvite(`#k=${params.get("k")}&s=${params.get("s")}&s=${params.get("s")}`, 1000), /Invalid invite link/);
   assert.throws(() => readInvite(url.hash, now - 31000), /expired/);
   const token = await turnToken(invite.capability, invite.sessionId);
   assert.match(token, /^[A-Za-z0-9_-]{43}$/);

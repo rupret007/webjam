@@ -93,11 +93,14 @@ export function inviteFragment(invite) {
 
 export function readInvite(hash, now = Date.now()) {
   const values = new URLSearchParams(hash.replace(/^#/, ""));
-  if ([...values.keys()].some((key) => !["k", "s", "t"].includes(key)) || [...values.keys()].length !== 3) throw new Error("Invalid invite link");
+  const keys = [...values.keys()];
+  if (keys.some((key) => !["k", "s", "t"].includes(key)) || keys.length !== 3 || new Set(keys).size !== 3) throw new Error("Invalid invite link");
+  const t = values.get("t") ?? "";
+  if (!/^\d+$/.test(t)) throw new Error("Invalid invite link");
   const capability = fixed(fromBase64Url(values.get("k")), 32);
   const sessionId = values.get("s");
   sessionBytes(sessionId);
-  const created = Number(values.get("t"));
+  const created = Number(t);
   if (!Number.isSafeInteger(created) || created > now + 30_000 || now - created >= 600_000) throw new Error("This invite has expired. Create a new Sketch Jam link.");
   return { capability, sessionId, created };
 }

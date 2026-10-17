@@ -13,8 +13,9 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   projects: [
-    { name: "chromium", use: { browserName: "chromium" } },
-    { name: "webkit", use: { browserName: "webkit" } },
+    { name: "chromium", testIgnore: /peer-cleanup\.spec\.js/, use: { browserName: "chromium" } },
+    { name: "webkit", testIgnore: /peer-cleanup\.spec\.js/, use: { browserName: "webkit" } },
+    { name: "chromium-peer-cleanup", testMatch: /peer-cleanup\.spec\.js/, use: { browserName: "chromium" } },
   ],
   webServer: {
     command: "node test/e2e/server.js",

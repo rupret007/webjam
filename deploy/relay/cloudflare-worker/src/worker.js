@@ -117,7 +117,7 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all
   if (web) {
     if ((typeof env.MAILBOX_QUOTA?.idFromName !== "function" ||
          typeof env.MAILBOX_QUOTA?.get !== "function") &&
-        !deps.fetch && !deps.mailboxFetch && env.ENVIRONMENT !== "development") {
+        env.ENVIRONMENT !== "development") {
       return errorResponse(503, "misconfigured");
     }
     // One persistent web counter spans both endpoints. Keep the original
@@ -234,18 +234,16 @@ async function handleMailbox(request, env, deps, mailbox, nowMs, web) {
 
 export async function handleRequest(request, env, deps = {}) {
   env ??= {};
+  const origin = allowedOrigin(request, env);
+  const blocked = requireHttps(request);
+  if (blocked) return withCors(blocked, origin);
   // Origin checks and preflight must finish before any quota/mailbox DO call.
   const cors = corsGate(request, env);
   if (cors) return cors;
-  const origin = allowedOrigin(request, env);
   return withCors(await handleAllowedRequest(request, env, deps), origin);
 }
 
 async function handleAllowedRequest(request, env, deps) {
-  const blocked = requireHttps(request);
-  if (blocked) {
-    return blocked;
-  }
   applyQuotaEnv(env ?? {});
   const fetchImpl = deps.fetch ?? globalThis.fetch;
   const nowMs = Number(deps.nowMs ?? Date.now());

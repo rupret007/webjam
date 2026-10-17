@@ -63,7 +63,9 @@ async function playRemote(index, stream) {
     document.body.append(audio);
   }
   audio.srcObject = stream;
-  try { await audio.play(); } catch { byId("resume").hidden = false; }
+  try { await audio.play(); } catch {
+    if (active && playback.get(index) === audio) byId("resume").hidden = false;
+  }
 }
 
 function stop() {
@@ -75,6 +77,7 @@ function stop() {
   playback.clear();
   audioContext?.close().catch(() => {});
   audioContext = null;
+  byId("peers").replaceChildren();
   byId("resume").hidden = true;
   controls();
 }
@@ -107,7 +110,9 @@ async function join() {
     stream?.getTracks().forEach((track) => track.stop());
     if (turn !== generation) return;
     stop();
-    status(error.name === "NotAllowedError" ? "Microphone access is needed. Allow it, then create a new link to try again." : error.message || "Unable to join this Sketch Jam.");
+    status(error.name === "NotAllowedError"
+      ? (used ? "Microphone access is needed. Allow it, then create a new link to try again." : "Microphone access is needed. Allow it, then tap Join Sketch Jam again.")
+      : error.message || "Unable to join this Sketch Jam.");
   }
 }
 
@@ -135,4 +140,9 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && active) audioContext?.resume().catch(() => { byId("resume").hidden = false; });
 });
 window.addEventListener("pagehide", stop);
+window.addEventListener("hashchange", () => {
+  if (active) stop();
+  used = false;
+  loadInvite();
+});
 loadInvite();
