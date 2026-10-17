@@ -178,10 +178,6 @@ for (const status of [429, 503]) {
 }
 
 test.describe("microphone permission denial or pre-claim network failure allows retrying Join on the same invite link", () => {
-  test.beforeEach(({ browserName }) => {
-    test.skip(browserName === "webkit", "WebKit headless reports a native capture error instead of app join status");
-  });
-
   test("after microphone denial", async ({ browser }) => {
     const { close, page } = await participant(browser, "Denied once", "/", { fakeAudioOnly: true });
     try {

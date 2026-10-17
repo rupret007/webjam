@@ -647,3 +647,135 @@ def test_proof_peers_drive_real_sidecar_not_standalone_ice():
     stop = run.find("stop_turn(")
     usage = run.find("relayed_bytes(")
     assert 0 <= wait < stop < usage
+
+
+def test_music_stream_sends_each_frame_once_through_bidirectional_loss(tmp_path):
+    """Drop the first packet and 1% per direction, with no retransmissions."""
+    import concurrent.futures
+    import socket
+    import threading
+
+    from tools.cross_network_acceptance import proof as p
+
+    finished = tmp_path / "music-finished"
+    stopped = threading.Event()
+    sent: list[int] = []
+    echoed: list[int] = []
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as host, \
+            socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as relay, \
+            socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as guest:
+        host.bind(("127.0.0.1", 0))
+        relay.bind(("127.0.0.1", 0))
+        relay.settimeout(0.02)
+
+        def forward():
+            client = None
+            while not stopped.is_set():
+                try:
+                    payload, source = relay.recvfrom(2048)
+                except TimeoutError:
+                    continue
+                sequence = p._music_sequence(payload, MUSIC)
+                if source == host.getsockname():
+                    echoed.append(sequence)
+                    if sequence % 100 != 1:
+                        relay.sendto(payload, client)
+                else:
+                    client = source
+                    sent.append(sequence)
+                    if sequence % 100 != 0:
+                        relay.sendto(payload, host.getsockname())
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            forwarding = pool.submit(forward)
+            receiving = pool.submit(p._host_music, host, MUSIC, finished)
+            try:
+                count = p._guest_music(guest, relay.getsockname()[1], MUSIC)
+                finished.touch()
+                assert receiving.result(timeout=2) >= p.MUSIC_MIN_ECHOES
+                assert count >= p.MUSIC_MIN_ECHOES
+                # Drain every sent frame before inspecting the forwarder's log.
+                import time
+                deadline = time.monotonic() + 1
+                while len(sent) < p.MUSIC_FRAMES and time.monotonic() < deadline:
+                    time.sleep(0.01)
+            finally:
+                finished.touch()
+                stopped.set()
+            forwarding.result(timeout=2)
+    assert sent == list(range(p.MUSIC_FRAMES))
+    assert len(set(echoed)) == len(echoed)
+    assert 0 not in echoed
+
+
+def test_music_stream_rejects_corruption_duplicates_and_out_of_range():
+    from tools.cross_network_acceptance import proof as p
+
+    class Input:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def recvfrom(self, _size):
+            return self.payload, ("127.0.0.1", 1)
+
+    seen: set[int] = set()
+    p._receive_music(Input(p._music_frame(MUSIC, 0)), MUSIC, seen)
+    with pytest.raises(p.ProofError, match="duplicate"):
+        p._receive_music(Input(p._music_frame(MUSIC, 0)), MUSIC, seen)
+    with pytest.raises(p.ProofError, match="payload mismatch"):
+        p._receive_music(Input(p._music_frame(ART, 1)), MUSIC, seen)
+    with pytest.raises(p.ProofError, match="out of range"):
+        p._receive_music(Input(p._music_frame(MUSIC, p.MUSIC_FRAMES)), MUSIC, seen)
+
+
+def test_music_stream_silence_and_premature_finish_fail(tmp_path, monkeypatch):
+    import socket
+
+    from tools.cross_network_acceptance import proof as p
+
+    monkeypatch.setattr(p, "MUSIC_TIMEOUT_S", 0.05)
+    finished = tmp_path / "music-finished"
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as host, \
+            socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as guest:
+        host.bind(("127.0.0.1", 0))
+        with pytest.raises(p.ProofError, match="stream incomplete"):
+            p._guest_music(guest, host.getsockname()[1], MUSIC)
+        finished.touch()
+        # A filesystem completion marker alone is never evidence of audio.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as empty:
+            empty.bind(("127.0.0.1", 0))
+            with pytest.raises(p.ProofError, match="stream incomplete"):
+                p._host_music(empty, MUSIC, finished)
+
+
+@pytest.mark.parametrize("echoes, passes", [(949, False), (950, True)])
+def test_music_stream_enforces_delivery_budget(tmp_path, monkeypatch, echoes, passes):
+    import concurrent.futures
+    import socket
+
+    from tools.cross_network_acceptance import proof as p
+
+    monkeypatch.setattr(p, "MUSIC_TIMEOUT_S", 3.0)
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as relay, \
+            socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as guest:
+        relay.bind(("127.0.0.1", 0))
+        relay.settimeout(4)
+
+        def reflect():
+            received = []
+            for _ in range(p.MUSIC_FRAMES):
+                payload, client = relay.recvfrom(2048)
+                sequence = p._music_sequence(payload, MUSIC)
+                received.append(sequence)
+                if sequence < echoes:
+                    relay.sendto(payload, client)
+            return received
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            reflecting = pool.submit(reflect)
+            if passes:
+                assert p._guest_music(guest, relay.getsockname()[1], MUSIC) == echoes
+            else:
+                with pytest.raises(p.ProofError, match="sent=1000 echoed=949"):
+                    p._guest_music(guest, relay.getsockname()[1], MUSIC)
+            assert reflecting.result(timeout=1) == list(range(p.MUSIC_FRAMES))
