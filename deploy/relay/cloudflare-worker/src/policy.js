@@ -22,6 +22,7 @@ export const DEFAULT_CAP_GB = 800;
 export const DEFAULT_TTL_SECONDS = 600;
 export const DEFAULT_RATE_LIMIT = 10;
 export const RATE_WINDOW_MS = 60_000;
+export const MAX_RATE_STORE_ENTRIES = 4096;
 export const USAGE_CACHE_MS = 60_000;
 export const MAX_BODY_BYTES = 4096;
 export const FREE_ALLOWANCE_GB = 1000;
@@ -163,6 +164,35 @@ function looksLikeIP(value) {
   return value.includes(":") && value.length >= 2 && value.length <= 45;
 }
 
+function rateStoreBucket(key) {
+  const separator = key.lastIndexOf(":");
+  if (separator < 0) {
+    return Number.NaN;
+  }
+  return Number(key.slice(separator + 1));
+}
+
+function pruneRateStore(store, bucket) {
+  for (const existing of store.keys()) {
+    const marked = rateStoreBucket(existing);
+    if (Number.isFinite(marked) && marked < bucket - 1) {
+      store.delete(existing);
+    }
+  }
+  if (store.size <= MAX_RATE_STORE_ENTRIES) {
+    return;
+  }
+  const keys = [...store.keys()].sort(
+    (left, right) => rateStoreBucket(left) - rateStoreBucket(right),
+  );
+  for (const existing of keys) {
+    if (store.size <= MAX_RATE_STORE_ENTRIES) {
+      break;
+    }
+    store.delete(existing);
+  }
+}
+
 export function allowRate(store, ip, nowMs, limit, windowMs = RATE_WINDOW_MS) {
   if (!ip) {
     return false;
@@ -171,14 +201,8 @@ export function allowRate(store, ip, nowMs, limit, windowMs = RATE_WINDOW_MS) {
   const key = `${ip}:${bucket}`;
   const next = (store.get(key) ?? 0) + 1;
   store.set(key, next);
-  if (store.size > 4096) {
-    for (const existing of store.keys()) {
-      const parts = existing.split(":");
-      const marked = Number(parts[parts.length - 1]);
-      if (marked < bucket - 1) {
-        store.delete(existing);
-      }
-    }
+  if (store.size > MAX_RATE_STORE_ENTRIES) {
+    pruneRateStore(store, bucket);
   }
   return next <= limit;
 }
