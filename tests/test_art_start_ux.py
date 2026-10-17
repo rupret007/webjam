@@ -1019,6 +1019,39 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
+@pytest.mark.parametrize("profile_key", ["art", "music"])
+def test_door_mark_does_not_announce_musicians(qapp, tmp_path: Path, profile_key):
+    """A painter on the Art door hears the symbol, not a musician-only metaphor."""
+
+    dialog = _dialog(tmp_path, profile_key)
+    try:
+        assert dialog._logo.accessibleName() == "WebJam"
+        assert dialog._logo.accessibleDescription() == (
+            "WebJam symbol: one continuous three-loop trefoil."
+        )
+        spoken = harvest_first_screen(dialog)
+        assert "webjam symbol: one continuous three-loop trefoil." in spoken
+        assert "musicians playing together" not in spoken
+        assert "musician" not in spoken
+        assert_no_banned_first_screen_words(spoken)
+        others = [
+            button.text()
+            for button in _visible_buttons(dialog)
+            if not isinstance(button, (StartCard, ProfileCard))
+        ]
+        if profile_key == "art":
+            assert [card.text() for card in _visible_cards(dialog)] == [
+                "Make together",
+                "Paint along",
+            ]
+            assert others == ["Host", "Join"]
+        else:
+            assert _visible_cards(dialog) == []
+            assert others == ["Host", "Join"]
+    finally:
+        dialog.deleteLater()
+
+
 def test_paint_along_selected_start_names_the_room_title():
     from core.creative_modes import (
         get_creator_profile_by_key,
