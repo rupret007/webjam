@@ -868,22 +868,30 @@ class SessionLibraryDialog(QDialog):
         path, _ = QFileDialog.getSaveFileName(self, "Export workspace summary", "workspace-summary.md", "Markdown (*.md)")
         if not path:
             return
+        created = False
         try:
             # A summary must never replace notes, references, or take evidence.
             # Exclusive creation also rejects existing symlinks and hardlinks.
             import os
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            created = True
             try:
-                with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                    handle.write(workspace_summary(snapshot))
-                    handle.flush()
-                    os.fsync(handle.fileno())
+                stream = os.fdopen(fd, "w", encoding="utf-8")
             except BaseException:
-                Path(path).unlink(missing_ok=True)
+                os.close(fd)
                 raise
+            with stream as handle:
+                handle.write(workspace_summary(snapshot))
+                handle.flush()
+                os.fsync(handle.fileno())
             self.status.setText("Summary exported. Original work is unchanged.")
         except (OSError, ValueError):
-            self.status.setText("Summary was not exported. Choose a new filename in a writable folder.")
+            # Never unlink this pathname after creation: another writer may
+            # have replaced it. A stat/identity check would still race unlink.
+            if created:
+                self.status.setText("Summary export failed. The chosen file may be incomplete. Retry with a new filename.")
+            else:
+                self.status.setText("Summary was not exported. Choose a new filename in a writable folder.")
 
     def _backup(self):
         if self.record is None or self._import_in_progress:

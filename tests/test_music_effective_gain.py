@@ -199,6 +199,67 @@ def test_late_arrival_during_solo_sends_zero_then_restores_default(mixer, source
     assert sink.gains[10] == 79
 
 
+@pytest.mark.parametrize("source", ["rpc", "udp_merge"])
+def test_same_id_occupant_replacement_drops_departed_mix_and_solo(mixer, source):
+    controller, sink = mixer.controller, mixer.sink
+    controller.set_fader_level(7, 40)
+    controller.set_mute(8, True)
+    controller.set_solo(7, True)
+    departed = controller.participants[7]
+    assert sink.gains[7] == 31
+    if source == "rpc":
+        controller._on_rpc_participants([
+            ChannelInfo(7, "New guitarist"),
+            ChannelInfo(8, "Collaborator"),
+            ChannelInfo(9, "My monitor"),
+        ])
+    else:
+        controller._state.apply_udp_clients_payload({
+            7: "New guitarist",
+            8: "Collaborator",
+            9: "My monitor",
+        })
+    replacement = controller.participants[7]
+    assert replacement is not departed
+    assert replacement.name == "New guitarist"
+    assert not replacement.solo
+    assert replacement.fader_level == 100
+    assert not replacement.muted
+    assert controller.participants[8].muted
+    assert not controller.participants[9].muted
+    assert not any(participant.solo for participant in controller.participants.values())
+    assert sink.gains[7] == 79
+    assert sink.gains[8] == 0
+    assert sink.gains[9] == 79
+
+
+@pytest.mark.parametrize("source", ["rpc", "udp_merge"])
+def test_arrival_on_replaced_slot_stays_suppressed_during_other_solo(mixer, source):
+    controller, sink = mixer.controller, mixer.sink
+    controller.set_fader_level(7, 40)
+    controller.set_solo(8, True)
+    departed = controller.participants[7]
+    if source == "rpc":
+        controller._on_rpc_participants([
+            ChannelInfo(7, "New guitarist"),
+            ChannelInfo(8, "Collaborator"),
+            ChannelInfo(9, "My monitor"),
+        ])
+    else:
+        controller._state.apply_udp_clients_payload({
+            7: "New guitarist",
+            8: "Collaborator",
+            9: "My monitor",
+        })
+    replacement = controller.participants[7]
+    assert replacement is not departed
+    assert replacement.muted
+    assert not replacement.solo
+    assert controller.participants[8].solo
+    assert sink.gains[7] == 0
+    assert sink.gains[8] == 79
+
+
 @pytest.mark.parametrize("solo", [False, True])
 @pytest.mark.parametrize("source", ["rpc", "udp_merge"])
 def test_unchanged_roster_does_not_reset_listening_mix(mixer, solo, source):
