@@ -281,6 +281,44 @@ class TestParticipantStateManager(unittest.TestCase):
         self.assertEqual(current.fader_level, 40)
         self.assertTrue(manager.participants[8].muted)
 
+    def _assert_replaced_seat_drops_departed_pre_solo_mute(self, sync):
+        manager, _ = _build_manager()
+        manager.add_participant("Lead", 1)
+        manager.add_participant("Departing drummer", 2)
+        manager.set_mute(2, True)
+        manager.set_solo(1, True)
+        sync(manager)({1: "Lead", 2: "New drummer"})
+        self.assertEqual(manager.participants[2].name, "New drummer")
+        manager.set_solo(1, False)
+        self.assertFalse(manager.participants[2].muted)
+        self.assertFalse(manager.participants[1].muted)
+        self.assertFalse(any(p.solo for p in manager.get_participants()))
+
+    def test_replaced_seat_drops_departed_pre_solo_mute_rpc(self):
+        self._assert_replaced_seat_drops_departed_pre_solo_mute(
+            lambda m: m.sync_from_protocol)
+
+    def test_replaced_seat_drops_departed_pre_solo_mute_udp(self):
+        self._assert_replaced_seat_drops_departed_pre_solo_mute(
+            lambda m: m.apply_udp_clients_payload)
+
+    def test_replacing_solo_owner_with_new_joiner_leaves_no_solo(self):
+        for name, sync in (
+            ("rpc", lambda m: m.sync_from_protocol),
+            ("udp", lambda m: m.apply_udp_clients_payload),
+        ):
+            with self.subTest(path=name):
+                manager, _ = _build_manager()
+                manager.add_participant("Lead", 1)
+                manager.add_participant("Bass", 2)
+                manager.set_solo(1, True)
+                sync(manager)({1: "New lead", 2: "Bass", 4: "Late joiner"})
+                self.assertFalse(any(p.solo for p in manager.get_participants()))
+                self.assertFalse(manager.participants[2].muted)
+                self.assertFalse(manager.participants[4].muted)
+                self.assertFalse(manager.participants[1].muted)
+                self.assertEqual(manager._pre_solo_mute, {})
+
     def test_jamulus_participant_default_factory(self):
         # Sanity-check the dataclass moved across cleanly.
         p = JamulusParticipant(channel_id=3, name="X")
