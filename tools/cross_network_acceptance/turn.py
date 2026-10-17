@@ -15,7 +15,16 @@ from tools.cross_network_acceptance.topology import required_bin
 
 REALM = "webjam"
 CREDENTIAL_PORT = 8787
-_USAGE = re.compile(r"\brb=(\d+)\b.*\bsb=(\d+)\b")
+PROOF_USER = re.compile(r"webjam-proof-[0-9a-f]{32}")
+_SESSION = re.compile(r"\bsession ([0-9]+): (.*)")
+_METHOD = re.compile(
+    r"(?:origin <[^>]*> )?realm <webjam> user <([^>]+)>: "
+    r"incoming packet (ALLOCATE|CHANNEL_BIND) processed, success"
+)
+_PEER_USAGE = re.compile(
+    r"peer usage: realm=<webjam>, username=<([^>]+)>, "
+    r"rp=[0-9]+, rb=([0-9]+), sp=[0-9]+, sb=([0-9]+)"
+)
 
 
 def turnserver_bin() -> str:
@@ -42,13 +51,18 @@ def mint_credentials(secret: str, host: str, port: int) -> dict[str, object]:
         tc.SECRET, tc.EXTERNAL_IP, tc.LISTEN_PORT = saved
 
 
-def credential_server_env(secret: str, host: str, port: int) -> dict[str, str]:
+def credential_server_env(
+    secret: str, host: str, port: int, *, proof_user: str,
+) -> dict[str, str]:
     return {
         "TURN_STATIC_AUTH_SECRET": secret,
         "TURN_EXTERNAL_IP": host,
         "TURN_LISTEN_PORT": str(int(port)),
         "TURN_LISTEN_ADDR": host,
         "TURN_CREDENTIAL_PORT": str(CREDENTIAL_PORT),
+        "WEBJAM_TEST_TURN_USER": proof_user,
+        "CLOUDFLARE_TURN_API_TOKEN": "",
+        "CLOUDFLARE_TURN_BASE_URL": "",
     }
 
 
@@ -66,16 +80,41 @@ def turn_command(
     ]
 
 
-def relayed_bytes(log_text: str) -> int:
-    """Coturn session rb=+sb= only."""
+def relayed_bytes(log_text: str, *, proof_user: str) -> int:
+    """Sum coturn peer rb=+sb= for this run's allocated, channel-bound sessions.
+
+    The private harness credential server mints this fresh user suffix only
+    for the proof run. Session ID AND full username must match successful
+    ALLOCATE and CHANNEL_BIND records before any usage is admitted. Coturn's
+    client-side `usage:` includes protocol traffic; only `peer usage:` counts.
+    These are interval counters (coturn resets them after each usage dump).
+    """
+    if not PROOF_USER.fullmatch(proof_user):
+        return 0
+    username = re.compile(r"[0-9]+:" + re.escape(proof_user))
+    allocated: set[tuple[str, str]] = set()
+    bound: set[tuple[str, str]] = set()
     total = 0
-    for match in _USAGE.finditer(log_text or ""):
-        total += int(match.group(1)) + int(match.group(2))
+    for line in (log_text or "").splitlines():
+        session = _SESSION.search(line)
+        if session is None:
+            continue
+        session_id, record = session.groups()
+        method = _METHOD.fullmatch(record)
+        if method and username.fullmatch(method[1]):
+            key = (session_id, method[1])
+            if method[2] == "ALLOCATE":
+                allocated.add(key)
+            elif key in allocated:
+                bound.add(key)
+        usage = _PEER_USAGE.fullmatch(record)
+        if usage and (session_id, usage[1]) in bound:
+            total += int(usage[2]) + int(usage[3])
     return total
 
 
-def wait_turn_usage(log_path: Path, timeout_s: float = 8.0) -> str:
-    """Re-read the coturn log until rb=/sb= appear or timeout.
+def wait_turn_usage(log_path: Path, timeout_s: float = 8.0, *, proof_user: str) -> str:
+    """Re-read the coturn log until scoped peer rb=/sb= appear or timeout.
 
     Coturn dumps usage on allocation timeout one timer tick after REFRESH
     lifetime=0. Harvesting immediately after peer reap races that tick.
@@ -89,7 +128,7 @@ def wait_turn_usage(log_path: Path, timeout_s: float = 8.0) -> str:
                 text = log_path.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 text = ""
-            if relayed_bytes(text) >= 1:
+            if relayed_bytes(text, proof_user=proof_user) >= 1:
                 return text
         if time.monotonic() >= deadline:
             return text
@@ -134,4 +173,4 @@ def conntrack_dump(ns: str) -> str:
 
 
 def credential_script() -> str:
-    return str(Path(__file__).resolve().parents[2] / "deploy" / "relay" / "turn_credentials.py")
+    return str(Path(__file__).with_name("credential_server.py"))
