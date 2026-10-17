@@ -261,6 +261,10 @@ async function handleAllowedRequest(request, env, deps) {
     return errorResponse(404, "not_found");
   }
 
+  const preliminaryWeb = web;
+  const rateDenied = await enforceAccess(request, env, deps, nowMs, 0, "rate", preliminaryWeb);
+  if (rateDenied) return rateDenied;
+
   let body;
   try {
     const raw = await request.arrayBuffer();
@@ -278,7 +282,11 @@ async function handleAllowedRequest(request, env, deps) {
     return errorResponse(403, "unauthorized");
   }
   web ||= body.client === "web";
-  const denied = await enforceAccess(request, env, deps, nowMs, 0, "all", web);
+  if (web && !preliminaryWeb) {
+    const webRateDenied = await enforceScope(request, env, nowMs, 0, "rate", "web");
+    if (webRateDenied) return webRateDenied;
+  }
+  const denied = await enforceAccess(request, env, deps, nowMs, 0, "daily", web);
   if (denied) return denied;
 
   const desktopKeyId = String(env.TURN_KEY_ID ?? "").trim();
@@ -331,7 +339,12 @@ async function handleAllowedRequest(request, env, deps) {
     return errorResponse(503, "unavailable");
   }
   // Do not trust an upstream response to extend the requested browser TTL.
-  if (web) document.ttl = ttl;
+  if (web) {
+    document.client = "web";
+    document.ttl = ttl;
+    // Reviewed exact allocation IPs: https://developers.cloudflare.com/realtime/turn/faq/
+    document.allowed_relay_ips = ["141.101.90.1", "162.159.207.1"];
+  }
   return jsonResponse(200, document);
 }
 

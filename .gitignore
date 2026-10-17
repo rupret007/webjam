@@ -49,3 +49,6 @@ deploy/relay/cloudflare-worker/.wrangler/
 web/sketch-jam/node_modules/
 web/sketch-jam/test-results/
 web/sketch-jam/playwright-report/
+
+# Reproducible optional native Web Join codec build output
+native/web-join/

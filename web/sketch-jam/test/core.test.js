@@ -39,6 +39,17 @@ test("AEAD rejects changed ciphertext, keys, address, and slot", async () => {
   await assert.rejects(seal(material.key, "x".repeat(4096), material.aad), /limit/);
 });
 
+test("fromBase64Url rejects noncanonical encodings", () => {
+  const canonical = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+  assert.throws(() => fromBase64Url(canonical.slice(0, -1)), /Noncanonical encoded data/);
+});
+
+test("readInvite rejects invite fragments with extra keys", () => {
+  const invite = createInvite(1000);
+  const fragment = inviteFragment(invite);
+  assert.throws(() => readInvite(`#${fragment}&extra=1`, 1000), /Invalid invite link/);
+});
+
 test("invite stays entirely in the fragment and expires at ten minutes", async () => {
   const now = 1234567890;
   const invite = createInvite(now);

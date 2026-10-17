@@ -51,4 +51,5 @@ new_sqlite_classes = ["Mailbox", "MailboxQuota"]
 # Web TURN requires a separate key in the same account for attributable usage:
 #   wrangler secret put WEB_TURN_KEY_ID
 #   wrangler secret put WEB_TURN_KEY_API_TOKEN
-# Missing web secrets fail closed (503). Direct ICE does not need TURN secrets.
+# Missing web secrets fail closed (503). Web Join requires web quota admission
+# for every connection path, including direct ICE. Direct ICE does not need TURN secrets.

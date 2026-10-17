@@ -913,6 +913,9 @@ class ApplicationController(QObject):
         from webjam_qt.controllers.workflow_help import WorkflowHelpCoordinator
 
         self.workflow_help = WorkflowHelpCoordinator(self)
+        from webjam_qt.controllers.web_join import WebJoinControls
+
+        self._web_join_controls = WebJoinControls(self)
         self._start_routing_scan()
         # Give the visible shell one event-loop turn before surfacing any
         # interrupted local recording or private evidence checkpoint.  The
@@ -1294,6 +1297,12 @@ class ApplicationController(QObject):
         if not getattr(self, "_shutdown_cleanup_pending", False):
             self._shutdown_art_room_role = getattr(self, "_art_room_role", "")
         self._shutdown_cleanup_pending = True
+        web_join = getattr(self, "_web_join_controls", None)
+        if web_join is not None and web_join.stop() is False:
+            return self._show_shutdown_cleanup_retry(
+                "Web Join is still stopping",
+                "The web guest's audio bridge has not finished closing. Retry Quit to finish cleanup.",
+            )
         ApplicationController._clear_shared_lesson_context(self)
         room_help = getattr(self, "_room_help", None)
         if room_help is not None:
@@ -7572,6 +7581,9 @@ class ApplicationController(QObject):
     def _stop_remote_transport(self, *, restore_route: bool = True) -> bool:
         """Stop v3 only after Jamulus has released its loopback proxy."""
 
+        web_join = getattr(self, "_web_join_controls", None)
+        if web_join is not None and web_join.stop() is False:
+            return False
         ApplicationController._invalidate_room_help(self)
         self._stop_mailbox_wait()
         self._direct_stun_guest_reply_copied = False
@@ -9464,6 +9476,13 @@ class ApplicationController(QObject):
             self.window.flash_message(
                 "Start a remote jam before resetting its invitation.",
                 ms=5000,
+            )
+            return
+        web_join = getattr(self, "_web_join_controls", None)
+        if web_join is not None and web_join.stop() is False:
+            self.window.flash_message(
+                "Web Join is still stopping. Use Kick web guest to retry, then reset the invite.",
+                ms=7000,
             )
             return
         ApplicationController._invalidate_room_help(self)

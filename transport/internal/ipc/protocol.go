@@ -68,6 +68,7 @@ func (SessionID) MarshalJSON() ([]byte, error)  { return nil, ErrProtocol }
 // Command never retains the JSON spellings of enrollment values. Profile is
 // a compiled value selected by exact ID, not desktop-provided configuration.
 type Command struct {
+	WebJoin              *webJoinCommand
 	Version              int
 	ID                   uint64
 	Type                 CommandType
@@ -94,6 +95,10 @@ func (Command) MarshalJSON() ([]byte, error) { return nil, ErrProtocol }
 func (c *Command) ClearSensitive() {
 	if c == nil {
 		return
+	}
+	if c.WebJoin != nil {
+		c.WebJoin.clear()
+		c.WebJoin = nil
 	}
 	clear(c.SessionReference[:])
 	clear(c.InviteReference[:])
@@ -189,6 +194,7 @@ type Event struct {
 	Route          string      `json:"route,omitempty"`
 	SessionPath    string      `json:"session_path,omitempty"`
 	RelayBytes     uint64      `json:"relay_bytes,omitempty"`
+	ExpiresAtUnix  int64       `json:"expires_at_unix,omitempty"`
 	RoomState      *room.State `json:"room_state,omitempty"`
 }
 
@@ -229,6 +235,9 @@ func ParseCommandAt(line []byte, now time.Time) (Command, error) {
 	}
 	if err := rejectDuplicateFields(line); err != nil {
 		return Command{}, ErrProtocol
+	}
+	if command, recognized, err := parseWebJoinCommand(line, now); recognized {
+		return command, err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(line))
 	decoder.DisallowUnknownFields()
@@ -558,6 +567,9 @@ func MarshalEvent(event Event) ([]byte, error) {
 	if event.Type == "room_state_received" || event.Type == "room_state_accepted" {
 		limit = limits.MaxRoomEventLineBytes
 	}
+	if event.Type == "web_join_offer" {
+		limit = limits.MaxRoomEventLineBytes
+	}
 	if len(encoded)+1 > limit {
 		return nil, ErrEventTooLarge
 	}
@@ -565,6 +577,12 @@ func MarshalEvent(event Event) ([]byte, error) {
 }
 
 func validateEvent(event *Event) error {
+	if isWebJoinEvent(event.Type) {
+		return validateWebJoinEvent(event)
+	}
+	if event.ExpiresAtUnix != 0 {
+		return ErrProtocol
+	}
 	if _, ok := allowedEventTypes[event.Type]; !ok {
 		return ErrProtocol
 	}

@@ -250,6 +250,17 @@ test("configured web caps cannot exceed free safety ceilings", () => {
   assert.equal(credentialTtlSeconds("7200", true), 3600);
 });
 
+test("web credentials explicitly identify web quota accounting and pin the provider relay IPs", async () => {
+  resetWorkerState();
+  const response = await handleRequest(request("/turn-credentials", token()), env, upstream());
+  assert.equal(response.status, 200);
+  const document = await response.json();
+  assert.equal(document.client, "web");
+  assert.deepEqual(document.allowed_relay_ips, ["141.101.90.1", "162.159.207.1"]);
+  assert.equal(document.quota_bytes, 256 * 1024 * 1024);
+  assert.equal(JSON.stringify(document).includes("web-test-token"), false);
+});
+
 test("usage cache cannot cross account/key identities and expired data cannot mask analytics failure", async () => {
   resetWorkerState();
   assert.equal((await handleRequest(request("/turn-credentials", token()), env, upstream())).status, 200);
