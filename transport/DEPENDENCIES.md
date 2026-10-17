@@ -13,14 +13,22 @@ the non-standard-library modules linked into `webjam-fabric`:
 | Module | Version | License notice |
 |---|---:|---|
 | `github.com/google/uuid` | `v1.6.0` | `GOOGLE-UUID-BSD-3-CLAUSE.txt` |
+| `github.com/pion/datachannel` | `v1.6.0` | `PION-MIT.txt` |
 | `github.com/pion/dtls/v3` | `v3.1.5` | `PION-MIT.txt` |
 | `github.com/pion/ice/v4` | `v4.3.0` | `PION-MIT.txt` |
+| `github.com/pion/interceptor` | `v0.1.44` | `PION-MIT.txt` |
 | `github.com/pion/logging` | `v0.2.4` | `PION-MIT.txt` |
 | `github.com/pion/mdns/v2` | `v2.1.0` | `PION-MIT.txt` |
 | `github.com/pion/randutil` | `v0.1.0` | `PION-MIT.txt` |
+| `github.com/pion/rtcp` | `v1.2.16` | `PION-MIT.txt` |
+| `github.com/pion/rtp` | `v1.10.1` | `PION-MIT.txt` |
+| `github.com/pion/sctp` | `v1.9.5` | `PION-MIT.txt` |
+| `github.com/pion/sdp/v3` | `v3.0.18` | `PION-MIT.txt` |
+| `github.com/pion/srtp/v3` | `v3.0.10` | `PION-MIT.txt` |
 | `github.com/pion/stun/v3` | `v3.1.6` | `PION-MIT.txt` |
 | `github.com/pion/transport/v4` | `v4.0.2` | `PION-MIT.txt` |
 | `github.com/pion/turn/v5` | `v5.0.12` | `PION-MIT.txt` |
+| `github.com/pion/webrtc/v4` | `v4.2.12` | `PION-MIT.txt` |
 | `github.com/quic-go/quic-go` | `v0.60.0` | `QUIC-GO-MIT.txt` |
 | `github.com/wlynxg/anet` | `v0.0.5` | `ANET-BSD-3-CLAUSE.txt` |
 | `golang.org/x/crypto` | `v0.53.0` | `GO-BSD-3-CLAUSE.txt` |

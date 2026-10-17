@@ -42,6 +42,7 @@
  */
 
 export const DEFAULT_DAILY_REQUESTS = 10_000;
+export const DEFAULT_WEB_DAILY_REQUESTS = 3_000;
 export const DEFAULT_DAILY_ROW_WRITES = 10_000;
 export const DEFAULT_DAILY_GB_S = 1_000;
 export const ESTIMATED_GB_S_PER_REQUEST = 0.01;
@@ -90,7 +91,9 @@ export function quotaLimits(env = {}, scope = "mailbox") {
     scope === "turn" ? DEFAULT_RATE_LIMIT : DEFAULT_MAILBOX_RATE_LIMIT;
   const rateVar =
     scope === "turn" ? "TURN_RATE_LIMIT_PER_MINUTE" : "MAILBOX_RATE_LIMIT_PER_MINUTE";
-  const dailyRequests = positiveInt(env.MAILBOX_DAILY_REQUESTS, DEFAULT_DAILY_REQUESTS);
+  const dailyRequests = scope === "web"
+    ? Math.min(positiveInt(env.WEB_DAILY_REQUESTS, DEFAULT_WEB_DAILY_REQUESTS), DEFAULT_WEB_DAILY_REQUESTS)
+    : positiveInt(env.MAILBOX_DAILY_REQUESTS, DEFAULT_DAILY_REQUESTS);
   const dailyRowWrites = positiveInt(
     env.MAILBOX_DAILY_ROW_WRITES,
     DEFAULT_DAILY_ROW_WRITES,
@@ -626,8 +629,9 @@ export class MailboxQuota {
       const chargeRaw = String(request.headers.get("X-WebJam-Quota-Charge") ?? "all");
       const charge =
         chargeRaw === "rate" || chargeRaw === "daily" ? chargeRaw : "all";
-      const scope =
-        request.headers.get("X-WebJam-Quota-Scope") === "turn" ? "turn" : "mailbox";
+      const requestedScope = request.headers.get("X-WebJam-Quota-Scope");
+      const scope = requestedScope === "turn" || requestedScope === "web"
+        ? requestedScope : "mailbox";
       const storageKey = `quota:${scope}`;
       const stored = await this.ctx.storage.get(storageKey);
       let state;

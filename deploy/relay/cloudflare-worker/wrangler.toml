@@ -10,6 +10,12 @@ compatibility_date = "2026-09-01"
 TURN_MONTHLY_CAP_GB = "800"
 TURN_CREDENTIAL_TTL_SECONDS = "600"
 TURN_RATE_LIMIT_PER_MINUTE = "10"
+# Exact comma-separated origins; add an exact preview origin when needed.
+# HTTP loopback origins additionally require ENVIRONMENT = "development".
+CORS_ALLOWED_ORIGINS = "https://stalemate.band"
+ENVIRONMENT = "production"
+WEB_TURN_MONTHLY_CAP_GB = "200"
+WEB_DAILY_REQUESTS = "3000"
 MAILBOX_TTL_SECONDS = "600"
 MAILBOX_RATE_LIMIT_PER_MINUTE = "30"
 MAILBOX_NEW_BUCKETS_PER_MINUTE = "32"
@@ -42,3 +48,8 @@ new_sqlite_classes = ["Mailbox", "MailboxQuota"]
 #   wrangler secret put CLOUDFLARE_ACCOUNT_ID
 #   wrangler secret put CLOUDFLARE_ANALYTICS_API_TOKEN
 #     (Account Analytics Read; TURN key tokens are rejected with code 10000)
+# Web TURN requires a separate key in the same account for attributable usage:
+#   wrangler secret put WEB_TURN_KEY_ID
+#   wrangler secret put WEB_TURN_KEY_API_TOKEN
+# Missing web secrets fail closed (503). Web Join requires web quota admission
+# for every connection path, including direct ICE.

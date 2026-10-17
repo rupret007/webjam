@@ -68,6 +68,7 @@ _EVENT_FIELDS = frozenset(
         "route",
         "session_path",
         "relay_bytes",
+        "expires_at_unix",
     }
 )
 _EVENT_TYPES = frozenset(
@@ -177,6 +178,37 @@ class TransportEvent:
     route: str = ""
     session_path: str = ""
     relay_bytes: int = 0
+    expires_at_unix: int = 0
+
+
+def _decode_web_join_envelope(value: Any) -> bytes:
+    if not isinstance(value, str) or not 1 <= len(value) <= 10923 or re.fullmatch(r"[A-Za-z0-9_-]+", value) is None:
+        raise TransportProtocolError("The transport process sent invalid data.")
+    try:
+        raw = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+    except ValueError:
+        raise TransportProtocolError("The transport process sent invalid data.") from None
+    if not 33 <= len(raw) <= 8192 or raw[:5] != b"WJWS1" or base64.urlsafe_b64encode(raw).rstrip(b"=").decode() != value:
+        raise TransportProtocolError("The transport process sent invalid data.")
+    return raw
+
+
+def _parse_web_join_event(raw: dict, event_id: int, event_type: str) -> TransportEvent:
+    fields = {"version", "id", "type", "code", "state", "generation"}
+    if event_type == "web_join_offer":
+        fields.update({"signal", "expires_at_unix"})
+    if set(raw) != fields or raw.get("code") != "ok":
+        raise TransportProtocolError("The transport process sent invalid data.")
+    generation = _strict_int(raw.get("generation"), minimum=1, maximum=2**32 - 1)
+    expected_state = {"web_join_offer": "host_waiting", "web_join_answer_applied": "connecting", "web_join_closed": "closed", "web_join_connected": "connected"}[event_type]
+    if raw.get("state") != expected_state or (event_id == 0 and event_type not in {"web_join_closed", "web_join_connected"}) or (event_type == "web_join_connected" and event_id != 0):
+        raise TransportProtocolError("The transport process sent invalid data.")
+    return TransportEvent(
+        event_id=event_id, event_type=event_type, code="ok", state=expected_state,
+        generation=generation,
+        signal=_decode_web_join_envelope(raw["signal"]) if "signal" in raw else b"",
+        expires_at_unix=_strict_int(raw["expires_at_unix"], minimum=1, maximum=2**63 - 1) if "expires_at_unix" in raw else 0,
+    )
 
 
 def _decode_fixed_public(value: Any, size: int) -> bytes:
@@ -296,6 +328,10 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         raise TransportProtocolError("The transport process is not compatible.")
     event_id = _strict_int(raw.get("id"), minimum=0, maximum=2**63 - 1)
     event_type = raw.get("type")
+    if isinstance(event_type, str) and event_type in {"web_join_offer", "web_join_answer_applied", "web_join_closed", "web_join_connected"}:
+        return _parse_web_join_event(raw, event_id, event_type)
+    if "expires_at_unix" in raw:
+        raise TransportProtocolError("The transport process sent invalid data.")
     if len(encoded) > MAX_EVENT_LINE_BYTES and event_type not in {
         "room_state_received", "room_state_accepted"
     }:
@@ -949,6 +985,46 @@ class TransportProcess:
 
     def hello(self) -> TransportEvent:
         return self._request("hello")
+
+    def open_web_join(
+        self, *, session_id: bytes, capability: bytes, bridge_port: int,
+        bridge_token: bytes, generation: int, expires_at_unix: int,
+    ) -> TransportEvent:
+        """Explicit session opt-in; all network configuration stays compiled."""
+        event = self._request(
+            "web_join_open", timeout=40,
+            session_id=_encode_fixed_private(session_id, 32),
+            capability=_encode_fixed_private(capability, 32),
+            bridge_token=_encode_fixed_private(bridge_token, 32),
+            bridge_port=self._command_int(bridge_port, minimum=1, maximum=65535),
+            generation=self._command_int(generation, minimum=1, maximum=2**32 - 1),
+            expires_at_unix=self._command_int(expires_at_unix, minimum=1, maximum=2**63 - 1),
+        )
+        if (
+            event.event_type != "web_join_offer"
+            or event.generation != generation
+            or type(event.expires_at_unix) is not int
+            or not time.time() < event.expires_at_unix <= expires_at_unix
+        ):
+            raise TransportProtocolError("The transport process sent invalid data.")
+        return event
+
+    def apply_web_join_answer(self, answer: bytes, *, generation: int) -> TransportEvent:
+        encoded = base64.urlsafe_b64encode(answer).rstrip(b"=").decode("ascii")
+        _decode_web_join_envelope(encoded)
+        event = self._request(
+            "web_join_answer", answer=encoded,
+            generation=self._command_int(generation, minimum=1, maximum=2**32 - 1),
+        )
+        if event.event_type != "web_join_answer_applied" or event.generation != generation:
+            raise TransportProtocolError("The transport process sent invalid data.")
+        return event
+
+    def close_web_join(self, *, generation: int) -> TransportEvent:
+        return self._request(
+            "web_join_close",
+            generation=self._command_int(generation, minimum=1, maximum=2**32 - 1),
+        )
 
     def prepare_host(self) -> bytes:
         """Create one ephemeral host identity inside the sidecar.
