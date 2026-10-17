@@ -217,37 +217,55 @@ class ParticipantStateManager:
         """Shared merge for RPC + UDP sync.  Mutates under the lock,
         returns channel ids whose mixer needs re-applying.  When
         ``clear_stale_snapshot`` is True (UDP fallback), wipes the pre-solo
-        snapshot whenever no solo is active."""
+        snapshot whenever no solo is active.
+
+        Protocol rows only carry a channel number and a display name. A
+        normalized name change on an occupied channel is treated as a new
+        person in that seat: queued listening intent cannot follow the new
+        row, and Solo or personal mix does not carry over. Case and padding
+        differences keep the current occupant. A name is not a durable
+        person identity; this is the conservative choice when a rename and a
+        replacement look the same.
+        """
         apply_ids: List[int] = []
         with self._participants_lock:
             known_ids = set(self.participants.keys())
             incoming_ids = set(incoming.keys())
-            active_solo = next(
-                (cid for cid, p in self.participants.items() if p.solo), None
-            )
-            for cid in incoming_ids - known_ids:
-                p = JamulusParticipant(channel_id=cid, name=incoming[cid])
-                if active_solo is not None and cid != active_solo:
-                    p.muted = True
-                    self._pre_solo_mute.setdefault(cid, False)
-                    apply_ids.append(cid)
-                self.participants[cid] = p
+            replacements = {
+                cid
+                for cid in incoming_ids & known_ids
+                if not self._occupant_identity_matches(
+                    self.participants[cid].name, incoming[cid],
+                )
+            }
             removed_solo = False
-            for cid in known_ids - incoming_ids:
+            for cid in (known_ids - incoming_ids) | replacements:
                 removed = self.participants.pop(cid, None)
                 if removed and removed.solo:
                     removed_solo = True
                 self._pre_solo_mute.pop(cid, None)
-            for cid in incoming_ids & known_ids:
-                self.participants[cid].name = incoming[cid]
-                self.participants[cid].is_connected = True
             if removed_solo:
                 for cid, p in self.participants.items():
                     p.solo = False
                     p.muted = self._pre_solo_mute.get(cid, False)
                     apply_ids.append(cid)
                 self._pre_solo_mute.clear()
-            elif clear_stale_snapshot and not any(
+            active_solo = next(
+                (cid for cid, p in self.participants.items() if p.solo), None
+            )
+            for cid in (incoming_ids - known_ids) | replacements:
+                p = JamulusParticipant(channel_id=cid, name=incoming[cid])
+                if active_solo is not None and cid != active_solo:
+                    p.muted = True
+                    self._pre_solo_mute.setdefault(cid, False)
+                    apply_ids.append(cid)
+                elif cid in replacements:
+                    apply_ids.append(cid)
+                self.participants[cid] = p
+            for cid in (incoming_ids & known_ids) - replacements:
+                self.participants[cid].name = incoming[cid]
+                self.participants[cid].is_connected = True
+            if clear_stale_snapshot and not any(
                 p.solo for p in self.participants.values()
             ):
                 self._pre_solo_mute.clear()
@@ -276,6 +294,13 @@ class ParticipantStateManager:
         if name is None:
             return ""
         return str(name).strip().casefold()
+
+    @classmethod
+    def _occupant_identity_matches(cls, current: object, incoming: object) -> bool:
+        return (
+            cls._normalize_participant_name(current)
+            == cls._normalize_participant_name(incoming)
+        )
 
     def serialize_mix(self) -> dict:
         # Copy values while locked: the file must describe one complete mix,
