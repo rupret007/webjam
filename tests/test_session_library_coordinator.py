@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 from pathlib import Path
@@ -176,6 +177,38 @@ def test_summary_export_stream_open_failure_closes_descriptor(library_coordinato
     assert destination.read_bytes() == b""
     assert "may be incomplete" in dialog.status.text()
     assert "Summary exported" not in dialog.status.text()
+
+
+def test_summary_export_creates_owner_only_file_under_permissive_umask(library_coordinator, tmp_path):
+    coordinator, _window = library_coordinator
+    coordinator.show()
+    dialog = coordinator.dialog
+    destination = tmp_path / "summary.md"
+    previous = os.umask(0)
+    try:
+        with patch.object(QFileDialog, "getSaveFileName", return_value=(str(destination), "")):
+            dialog._export()
+    finally:
+        os.umask(previous)
+
+    assert destination.read_text(encoding="utf-8")
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+    assert dialog.status.text() == "Summary exported. Original work is unchanged."
+
+
+def test_summary_export_nul_path_is_not_exported_and_creates_nothing(library_coordinator, tmp_path):
+    coordinator, _window = library_coordinator
+    coordinator.show()
+    dialog = coordinator.dialog
+    before = sorted(tmp_path.iterdir())
+    bad_path = str(tmp_path / "sum\x00mary.md")
+
+    with patch.object(QFileDialog, "getSaveFileName", return_value=(bad_path, "")):
+        dialog._export()
+
+    assert dialog.status.text() == "Summary was not exported. Choose a new filename in a writable folder."
+    assert sorted(tmp_path.iterdir()) == before
+    assert not (tmp_path / "sum").exists()
 
 
 @pytest.mark.parametrize("action", ["window", "escape", "button"])
