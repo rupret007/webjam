@@ -918,6 +918,8 @@ to prepare a level; it stays silent until you unmute it. **Solo** lets you
 listen to one channel. Other channels stay suppressed even when you adjust
 their faders. Turning Solo off, or the soloed musician leaving, restores your
 chosen levels and mute choices. A new arrival stays suppressed during Solo.
+If the same seat shows a different name, that person starts with a fresh mix
+and does not keep the previous occupant's Solo, mute, or fader.
 
 **Save Mix** (Ctrl+S) keeps your current listening balance; **Load Mix**
 (Ctrl+O) restores it. Use Ctrl+Shift+S / Ctrl+Shift+O for named mixes.
