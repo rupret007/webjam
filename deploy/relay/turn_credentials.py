@@ -90,13 +90,23 @@ def _record(session_bytes: int) -> None:
         _issued += max(0, session_bytes)
 
 
+def _prune_rate_locked(now: float) -> None:
+    cutoff = now - RATE_WINDOW_SECONDS
+    for ip in list(_rate):
+        stamps = [stamp for stamp in _rate[ip] if stamp >= cutoff]
+        if stamps:
+            _rate[ip] = stamps
+        else:
+            del _rate[ip]
+
+
 def allow_rate(ip: str, now: float, limit: int = RATE_LIMIT) -> bool:
     if not ip:
         return False
     with _lock:
-        stamps = [stamp for stamp in _rate.get(ip, []) if now - stamp < RATE_WINDOW_SECONDS]
+        _prune_rate_locked(now)
+        stamps = list(_rate.get(ip, []))
         if len(stamps) >= limit:
-            _rate[ip] = stamps
             return False
         stamps.append(now)
         _rate[ip] = stamps

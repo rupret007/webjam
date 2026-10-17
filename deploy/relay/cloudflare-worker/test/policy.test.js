@@ -7,6 +7,7 @@ import {
   FETCH_TIMEOUT_MS,
   FREE_ALLOWANCE_GB,
   GIGABYTE_BYTES,
+  MAX_RATE_STORE_ENTRIES,
   allowRate,
   analyticsBearerToken,
   decideCap,
@@ -163,6 +164,17 @@ test("rate limiter is per IP and fail-closed without an IP", () => {
   assert.equal(allowRate(store, "203.0.113.10", 1_000, 10), false);
   assert.equal(allowRate(store, "203.0.113.11", 1_000, 10), true);
   assert.equal(allowRate(store, "", 1_000, 10), false);
+});
+
+test("rate limiter store stays bounded when many IPs share one bucket", () => {
+  const store = new Map();
+  const nowMs = 60_000;
+  const limit = 1;
+  for (let i = 0; i < MAX_RATE_STORE_ENTRIES + 64; i += 1) {
+    allowRate(store, `203.0.113.${i % 256}.${(i >> 8) % 256}`, nowMs, limit);
+  }
+  assert.ok(store.size <= MAX_RATE_STORE_ENTRIES);
+  assert.equal(allowRate(store, "198.51.100.42", nowMs, limit), true);
 });
 
 test("UTC month range is the first of the month through today", () => {
