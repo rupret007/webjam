@@ -97,6 +97,9 @@ The **Summary** tab and **Export summary** collect progress and next steps;
 ending a rehearsal retains its recap with the workspace.
 **Export summary** includes the latest live Notes and saved recap even if the
 library editor has no new edits. Conflicting drafts must be resolved before export.
+Choose a new filename for each export; existing files are never overwritten.
+If export fails after creating a file, that file is left in place and may be
+incomplete. Retry with a new filename.
 
 For Art, open **More → Session library… → Art project**. Keep a **Project brief**, **Progress**,
 and **Next steps** alongside references added with **Add file…** or **Add
@@ -917,6 +920,8 @@ to prepare a level; it stays silent until you unmute it. **Solo** lets you
 listen to one channel. Other channels stay suppressed even when you adjust
 their faders. Turning Solo off, or the soloed musician leaving, restores your
 chosen levels and mute choices. A new arrival stays suppressed during Solo.
+If the same seat shows a different name, that person starts with a fresh mix
+and does not keep the previous occupant's Solo, mute, or fader.
 
 **Save Mix** (Ctrl+S) keeps your current listening balance; **Load Mix**
 (Ctrl+O) restores it. Use Ctrl+Shift+S / Ctrl+Shift+O for named mixes.
