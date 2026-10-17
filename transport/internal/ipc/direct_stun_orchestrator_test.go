@@ -246,6 +246,11 @@ func TestHostFetchesTURNInParallelAndSkipsWaitOnLAN(t *testing.T) {
 }
 
 func TestDirectStunDirectFailsThenRelayConnects(t *testing.T) {
+	audio, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 22124})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer audio.Close()
 	stopTURN := startHarnessTURN(t)
 	defer stopTURN()
 	previousTimeout := directPathTimeout
@@ -263,6 +268,37 @@ func TestDirectStunDirectFailsThenRelayConnects(t *testing.T) {
 	defer cancelGuest()
 	defer guestOp.Close(context.Background())
 	waitBothConnected(t, hostOp, guestOp, true)
+
+	guestAudio, err := net.DialUDP("udp4", nil, &net.UDPAddr{
+		IP: net.IPv4(127, 0, 0, 1), Port: guestOp.(*directStunOperation).endpoint.LocalPort(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer guestAudio.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	if err = audio.SetDeadline(deadline); err != nil {
+		t.Fatal(err)
+	}
+	if err = guestAudio.SetDeadline(deadline); err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("relay audio proof")
+	if _, err = guestAudio.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	buffer := make([]byte, 2048)
+	n, proxy, err := audio.ReadFromUDP(buffer)
+	if err != nil || string(buffer[:n]) != string(payload) {
+		t.Fatalf("host audio = %q, %v", buffer[:n], err)
+	}
+	if _, err = audio.WriteToUDP(buffer[:n], proxy); err != nil {
+		t.Fatal(err)
+	}
+	n, err = guestAudio.Read(buffer)
+	if err != nil || string(buffer[:n]) != string(payload) {
+		t.Fatalf("guest audio echo = %q, %v", buffer[:n], err)
+	}
 }
 
 func TestDirectStunRelayRejectsWrongPin(t *testing.T) {
