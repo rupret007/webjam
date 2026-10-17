@@ -483,8 +483,10 @@ Make together is complete with everyone working in their own space: paint,
 clay, paper, a printer, or the software they already know. A shared canvas is
 optional and is not a setup requirement.
 
-Open **Conversation** to talk and show your work. Until a meeting link is
-saved the room's button reads **Set Up Conversation**; it opens the same
+While a Make together host waits with no meeting link or shared activity,
+**Copy Invite** is the next action. **Conversation** stays in the footer.
+Open it to talk and show your work. When the room body offers a conversation
+button before a meeting link is saved, it reads **Set Up Conversation**; it opens the same
 panel, where you add a public HTTPS link. Once saved it reads
 **Conversation**. Use **Join / Open Meeting** to open the saved link, then
 share a demonstration or process video in Webex or the selected meeting app.

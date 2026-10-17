@@ -15,6 +15,37 @@ import (
 	"github.com/rupret007/webjam/transport/internal/wire"
 )
 
+func TestReliableAcquireReturnsCancelledContextWithoutAcquiringSlot(t *testing.T) {
+	t.Parallel()
+	host, _ := newReliableCancellationPair(t)
+	plane, err := NewReliablePlane(host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err = plane.acquire(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("acquire error = %v, want context.Canceled", err)
+	}
+	if len(host.streamSlots) != 0 {
+		t.Fatal("cancelled acquire consumed a stream slot")
+	}
+	for range limits.MaxConcurrentStreams {
+		if err = plane.acquire(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = plane.acquire(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("acquire with full slots error = %v, want context.Canceled", err)
+	}
+	if len(host.streamSlots) != limits.MaxConcurrentStreams {
+		t.Fatalf("stream slot count = %d, want %d", len(host.streamSlots), limits.MaxConcurrentStreams)
+	}
+	for range limits.MaxConcurrentStreams {
+		plane.release()
+	}
+}
+
 func TestReliableAcceptCancelsStalledFrame(t *testing.T) {
 	t.Parallel()
 	for _, withholdFIN := range []bool{false, true} {
