@@ -34,7 +34,7 @@ from webjam_qt.theme.tokens import Color
 
 BRAND_NAME: Final = "WebJam"
 BRAND_DESCRIPTION: Final = (
-    "WebJam symbol: one continuous three-loop trefoil for musicians playing together."
+    "WebJam symbol: one continuous three-loop trefoil."
 )
 BRAND_MARK_PATH: Final = Path(__file__).resolve().parent / "assets" / "webjam-mark.svg"
 
