@@ -132,8 +132,10 @@ def test_own_tools_guidance_has_one_heading_and_keeps_recovery_context(window, q
     ]
     assert len(headings) == 1
     assert panel._activity_detail.isVisibleTo(window)
-    assert panel.conversation_button().isVisibleTo(window)
+    assert panel.conversation_button().isVisibleTo(window) is (not hosting)
     assert panel.conversation_button().isEnabled()
+    assert window.session_strip._video_button.isVisibleTo(window)
+    assert window.session_strip._video_button.isEnabled()
 
     # Recovery adds distinct context; returning to the room removes the
     # redundant heading again, without leaving a stale visibility decision.
@@ -196,10 +198,11 @@ def test_presence_action_fits_without_scrolling_below_short_connection_copy(
     assert actions == [activity]
 
 
-def test_waiting_host_copy_invite_is_the_one_hud_primary_at_800x600(window, qapp):
+@pytest.mark.parametrize("size", [(800, 600), (1280, 800)])
+def test_waiting_host_copy_invite_is_the_one_hud_primary_at_800x600(window, qapp, size):
     """Compact waiting room: HUD Copy Invite owns the next click.
 
-    Conversation stays a ghost/footer. The activity line keeps own-space
+    Conversation stays in the footer only. The activity line keeps own-space
     copy and does not ask to set up Conversation.
     """
 
@@ -223,9 +226,10 @@ def test_waiting_host_copy_invite_is_the_one_hud_primary_at_800x600(window, qapp
         action_visible=True,
         action_kind="invite",
     )
-    window.resize(800, 600)
+    window.resize(*size)
     window.session_strip.set_compact_control_labels(True)
     _settle(qapp)
+    assert window.size() == QSize(*size)
 
     own_space = (
         "You do not need an art app. Use paper, your usual tools, or just talk."
@@ -247,11 +251,68 @@ def test_waiting_host_copy_invite_is_the_one_hud_primary_at_800x600(window, qapp
     assert "Conversation" not in panel._activity_detail.text()
     assert panel._activity_detail.isVisibleTo(window)
     conversation = panel.conversation_button()
-    assert conversation.isVisibleTo(window)
+    assert not conversation.isVisibleTo(window)
     assert conversation.isEnabled()
     assert conversation.text() == "Set Up Conversation"
     assert conversation.objectName() == "GhostButton"
     assert not panel.activity_button().isVisibleTo(window)
+    assert not any(button.isVisibleTo(window) for button in panel.findChildren(QPushButton))
+    assert _visible_room_primaries(window) == [hud._action]
+    assert panel.verticalScrollBar().maximum() == 0
+    footer = window.session_strip._video_button
+    assert footer.isVisibleTo(window) and footer.isEnabled()
+    assert footer.text() == "Conversation"
+    assert window.rect().contains(QRect(footer.mapTo(window, QPoint()), footer.size()))
+    invites, conversations = [], []
+    hud.invite_requested.connect(lambda: invites.append(True))
+    window.session_strip.tool_requested.connect(conversations.append)
+    hud._action.setFocus(Qt.FocusReason.TabFocusReason)
+    QTest.keyClick(hud._action, Qt.Key.Key_Space)
+    assert invites == [True]
+    # The hidden body control must also leave the keyboard's tab order.
+    for _ in range(20):
+        QTest.keyClick(window.focusWidget(), Qt.Key.Key_Tab)
+        assert not conversation.hasFocus()
+        if footer.hasFocus():
+            break
+    assert footer.hasFocus()
+    QTest.keyClick(footer, Qt.Key.Key_Space)
+    assert conversations == ["conversation"]
+
+
+@pytest.mark.parametrize("next_state", [
+    "saved_link", "connected_host", "connected_guest", "paint_along", "canvas", "secondary_canvas",
+])
+def test_waiting_make_together_body_conversation_returns_for_other_states(window, qapp, next_state):
+    waiting = art_room_overview(state=ArtRoomState.WAITING, hosting=True)
+    changes = dict(state=ArtRoomState.WAITING, hosting=True)
+    if next_state == "saved_link":
+        changes["conversation_configured"] = True
+    elif next_state.startswith("connected"):
+        changes.update(state=ArtRoomState.CONNECTED, hosting=next_state == "connected_host")
+    else:
+        presence = art_room_presence(
+            ArtCompanionProjection(
+                in_room=True,
+                canvas=(CanvasCompanionState.MISSING_APP if "canvas" in next_state
+                        else CanvasCompanionState.NONE),
+            ),
+            hosting=True, intended_video=next_state == "paint_along",
+            paint_along_room=next_state == "paint_along",
+        )
+        changes["secondary_presence" if next_state == "secondary_canvas" else "presence"] = presence
+    other = art_room_overview(**changes)
+    panel = window.art_room_overview
+    for current, visible in ((waiting, False), (other, True), (waiting, False)):
+        window.set_art_room_overview(current)
+        _settle(qapp)
+        assert panel.conversation_button().isVisibleTo(window) is visible
+        assert panel.conversation_button().isEnabled()
+        assert panel.conversation_button().text() == (
+            "Conversation" if current is other and next_state == "saved_link"
+            else "Set Up Conversation"
+        )
+        assert window.session_strip._video_button.isVisibleTo(window)
 
 
 @pytest.mark.parametrize("role", [SessionRole.HOST, SessionRole.GUEST])

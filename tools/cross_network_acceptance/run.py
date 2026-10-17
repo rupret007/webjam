@@ -332,6 +332,7 @@ def run_case(
             turn_proc: subprocess.Popen[str] | None = None
             cred_proc: subprocess.Popen[str] | None = None
             turn_log = work_root / "turn.log"
+            proof_user = "webjam-proof-" + secrets.token_hex(16)
             asserting = False
             try:
                 topology = apply_topology(spec)
@@ -349,7 +350,7 @@ def run_case(
                         secret = secrets.token_hex(16)
                         cred_env = env.copy()
                         cred_env.update(credential_server_env(
-                            secret, topology.inet_addr, STUN_UDP))
+                            secret, topology.inet_addr, STUN_UDP, proof_user=proof_user))
                         cred_proc = ns_popen(
                             topology.inet_ns,
                             [sys.executable, credential_script()],
@@ -429,14 +430,15 @@ def run_case(
                 host_proof = _wait_json(peer_dir / "host.proof", 1.0)
                 guest_proof = _wait_json(peer_dir / "guest.proof", 1.0)
                 if turn_proc is not None:
-                    wait_turn_usage(turn_log)
+                    wait_turn_usage(turn_log, proof_user=proof_user)
                     stop_turn(work_root / "turn.pid")
                     _stop_procs([turn_proc])
                     turn_proc = None
                 relay_count = 0
                 if turn_log.is_file():
                     relay_count = relayed_bytes(
-                        turn_log.read_text(encoding="utf-8", errors="replace"))
+                        turn_log.read_text(encoding="utf-8", errors="replace"),
+                        proof_user=proof_user)
                 reason = evaluate_proof(
                     host_proof, guest_proof, expect_path=expect_path,
                     music_nonce=music_nonce, art_nonce=art_nonce, relay_bytes=relay_count,

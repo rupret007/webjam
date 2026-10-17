@@ -26,6 +26,30 @@ from tools.cross_network_acceptance.turn import mint_credentials, relayed_bytes,
 
 FULL_SHA = "a" * 40
 MUSIC, ART = "11" * 16, "22" * 16
+PROOF_USER = "webjam-proof-" + "ab" * 16
+TURN_USERNAME = "2000000000:" + PROOF_USER
+
+
+def _turn_method(session="000000000000000001", username=TURN_USERNAME, method="ALLOCATE"):
+    return (
+        f"1: : session {session}: realm <webjam> user <{username}>: "
+        f"incoming packet {method} processed, success\n"
+    )
+
+
+def _turn_usage(session="000000000000000001", username=TURN_USERNAME, rb=80, sb=40):
+    return (
+        f"12: : session {session}: peer usage: realm=<webjam>, username=<{username}>, "
+        f"rp=2, rb={rb}, sp=2, sb={sb}\n"
+    )
+
+
+def _turn_session(session="000000000000000001", username=TURN_USERNAME, rb=80, sb=40):
+    return (
+        _turn_method(session, username)
+        + _turn_method(session, username, "CHANNEL_BIND")
+        + _turn_usage(session, username, rb, sb)
+    )
 
 
 def _proof(**kw):
@@ -257,9 +281,9 @@ def test_topology_labels_and_shim_counts_are_never_proof():
     usage = inspect.getsource(relayed_bytes)
     assert "rb=" in usage and "sb=" in usage
     assert "findall" not in usage and "loopback" not in usage
-    assert relayed_bytes("session x usage: rp=2, rb=80, sp=2, sb=40") == 120
-    assert relayed_bytes("incoming packet Data from peer") == 0
-    assert relayed_bytes("28808") == 0
+    assert relayed_bytes(_turn_session(), proof_user=PROOF_USER) == 120
+    assert relayed_bytes("incoming packet Data from peer", proof_user=PROOF_USER) == 0
+    assert relayed_bytes("28808", proof_user=PROOF_USER) == 0
 
     for path in (
         "tools/cross_network_acceptance/README.md",
@@ -425,6 +449,7 @@ def test_dual_stun_mapping_mismatch_is_setup_error():
 
 
 def test_nat_probe_fails_on_subprocess_or_missing_mapping(monkeypatch):
+    import shutil
     import subprocess
     import sys
     from tools.cross_network_acceptance.nat_probe import _exec, _read
@@ -445,7 +470,9 @@ def test_nat_probe_fails_on_subprocess_or_missing_mapping(monkeypatch):
         "mapping_reused": True, "host_mapped": 41234, "guest_mapped": 42000,
         "observed_ports": [41234, 41234], "mapped_addr": "27.1.0.10",
     })
-    monkeypatch.setattr("tools.cross_network_acceptance.nat_probe.required_bin", lambda _n: "/bin/false")
+    false_bin = shutil.which("false")
+    assert false_bin is not None
+    monkeypatch.setattr("tools.cross_network_acceptance.nat_probe.required_bin", lambda _n: false_bin)
     with pytest.raises(ProbeError):
         _exec("ns", "print(1)", [])
     proc = subprocess.Popen([sys.executable, "-c", "print('not-json')"], stdout=subprocess.PIPE, text=True)
@@ -475,9 +502,9 @@ def test_turn_credentials_contract_and_relay_byte_logs(monkeypatch):
         "invite_token": "A" * 32,
     })
     assert not tc.valid_session_invite_shape({"session_id": "x", "invite_token": "y"})
-    assert relayed_bytes("session x usage: rp=2, rb=80, sp=2, sb=40") == 120
-    assert relayed_bytes("incoming packet Data from peer") == 0
-    assert relayed_bytes("idle") == 0
+    assert relayed_bytes(_turn_session(), proof_user=PROOF_USER) == 120
+    assert relayed_bytes("incoming packet Data from peer", proof_user=PROOF_USER) == 0
+    assert relayed_bytes("idle", proof_user=PROOF_USER) == 0
     cmd = inspect.getsource(turn_command)
     assert "--simple-log" in cmd and "-v" in cmd and "--pidfile" in cmd
     turn_src = Path("tools/cross_network_acceptance/turn.py").read_text(encoding="utf-8")
@@ -499,15 +526,15 @@ def test_wait_turn_usage_polls_until_rb_sb(tmp_path):
         time.sleep(0.12)
         log.write_text(
             "11: REFRESH processed, success\n"
-            "12: session 1 usage: realm=<webjam>, username=<u>, rp=1, rb=40, sp=1, sb=20\n",
+            + _turn_session(rb=40, sb=20),
             encoding="utf-8",
         )
 
     threading.Thread(target=writer, daemon=True).start()
     started = time.monotonic()
-    text = wait_turn_usage(log, timeout_s=2.0)
+    text = wait_turn_usage(log, timeout_s=2.0, proof_user=PROOF_USER)
     assert time.monotonic() - started >= 0.1
-    assert relayed_bytes(text) == 60
+    assert relayed_bytes(text, proof_user=PROOF_USER) == 60
     run = Path("tools/cross_network_acceptance/run.py").read_text(encoding="utf-8")
     wait_at = run.find("wait_turn_usage(")
     stop_at = run.find("stop_turn(")
@@ -525,9 +552,227 @@ def test_wait_turn_usage_timeout_does_not_invent_bytes(tmp_path):
 
     log = tmp_path / "turn.log"
     log.write_text("11: REFRESH processed, success\n", encoding="utf-8")
-    text = wait_turn_usage(log, timeout_s=0.2)
-    assert relayed_bytes(text) == 0
+    text = wait_turn_usage(log, timeout_s=0.2, proof_user=PROOF_USER)
+    assert relayed_bytes(text, proof_user=PROOF_USER) == 0
     assert "REFRESH" in text
+
+
+def test_relay_bytes_counts_only_current_run_allocations_and_peer_usage():
+    other_user = "2000000000:webjam-proof-" + "cd" * 16
+    guest_user = "2000000001:" + PROOF_USER
+    # Interleave another run (even reusing a session ID), the Host and Join,
+    # and both kinds of usage emitted for the same traffic by coturn.
+    log = (
+        _turn_session(username=other_user, rb=9000, sb=8000)
+        + _turn_method()
+        + _turn_method("000000000000000002", guest_user)
+        + _turn_method(method="CHANNEL_BIND")
+        + _turn_method("000000000000000002", guest_user, "CHANNEL_BIND")
+        + _turn_usage(rb=180, sb=140).replace("peer usage:", "usage:")
+        + _turn_usage()
+        + _turn_usage(username=other_user, rb=7000, sb=6000)
+        + _turn_usage("000000000000000002", guest_user, rb=60, sb=30)
+        + _turn_usage(rb=10, sb=5)  # A later interval, not a cumulative total.
+    )
+    assert relayed_bytes(log, proof_user=PROOF_USER) == 225
+    assert relayed_bytes(log, proof_user="") == 0
+    assert relayed_bytes(log, proof_user="webjam") == 0
+    with pytest.raises(TypeError):
+        relayed_bytes(log)
+
+
+@pytest.mark.parametrize("log", [
+    _turn_usage(),  # No allocation or channel evidence.
+    _turn_method() + _turn_usage(),
+    _turn_method(method="CHANNEL_BIND") + _turn_usage(),
+    _turn_session().replace("ALLOCATE processed, success", "ALLOCATE processed, error 401"),
+    _turn_session().replace("CHANNEL_BIND processed, success", "CHANNEL_BIND processed, error 400"),
+    _turn_session().replace("<webjam>", "<other-realm>"),
+    _turn_session(username=TURN_USERNAME + "-extra"),
+    _turn_session(username="2000000000:webjam"),
+    _turn_session().replace("peer usage:", "usage:"),  # Control traffic alone.
+    _turn_session(rb=0, sb=0) + "RelayBytes=99999 loopback_bytes=88888 session_path=relay\n",
+    _turn_session(rb=0, sb=0) + _turn_usage(session="000000000000000002"),
+    _turn_session(rb=0, sb=0) + _turn_usage(username="2000000001:" + PROOF_USER),
+    _turn_session().replace("rb=80", "rb=-80"),
+    _turn_session().replace("sb=40", "sb=40junk"),
+    _turn_session().replace("sb=40", "sb="),
+])
+def test_unscoped_or_incomplete_coturn_records_cannot_pass_relay_proof(log):
+    count = relayed_bytes(log, proof_user=PROOF_USER)
+    assert count == 0
+    assert evaluate_proof(
+        _proof(local_type="relay", remote_type="relay"),
+        _proof(local_type="relay", remote_type="relay"),
+        expect_path="relay", music_nonce=MUSIC, art_nonce=ART, relay_bytes=count,
+    ) == "relay carried no bytes"
+
+
+def test_wait_turn_usage_ignores_unrelated_bytes_until_scoped_usage(tmp_path, monkeypatch):
+    from tools.cross_network_acceptance import turn
+
+    log = tmp_path / "turn.log"
+    unrelated = _turn_session(username="2000000000:webjam", rb=9000, sb=8000)
+    log.write_text(unrelated, encoding="utf-8")
+    polls = []
+
+    def flush_proof_usage(_seconds):
+        polls.append(True)
+        log.write_text(unrelated + _turn_session(), encoding="utf-8")
+
+    monkeypatch.setattr(turn.time, "sleep", flush_proof_usage)
+    text = turn.wait_turn_usage(log, timeout_s=2, proof_user=PROOF_USER)
+    assert polls == [True]
+    assert relayed_bytes(text, proof_user=PROOF_USER) == 120
+
+
+def test_wait_turn_usage_times_out_with_only_unrelated_traffic(tmp_path):
+    from tools.cross_network_acceptance.turn import wait_turn_usage
+
+    log = tmp_path / "turn.log"
+    unrelated = _turn_session(username="2000000000:webjam", rb=9000, sb=8000)
+    log.write_text(unrelated, encoding="utf-8")
+    text = wait_turn_usage(log, timeout_s=0, proof_user=PROOF_USER)
+    assert text == unrelated
+    assert relayed_bytes(text, proof_user=PROOF_USER) == 0
+
+
+@pytest.mark.parametrize("proof_user", ["", "webjam", PROOF_USER + "\n"])
+def test_harness_credential_server_requires_fresh_scoped_identity(monkeypatch, proof_user):
+    from tools.cross_network_acceptance import credential_server
+
+    monkeypatch.setenv("WEBJAM_TEST_TURN_USER", proof_user)
+    assert credential_server.main() == 2
+
+
+def test_harness_credential_server_mints_scoped_coturn_credentials(monkeypatch):
+    import base64
+    import hashlib
+    import hmac
+    import threading
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+
+    from deploy.relay import turn_credentials as tc
+    from tools.cross_network_acceptance import credential_server
+    from tools.cross_network_acceptance.turn import credential_server_env
+
+    env = credential_server_env("test-only-secret", "127.0.0.1", 3478, proof_user=PROOF_USER)
+    assert env["CLOUDFLARE_TURN_API_TOKEN"] == env["CLOUDFLARE_TURN_BASE_URL"] == ""
+    monkeypatch.setenv("WEBJAM_TEST_TURN_USER", env["WEBJAM_TEST_TURN_USER"])
+    monkeypatch.setattr(tc, "SECRET", b"test-only-secret")
+    monkeypatch.setattr(tc, "EXTERNAL_IP", "127.0.0.1")
+    monkeypatch.setattr(tc, "USER", "webjam")
+    monkeypatch.setattr(tc, "CF_TOKEN", "test-only-provider-must-not-be-used")
+    monkeypatch.setattr(tc, "CF_URL", "https://invalid.example")
+    monkeypatch.setattr(tc, "_rate", {})
+    monkeypatch.setattr(tc, "_issued", 0)
+    monkeypatch.setattr(tc, "_day", "")
+    ready = threading.Event()
+    servers = []
+    server_type = tc.ThreadingHTTPServer
+
+    def serve_local(_address, handler):
+        server = server_type(("127.0.0.1", 0), handler)
+        servers.append(server)
+        ready.set()
+        return server
+
+    monkeypatch.setattr(tc, "ThreadingHTTPServer", serve_local)
+    thread = threading.Thread(target=credential_server.main, daemon=True)
+    thread.start()
+    assert ready.wait(2)
+    server = servers[0]
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/turn-credentials"
+        request = Request(url, data=json.dumps({
+            "session_id": "ab" * 32, "invite_token": "A" * 43,
+        }).encode(), headers={"Content-Type": "application/json"})
+        with urlopen(request, timeout=2) as response:
+            payload = json.load(response)
+        username = payload["username"]
+        assert username.split(":", 1)[1] == PROOF_USER
+        expected = base64.b64encode(hmac.new(
+            b"test-only-secret", username.encode("ascii"), hashlib.sha1,
+        ).digest()).decode("ascii")
+        assert payload["credential"] == expected
+        assert relayed_bytes(_turn_session(username=username), proof_user=PROOF_USER) == 120
+        assert tc.CF_TOKEN == tc.CF_URL == ""
+        with pytest.raises(HTTPError) as denied:
+            urlopen(Request(url, data=b"{}"), timeout=2)
+        assert denied.value.code == 403
+        denied.value.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+    assert not thread.is_alive()
+
+
+@pytest.mark.parametrize("proof_bytes", [False, True])
+def test_run_case_scopes_credential_mint_wait_and_receipt(tmp_path, monkeypatch, proof_bytes):
+    from tools.cross_network_acceptance import run as r
+    from tools.cross_network_acceptance.turn import credential_script, wait_turn_usage
+
+    minted_users, waited_users, counted_users = [], [], []
+    topology = SimpleNamespace(
+        inet_ns="inet", inet_addr="27.1.0.1", host_ns="host", guest_ns="guest",
+        host_addr="10.1.10.10", guest_addr="10.1.20.10",
+    )
+
+    def start_process(_ns, argv, *, env, **_kwargs):
+        if credential_script() in argv:
+            minted_users.append(env["WEBJAM_TEST_TURN_USER"])
+        if "guest" in argv:
+            log = _turn_session(username="2000000000:webjam", rb=9000, sb=8000)
+            if proof_bytes:
+                log += _turn_session(username="2000000000:" + minted_users[-1])
+            (tmp_path / "work" / "relay" / "turn.log").write_text(log, encoding="utf-8")
+        return object()
+
+    def peer_proof(path, _timeout):
+        config = json.loads(path.with_name("peer-config.json").read_text(encoding="utf-8"))
+        return _proof(
+            role=path.stem, local_type="relay", remote_type="relay",
+            music_nonce=config["music_nonce"], music_echo=config["music_nonce"],
+            art_nonce=config["art_nonce"], art_echo=config["art_nonce"],
+        )
+
+    def wait_scoped(path, *, proof_user):
+        waited_users.append(proof_user)
+        return wait_turn_usage(path, timeout_s=0, proof_user=proof_user)
+
+    def count_scoped(log, *, proof_user):
+        counted_users.append(proof_user)
+        return relayed_bytes(log, proof_user=proof_user)
+
+    monkeypatch.setattr(r, "require_transport_binary", lambda _path: "test-sidecar")
+    monkeypatch.setattr(r, "_user_env", lambda *_a, **_kw: {})
+    monkeypatch.setattr(r, "apply_topology", lambda _spec: topology)
+    monkeypatch.setattr(r, "_start_pcap", lambda *_a: [])
+    monkeypatch.setattr(r, "ns_popen", start_process)
+    monkeypatch.setattr(r, "turn_command", lambda **_kw: ["test-turnserver"])
+    monkeypatch.setattr(r, "_post_in_ns", lambda *_a: {"ok": True})
+    monkeypatch.setattr(r, "_mapping_ports", lambda *_a: (41000, 42000))
+    monkeypatch.setattr(r, "_reap", lambda *_a: 0)
+    monkeypatch.setattr(r, "_wait_json", peer_proof)
+    monkeypatch.setattr(r, "wait_turn_usage", wait_scoped)
+    monkeypatch.setattr(r, "relayed_bytes", count_scoped)
+    for name in (
+        "_arm_timeout", "_disarm_timeout", "_chown_tree", "_wait_port", "_pause",
+        "stop_turn", "_stop_procs", "_capture_router_state", "cleanup_topology",
+    ):
+        monkeypatch.setattr(r, name, lambda *_a, **_kw: None)
+    result = r.run_case(case="relay", output_dir=tmp_path, netem=False, sha=FULL_SHA)
+    assert minted_users == waited_users == counted_users
+    assert len(minted_users) == 1
+    assert minted_users[0].startswith("webjam-proof-") and len(minted_users[0]) == 45
+    receipt = json.loads((tmp_path / f"{FULL_SHA}-relay.json").read_text(encoding="utf-8"))
+    assert receipt["relay_bytes"] == (120 if proof_bytes else 0)
+    assert receipt["status"] == ("PASS" if proof_bytes else "FAIL")
+    assert result == (0 if proof_bytes else 1)
+    assert (tmp_path / f"{FULL_SHA}-relay.PASS").exists() == proof_bytes
+    assert minted_users[0] not in json.dumps(receipt)
 
 
 def test_stop_turn_terms_pidfile_process(tmp_path):
