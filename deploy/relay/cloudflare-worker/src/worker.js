@@ -136,11 +136,11 @@ async function enforceAccess(
   charge = "all",
   scopeOverride = null,
 ) {
-  if (typeof deps.enforceAccess === "function" && scopeOverride == null) {
-    return deps.enforceAccess(request, nowMs, rowWrites, charge);
-  }
   const ip = clientIP(request.headers);
   const scope = scopeOverride ?? quotaScope(new URL(request.url).pathname);
+  if (typeof deps.enforceAccess === "function") {
+    return deps.enforceAccess(request, nowMs, rowWrites, charge, scope);
+  }
   if (env.MAILBOX_QUOTA && typeof env.MAILBOX_QUOTA.idFromName === "function") {
     try {
       const stub = env.MAILBOX_QUOTA.get(env.MAILBOX_QUOTA.idFromName(scope));
@@ -326,7 +326,7 @@ export async function handleRequest(request, env, deps = {}) {
   }
 
   if (missingRequiredSecrets(env).length > 0) {
-    return errorResponse(503, "misconfigured");
+    return withCors(errorResponse(503, "misconfigured"), corsOrigin);
   }
   const keyId = String(env.TURN_KEY_ID ?? "").trim();
   const apiToken = String(env.TURN_KEY_API_TOKEN ?? "").trim();
@@ -337,11 +337,11 @@ export async function handleRequest(request, env, deps = {}) {
   try {
     const raw = await request.arrayBuffer();
     if (raw.byteLength === 0 || raw.byteLength > MAX_BODY_BYTES) {
-      return errorResponse(403, "unauthorized");
+      return withCors(errorResponse(403, "unauthorized"), corsOrigin);
     }
     body = JSON.parse(new TextDecoder().decode(raw));
   } catch {
-    return errorResponse(403, "unauthorized");
+    return withCors(errorResponse(403, "unauthorized"), corsOrigin);
   }
   if (!validSessionInviteShape(body)) {
     return withCors(errorResponse(403, "unauthorized"), corsOrigin);
@@ -377,7 +377,7 @@ export async function handleRequest(request, env, deps = {}) {
     }
   }
 
-  const ttl = credentialTtlSeconds(env.TURN_CREDENTIAL_TTL_SECONDS);
+  const ttl = credentialTtlSeconds(env.TURN_CREDENTIAL_TTL_SECONDS, browser);
   let generated;
   try {
     generated = await generateIceServers(
@@ -388,11 +388,11 @@ export async function handleRequest(request, env, deps = {}) {
       timeoutMs,
     );
   } catch {
-    return errorResponse(503, "unavailable");
+    return withCors(errorResponse(503, "unavailable"), corsOrigin);
   }
   const document = iceServersDocument(generated, SESSION_QUOTA_BYTES);
   if (document == null) {
-    return errorResponse(503, "unavailable");
+    return withCors(errorResponse(503, "unavailable"), corsOrigin);
   }
   return withCors(jsonResponse(200, document), corsOrigin);
 }

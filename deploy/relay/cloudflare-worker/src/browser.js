@@ -3,21 +3,28 @@
  * Desktop mailbox/TURN calls send no Origin header and stay on the desktop quota path.
  */
 
-const DEFAULT_ORIGIN_PATTERNS = [
-  "https://stalemate.band",
-  "http://localhost:*",
-  "http://127.0.0.1:*",
-];
+const PRODUCTION_ORIGIN_PATTERNS = ["https://stalemate.band"];
+
+const LOCALHOST_ORIGIN_PATTERNS = ["http://localhost:*", "http://127.0.0.1:*"];
+
+function corsDevLocalhostEnabled(env = {}) {
+  const raw = String(env.WEBJAM_CORS_DEV_LOCALHOST ?? "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
 
 export function corsAllowlist(env = {}) {
   const raw = String(env.WEBJAM_CORS_ORIGINS ?? "").trim();
-  if (!raw) {
-    return DEFAULT_ORIGIN_PATTERNS;
+  if (raw) {
+    return raw
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
   }
-  return raw
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+  const patterns = [...PRODUCTION_ORIGIN_PATTERNS];
+  if (corsDevLocalhostEnabled(env)) {
+    patterns.push(...LOCALHOST_ORIGIN_PATTERNS);
+  }
+  return patterns;
 }
 
 export function originAllowed(origin, env = {}) {
@@ -33,7 +40,13 @@ export function originAllowed(origin, env = {}) {
       const prefix = pattern.slice(0, -1);
       if (value.startsWith(prefix)) {
         const rest = value.slice(prefix.length);
-        if (/^\d+$/.test(rest)) {
+        const port = Number.parseInt(rest, 10);
+        if (
+          Number.isFinite(port) &&
+          port >= 1 &&
+          port <= 65535 &&
+          String(port) === rest
+        ) {
           return true;
         }
       }

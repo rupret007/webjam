@@ -21,6 +21,7 @@ export const GIGABYTE_BYTES = 1_000_000_000;
 export const DEFAULT_CAP_GB = 800;
 export const DEFAULT_WEB_CAP_GB = 200;
 export const DEFAULT_TTL_SECONDS = 600;
+export const MAX_BROWSER_TTL_SECONDS = 3600;
 export const DEFAULT_RATE_LIMIT = 10;
 export const RATE_WINDOW_MS = 60_000;
 export const USAGE_CACHE_MS = 60_000;
@@ -105,10 +106,13 @@ export function monthlyCapBytes(capGbRaw) {
   return gigabytes * GIGABYTE_BYTES;
 }
 
-export function credentialTtlSeconds(raw) {
+export function credentialTtlSeconds(raw, browser = false) {
   const parsed = Number.parseInt(String(raw ?? ""), 10);
   if (!Number.isFinite(parsed) || parsed < 60 || parsed > 86400) {
     return DEFAULT_TTL_SECONDS;
+  }
+  if (browser && parsed > MAX_BROWSER_TTL_SECONDS) {
+    return MAX_BROWSER_TTL_SECONDS;
   }
   return parsed;
 }

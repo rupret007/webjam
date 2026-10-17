@@ -16,6 +16,8 @@ import {
   iceServersDocument,
   missingRequiredSecrets,
   monthlyCapBytes,
+  credentialTtlSeconds,
+  MAX_BROWSER_TTL_SECONDS,
   readUsageBytes,
   utcMonthDateRange,
   validSessionInviteShape,
@@ -263,6 +265,12 @@ test("default credential TTL is 600 seconds", () => {
   assert.equal(FETCH_TIMEOUT_MS, 5000);
   assert.equal(UPSTREAM_FETCHES_PER_REQUEST, 2);
   assert.equal(WORKER_WORST_CASE_MS, 10_000);
+});
+
+test("browser credential TTL is capped at one hour", () => {
+  assert.equal(credentialTtlSeconds("86400", false), 86400);
+  assert.equal(credentialTtlSeconds("86400", true), MAX_BROWSER_TTL_SECONDS);
+  assert.equal(MAX_BROWSER_TTL_SECONDS, 3600);
 });
 
 test("outbound fetch timeout still applies while the body is read", async () => {

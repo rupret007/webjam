@@ -105,21 +105,30 @@ function webScopeLimits(env = {}) {
     dailyRequests,
     dailyRowWrites,
     dailyGbS,
-    prefixDailyRequests: positiveInt(
-      env.WEB_PREFIX_DAILY_REQUESTS,
-      DEFAULT_WEB_PREFIX_DAILY_REQUESTS,
+    prefixDailyRequests: atMost(
+      positiveInt(env.WEB_PREFIX_DAILY_REQUESTS, DEFAULT_WEB_PREFIX_DAILY_REQUESTS),
+      dailyRequests,
     ),
-    prefixDailyRowWrites: positiveInt(
-      env.WEB_PREFIX_DAILY_ROW_WRITES,
-      DEFAULT_WEB_PREFIX_DAILY_ROW_WRITES,
+    prefixDailyRowWrites: atMost(
+      positiveInt(env.WEB_PREFIX_DAILY_ROW_WRITES, DEFAULT_WEB_PREFIX_DAILY_ROW_WRITES),
+      dailyRowWrites,
     ),
-    prefixDailyGbS: positiveInt(env.WEB_PREFIX_DAILY_GB_S, DEFAULT_WEB_PREFIX_DAILY_GB_S),
-    netDailyRequests: positiveInt(env.WEB_NET_DAILY_REQUESTS, DEFAULT_WEB_NET_DAILY_REQUESTS),
-    netDailyRowWrites: positiveInt(
-      env.WEB_NET_DAILY_ROW_WRITES,
-      DEFAULT_WEB_NET_DAILY_ROW_WRITES,
+    prefixDailyGbS: atMost(
+      positiveInt(env.WEB_PREFIX_DAILY_GB_S, DEFAULT_WEB_PREFIX_DAILY_GB_S),
+      dailyGbS,
     ),
-    netDailyGbS: positiveInt(env.WEB_NET_DAILY_GB_S, DEFAULT_WEB_NET_DAILY_GB_S),
+    netDailyRequests: atMost(
+      positiveInt(env.WEB_NET_DAILY_REQUESTS, DEFAULT_WEB_NET_DAILY_REQUESTS),
+      dailyRequests,
+    ),
+    netDailyRowWrites: atMost(
+      positiveInt(env.WEB_NET_DAILY_ROW_WRITES, DEFAULT_WEB_NET_DAILY_ROW_WRITES),
+      dailyRowWrites,
+    ),
+    netDailyGbS: atMost(
+      positiveInt(env.WEB_NET_DAILY_GB_S, DEFAULT_WEB_NET_DAILY_GB_S),
+      dailyGbS,
+    ),
     perMinute: positiveInt(env.MAILBOX_RATE_LIMIT_PER_MINUTE, DEFAULT_MAILBOX_RATE_LIMIT),
     newBucketsPerMinute: positiveInt(
       env.MAILBOX_NEW_BUCKETS_PER_MINUTE,
@@ -677,8 +686,14 @@ export class MailboxQuota {
       const chargeRaw = String(request.headers.get("X-WebJam-Quota-Charge") ?? "all");
       const charge =
         chargeRaw === "rate" || chargeRaw === "daily" ? chargeRaw : "all";
+      const scopeHeader = String(request.headers.get("X-WebJam-Quota-Scope") ?? "").trim();
       const scope =
-        request.headers.get("X-WebJam-Quota-Scope") === "turn" ? "turn" : "mailbox";
+        scopeHeader === "turn" ||
+        scopeHeader === "web-turn" ||
+        scopeHeader === "mailbox" ||
+        scopeHeader === "web-mailbox"
+          ? scopeHeader
+          : "mailbox";
       const storageKey = `quota:${scope}`;
       const stored = await this.ctx.storage.get(storageKey);
       let state;

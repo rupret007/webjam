@@ -10,6 +10,7 @@ from core.web_sketch_jam_signaling import (
     all_sketch_jam_mailbox_ids,
     claim_seat_without_collision,
     seat_claim_order,
+    sketch_jam_mailbox_aead_key,
     sketch_jam_pair_mailbox_id,
     sketch_jam_seat_mailbox_id,
 )
@@ -37,10 +38,22 @@ def test_four_peers_derive_six_distinct_pairwise_mailbox_ids_and_claim_seats_wit
         assert len(set(order)) == SEAT_COUNT
 
     taken = {0, 1}
-    late = os.urandom(32)
+    late = b"\x00" + os.urandom(31)
     assert seat_claim_order(late)[0] in taken
     assigned = claim_seat_without_collision(invite, [late], occupied=taken)
     assert assigned[late] in {2, 3}
+
+
+def test_sketch_jam_mailbox_aead_key_derives_32_byte_key_and_rejects_non_32_byte_mailbox_ids() -> (
+    None
+):
+    invite = _invite_secret()
+    mailbox_id = sketch_jam_seat_mailbox_id(invite, 0)
+    key = sketch_jam_mailbox_aead_key(invite, mailbox_id)
+    assert len(key) == 32
+    assert sketch_jam_mailbox_aead_key(invite, mailbox_id) == key
+    with pytest.raises(ValueError):
+        sketch_jam_mailbox_aead_key(invite, "ab")
 
 
 def test_pair_mailbox_ids_are_ordered_and_stable() -> None:
