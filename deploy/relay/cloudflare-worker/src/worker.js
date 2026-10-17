@@ -4,6 +4,7 @@
  * ship in the WebJam client.
  */
 
+import { classifyBrowserRequest, withCors } from "./browser.js";
 import { Mailbox, validMailboxId } from "./mailbox.js";
 import {
   FETCH_TIMEOUT_MS,
@@ -21,6 +22,7 @@ import {
   usageAnalyticsQuery,
   utcMonthDateRange,
   validSessionInviteShape,
+  webMonthlyCapBytes,
 } from "./policy.js";
 import {
   MailboxQuota,
@@ -38,6 +40,8 @@ const SESSION_QUOTA_BYTES = 256 * 1024 * 1024;
 let quotaStates = {
   turn: emptyQuotaState(),
   mailbox: emptyQuotaState(),
+  "web-turn": emptyQuotaState(),
+  "web-mailbox": emptyQuotaState(),
 };
 let usageCache = null;
 
@@ -45,8 +49,17 @@ export function resetWorkerState() {
   quotaStates = {
     turn: emptyQuotaState(),
     mailbox: emptyQuotaState(),
+    "web-turn": emptyQuotaState(),
+    "web-mailbox": emptyQuotaState(),
   };
   usageCache = null;
+}
+
+function quotaStateFor(scope) {
+  if (!quotaStates[scope]) {
+    quotaStates[scope] = emptyQuotaState();
+  }
+  return quotaStates[scope];
 }
 
 function jsonResponse(status, body) {
@@ -89,6 +102,15 @@ function applyQuotaEnv(env) {
     MAILBOX_NET_DAILY_ROW_WRITES: env.MAILBOX_NET_DAILY_ROW_WRITES,
     MAILBOX_NET_DAILY_GB_S: env.MAILBOX_NET_DAILY_GB_S,
     MAILBOX_RATE_PREFIX_DAILY: env.MAILBOX_RATE_PREFIX_DAILY,
+    WEB_DAILY_REQUESTS: env.WEB_DAILY_REQUESTS,
+    WEB_DAILY_ROW_WRITES: env.WEB_DAILY_ROW_WRITES,
+    WEB_DAILY_GB_S: env.WEB_DAILY_GB_S,
+    WEB_PREFIX_DAILY_REQUESTS: env.WEB_PREFIX_DAILY_REQUESTS,
+    WEB_PREFIX_DAILY_ROW_WRITES: env.WEB_PREFIX_DAILY_ROW_WRITES,
+    WEB_PREFIX_DAILY_GB_S: env.WEB_PREFIX_DAILY_GB_S,
+    WEB_NET_DAILY_REQUESTS: env.WEB_NET_DAILY_REQUESTS,
+    WEB_NET_DAILY_ROW_WRITES: env.WEB_NET_DAILY_ROW_WRITES,
+    WEB_NET_DAILY_GB_S: env.WEB_NET_DAILY_GB_S,
   };
   globalThis.WEBJAM_QUOTA_ENV = quotaEnv;
   return quotaEnv;
@@ -105,12 +127,20 @@ function requireHttps(request) {
   return errorResponse(403, "https");
 }
 
-async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all") {
-  if (typeof deps.enforceAccess === "function") {
+async function enforceAccess(
+  request,
+  env,
+  deps,
+  nowMs,
+  rowWrites,
+  charge = "all",
+  scopeOverride = null,
+) {
+  if (typeof deps.enforceAccess === "function" && scopeOverride == null) {
     return deps.enforceAccess(request, nowMs, rowWrites, charge);
   }
   const ip = clientIP(request.headers);
-  const scope = quotaScope(new URL(request.url).pathname);
+  const scope = scopeOverride ?? quotaScope(new URL(request.url).pathname);
   if (env.MAILBOX_QUOTA && typeof env.MAILBOX_QUOTA.idFromName === "function") {
     try {
       const stub = env.MAILBOX_QUOTA.get(env.MAILBOX_QUOTA.idFromName(scope));
@@ -131,7 +161,7 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all
       return errorResponse(503, "unavailable");
     }
   }
-  const decision = applyQuota(quotaStates[scope], {
+  const decision = applyQuota(quotaStateFor(scope), {
     ip,
     nowMs,
     rowWrites,
@@ -142,6 +172,35 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all
     return null;
   }
   return errorResponse(decision.status, decision.code);
+}
+
+async function enforceGlobalAndWebAccess(
+  request,
+  env,
+  deps,
+  nowMs,
+  rowWrites,
+  charge,
+  globalScope,
+  browser,
+) {
+  const denied = await enforceAccess(
+    request,
+    env,
+    deps,
+    nowMs,
+    rowWrites,
+    charge,
+    globalScope,
+  );
+  if (denied) {
+    return denied;
+  }
+  if (!browser) {
+    return null;
+  }
+  const webScope = globalScope === "turn" ? "web-turn" : "web-mailbox";
+  return enforceAccess(request, env, deps, nowMs, rowWrites, charge, webScope);
 }
 
 function isWebsocketUpgrade(request) {
@@ -164,7 +223,7 @@ function closeAcceptedSocket(response) {
   }
 }
 
-async function handleMailbox(request, env, deps, mailbox, nowMs) {
+async function handleMailbox(request, env, deps, mailbox, nowMs, browser) {
   if (mailbox.invalid) {
     return errorResponse(404, "not_found");
   }
@@ -175,13 +234,15 @@ async function handleMailbox(request, env, deps, mailbox, nowMs) {
   // Only a non-mutating handshake must accept before the daily charge.
   // POST/DELETE that merely carry Upgrade still mutate if they run first.
   const websocket = isWebsocketUpgrade(request) && writes === 0;
-  const denied = await enforceAccess(
+  const denied = await enforceGlobalAndWebAccess(
     request,
     env,
     deps,
     nowMs,
     websocket ? 0 : writes,
     websocket ? "rate" : "all",
+    "mailbox",
+    browser,
   );
   if (denied) {
     return denied;
@@ -202,7 +263,16 @@ async function handleMailbox(request, env, deps, mailbox, nowMs) {
     }
   }
   if (websocket && mailboxCountsDaily(response.status)) {
-    const charged = await enforceAccess(request, env, deps, nowMs, writes, "daily");
+    const charged = await enforceGlobalAndWebAccess(
+      request,
+      env,
+      deps,
+      nowMs,
+      writes,
+      "daily",
+      "mailbox",
+      browser,
+    );
     if (charged) {
       closeAcceptedSocket(response);
       return charged;
@@ -220,9 +290,19 @@ export async function handleRequest(request, env, deps = {}) {
   const fetchImpl = deps.fetch ?? globalThis.fetch;
   const nowMs = Number(deps.nowMs ?? Date.now());
   const path = new URL(request.url).pathname;
+  const browserGate = classifyBrowserRequest(request, env ?? {});
+  if (browserGate.blocked) {
+    if (browserGate.response) {
+      return browserGate.response;
+    }
+    return errorResponse(browserGate.status ?? 403, browserGate.code ?? "origin");
+  }
+  const browser = browserGate.browser === true;
+  const corsOrigin = browserGate.corsOrigin;
   const mailbox = parseMailboxPath(path);
   if (mailbox) {
-    return handleMailbox(request, env, deps, mailbox, nowMs);
+    const response = await handleMailbox(request, env, deps, mailbox, nowMs, browser);
+    return withCors(response, corsOrigin);
   }
   if (request.method !== "POST") {
     return errorResponse(405, "method");
@@ -231,9 +311,18 @@ export async function handleRequest(request, env, deps = {}) {
     return errorResponse(404, "not_found");
   }
 
-  const denied = await enforceAccess(request, env, deps, nowMs, 0);
+  const denied = await enforceGlobalAndWebAccess(
+    request,
+    env,
+    deps,
+    nowMs,
+    0,
+    "all",
+    "turn",
+    browser,
+  );
   if (denied) {
-    return denied;
+    return withCors(denied, corsOrigin);
   }
 
   if (missingRequiredSecrets(env).length > 0) {
@@ -255,7 +344,10 @@ export async function handleRequest(request, env, deps = {}) {
     return errorResponse(403, "unauthorized");
   }
   if (!validSessionInviteShape(body)) {
-    return errorResponse(403, "unauthorized");
+    return withCors(errorResponse(403, "unauthorized"), corsOrigin);
+  }
+  if (browser && String(body.client ?? "") !== "web") {
+    return withCors(errorResponse(403, "unauthorized"), corsOrigin);
   }
 
   const capBytes = monthlyCapBytes(env.TURN_MONTHLY_CAP_GB);
@@ -269,7 +361,20 @@ export async function handleRequest(request, env, deps = {}) {
   );
   const decision = decideCap(usageBytes, capBytes);
   if (!decision.allow) {
-    return errorResponse(decision.code === "cap" ? 429 : 503, decision.code);
+    return withCors(
+      errorResponse(decision.code === "cap" ? 429 : 503, decision.code),
+      corsOrigin,
+    );
+  }
+  if (browser) {
+    const webCapBytes = webMonthlyCapBytes(env.WEB_TURN_MONTHLY_CAP_GB);
+    const webDecision = decideCap(usageBytes, webCapBytes);
+    if (!webDecision.allow) {
+      return withCors(
+        errorResponse(webDecision.code === "cap" ? 429 : 503, webDecision.code),
+        corsOrigin,
+      );
+    }
   }
 
   const ttl = credentialTtlSeconds(env.TURN_CREDENTIAL_TTL_SECONDS);
@@ -289,7 +394,7 @@ export async function handleRequest(request, env, deps = {}) {
   if (document == null) {
     return errorResponse(503, "unavailable");
   }
-  return jsonResponse(200, document);
+  return withCors(jsonResponse(200, document), corsOrigin);
 }
 
 async function monthUsageBytes(

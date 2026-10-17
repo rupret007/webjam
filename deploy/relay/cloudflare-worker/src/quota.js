@@ -42,6 +42,15 @@
  */
 
 export const DEFAULT_DAILY_REQUESTS = 10_000;
+export const DEFAULT_WEB_DAILY_REQUESTS = 3_000;
+export const DEFAULT_WEB_DAILY_ROW_WRITES = 3_000;
+export const DEFAULT_WEB_DAILY_GB_S = 300;
+export const DEFAULT_WEB_PREFIX_DAILY_REQUESTS = 60;
+export const DEFAULT_WEB_PREFIX_DAILY_ROW_WRITES = 60;
+export const DEFAULT_WEB_PREFIX_DAILY_GB_S = 6;
+export const DEFAULT_WEB_NET_DAILY_REQUESTS = 600;
+export const DEFAULT_WEB_NET_DAILY_ROW_WRITES = 600;
+export const DEFAULT_WEB_NET_DAILY_GB_S = 60;
 export const DEFAULT_DAILY_ROW_WRITES = 10_000;
 export const DEFAULT_DAILY_GB_S = 1_000;
 export const ESTIMATED_GB_S_PER_REQUEST = 0.01;
@@ -85,7 +94,49 @@ export function utcDayKey(nowMs) {
   return new Date(nowMs).toISOString().slice(0, 10);
 }
 
+function webScopeLimits(env = {}) {
+  const dailyRequests = positiveInt(env.WEB_DAILY_REQUESTS, DEFAULT_WEB_DAILY_REQUESTS);
+  const dailyRowWrites = positiveInt(
+    env.WEB_DAILY_ROW_WRITES,
+    DEFAULT_WEB_DAILY_ROW_WRITES,
+  );
+  const dailyGbS = positiveInt(env.WEB_DAILY_GB_S, DEFAULT_WEB_DAILY_GB_S);
+  return {
+    dailyRequests,
+    dailyRowWrites,
+    dailyGbS,
+    prefixDailyRequests: positiveInt(
+      env.WEB_PREFIX_DAILY_REQUESTS,
+      DEFAULT_WEB_PREFIX_DAILY_REQUESTS,
+    ),
+    prefixDailyRowWrites: positiveInt(
+      env.WEB_PREFIX_DAILY_ROW_WRITES,
+      DEFAULT_WEB_PREFIX_DAILY_ROW_WRITES,
+    ),
+    prefixDailyGbS: positiveInt(env.WEB_PREFIX_DAILY_GB_S, DEFAULT_WEB_PREFIX_DAILY_GB_S),
+    netDailyRequests: positiveInt(env.WEB_NET_DAILY_REQUESTS, DEFAULT_WEB_NET_DAILY_REQUESTS),
+    netDailyRowWrites: positiveInt(
+      env.WEB_NET_DAILY_ROW_WRITES,
+      DEFAULT_WEB_NET_DAILY_ROW_WRITES,
+    ),
+    netDailyGbS: positiveInt(env.WEB_NET_DAILY_GB_S, DEFAULT_WEB_NET_DAILY_GB_S),
+    perMinute: positiveInt(env.MAILBOX_RATE_LIMIT_PER_MINUTE, DEFAULT_MAILBOX_RATE_LIMIT),
+    newBucketsPerMinute: positiveInt(
+      env.MAILBOX_NEW_BUCKETS_PER_MINUTE,
+      DEFAULT_NEW_BUCKETS_PER_MINUTE,
+    ),
+    ratePrefixDaily: positiveInt(env.MAILBOX_RATE_PREFIX_DAILY, DEFAULT_RATE_PREFIX_DAILY),
+  };
+}
+
 export function quotaLimits(env = {}, scope = "mailbox") {
+  if (scope === "web-mailbox" || scope === "web-turn") {
+    const web = webScopeLimits(env);
+    if (scope === "web-turn") {
+      web.perMinute = positiveInt(env.TURN_RATE_LIMIT_PER_MINUTE, DEFAULT_RATE_LIMIT);
+    }
+    return web;
+  }
   const rateFallback =
     scope === "turn" ? DEFAULT_RATE_LIMIT : DEFAULT_MAILBOX_RATE_LIMIT;
   const rateVar =

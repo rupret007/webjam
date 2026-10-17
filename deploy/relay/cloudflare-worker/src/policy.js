@@ -19,6 +19,7 @@
 
 export const GIGABYTE_BYTES = 1_000_000_000;
 export const DEFAULT_CAP_GB = 800;
+export const DEFAULT_WEB_CAP_GB = 200;
 export const DEFAULT_TTL_SECONDS = 600;
 export const DEFAULT_RATE_LIMIT = 10;
 export const RATE_WINDOW_MS = 60_000;
@@ -139,7 +140,20 @@ export function validSessionInviteShape(body) {
   const session = String(body.session_id ?? "");
   const token = String(body.invite_token ?? body.token ?? "");
   const sessionOk = UUID_RE.test(session) || SESSION_HEX_RE.test(session);
-  return sessionOk && INVITE_TOKEN_RE.test(token);
+  if (!sessionOk || !INVITE_TOKEN_RE.test(token)) {
+    return false;
+  }
+  if (body.client != null && String(body.client) !== "web") {
+    return false;
+  }
+  return true;
+}
+
+export function webMonthlyCapBytes(capGbRaw) {
+  const parsed = Number.parseInt(String(capGbRaw ?? ""), 10);
+  const gigabytes =
+    Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_WEB_CAP_GB;
+  return gigabytes * GIGABYTE_BYTES;
 }
 
 export function clientIP(headers) {
