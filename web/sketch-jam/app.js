@@ -103,15 +103,15 @@ async function join() {
     byId("audio-warnings").hidden = acquired.warnings.length === 0;
     invite = readInvite(location.hash);
     room = new SketchRoom({ origin: RELAY_ORIGIN, invite, stream, audioContext, onStatus: status, onPeer: showPeer, onTrack: playRemote, onError: (error) => { stop(); status(error.message || "Unable to join this Sketch Jam."); } });
-    used = true;
     status("Joining with encrypted signaling…");
     await room.join(byId("name").value);
+    used = true;
   } catch (error) {
     stream?.getTracks().forEach((track) => track.stop());
     if (turn !== generation) return;
     stop();
     status(error.name === "NotAllowedError"
-      ? (used ? "Microphone access is needed. Allow it, then create a new link to try again." : "Microphone access is needed. Allow it, then tap Join Sketch Jam again.")
+      ? "Microphone access is needed. Allow it, then tap Join Sketch Jam again."
       : error.message || "Unable to join this Sketch Jam.");
   }
 }

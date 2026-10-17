@@ -122,7 +122,7 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all
     }
     // One persistent web counter spans both endpoints. Keep the original
     // mailbox/TURN caps too; a browser request never escapes those budgets.
-    const denied = await enforceScope(request, env, nowMs, 0, charge, "web");
+    const denied = await enforceScope(request, env, nowMs, rowWrites, charge, "web");
     if (denied) return denied;
   }
   return enforceScope(request, env, nowMs, rowWrites, charge,

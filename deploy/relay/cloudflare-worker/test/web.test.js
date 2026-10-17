@@ -3,12 +3,14 @@ import test from "node:test";
 import { handleRequest, resetWorkerState } from "../src/worker.js";
 import { allowedOrigin, withCors } from "../src/cors.js";
 import { credentialTtlSeconds, monthlyCapBytes, webMonthlyCapBytes } from "../src/policy.js";
-import { quotaLimits } from "../src/quota.js";
+import { MailboxQuota, quotaLimits } from "../src/quota.js";
+import { memoryQuotaStorage } from "./quota-memory.js";
 
 const ORIGIN = "https://stalemate.band";
 const SESSION = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
 const INVITE = "A".repeat(43);
 const ID = "ab".repeat(32);
+const PAYLOAD = "dGVzdC1jaXBoZXJ0ZXh0";
 const NOW = Date.parse("2026-10-15T00:00:00Z");
 function quotaBinding() {
   return {
@@ -256,4 +258,128 @@ test("usage cache cannot cross account/key identities and expired data cannot ma
   assert.equal(other.calls.length, 1);
   const stale = { ...upstream({ errors: [{ message: "offline" }] }), nowMs: NOW + 60_001 };
   assert.equal((await handleRequest(request("/turn-credentials", token()), env, stale)).status, 503);
+});
+
+function multiScopeQuotaEnv(quotaEnv = {}) {
+  const objects = new Map();
+  const memories = new Map();
+  return {
+    memories,
+    env: {
+      ...quotaEnv,
+      MAILBOX_QUOTA: {
+        idFromName: (scope) => scope,
+        get(scope) {
+          if (!objects.has(scope)) {
+            const memory = memoryQuotaStorage();
+            memories.set(scope, memory);
+            objects.set(scope, new MailboxQuota({ storage: memory.storage }, quotaEnv));
+          }
+          return objects.get(scope);
+        },
+      },
+    },
+  };
+}
+
+test("web POST and DELETE mailbox requests charge mailbox row writes to both mailbox and web scopes", async () => {
+  const calls = [];
+  const config = {
+    ...env,
+    ENVIRONMENT: "development",
+    MAILBOX_QUOTA: {
+      idFromName: (scope) => scope,
+      get: (scope) => ({
+        fetch: async (request) => {
+          calls.push({
+            scope,
+            writes: request.headers.get("X-WebJam-Row-Writes"),
+          });
+          return new Response(null, { status: 200 });
+        },
+      }),
+    },
+  };
+  const deps = {
+    nowMs: NOW,
+    mailboxFetch: async (request) => new Response(null, {
+      status: request.method === "POST" ? 201 : 204,
+    }),
+  };
+  const headers = { "content-type": "application/json", "CF-Connecting-IP": "203.0.113.10" };
+  for (const [method, writes] of [["POST", "2"], ["DELETE", "1"]]) {
+    resetWorkerState();
+    calls.length = 0;
+    const init = {
+      method,
+      headers,
+      ...(method === "POST" ? { body: JSON.stringify({ payload: PAYLOAD }) } : {}),
+    };
+    const response = await handleRequest(
+      new Request(`https://worker.test/mailbox/${ID}/offer?client=web`, init),
+      config,
+      deps,
+    );
+    assert.equal(response.status, method === "POST" ? 201 : 204);
+    assert.deepEqual(
+      calls.filter((entry) => entry.scope === "web").map((entry) => entry.writes),
+      [writes],
+    );
+    assert.deepEqual(
+      calls.filter((entry) => entry.scope === "mailbox").map((entry) => entry.writes),
+      [writes],
+    );
+  }
+});
+
+test("web scope per-minute rate limit interaction between mailbox polling and turn-credentials", async () => {
+  resetWorkerState();
+  const quotaConfig = {
+    MAILBOX_DAILY_REQUESTS: "1000",
+    TURN_RATE_LIMIT_PER_MINUTE: "10",
+    MAILBOX_RATE_LIMIT_PER_MINUTE: "30",
+  };
+  const { env: quotaEnv } = multiScopeQuotaEnv(quotaConfig);
+  const config = { ...env, ...quotaEnv, ENVIRONMENT: "development" };
+  const deps = {
+    ...upstream(),
+    nowMs: NOW,
+    mailboxFetch: async () => new Response(null, { status: 204 }),
+  };
+  const mailboxGet = () => request(`/mailbox/${ID}/offer?client=web`, undefined, null, "GET");
+  for (let index = 0; index < 25; index += 1) {
+    assert.equal((await handleRequest(mailboxGet(), config, deps)).status, 204);
+  }
+  for (let index = 0; index < 5; index += 1) {
+    assert.equal((await handleRequest(request("/turn-credentials", token(), null), config, deps)).status, 200);
+  }
+  const blocked = await handleRequest(request("/turn-credentials", token(), null), config, deps);
+  assert.equal(blocked.status, 429);
+  assert.deepEqual(await blocked.json(), { error: "rate" });
+});
+
+test("desktop turn-credentials behavior when WEB_TURN_KEY_ID is unset vs misconfigured", async () => {
+  const desktopBody = { session_id: SESSION, invite_token: INVITE };
+  const desktopRequest = () => new Request("https://worker.test/turn-credentials", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "CF-Connecting-IP": "203.0.113.10",
+    },
+    body: JSON.stringify(desktopBody),
+  });
+  const desktopOnly = {
+    TURN_KEY_ID: "desktop-key",
+    TURN_KEY_API_TOKEN: "desktop-test-token",
+    CLOUDFLARE_ACCOUNT_ID: "account",
+    CLOUDFLARE_ANALYTICS_API_TOKEN: "analytics-test-token",
+    MAILBOX_QUOTA: quotaBinding(),
+  };
+  resetWorkerState();
+  assert.equal((await handleRequest(desktopRequest(), desktopOnly, upstream())).status, 200);
+  resetWorkerState();
+  const misconfigured = { ...desktopOnly, WEB_TURN_KEY_ID: "desktop-key" };
+  const response = await handleRequest(desktopRequest(), misconfigured, upstream());
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "misconfigured" });
 });

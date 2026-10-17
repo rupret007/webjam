@@ -9,8 +9,8 @@ test.beforeEach(async ({ request }) => {
   await request.post("/__test/reset", { data: {} });
 });
 
-async function participant(browser, name, invite = "/") {
-  const nativeMockCapture = browser.browserType().name() === "webkit";
+async function participant(browser, name, invite = "/", { fakeAudioOnly = false } = {}) {
+  const nativeMockCapture = !fakeAudioOnly && browser.browserType().name() === "webkit";
   // Safari mutes an older tab's microphone when a second tab starts capture.
   // Independent WebKit processes model independent people with live inputs.
   const isolatedBrowser = nativeMockCapture ? await browser.browserType().launch() : null;
@@ -176,3 +176,51 @@ for (const status of [429, 503]) {
     }
   });
 }
+
+test.describe("microphone permission denial or pre-claim network failure allows retrying Join on the same invite link", () => {
+  test.beforeEach(({ browserName }) => {
+    test.skip(browserName === "webkit", "WebKit headless reports a native capture error instead of app join status");
+  });
+
+  test("after microphone denial", async ({ browser }) => {
+    const { close, page } = await participant(browser, "Denied once", "/", { fakeAudioOnly: true });
+    try {
+      await page.evaluate(() => {
+        let denied = true;
+        const mediaPrototype = Object.getPrototypeOf(navigator.mediaDevices);
+        const prior = mediaPrototype.getUserMedia;
+        Object.defineProperty(mediaPrototype, "getUserMedia", {
+          configurable: true,
+          value: async (constraints) => {
+            if (denied) {
+              denied = false;
+              throw new DOMException("Permission denied", "NotAllowedError");
+            }
+            return prior.call(navigator.mediaDevices, constraints);
+          },
+        });
+      });
+      await page.locator("#headphones").check();
+      await page.locator("#join").click();
+      await expect(page.locator("#status")).toContainText(/Microphone access is needed/i);
+      await expect(page.locator("#join")).toBeEnabled();
+      await page.locator("#join").click();
+      await expect(page.locator("#status")).toContainText(/Joining with encrypted signaling|Joined/i, { timeout: 30_000 });
+    } finally {
+      await close();
+    }
+  });
+
+  test("after relay outage before seat claim", async ({ browser, request }) => {
+    await request.post("/__test/reset", { data: { fault: 503 } });
+    const { close, page } = await participant(browser, "Busy relay", "/", { fakeAudioOnly: true });
+    try {
+      await page.locator("#headphones").check();
+      await page.locator("#join").click();
+      await expect(page.locator("#status")).toContainText(/relay busy/i, { timeout: 30_000 });
+      await expect(page.locator("#join")).toBeEnabled();
+    } finally {
+      await close();
+    }
+  });
+});
