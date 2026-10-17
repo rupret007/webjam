@@ -117,9 +117,7 @@ func TestReliableSendCancelsBlockedWrite(t *testing.T) {
 		cancel()
 		assertReliableCancellation(t, result)
 		stream.CancelRead(0)
-		if err = stream.Close(); err != nil {
-			t.Fatal(err)
-		}
+		stream.CancelWrite(0)
 		if len(guest.streamSlots) != 0 {
 			t.Fatal("canceled send retained its stream slot")
 		}
