@@ -19,10 +19,12 @@ REQUIRED_FIELDS = (
     "local_type", "remote_type", "music_nonce", "art_nonce", "music_echo", "art_echo",
 )
 # A live UDP path has no delivery guarantee for an individual frame. Exercise
-# a fixed two-second audio stream under netem's 1% loss in each direction.
+# a fixed five-second audio stream under netem's 1% loss in each direction.
+# Pace the probe so the bounded live queue is not the source of test loss
+# when QUIC congestion control encounters netem's 100 +/- 50 ms delay.
 # Every sequence is sent exactly once; neither frames nor cases are retried.
 MUSIC_FRAMES = 1000
-MUSIC_INTERVAL_S = 0.002
+MUSIC_INTERVAL_S = 0.005
 MUSIC_MIN_ECHOES = 950
 MUSIC_TIMEOUT_S = 12.0
 
@@ -181,17 +183,20 @@ def _receive_music(sock: socket.socket, nonce: str, seen: set[int]) -> tuple[byt
 def _guest_music(sock: socket.socket, port: int, nonce: str) -> int:
     started = time.monotonic()
     deadline = started + MUSIC_TIMEOUT_S
+    next_send = started
     sent = 0
     seen: set[int] = set()
     while time.monotonic() < deadline:
         now = time.monotonic()
-        if sent < MUSIC_FRAMES and now >= started + sent * MUSIC_INTERVAL_S:
+        if sent < MUSIC_FRAMES and now >= next_send:
             sock.sendto(_music_frame(nonce, sent), ("127.0.0.1", port))
             sent += 1
+            # A descheduled process must not catch up with a queue-filling burst.
+            next_send = time.monotonic() + MUSIC_INTERVAL_S
         if sent == MUSIC_FRAMES and len(seen) >= MUSIC_MIN_ECHOES:
             return len(seen)
-        next_send = started + sent * MUSIC_INTERVAL_S if sent < MUSIC_FRAMES else deadline
-        timeout = max(0, min(next_send, deadline) - time.monotonic())
+        wake_at = min(next_send, deadline) if sent < MUSIC_FRAMES else deadline
+        timeout = max(0, wake_at - time.monotonic())
         if select.select([sock], [], [], timeout)[0]:
             _receive_music(sock, nonce, seen)
     raise ProofError(f"music stream incomplete: sent={sent} echoed={len(seen)}")

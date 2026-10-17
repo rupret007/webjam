@@ -650,10 +650,12 @@ def test_proof_peers_drive_real_sidecar_not_standalone_ice():
 
 
 def test_music_stream_sends_each_frame_once_through_bidirectional_loss(tmp_path):
-    """Drop the first packet and 1% per direction, with no retransmissions."""
+    """Delay/reorder by 100 +/- 50 ms and drop 1% in each direction."""
     import concurrent.futures
+    import heapq
     import socket
     import threading
+    import time
 
     from tools.cross_network_acceptance import proof as p
 
@@ -666,11 +668,15 @@ def test_music_stream_sends_each_frame_once_through_bidirectional_loss(tmp_path)
             socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as guest:
         host.bind(("127.0.0.1", 0))
         relay.bind(("127.0.0.1", 0))
-        relay.settimeout(0.02)
+        relay.settimeout(0.002)
 
         def forward():
             client = None
+            pending = []
             while not stopped.is_set():
+                while pending and pending[0][0] <= time.monotonic():
+                    _, payload, target = heapq.heappop(pending)
+                    relay.sendto(payload, target)
                 try:
                     payload, source = relay.recvfrom(2048)
                 except TimeoutError:
@@ -679,12 +685,18 @@ def test_music_stream_sends_each_frame_once_through_bidirectional_loss(tmp_path)
                 if source == host.getsockname():
                     echoed.append(sequence)
                     if sequence % 100 != 1:
-                        relay.sendto(payload, client)
+                        target = client
+                    else:
+                        continue
                 else:
                     client = source
                     sent.append(sequence)
                     if sequence % 100 != 0:
-                        relay.sendto(payload, host.getsockname())
+                        target = host.getsockname()
+                    else:
+                        continue
+                delay = 0.05 + (sequence * 17 % 100) / 1000
+                heapq.heappush(pending, (time.monotonic() + delay, payload, target))
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             forwarding = pool.submit(forward)
@@ -695,7 +707,6 @@ def test_music_stream_sends_each_frame_once_through_bidirectional_loss(tmp_path)
                 assert receiving.result(timeout=2) >= p.MUSIC_MIN_ECHOES
                 assert count >= p.MUSIC_MIN_ECHOES
                 # Drain every sent frame before inspecting the forwarder's log.
-                import time
                 deadline = time.monotonic() + 1
                 while len(sent) < p.MUSIC_FRAMES and time.monotonic() < deadline:
                     time.sleep(0.01)
@@ -755,11 +766,11 @@ def test_music_stream_enforces_delivery_budget(tmp_path, monkeypatch, echoes, pa
 
     from tools.cross_network_acceptance import proof as p
 
-    monkeypatch.setattr(p, "MUSIC_TIMEOUT_S", 3.0)
+    monkeypatch.setattr(p, "MUSIC_TIMEOUT_S", 6.0)
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as relay, \
             socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as guest:
         relay.bind(("127.0.0.1", 0))
-        relay.settimeout(4)
+        relay.settimeout(7)
 
         def reflect():
             received = []
