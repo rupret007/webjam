@@ -273,8 +273,21 @@ def _decode(data: bytes) -> WorkspaceBackupPreview:
     return WorkspaceBackupPreview(payload)
 
 
+def _bounded_capture(stream) -> bytes:
+    """Fill short reads through EOF, capped at the existing limit plus one."""
+    chunks = []
+    remaining = MAX_WORKSPACE_BACKUP_BYTES + 1
+    while remaining:
+        chunk = stream.read(min(64 * 1024, remaining))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
 def _read_regular(path: Path) -> bytes:
-    """Bound reads and reject links, special files, and replacements during read."""
+    """Compare bounded captures and retain the original metadata boundaries."""
     before = path.lstat()
     if not stat.S_ISREG(before.st_mode):
         raise WorkspaceBackupError("Choose a regular backup file without symbolic links.")
@@ -284,7 +297,8 @@ def _read_regular(path: Path) -> bytes:
     flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     descriptor = os.open(path, flags)
     try:
-        stream = os.fdopen(descriptor, "rb")
+        # A buffered rewind can reuse bytes captured before an in-place edit.
+        stream = os.fdopen(descriptor, "rb", buffering=0)
         descriptor = -1
         with stream:
             opened = os.fstat(stream.fileno())
@@ -292,7 +306,13 @@ def _read_regular(path: Path) -> bytes:
                 before.st_dev, before.st_ino
             ) != (opened.st_dev, opened.st_ino):
                 raise WorkspaceBackupError("Workspace backup changed while being read.")
-            data = stream.read(MAX_WORKSPACE_BACKUP_BYTES + 1)
+            data = _bounded_capture(stream)
+            stream.seek(0)
+            verification = _bounded_capture(stream)
+            # Two observations catch persistent edits with indistinguishable
+            # timestamps; finite reads cannot rule out arbitrary ABA writes.
+            if data != verification or len(data) != opened.st_size:
+                raise WorkspaceBackupError("Workspace backup changed while being read.")
             after = os.fstat(stream.fileno())
             current = path.lstat()
             def identity(value):
@@ -318,7 +338,7 @@ def _read_regular(path: Path) -> bytes:
 
 
 def preview_workspace_backup(path: str | Path) -> WorkspaceBackupPreview:
-    """Read once without writes or media access; preview binds validated bytes."""
+    """Capture bounded bytes without writes or media access; preview binds them."""
     try:
         return _decode(_read_regular(Path(path)))
     except (OSError, ValueError) as exc:
