@@ -144,6 +144,9 @@ copied; unrelated files and application credentials are not added.
 Choose **Import backup…** and select a JSON backup, media package, or its
 `.webjamreceipt` file. A receipt checks the package beside it against the
 intended checksum. Review the title, profile, counts, prior imports and limits.
+If a metadata backup changes while being read, preview stops; choose a stable
+saved file again. A completed preview keeps its reviewed contents even if the
+source file changes later.
 **Cancel** leaves the open draft unchanged.
 **Import as new** creates a separate saved workspace and keeps your
 current editor and selection. Select the imported entry yourself when ready.
