@@ -103,6 +103,9 @@ def test_a_host_who_chose_the_video_is_offered_that_way_in_instead():
 
     assert presence.label == "Set up Paint along"
     assert presence.target is ArtPresenceTarget.VIDEO
+    assert presence.description == (
+        "Open Paint along, then watch a shared lesson or choose a silent file."
+    )
 
 
 def test_a_guest_in_a_paint_along_room_is_told_the_video_is_coming():

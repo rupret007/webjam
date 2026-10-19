@@ -42,7 +42,8 @@ assuming that a source test or moving meter proves audibility.
 A Join must move through **Checking invite**, **Contacting host**,
 **Securing connection**, and **Opening Jamulus**, or stop at **Needs
 attention**. It does not have an unbounded “trying to connect” state.
-If the invitation says same network, use the host's Wi-Fi first.
+If WebJam could not reach the host, use home Wi-Fi on both computers,
+not a phone hotspot, and ask the host for a fresh invitation.
 
 - **Try Again** means the failure occurred before WebJam submitted the
   one-use invitation.

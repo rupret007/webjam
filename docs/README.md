@@ -27,7 +27,7 @@ then keeps the technical story.
 | New creator | [Simple-language guide](../README_SIMPLE.md) | Same story as the creator guide, in shorter words |
 | Creator | [Creator guide](../USER_GUIDE.md) | The one complete how-to: install, Host/Join, record, leave, Studio |
 | First-time demo | [First Session](../FIRST_JAM.md) | Shortest live path; details stay in the creator guide |
-| Follow-along pilot | [First test](FOLLOW_ALONG_FIRST_TEST.md) and [pilot record](FOLLOW_ALONG_PILOT_RECORD.md) | Two-person same-LAN Paint along / Play along; physical rows stay **NOT RUN** until observed |
+| Follow-along pilot | [First test](FOLLOW_ALONG_FIRST_TEST.md) and [pilot record](FOLLOW_ALONG_PILOT_RECORD.md) | Two-person Paint along / Play along from two homes or one network; physical rows stay **NOT RUN** until observed |
 | Reference Studio user | [Reference Studio guide](REFERENCE_STUDIO_MUSICIAN_GUIDE.md) | Write, arrange, record, and bounce a local project |
 | Developer | [Development guide](../DEVELOPMENT.md) | Set up the repository, preserve ownership boundaries, and run checks |
 
@@ -62,6 +62,10 @@ and [follow-along first test](FOLLOW_ALONG_FIRST_TEST.md).
   Separate from Pocket Stage.
 - [Pocket Stage plan](plans/webjam-pocket-stage-v1.md) and [threat model](security/pocket-stage-mobile-threat-model.md)
   — iPhone owner-device preview and its trust model.
+- [Cross-network Host/Join plan](REMOTE-SESSIONS-PLAN.md) — ordinary packaged
+  Host/Join uses `direct-stun` (public STUN, clipboard signaling, TURN
+  fallback only when direct ICE fails, $0, no port forwarding). Two-home
+  physical proof remains **NOT RUN**.
 - [Webex decision record](adr/0004-webex-external-launch-and-future-oauth.md)
   — external handoff today; OAuth or an embedded companion remains future work.
 - [Conversation companion guidance](../WEBEX_AUDIO_MODES.md) — the canonical

@@ -127,6 +127,15 @@ def test_paint_along_host_empty_has_one_visual_primary(qapp):
         assert [button.text() for button in primaries] == ["Watch a shared lesson"]
         assert panel._share_button.objectName() == "GhostButton"
         assert panel._youtube_button.objectName() == "GhostButton"
+        panel.set_invite_owns_primary(True)
+        _settle(qapp)
+        primaries = [
+            button for button in panel.findChildren(QPushButton)
+            if button.isVisibleTo(panel) and button.isEnabled()
+            and button.objectName() == "PrimaryButton"
+        ]
+        assert primaries == []
+        assert panel._watch_lesson_button.objectName() == "GhostButton"
         _assert_no_horizontal_scroll(panel)
         assert panel.rect().contains(_mapped(panel._watch_lesson_button, panel))
         for label in (panel._headline, panel._status, panel._lesson_hint):

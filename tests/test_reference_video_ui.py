@@ -205,6 +205,23 @@ def test_empty_host_keeps_shared_lesson_first_above_silent_reference(host_dialog
     assert host_dialog._youtube_button.objectName() == "GhostButton"
 
 
+def test_copy_invite_on_the_hud_ghosts_watch_a_shared_lesson(host_dialog):
+    """One-orange rule: HUD Copy Invite owns orange; PR #320 Watch yields."""
+
+    assert host_dialog._watch_lesson_button.objectName() == "PrimaryButton"
+    host_dialog.set_invite_owns_primary(True)
+    assert host_dialog._watch_lesson_button.objectName() == "GhostButton"
+    assert host_dialog._share_button.objectName() == "GhostButton"
+    assert host_dialog._youtube_button.objectName() == "GhostButton"
+    host_dialog.set_host_snapshot(_shared())
+    assert host_dialog._watch_lesson_button.objectName() == "GhostButton"
+    host_dialog.set_invite_owns_primary(False)
+    host_dialog.set_host_snapshot(_shared())
+    assert host_dialog._watch_lesson_button.objectName() == "GhostButton"
+    host_dialog.set_host_snapshot(ReferenceVideoSnapshot())
+    assert host_dialog._watch_lesson_button.objectName() == "PrimaryButton"
+
+
 def test_the_host_panel_enables_transport_only_once_a_file_is_shared(host_dialog):
     host_dialog.set_host_snapshot(_shared())
 
@@ -360,6 +377,25 @@ def test_a_follower_panel_starts_on_the_no_video_path(guest_dialog):
     assert guest_dialog._role.text() == "YOU FOLLOW"
     assert guest_dialog._open_button.isEnabled() is True
     assert guest_dialog._hide_button.isEnabled() is False
+    assert guest_dialog._watch_lesson_button.objectName() == "PrimaryButton"
+    assert guest_dialog._open_button.objectName() == "GhostButton"
+
+
+def test_guest_open_my_copy_is_the_one_orange_only_when_a_file_is_needed(guest_dialog):
+    assert guest_dialog._watch_lesson_button.objectName() == "PrimaryButton"
+    assert guest_dialog._open_button.objectName() == "GhostButton"
+
+    guest_dialog.set_follow_snapshot(_follow(ReferenceVideoFollowState.NEEDS_FILE))
+    assert guest_dialog._open_button.objectName() == "PrimaryButton"
+    assert guest_dialog._watch_lesson_button.objectName() == "GhostButton"
+
+    guest_dialog.set_follow_snapshot(_follow(ReferenceVideoFollowState.FILE_UNAVAILABLE))
+    assert guest_dialog._open_button.objectName() == "PrimaryButton"
+    assert guest_dialog._watch_lesson_button.objectName() == "GhostButton"
+
+    guest_dialog.set_invite_owns_primary(True)
+    assert guest_dialog._open_button.objectName() == "GhostButton"
+    assert guest_dialog._watch_lesson_button.objectName() == "GhostButton"
 
 
 def test_a_follower_panel_asks_for_the_hosts_file(guest_dialog):

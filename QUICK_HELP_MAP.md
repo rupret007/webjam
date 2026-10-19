@@ -16,8 +16,8 @@
 | --- | --- |
 | Open the downloaded app | Windows: **More info** → **Run anyway**. Mac: **System Settings → Privacy & Security → Open Anyway** for WebJam. Ubuntu: start `WebJam` from the unzipped folder |
 | Choose a creator workflow | Launch → **Art** or **Music**. Art is **Make together** / **Paint along**, then **Host** / **Join**. Music is **Host** / **Join** only |
-| Start a live session | Choose **Art** or **Music**, then **Host**; Art chooses a start card first. Music Host is Mac-only; stay on the same Wi-Fi |
-| Join a live session | Choose a profile → **Join**, **Join Recording**, or **Join Review** → paste the complete invite into the one masked field → **Join**; the invite carries whatever the host started. Stay on the host's Wi-Fi |
+| Start a live session | Choose **Art** or **Music**, then **Host**; Art chooses a start card first. Music Host is Mac-only. A friend in another house can Join |
+| Join a live session | Choose a profile → **Join**, **Join Recording**, or **Join Review** → paste the complete invite into the one masked field → **Join**; the invite carries whatever the host started. If WebJam shows a short reply, send it back; the host chooses **Paste Reply** |
 | Fix an invitation error | Copy the complete invitation again. WebJam names incomplete, expired, malformed, incompatible, or unsupported invitations without showing their private values |
 | Stop a Join that is not finishing | WebJam stops the attempt at **Needs attention**. Choose the one shown action: **Try Again** only when the invite was not used, or **Paste New Invite** after timeout/expiry/uncertain enrollment |
 | Chat with the room | After authenticated Jamulus connection, use the session canvas band chat. It is not available as pre-connection tech support |

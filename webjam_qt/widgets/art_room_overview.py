@@ -234,12 +234,21 @@ class ArtRoomOverviewWidget(QScrollArea):
             else None
         )
         self.setProperty("roomPhase", overview.phase)
+        names = (
+            room_connections.names
+            if overview.phase == "connected" and overview.role_label == "Host"
+            and room_connections is not None
+            else ()
+        )
+        connection_detail = (
+            f"{names[0]} is here" if names else overview.connection_detail
+        )
         for label, text in (
             (self._phase, overview.phase_label),
             (self._title, overview.title),
             (self._role, overview.role_label),
             (self._connection, overview.connection_label),
-            (self._connection_detail, overview.connection_detail),
+            (self._connection_detail, connection_detail),
             (self._making_detail, overview.making_detail),
             (self._activity, overview.activity_label),
             (self._activity_detail, overview.activity_detail),
@@ -253,7 +262,7 @@ class ArtRoomOverviewWidget(QScrollArea):
             # The caveat stays out of the short visible paragraph but is
             # still spoken by screen readers focused on this label.
             self._connection_detail.setAccessibleDescription(
-                f"{overview.connection_detail} {overview.connection_note}".strip()
+                f"{connection_detail} {overview.connection_note}".strip()
             )
         offered = bool(overview.activity_action and overview.activity_action_label)
         # The waiting host's HUD owns Copy Invite. Keep Paint along available
@@ -333,7 +342,7 @@ class ArtRoomOverviewWidget(QScrollArea):
             text.rstrip(".") for text in (
                 overview.phase_label, overview.role_label,
                 overview.title if overview.making_detail else "",
-                overview.connection_label, overview.connection_detail,
+                overview.connection_label, connection_detail,
                 overview.connection_note,
                 overview.making_detail,
                 overview.activity_label, overview.activity_detail,

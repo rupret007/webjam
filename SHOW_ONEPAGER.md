@@ -7,7 +7,7 @@ clear, and hands work to the tools they already use.
 
 | Show | What Jeff does | What the audience sees |
 | --- | --- | --- |
-| Live band | Music → Host / Join on the same Wi-Fi (a Mac hosts; others Join); exchange a phrase, then show Notes. | Jamulus carries the performance; local notes capture the next decision. |
+| Live band | Music → Host / Join (a Mac hosts; others Join, including from another house); exchange a phrase, then show Notes. | Jamulus carries the performance; local notes capture the next decision. |
 | Play along | File → New Music Project… → Open Project…; play the prepared project. | Local backing audio and standalone Studio controls. |
 | Paint along | Art → Paint along → Host; choose a process video. | One video workspace with local-file and YouTube choices; artists use their own tools. |
 | Record along | Run the handoff command; import its MIDI and WAV files into Logic. | Editable Type 1 MIDI, aligned 24-bit stems, tempo, and markers. |
