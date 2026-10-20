@@ -296,8 +296,9 @@ def test_backup_path_replaced_between_inspection_and_open_is_refused(tmp_path, r
 
 
 @pytest.mark.parametrize("platform", ["posix", "nt"])
-@pytest.mark.parametrize("changed", [None, "path_ctime", "handle_ctime", "handle_ctime_final"])
-def test_preview_checks_ctime_within_each_api_on_windows(tmp_path, record, monkeypatch, platform, changed):
+@pytest.mark.parametrize("changed", [None, "path_ctime", "handle_ctime"])
+@pytest.mark.parametrize("handle_inspection", [2, 3], ids=["capture", "readback"])
+def test_preview_checks_ctime_within_each_api_on_windows(tmp_path, record, monkeypatch, platform, changed, handle_inspection):
     target = tmp_path / "backup.json"
     target.write_bytes(_wire(_payload(record)))
     real_lstat = Path.lstat
@@ -311,9 +312,8 @@ def test_preview_checks_ctime_within_each_api_on_windows(tmp_path, record, monke
         # Model the Windows lstat creation-time / fstat change-time mismatch
         # on every host, and a change visible only to one of those APIs.
         values["st_ctime_ns"] = 1_000_000_000 if source == "path" else 2_000_000_000
-        if changed == source + "_ctime" and inspections[source] == 2:
-            values["st_ctime_ns"] += 1
-        if changed == "handle_ctime_final" and source == "handle" and inspections[source] == 3:
+        change_at = handle_inspection if source == "handle" else 2
+        if changed == source + "_ctime" and inspections[source] == change_at:
             values["st_ctime_ns"] += 1
         return SimpleNamespace(**values)
 
@@ -327,10 +327,59 @@ def test_preview_checks_ctime_within_each_api_on_windows(tmp_path, record, monke
     else:
         with pytest.raises(WorkspaceBackupError, match="changed while"):
             preview_workspace_backup(target)
+    # The two captures retain the original path checks and add a final handle check.
     assert inspections == {"path": 2, "handle": 3}
 
 
-def test_preview_refuses_same_size_edit_during_read_with_restored_mtime(tmp_path, record, monkeypatch):
+@pytest.mark.parametrize("restore_bytes", [False, True], ids=["persistent", "restored"])
+def test_preview_refuses_same_size_edit_during_read_with_restored_mtime(tmp_path, record, monkeypatch, restore_bytes):
+    target = tmp_path / "backup.json"
+    original = _wire(_payload(record))
+    changed = _wire(_payload(replace(record, notes=record.notes.replace("Every line", "Other line"))))
+    assert len(changed) == len(original) and changed != original
+    target.write_bytes(original)
+    before = target.stat()
+    real_fstat = os.fstat
+    real_lstat = Path.lstat
+    inspections = []
+
+    def with_ctime(info, ctime):
+        values = {key: getattr(info, key) for key in (
+            "st_mode", "st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")}
+        values["st_ctime_ns"] = ctime
+        return SimpleNamespace(**values)
+
+    def edit_after_read(descriptor):
+        if len(inspections) == 1:
+            target.write_bytes(changed)
+            os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+        # Model a visible handle ctime tick independently of the native clock.
+        result = with_ctime(real_fstat(descriptor), before.st_ctime_ns + bool(inspections))
+        inspections.append(result)
+        if restore_bytes and len(inspections) == 2:
+            # Equal captures must still be refused when ctime records an edit.
+            target.write_bytes(original)
+            os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+        return result
+
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.fstat = edit_after_read
+    monkeypatch.setattr(backup, "os", simulated_os)
+    monkeypatch.setattr(Path, "lstat", lambda path: with_ctime(real_lstat(path), before.st_ctime_ns)
+                        if path == target else real_lstat(path))
+    with pytest.raises(WorkspaceBackupError, match="changed while"):
+        preview_workspace_backup(target)
+    assert len(inspections) == 3
+    assert inspections[0].st_size == inspections[1].st_size
+    assert inspections[0].st_mtime_ns == inspections[1].st_mtime_ns
+    assert inspections[0].st_ctime_ns != inspections[1].st_ctime_ns
+    assert inspections[1].st_size == inspections[2].st_size
+    assert inspections[1].st_mtime_ns == inspections[2].st_mtime_ns
+    assert inspections[1].st_ctime_ns == inspections[2].st_ctime_ns
+    assert target.read_bytes() == (original if restore_bytes else changed)
+
+
+def test_preview_refuses_same_size_edit_during_read_with_unchanged_metadata(tmp_path, record, monkeypatch):
     target = tmp_path / "backup.json"
     original = _wire(_payload(record))
     changed = _wire(_payload(replace(record, notes=record.notes.replace("Every line", "Other line"))))
