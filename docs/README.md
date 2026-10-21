@@ -30,6 +30,7 @@ then keeps the technical story.
 | Follow-along pilot | [First test](FOLLOW_ALONG_FIRST_TEST.md) and [pilot record](FOLLOW_ALONG_PILOT_RECORD.md) | Two-person same-LAN Paint along / Play along; physical rows stay **NOT RUN** until observed |
 | Reference Studio user | [Reference Studio guide](REFERENCE_STUDIO_MUSICIAN_GUIDE.md) | Write, arrange, record, and bounce a local project |
 | Developer | [Development guide](../DEVELOPMENT.md) | Set up the repository, preserve ownership boundaries, and run checks |
+| Browser jam evaluator | [Sketch Jam](web-sketch-jam.md) | Unreleased browser mesh, local checks, free-limit behavior, and physical test gaps |
 
 ## Keep working between sessions
 

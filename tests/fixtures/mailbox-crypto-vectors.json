@@ -1,0 +1,35 @@
+[
+  {
+    "name": "ascending",
+    "capability_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "session_reference_hex": "000102030405060708090a0b0c0d0e0f",
+    "mailbox_id": "75b108b64a473791694de36ff54d94975f90d3f2e990e69627a92541393dde7b",
+    "mailbox_key_hex": "cf4fa65c78b571891c1d311ec4cec49aa924404ada0fadd1ad731bdda7a357f8",
+    "host_spki_sha256_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+    "plaintext_utf8": "WebJam shared mailbox vector: ascending",
+    "offer_payload": "AAECAwQFBgcICQoLNpBv6wXm3UvT6sWBZKnJs1mQ08hq2LVs00I5o6OVAm2WkPMjcsi9JUcsXbR0MxidK0MytTlImQ",
+    "answer_payload": "DA0ODxAREhMUFRYXKvkHaIVRDD-mUmn2s4lrfTee8KkC99nBa9jOGIGCQBDwxa3ncSBlEd_OGssgan1erFIzwiCb2Q"
+  },
+  {
+    "name": "zero-capability",
+    "capability_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+    "session_reference_hex": "00112233445566778899aabbccddeeff",
+    "mailbox_id": "7a0378d3d06314160e221753e0d798d362d51f402096c3ac1eaeaddbb49598b9",
+    "mailbox_key_hex": "89085fda12d4b4cff2f37487a32f55616c2353a2b122e30aa0d2ce70e99b21da",
+    "host_spki_sha256_hex": "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5",
+    "plaintext_utf8": "WebJam shared mailbox vector: zero-capability",
+    "offer_payload": "AAECAwQFBgcICQoLXv9qrVgNFQ0pBpqhnioVYEFcW_HMf4DOhvgDSMHTAbX9N3YonXGu2EjyHkIzEZ3LWZPYFwa65jv05uo7Yw",
+    "answer_payload": "DA0ODxAREhMUFRYXwoV1QZqdLoedOg1DdkvuXGc-fOxnl2usOL3mon7X-cjTZCCQ5ZMehcfGWeDaWzhyWZB2G7q0sL9Y1GmQ2w"
+  },
+  {
+    "name": "high-bit-capability",
+    "capability_hex": "e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+    "session_reference_hex": "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
+    "mailbox_id": "8e175583a35dd9295edf04bfaf8a734b0c0cb45fe74ed7d71dafa7620dfc3fb1",
+    "mailbox_key_hex": "e5233dbf6a61e5fcc69971e15ff428007e460da824d8eb38413892278529d35c",
+    "host_spki_sha256_hex": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "plaintext_utf8": "WebJam shared mailbox vector: high-bit-capability",
+    "offer_payload": "AAECAwQFBgcICQoLvgjiVDelawua6e_g13bl3a51j_jNElUDAL8faLaDupyFISybdqt5C_GevfQ8rv6_2-CMeaxg2Hdq2NrAK3nqBRQ",
+    "answer_payload": "DA0ODxAREhMUFRYX5WYA6Tha4Aq1HgXn25a37TomyIXMDjeAfj1QLR7cxAJkcGDAcn8E7cYyOdrB9KtJXALGZ7BFeEPGa283LWQLT-w"
+  }
+]

@@ -447,7 +447,7 @@ def run_case(
                     reason = reason or "peer exit"
                 profiles = [
                     {k: row.get(k) for k in (
-                        "role", "local_type", "remote_type", "music_echo", "art_echo")}
+                        "role", "local_type", "remote_type", "music_echo", "music_frames", "art_echo")}
                     for row in (host_proof, guest_proof)
                 ]
                 if reason:
