@@ -1169,7 +1169,7 @@ jobs:
           - os: windows-2025
             target: windows-x64
             python: "3.11.9"
-          - os: macos-14
+          - os: [self-hosted, mini]
             target: macos-arm64
             python: "3.11.9"
           - os: macos-15-intel
@@ -1182,6 +1182,23 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Prepare macOS Python hostedtoolcache (self-hosted)
+        if: matrix.target == 'macos-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache_dir=/Users/runner/hostedtoolcache
+          if [[ -d "$cache_dir" && -w "$cache_dir" ]]; then
+            exit 0
+          fi
+          if [[ -d "$cache_dir" ]]; then
+            echo "$cache_dir exists but is not writable by $(whoami)" >&2
+            exit 1
+          fi
+          # actions/setup-python macOS packages install only under this path.
+          sudo mkdir -p "$cache_dir"
+          sudo chown "$(id -un):$(id -gn)" "$cache_dir"
 
       - name: Set up service test Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
