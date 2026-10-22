@@ -287,7 +287,7 @@ def _bounded_capture(stream) -> bytes:
 
 
 def _read_regular(path: Path) -> bytes:
-    """Compare bounded captures and retain the original metadata boundaries."""
+    """Compare two bounded captures from one pinned regular file descriptor."""
     before = path.lstat()
     if not stat.S_ISREG(before.st_mode):
         raise WorkspaceBackupError("Choose a regular backup file without symbolic links.")
@@ -297,7 +297,7 @@ def _read_regular(path: Path) -> bytes:
     flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     descriptor = os.open(path, flags)
     try:
-        # A buffered rewind can reuse bytes captured before an in-place edit.
+        # Rewinding a BufferedReader can reuse stale bytes after an in-place edit.
         stream = os.fdopen(descriptor, "rb", buffering=0)
         descriptor = -1
         with stream:
@@ -307,12 +307,11 @@ def _read_regular(path: Path) -> bytes:
             ) != (opened.st_dev, opened.st_ino):
                 raise WorkspaceBackupError("Workspace backup changed while being read.")
             data = _bounded_capture(stream)
+            if len(data) > MAX_WORKSPACE_BACKUP_BYTES:
+                raise WorkspaceBackupError("Workspace backup is too large.")
+            captured = os.fstat(stream.fileno())
             stream.seek(0)
             verification = _bounded_capture(stream)
-            # Two observations catch persistent edits with indistinguishable
-            # timestamps; finite reads cannot rule out arbitrary ABA writes.
-            if data != verification or len(data) != opened.st_size:
-                raise WorkspaceBackupError("Workspace backup changed while being read.")
             after = os.fstat(stream.fileno())
             current = path.lstat()
             def identity(value):
@@ -321,16 +320,16 @@ def _read_regular(path: Path) -> bytes:
             # Windows Python can report creation time for lstat's ctime but
             # change time for fstat's ctime. Check each API's ctime for changes
             # without comparing those different clocks. POSIX keeps the full
-            # cross-API check, including changes that restore size and mtime.
-            if not stat.S_ISREG(current.st_mode) or not (
-                identity(before) == identity(opened) == identity(after) == identity(current)
+            # cross-API check. Exact byte comparison also catches persistent
+            # same-tick edits whose size, mtime and ctime are indistinguishable.
+            # This bounded check cannot prove absence of arbitrary ABA writes.
+            if data != verification or len(data) != opened.st_size or not stat.S_ISREG(current.st_mode) or not (
+                identity(before) == identity(opened) == identity(captured) == identity(after) == identity(current)
                 and before.st_ctime_ns == current.st_ctime_ns
-                and opened.st_ctime_ns == after.st_ctime_ns
+                and opened.st_ctime_ns == captured.st_ctime_ns == after.st_ctime_ns
                 and (os.name == "nt" or before.st_ctime_ns == opened.st_ctime_ns)
             ):
                 raise WorkspaceBackupError("Workspace backup changed while being read.")
-        if len(data) > MAX_WORKSPACE_BACKUP_BYTES:
-            raise WorkspaceBackupError("Workspace backup is too large.")
         return data
     finally:
         if descriptor >= 0:
@@ -338,7 +337,7 @@ def _read_regular(path: Path) -> bytes:
 
 
 def preview_workspace_backup(path: str | Path) -> WorkspaceBackupPreview:
-    """Capture bounded bytes without writes or media access; preview binds them."""
+    """Capture stable bounded bytes without writes or media access for preview."""
     try:
         return _decode(_read_regular(Path(path)))
     except (OSError, ValueError) as exc:
