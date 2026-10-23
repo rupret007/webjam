@@ -31,8 +31,8 @@ repeating the same steps.
    - **Ubuntu:** unzip the folder, keep it together, and start `WebJam`.
 3. **Start or join.** Choose **Art** or **Music**, then **Host** or **Join**.
    The host uses **Copy Invite** and sends the whole message. The friend
-   pastes it on **Join**. Stay on the **same Wi-Fi or local network**. Keep
-   the host's window open.
+   pastes it on **Join**. If the invitation says **same network**, use the
+   host's Wi-Fi or local network. Keep the host's window open.
 
 **Music Host is Mac-only.** Windows and Linux can Join a Music jam; they
 cannot start one. Any computer can Host or Join Art.
