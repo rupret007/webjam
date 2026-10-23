@@ -19,6 +19,9 @@ repeating the same steps.
 
 1. **Get the app** from [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
    Choose the download for your computer.
+   For the Stalemate private beta, use its organizer's qualified package.
+   A public download with the same version number may not accept the newer
+   invitation; see [community beta setup](docs/COMMUNITY_MUSIC_BETA.md).
 2. **Open it.**
    - **Windows:** if Windows says it protected your PC, choose **More info**,
      then **Run anyway**. A work PC may still block it; ask IT.
@@ -33,6 +36,13 @@ repeating the same steps.
 
 **Music Host is Mac-only.** Windows and Linux can Join a Music jam; they
 cannot start one. Any computer can Host or Join Art.
+
+**Unsigned Windows remote Music is blocked.** The current frozen Windows
+candidate requires a valid signature on its native remote transport. Opening
+the app after a Windows warning does not meet that requirement. A same-network
+invitation uses a different path; do not treat it as proof of remote Music.
+The full community music beta still needs qualified builds and physical
+installation, two-way audio and recovery checks on Mac, Windows and Linux.
 
 **What Host does:** opens your room (Art) or starts the private band server
 and Jamulus (Music). When the room is ready, **Copy Invite** appears.
