@@ -42,7 +42,9 @@ $("join").addEventListener("click", async () => {
     starting = false; refresh();
   } catch (error) {
     stream?.getTracks().forEach((track) => track.stop());
-    if (error.name !== "AbortError" && !attempt.signal.aborted) leave(error.message);
+    if (!attempt.signal.aborted) leave(error.name === "AbortError"
+      ? "Joining timed out or was interrupted. Check your connection and microphone, then try Join again."
+      : error.message);
   } finally { $("leave").removeEventListener("click", cancel); }
 });
 $("leave").addEventListener("click", () => leave());

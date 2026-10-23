@@ -911,6 +911,13 @@ After Jamulus connects, the session canvas includes Jamulus band chat. That
 chat is unavailable while the private connection itself is still being set
 up, so use the invitation recovery shown by WebJam for connection trouble.
 
+For the separate opt-in [browser Web Join](docs/web-join.md), an interrupted
+or timed-out Join explains the problem, releases audio resources, and enables
+an explicit retry. **Leave session** remains a deliberate exit; it does not
+automatically reconnect or later show a timeout warning. Joining again still
+requires a valid, unused host invitation. Ask the host for a fresh link if the
+old one has expired or may have been consumed.
+
 ## Your Music listening mix
 
 The participant cards control what you hear through the Music connection.
