@@ -57,6 +57,11 @@ $("join").addEventListener("click", async () => {
 $("leave").addEventListener("click", () => leave());
 window.addEventListener("pagehide", () => leave());
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && context?.state === "suspended") context.resume().catch(() => leave("Tap Join again to resume audio."));
+  if (!document.hidden && context?.state === "suspended") {
+    const attempt = activeAttempt;
+    context.resume().catch(() => {
+      if (attempt && !attempt.signal.aborted && activeAttempt === attempt) leave("Tap Join again to resume audio.");
+    });
+  }
 });
 refresh();

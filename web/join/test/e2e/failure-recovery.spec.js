@@ -136,3 +136,55 @@ for (const scenario of ['left', 'rejoined', 'active']) {
     expect(await page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
   });
 }
+
+for (const scenario of ['left', 'rejoined', 'active']) {
+  const outcome = { left: 'a deliberate Leave', rejoined: 'the next Join', active: 'cleanup for the active Join' }[scenario];
+  test(`a late audio-resume rejection preserves ${outcome}`, async ({ page }) => {
+    await page.route('**/session.js', route => route.fulfill({
+      contentType: 'application/javascript',
+      body: `export class WebJoinSession {
+        constructor(options) {
+          this.options = options; this.closed = false;
+          (window.testSessions ??= []).push(this);
+        }
+        async join() { this.options.onStatus('Synthetic session connected.'); }
+        close() {
+          this.closed = true;
+          this.options.stream.getTracks().forEach(track => track.stop());
+        }
+      }`
+    }));
+    await openInvitation(page);
+    const join = page.getByRole('button', { name: 'Join with microphone', exact: true });
+    const leave = page.getByRole('button', { name: 'Leave session', exact: true });
+    await join.click();
+    await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
+    await page.evaluate(async () => {
+      const audio = testSessions[0].options.audioContext;
+      await audio.suspend();
+      audio.resume = () => new Promise((resolve, reject) => { window.rejectResume = reject; });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await expect.poll(() => page.evaluate(() => typeof rejectResume)).toBe('function');
+    if (scenario !== 'active') await leave.click();
+    if (scenario === 'rejoined') {
+      await join.click();
+      await expect.poll(() => page.evaluate(() => testSessions.length)).toBe(2);
+      await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
+    }
+    await page.evaluate(() => rejectResume(new DOMException('Test-only interrupted resume', 'InvalidStateError')));
+    const status = { left: 'You left the session.', rejoined: 'Synthetic session connected.', active: 'Tap Join again to resume audio.' }[scenario];
+    await expect(page.locator('#status')).toHaveText(status, { timeout: 2000 });
+    if (scenario === 'rejoined') {
+      await expect(join).toBeDisabled();
+      await expect(leave).toBeVisible();
+      expect(await page.evaluate(() => testSessions[1].closed)).toBe(false);
+      expect(await page.evaluate(() => testSessions[1].options.stream.getTracks().every(track => track.readyState === 'live'))).toBe(true);
+      await leave.click();
+    } else {
+      await expect(join).toBeEnabled();
+      await expect(leave).toBeHidden();
+    }
+    expect(await page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
+  });
+}
