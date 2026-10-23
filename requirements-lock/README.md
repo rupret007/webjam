@@ -27,6 +27,14 @@ These lock files alone do not claim signed packages, notarization, or
 physical-audio evidence; they record the dependency graph the release workflow
 must use.
 
+The current Certifi floor and all four native locks use `2026.10.19` to address
+the `PYSEC-2026-4320` audit finding. The regenerated hashes match the
+[maintainer's PyPI release](https://pypi.org/project/certifi/2026.10.19/).
+The native CI and cross-network harness use Go `1.26.10`, the fixed compiler
+for [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809). These source updates do
+not qualify an older package: repeat the normal native matrix and bind any new
+package evidence to its exact source and hashes.
+
 The macOS-only pin is a narrow exception to GHSA-h35f-9h28-mq5c. That issue
 affects Unicode exclusion rules while creating an sdist; this release path
 never creates an sdist. The Intel cryptography exception consumes an upstream

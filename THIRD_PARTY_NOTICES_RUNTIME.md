@@ -23,7 +23,7 @@ exception.
 | `annotated-doc` | `0.0.4` | Runtime | `MIT` | [project](https://github.com/fastapi/annotated-doc) |
 | `annotated-types` | `0.7.0` | Runtime | `MIT` | [project](https://github.com/annotated-types/annotated-types) |
 | `anyio` | `4.14.2` | Runtime | `MIT` | [project](https://github.com/agronholm/anyio) |
-| `certifi` | `2026.6.17` | Runtime | `MPL-2.0` | [project](https://github.com/certifi/python-certifi) |
+| `certifi` | `2026.10.19` | Runtime | `MPL-2.0` | [project](https://github.com/certifi/python-certifi) |
 | `cffi` | `2.1.0` | Runtime | `MIT-0` | [project](https://github.com/python-cffi/cffi) |
 | `click` | `8.4.2` | Runtime | `BSD-3-Clause` | [project](https://github.com/pallets/click) |
 | `colorama` | `0.4.6` | Runtime | `BSD-3-Clause` | [project](https://github.com/tartley/colorama) |
