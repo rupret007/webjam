@@ -75,7 +75,7 @@
       "version": "4.14.2"
     },
     {
-      "bom-ref": "pkg:pypi/certifi@2026.6.17",
+      "bom-ref": "pkg:pypi/certifi@2026.10.19",
       "externalReferences": [
         {
           "type": "website",
@@ -94,9 +94,9 @@
           "value": "linux-x64,macos-arm64,macos-x64,windows-x64"
         }
       ],
-      "purl": "pkg:pypi/certifi@2026.6.17",
+      "purl": "pkg:pypi/certifi@2026.10.19",
       "type": "library",
-      "version": "2026.6.17"
+      "version": "2026.10.19"
     },
     {
       "bom-ref": "pkg:pypi/cffi@2.1.0",

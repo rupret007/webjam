@@ -750,7 +750,12 @@ def test_every_external_action_is_pinned_to_an_immutable_commit() -> None:
 
 
 def test_transport_uses_the_reviewed_patched_go_toolchain_everywhere() -> None:
-    assert WORKFLOW.count('go-version: "1.26.9"') == 2
+    assert WORKFLOW.count('go-version: "1.26.10"') == 2
+    cross_network = (
+        ROOT / ".github" / "workflows" / "cross-network-acceptance.yml"
+    ).read_text(encoding="utf-8")
+    assert cross_network.count('go-version: "1.26.10"') == 1
+    assert "1.26.9" not in WORKFLOW + cross_network
     assert "1.25.12" not in WORKFLOW
     assert re.search(r"(?m)^go 1\.25\.13$", TRANSPORT_GO_MOD)
 
