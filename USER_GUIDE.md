@@ -917,6 +917,9 @@ an explicit retry. **Leave session** remains a deliberate exit; it does not
 automatically reconnect or later show a timeout warning. Joining again still
 requires a valid, unused host invitation. Ask the host for a fresh link if the
 old one has expired or may have been consumed.
+An earlier playback attempt finishing after Leave cannot replace that exit
+message or disconnect your next Join. A playback problem in the current
+attempt still releases audio and offers an explicit retry.
 
 ## Your Music listening mix
 

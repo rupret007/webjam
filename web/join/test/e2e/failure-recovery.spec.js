@@ -80,3 +80,59 @@ test('Leave during a stalled fetch stays a deliberate exit, then allows another 
   await expect.poll(() => requests).toBe(2);
   await expect(page.locator('#status')).toContainText('Relay busy');
 });
+
+for (const scenario of ['left', 'rejoined', 'active']) {
+  const outcome = { left: 'a deliberate Leave', rejoined: 'the next Join', active: 'cleanup for the active Join' }[scenario];
+  test(`a late playback rejection preserves ${outcome}`, async ({ page }) => {
+    // Isolate the page's media-promise ownership from enrollment, which the
+    // separate real Go/Pion cases exercise. No hosted credentials or mic.
+    await page.route('**/session.js', route => route.fulfill({
+      contentType: 'application/javascript',
+      body: `export class WebJoinSession {
+        constructor(options) {
+          this.options = options; this.closed = false;
+          (window.testSessions ??= []).push(this);
+        }
+        async join() {
+          this.options.onStatus('Synthetic session connected.');
+          this.options.onTrack(new MediaStream());
+        }
+        close() {
+          this.closed = true;
+          this.options.stream.getTracks().forEach(track => track.stop());
+        }
+      }`
+    }));
+    await page.addInitScript(() => {
+      window.rejectPlayback = [];
+      HTMLMediaElement.prototype.play = function () {
+        return new Promise((resolve, reject) => window.rejectPlayback.push(reject));
+      };
+    });
+    await openInvitation(page);
+    const join = page.getByRole('button', { name: 'Join with microphone', exact: true });
+    const leave = page.getByRole('button', { name: 'Leave session', exact: true });
+    await join.click();
+    await expect.poll(() => page.evaluate(() => rejectPlayback.length)).toBe(1);
+    if (scenario !== 'active') await leave.click();
+    if (scenario === 'rejoined') {
+      await join.click();
+      await expect.poll(() => page.evaluate(() => testSessions.length)).toBe(2);
+      await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
+    }
+    await page.evaluate(() => rejectPlayback[0](new DOMException('Test-only interrupted playback', 'AbortError')));
+    const status = { left: 'You left the session.', rejoined: 'Synthetic session connected.', active: 'Playback could not start. Tap Join again.' }[scenario];
+    await expect(page.locator('#status')).toHaveText(status);
+    if (scenario === 'rejoined') {
+      await expect(join).toBeDisabled();
+      await expect(leave).toBeVisible();
+      expect(await page.evaluate(() => testSessions[1].closed)).toBe(false);
+      expect(await page.evaluate(() => testSessions[1].options.stream.getTracks().every(track => track.readyState === 'live'))).toBe(true);
+      await leave.click();
+    } else {
+      await expect(join).toBeEnabled();
+      await expect(leave).toBeHidden();
+    }
+    expect(await page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
+  });
+}

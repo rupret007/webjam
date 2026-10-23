@@ -35,7 +35,14 @@ $("join").addEventListener("click", async () => {
     session = new WebJoinSession({ origin: RELAY_ORIGIN, invite, stream, audioContext: context,
       onStatus: (message) => { $("status").textContent = message; },
       onLatency: (milliseconds) => { $("latency").textContent = milliseconds === null ? "Estimated listening delay: unavailable in this browser." : `Estimated listening delay: ${Math.round(milliseconds)} ms (network + playback; excludes capture and host bridge).`; },
-      onTrack: (remote) => { $("host-audio").srcObject = remote; $("host-audio").play().catch(() => { leave("Playback could not start. Tap Join again."); }); },
+      onTrack: (remote) => {
+        if (attempt.signal.aborted || activeAttempt !== attempt) return;
+        $("host-audio").srcObject = remote;
+        $("host-audio").play().catch(() => {
+          // pause() or a later Join may settle an earlier playback promise.
+          if (!attempt.signal.aborted && activeAttempt === attempt) leave("Playback could not start. Tap Join again.");
+        });
+      },
       onError: (error) => { if (!attempt.signal.aborted) leave(error.message); },
     });
     await session.join();
