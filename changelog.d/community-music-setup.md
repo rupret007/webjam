@@ -1,0 +1,1 @@
+- Clarify community music test setup: use the organizer's qualified build, follow the invitation's network scope, and retain the unsigned-Windows remote transport limit and separate physical platform acceptance.
