@@ -1,1 +1,2 @@
 - Browser Web Join releases audio and offers an explicit retry when a connection is interrupted or times out, instead of leaving Join disabled. Deliberate Leave still exits without an automatic reconnect or a later timeout warning.
+- Delayed playback failures from an earlier attempt cannot overwrite Leave or disconnect a later Join. Current-attempt playback failures still release audio and allow retry.
