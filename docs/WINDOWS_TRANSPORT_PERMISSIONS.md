@@ -1,9 +1,10 @@
 # Windows transport permissions contract
 
 Source implementation, OS-isolated tests and native diagnostic definition,
-2026-10-25. **Native Windows API behavior has not yet been observed by this
-follow-up. A frozen installed package and real Authenticode remain unqualified.
-This change does not make the unsigned Windows beta available.**
+2026-10-25. **The earlier eight-case Windows control result is separate from
+qualification of the explicit command below, whose Windows CI rerun is pending.
+A frozen installed package and real Authenticode remain unqualified. This change
+does not make the unsigned Windows beta available.**
 Base: `83af86e6bf3747e362db90870f09a928130623a2` (PR401). No signing purchase,
 installation, credential, provider, dependency constraint or release change.
 
@@ -97,13 +98,36 @@ unconditional `windows-diagnostic-control` job. It adds no job, dispatch,
 dependency, installer, signature exception or release action. The three-minute
 step runs even when earlier controls fail and retains its JUnit, source/hash and
 environment receipts with the existing control artifacts. A failing native
-control still fails the job.
+control still fails the job. A follow-up moves those unchanged case bodies into
+an explicit support command, outside default portable pytest discovery, without
+a skip/xfail marker or integrity-check exception.
 
 ```text
-python -X dev -m pytest -q tests/native_windows/test_transport_permissions_native.py --confcutdir tests/native_windows --junitxml out/windows-transport-acl-native.xml --basetemp out/windows-transport-acl-native-pytest
+python -X dev -m tests.support.windows_transport_permissions_native_control
 ```
 
-The tests load the unchanged production guard directly by file path, without
+The command accepts no options, including help, output-path or selection flags.
+It refuses inherited `PYTEST_ADDOPTS`/`PYTEST_PLUGINS`, disables plugin autoload
+while running, and uses a new empty configuration and no product conftest.
+Only a fresh `out/windows-transport-acl-native/` can be reserved; existing,
+non-directory, aliased or reparse targets are refused without cleaning them.
+JUnit (`results.xml`), pytest temporary/cache files, configuration and execution
+proof stay inside that new owned directory alongside the environment receipt.
+
+A separate bounded plugin requires the exact eight case IDs and one passing
+setup, call and teardown report for each, with no skips, expected failures,
+duplicates or changed source hashes. Collection-only/subset runs and a runner's
+`SystemExit(0)` cannot return qualification. Both pytest's actual result and this
+`execution.json` proof must succeed before the command returns zero.
+
+On macOS or Linux the CLI exits 2 with an explicit unsupported-host message before
+loading pytest; this is neither a passing control nor a skipped native suite.
+Ordinary recursive pytest uses its existing discovery rules and does not collect
+the support command. Top-level portable controls cover CI wiring, non-overwrite
+refusals and report/exit classification using benign temporary source copies and
+synthetic runner reports. Those controls do not execute native Windows APIs.
+
+The cases load the unchanged production guard directly by file path, without
 the `services` initializer, product dependencies, injected API or synthetic
 descriptors. All ACL changes apply only to a new unique lab tree beneath the
 existing per-user `LOCALAPPDATA`. The system `icacls.exe` is found through
@@ -123,10 +147,16 @@ adjacent interpreter runtime DLLs into the owned tree and supplies only
 isolated environment, prove package installation, verify Authenticode or test
 audio. The production guard and launch path are unchanged by this follow-up.
 
-Non-Windows collection explicitly skips the eight native cases. Local macOS
-collection and the two static CI wiring checks cannot establish Windows
-acceptance. The source/environment receipt records intended coverage before
-test execution; only the actual Windows pytest exit code and retained JUnit can
-establish which controls passed. Real Windows results remain pending until the
-normal reviewed PR CI runs; all broader release qualification above remains
-required.
+Earlier macOS receipts with two static passes/eight skips describe the initial
+diagnostic definition and remain historical evidence; they do not describe this
+explicit command. Application evidence separately retains an eight-case actual
+Windows pass from job `121302109950`, run `40237418806`, before this command change.
+The unchanged case-body comparison preserves its narrow meaning; the new command
+and CI path still require a normal reviewed Windows CI run. Local portable checks
+and an unsupported-host exit cannot establish native acceptance.
+
+The source/environment receipt records intended coverage before test execution;
+only the actual Windows pytest exit code and retained JUnit establish which
+controls passed. Neither that earlier control nor this follow-up qualifies a
+frozen WebJam application, package installation, Authenticode or physical audio.
+All broader release requirements above remain in force.

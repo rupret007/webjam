@@ -1,8 +1,9 @@
-"""Real Windows ACL/share controls, separate from application/signing acceptance.
+"""Explicit real Windows ACL/share diagnostic, separate from product acceptance.
 
-CI runs this file with --confcutdir tests/native_windows, so neither services'
-package initializer nor product/provider fixtures are imported. The guard loads
-directly from its actual source file; no API, metadata or ancestry is mocked.
+The Windows-only CLI runs this file with --confcutdir tests/support. Its support
+filename stays outside default portable pytest discovery; unsupported CLI hosts
+exit 2 instead of skipping or passing. The actual guard loads directly from its
+source file; no API, metadata, ancestry or case assertion is substituted.
 Only unique newly created files/directories below the lab root have ACLs changed.
 """
 
@@ -21,11 +22,14 @@ import subprocess
 import sys
 import tempfile
 
-import pytest
+_UNSUPPORTED = "Native Windows transport ACL diagnostic requires Windows; no native API tests executed."
+# Make the CLI's unsupported-host result independent of pytest availability.
+if __name__ == "__main__" and os.name != "nt":
+    print(_UNSUPPORTED, file=sys.stderr)
+    raise SystemExit(2)
 
-pytestmark = pytest.mark.skipif(
-    os.name != "nt", reason="Real Windows ACL/API qualification only"
-)
+import pytest  # noqa: E402 - unsupported CLI hosts must exit before loading pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -318,3 +322,192 @@ def test_actual_python_createprocess_succeeds_while_image_guard_is_held(
         "owned_python_sha256", hashlib.sha256(target.read_bytes()).hexdigest()
     )
     record_property("copied_runtime_dlls", ",".join(copied))
+
+
+_NATIVE_PATH = "tests/support/windows_transport_permissions_native_control.py"
+_EXPECTED_CASES = tuple(
+    f"{_NATIVE_PATH}::{name}"
+    for name in (
+        "test_private_file_attributes_do_not_substitute_for_actual_acl_acceptance[False]",
+        "test_private_file_attributes_do_not_substitute_for_actual_acl_acceptance[True]",
+        "test_actual_handle_metadata_sid_and_dacl_decode",
+        "test_actual_permissive_file_or_delete_child_parent_ace_denies_the_guard[file]",
+        "test_actual_permissive_file_or_delete_child_parent_ace_denies_the_guard[parent]",
+        "test_actual_write_delete_and_rename_are_fenced_until_guard_release",
+        "test_actual_preexisting_writer_prevents_guard_and_failure_cleanup_releases_ancestors",
+        "test_actual_python_createprocess_succeeds_while_image_guard_is_held",
+    )
+)
+
+
+class NativeExecutionProof:
+    """A zero pytest status alone cannot qualify collection-only/subset runs."""
+
+    def __init__(self):
+        self.collected, self.reports, self.invalid = [], {}, False
+
+    def pytest_collection_finish(self, session):
+        self.collected = [item.nodeid for item in session.items[:9]]
+        if len(session.items) != 8 or set(self.collected) != set(_EXPECTED_CASES):
+            self.invalid = True
+
+    def pytest_runtest_logreport(self, report):
+        if report.nodeid not in _EXPECTED_CASES or report.when not in {
+            "setup",
+            "call",
+            "teardown",
+        }:
+            self.invalid = True
+            return
+        phases = self.reports.setdefault(report.nodeid, {})
+        if (
+            report.when in phases
+            or report.outcome != "passed"
+            or hasattr(report, "wasxfail")
+        ):
+            self.invalid = True
+        phases[report.when] = report.outcome
+
+    def qualified(self):
+        return (
+            not self.invalid
+            and len(self.collected) == 8
+            and set(self.collected) == set(_EXPECTED_CASES)
+            and set(self.reports) == set(_EXPECTED_CASES)
+            and all(
+                phases == {"setup": "passed", "call": "passed", "teardown": "passed"}
+                for phases in self.reports.values()
+            )
+        )
+
+
+def _safe_directory(path):
+    details = path.lstat()
+    if (
+        not stat.S_ISDIR(details.st_mode)
+        or getattr(details, "st_file_attributes", 0) & 0x400
+        or path.resolve(strict=True) != path
+    ):
+        raise ValueError("Output directory is not an ordinary canonical directory")
+
+
+def _reserve_output():
+    root = Path(ROOT)
+    _safe_directory(root)
+    parent = root / "out"
+    try:
+        parent.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    _safe_directory(parent)
+    owned = parent / "windows-transport-acl-native"
+    owned.mkdir(mode=0o700)  # Never reuse or clean an existing directory/target.
+    _safe_directory(owned)
+    for name, text in (
+        ("pytest.ini", "[pytest]\n"),
+        ("results.xml", ""),
+        ("execution.json", ""),
+    ):
+        with (owned / name).open("x", encoding="utf-8") as output:
+            output.write(text)
+    return owned
+
+
+def _source_hashes():
+    source = Path(__file__).resolve()
+    if source != Path(ROOT) / _NATIVE_PATH:
+        raise ValueError("Diagnostic source does not match its checkout root")
+    return {
+        "control": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "guard": hashlib.sha256(
+            (Path(ROOT) / "services/windows_transport_permissions.py").read_bytes()
+        ).hexdigest(),
+    }
+
+
+def main(argv=None):
+    if os.name != "nt":
+        print(_UNSUPPORTED, file=sys.stderr)
+        return 2
+    if list(sys.argv[1:] if argv is None else argv) or any(
+        os.environ.get(key) for key in ("PYTEST_ADDOPTS", "PYTEST_PLUGINS")
+    ):
+        print(
+            "Native diagnostic refuses CLI options and inherited pytest selectors/plugins.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        before = _source_hashes()
+        owned = _reserve_output()
+        proof = NativeExecutionProof()
+        aborted = False
+        previous = os.environ.get("PYTEST_DISABLE_PLUGIN_AUTOLOAD")
+        os.environ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
+        try:
+            try:
+                code = int(
+                    pytest.main(
+                        [
+                            str(Path(__file__).resolve()),
+                            "-q",
+                            "-c",
+                            str(owned / "pytest.ini"),
+                            "--rootdir",
+                            str(ROOT),
+                            "--noconftest",
+                            "--confcutdir",
+                            str(Path(__file__).resolve().parent),
+                            "--override-ini",
+                            f"cache_dir={owned / 'cache'}",
+                            "--junitxml",
+                            str(owned / "results.xml"),
+                            "--basetemp",
+                            str(owned / "pytest"),
+                        ],
+                        plugins=[proof],
+                    )
+                )
+            except SystemExit:
+                code, aborted = 2, True
+        finally:
+            if previous is None:
+                os.environ.pop("PYTEST_DISABLE_PLUGIN_AUTOLOAD", None)
+            else:
+                os.environ["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = previous
+        after = _source_hashes()
+        qualified = not aborted and code == 0 and proof.qualified() and before == after
+        (owned / "execution.json").write_text(
+            json.dumps(
+                {
+                    "qualified": qualified,
+                    "pytest_exit": code,
+                    "runner_aborted": aborted,
+                    "expected": list(_EXPECTED_CASES),
+                    "collected": proof.collected,
+                    "reports": proof.reports,
+                    "source_hashes_before": before,
+                    "source_hashes_after": after,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        if qualified:
+            return 0
+        print(
+            "Native diagnostic did not establish eight exact executed passes with unchanged sources.",
+            file=sys.stderr,
+        )
+        return code or 2
+    except (Exception, SystemExit):
+        print(
+            "Native diagnostic could not reserve fresh outputs or confirm execution; no qualification recorded.",
+            file=sys.stderr,
+        )
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
