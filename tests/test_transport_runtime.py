@@ -542,6 +542,15 @@ def _synthetic_signature_platform(monkeypatch, platform: str, system_root=None) 
     os_proxy.environ = environment
     monkeypatch.setattr(transport_runtime, "os", os_proxy)
     monkeypatch.setattr(transport_runtime, "sys", SimpleNamespace(platform=platform))
+    if platform == "win32":
+        # These command-contract tests explicitly stand in for ACL qualification;
+        # separate permission tests exercise the real guard against a fake OS.
+        class SyntheticAclGuard:
+            def __init__(self, path): pass
+            def __enter__(self): return self
+            def __exit__(self, *_): pass
+            def check_current(self, path): pass
+        monkeypatch.setattr(transport_runtime, "WindowsBinaryGuard", SyntheticAclGuard)
 
 
 @pytest.mark.parametrize("platform,configured_root", [

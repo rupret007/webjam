@@ -28,12 +28,14 @@ import time
 import unicodedata
 from collections import deque
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, BinaryIO
 
 from core.remote_invitation import RemoteInvitation
 from core.room_state import RoomState
+from services.windows_transport_permissions import WindowsBinaryGuard, WindowsTransportPermissionError
 
 IPC_VERSION = 1
 MAX_IPC_LINE_BYTES = 64 * 1024
@@ -743,10 +745,21 @@ def _validated_binary(
     expected_sha256: str | None = None,
     expected_machine: str | None = None,
     require_platform_signature: bool = False,
+    _windows_guard: WindowsBinaryGuard | None = None,
 ) -> Path:
     candidate = Path(path).expanduser()
     if not candidate.is_absolute():
         raise TransportLaunchError("The transport process is not installed safely.")
+    if os.name == "nt":
+        try:
+            if _windows_guard is None:
+                with WindowsBinaryGuard(str(candidate)) as guard:
+                    return _validated_binary(candidate, expected_sha256=expected_sha256,
+                        expected_machine=expected_machine, require_platform_signature=require_platform_signature,
+                        _windows_guard=guard)
+            _windows_guard.check_current(str(candidate))
+        except WindowsTransportPermissionError as exc:
+            raise TransportLaunchError(str(exc)) from exc
     try:
         if candidate.is_symlink():
             raise TransportLaunchError(
@@ -762,7 +775,7 @@ def _validated_binary(
         ) from exc
     if not stat.S_ISREG(details.st_mode):
         raise TransportLaunchError("The transport process is not installed safely.")
-    if details.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+    if os.name != "nt" and details.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
         raise TransportLaunchError("The transport process is not installed safely.")
     if os.name != "nt" and hasattr(os, "getuid") and details.st_uid not in {
         os.getuid(),
@@ -790,6 +803,11 @@ def _validated_binary(
         _validate_binary_architecture(resolved, expected_machine)
     if require_platform_signature:
         _verify_platform_signature(resolved)
+    if os.name == "nt":
+        try:
+            _windows_guard.check_current(str(resolved))
+        except WindowsTransportPermissionError as exc:
+            raise TransportLaunchError(str(exc)) from exc
     return resolved
 
 
@@ -909,37 +927,7 @@ class TransportProcess:
                 raise TransportLaunchError("The transport process was stopped.")
             self._start_in_progress = True
         try:
-            binary = _validated_binary(
-                self._binary_input,
-                expected_sha256=self._expected_sha256,
-                expected_machine=self._expected_machine,
-                require_platform_signature=self._require_platform_signature,
-            )
-            with self._condition:
-                if self._stop_requested:
-                    raise self._stopped_error_locked()
-            popen_options: dict[str, Any] = {
-                "stdin": subprocess.PIPE,
-                "stdout": subprocess.PIPE,
-                "stderr": subprocess.DEVNULL,
-                "cwd": str(binary.parent),
-                "env": _sidecar_environment(),
-                "shell": False,
-                "close_fds": True,
-                "bufsize": 0,
-            }
-            if os.name == "nt":
-                popen_options["creationflags"] = (
-                    subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
-                )
-            else:
-                popen_options["start_new_session"] = True
-            try:
-                process = subprocess.Popen([str(binary)], **popen_options)
-            except (OSError, ValueError, subprocess.SubprocessError) as exc:
-                raise TransportLaunchError(
-                    "WebJam could not start its secure transport process."
-                ) from exc
+            process = self._spawn_validated()
             if process.stdin is None or process.stdout is None:
                 self._terminate_process(process)
                 raise TransportLaunchError(
@@ -982,6 +970,36 @@ class TransportProcess:
                 self._start_in_progress = False
                 self._condition.notify_all()
             raise
+
+    def _spawn_validated(self) -> subprocess.Popen[bytes]:
+        process = None
+        try:
+            # Pin before path resolution, and keep native file/ancestor handles
+            # until CreateProcess (inside Popen) has opened the image.
+            with (WindowsBinaryGuard(str(self._binary_input.expanduser())) if os.name == "nt" else nullcontext()) as guard:
+                binary = _validated_binary(self._binary_input, expected_sha256=self._expected_sha256,
+                    expected_machine=self._expected_machine, require_platform_signature=self._require_platform_signature,
+                    _windows_guard=guard)
+                with self._condition:
+                    if self._stop_requested:
+                        raise self._stopped_error_locked()
+                options: dict[str, Any] = {"stdin": subprocess.PIPE, "stdout": subprocess.PIPE,
+                    "stderr": subprocess.DEVNULL, "cwd": str(binary.parent), "env": _sidecar_environment(),
+                    "shell": False, "close_fds": True, "bufsize": 0}
+                if os.name == "nt":
+                    options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+                else:
+                    options["start_new_session"] = True
+                try:
+                    process = subprocess.Popen([str(binary)], **options)
+                    return process
+                except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                    raise TransportLaunchError("WebJam could not start its secure transport process.") from exc
+        except WindowsTransportPermissionError as exc:
+            if process is not None:
+                self._terminate_process(process)
+                self._close_process_streams(process)
+            raise TransportLaunchError(str(exc)) from exc
 
     def hello(self) -> TransportEvent:
         return self._request("hello")
