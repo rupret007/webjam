@@ -4,12 +4,12 @@ from dataclasses import replace
 import ctypes
 from types import SimpleNamespace
 import hashlib
-import os
 import struct
 
 import pytest
 
 from services import transport_runtime as runtime
+from services import windows_transport_permissions as permissions
 from services.windows_transport_permissions import (
     WindowsAce,
     WindowsBinaryGuard,
@@ -214,12 +214,23 @@ def test_partial_open_failure_closes_all_handles_and_never_returns_a_grant(probl
     assert api.closed == list(reversed([path for path, _ in api.opened]))
 
 
-def test_native_adapter_is_unavailable_on_non_windows_instead_of_accepting_posix_modes():
-    if os.name == "nt":
-        pytest.skip("This negative control requires a non-Windows OS")
+def test_native_adapter_refuses_unsupported_os_before_loading_windows_api(monkeypatch):
+    # Exercise the real unsupported-platform branch on every test host. Replace
+    # only this module's OS view; never mutate the process-wide os module.
+    monkeypatch.setattr(permissions, "os", SimpleNamespace(name="posix"))
+    loads = []
+
+    def unexpected_native_load(*args, **kwargs):
+        loads.append((args, kwargs))
+        raise AssertionError("Unsupported OS attempted to load a Windows DLL")
+
+    monkeypatch.setattr(ctypes, "WinDLL", unexpected_native_load, raising=False)
+    with pytest.raises(WindowsTransportPermissionError):
+        _NativeWindowsApi()
     with pytest.raises(WindowsTransportPermissionError):
         with WindowsBinaryGuard(TARGET):
             pytest.fail("Native Windows guard must not be simulated implicitly")
+    assert loads == []
 
 
 @pytest.mark.parametrize("directory", [False, True])
