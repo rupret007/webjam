@@ -14,6 +14,8 @@ customtkinter>=5.2.0
 # For building executables. This is the version retained for the v0.18.0 source
 # candidate bundle layout; the source pin alone does not certify native packages.
 pyinstaller==6.21.0
+# Patched legacy-wheel metadata handling (GHSA-xmj3-9gf7-h52w).
+setuptools>=84.1.0
 
 # Core modernization dependencies
 numpy>=1.26.0

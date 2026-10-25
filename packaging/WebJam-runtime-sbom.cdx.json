@@ -817,7 +817,7 @@
       "version": "2.66.0"
     },
     {
-      "bom-ref": "pkg:pypi/setuptools@81.0.0",
+      "bom-ref": "pkg:pypi/setuptools@84.1.0",
       "externalReferences": [
         {
           "type": "website",
@@ -833,36 +833,12 @@
       "properties": [
         {
           "name": "webjam:targets",
-          "value": "macos-arm64,macos-x64"
+          "value": "linux-x64,macos-arm64,macos-x64,windows-x64"
         }
       ],
-      "purl": "pkg:pypi/setuptools@81.0.0",
+      "purl": "pkg:pypi/setuptools@84.1.0",
       "type": "library",
-      "version": "81.0.0"
-    },
-    {
-      "bom-ref": "pkg:pypi/setuptools@83.0.0",
-      "externalReferences": [
-        {
-          "type": "website",
-          "url": "https://github.com/pypa/setuptools"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT"
-        }
-      ],
-      "name": "setuptools",
-      "properties": [
-        {
-          "name": "webjam:targets",
-          "value": "linux-x64,windows-x64"
-        }
-      ],
-      "purl": "pkg:pypi/setuptools@83.0.0",
-      "type": "library",
-      "version": "83.0.0"
+      "version": "84.1.0"
     },
     {
       "bom-ref": "pkg:pypi/shiboken6@6.11.1",

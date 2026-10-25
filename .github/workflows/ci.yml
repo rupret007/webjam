@@ -166,7 +166,7 @@ jobs:
           # pip-audit also evaluates the bootstrap packaging tools present in
           # the runner.  Keep setuptools above the advisory's fixed version so
           # a docs-only push cannot skip the actual product checks.
-          python -m pip install --upgrade pip "setuptools>=83.0.0"
+          python -m pip install --upgrade pip "setuptools>=84.1.0"
           pip install -r requirements.txt
           pip install pytest "ruff==0.15.22" "pip-audit==2.10.1"
 
@@ -185,27 +185,17 @@ jobs:
 
       - name: Audit native release dependency locks
         run: |
-          for target in windows-x64 linux-x64; do
+          for target in windows-x64 linux-x64 macos-x64 macos-arm64; do
             pip-audit --progress-spinner off --disable-pip --no-deps \
               -r "requirements-lock/${target}.txt"
           done
           for lock in \
             component-catalog-verifier-linux-x64.txt \
-            pocket-stage-integration-macos-arm64.txt; do
+            pocket-stage-integration-macos-arm64.txt \
+            macos-x64-cryptography-build.txt; do
             pip-audit --progress-spinner off --disable-pip --no-deps \
               -r "requirements-lock/${lock}"
           done
-          # GHSA-h35f-9h28-mq5c affects sdist creation. The macOS release
-          # installs only hashed wheels and needs the final pkg_resources
-          # release until PyInstaller supports setuptools 82+.
-          for target in macos-x64 macos-arm64; do
-            pip-audit --progress-spinner off --disable-pip --no-deps \
-              --ignore-vuln PYSEC-2026-3447 \
-              -r "requirements-lock/${target}.txt"
-          done
-          pip-audit --progress-spinner off --disable-pip --no-deps \
-            --ignore-vuln PYSEC-2026-3447 \
-            -r requirements-lock/macos-x64-cryptography-build.txt
 
       - name: Run UX smoke gate
         run: python ux_smoke_test.py
@@ -1619,16 +1609,17 @@ jobs:
                   print("Owned native workflow diagnostics:")
                   print(stream.read(64 * 1024).decode("utf-8", errors="replace"))
 
-      - name: Verify macOS PyInstaller pkg_resources compatibility
+      - name: Verify macOS PyInstaller setuptools compatibility
         if: startsWith(matrix.target, 'macos-')
         run: |
           python - <<'PY'
           from importlib.metadata import version
-          import pkg_resources
+          from importlib.util import find_spec
 
-          assert version("setuptools") == "81.0.0"
-          assert getattr(pkg_resources, "__file__", None)
-          assert hasattr(pkg_resources, "NullProvider")
+          assert version("setuptools") == "84.1.0"
+          # A clean setuptools 84 environment has no pkg_resources. Stale
+          # remnants can select PyInstaller's obsolete NullProvider hook.
+          assert find_spec("pkg_resources") is None
           PY
 
       - name: Build bundled secure transport

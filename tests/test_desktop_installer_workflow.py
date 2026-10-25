@@ -377,10 +377,10 @@ def test_native_release_build_uses_exact_hashed_locks_and_bounded_intel_exceptio
         "linux-x64": "3.11.15",
     }
     expected_setuptools = {
-        "windows-x64": "83.0.0",
-        "macos-x64": "81.0.0",
-        "macos-arm64": "81.0.0",
-        "linux-x64": "83.0.0",
+        "windows-x64": "84.1.0",
+        "macos-x64": "84.1.0",
+        "macos-arm64": "84.1.0",
+        "linux-x64": "84.1.0",
     }
     assert 'python-version: "${{ matrix.python }}"' in build
     assert "Install hash-locked pip bootstrap" in build
@@ -402,9 +402,9 @@ def test_native_release_build_uses_exact_hashed_locks_and_bounded_intel_exceptio
     assert "python -m pip freeze --all" in build
     assert build.count("packaging/macos/verify-cryptography-x64-runtime.sh") == 2
     assert "Reverify Intel cryptography after final ZIP packaging" in build
-    assert "Verify macOS PyInstaller pkg_resources compatibility" in build
-    assert 'version("setuptools") == "81.0.0"' in build
-    assert 'hasattr(pkg_resources, "NullProvider")' in build
+    assert "Verify macOS PyInstaller setuptools compatibility" in build
+    assert 'version("setuptools") == "84.1.0"' in build
+    assert 'find_spec("pkg_resources") is None' in build
     assert "pip install --upgrade pip" not in build
     assert "pip install -r requirements.txt" not in build
     for target, python_version in expected_python.items():
@@ -441,10 +441,9 @@ def test_cryptography_release_floor_remediates_all_three_audit_findings() -> Non
     assert "static OpenSSL 3.5.7 LTS" in release
 
 
-def test_native_release_locks_are_audited_with_a_narrow_macos_exception() -> None:
+def test_native_release_locks_are_audited_without_advisory_exceptions() -> None:
     audit = _workflow_step("Audit native release dependency locks")
-    assert "for target in windows-x64 linux-x64" in audit
-    assert "for target in macos-x64 macos-arm64" in audit
+    assert "for target in windows-x64 linux-x64 macos-x64 macos-arm64" in audit
     for auxiliary_lock in (
         "component-catalog-verifier-linux-x64.txt",
         "pocket-stage-integration-macos-arm64.txt",
@@ -452,8 +451,8 @@ def test_native_release_locks_are_audited_with_a_narrow_macos_exception() -> Non
     ):
         assert auxiliary_lock in audit
     assert "--disable-pip --no-deps" in audit
-    assert "--ignore-vuln PYSEC-2026-3447" in audit
-    assert "GHSA-h35f-9h28-mq5c affects sdist creation" in audit
+    assert "--ignore-vuln" not in audit
+    assert 'setuptools>=84.1.0' in REQUIREMENTS
 
 
 def test_pocket_stage_integration_uses_its_complete_hash_locked_environment() -> None:
