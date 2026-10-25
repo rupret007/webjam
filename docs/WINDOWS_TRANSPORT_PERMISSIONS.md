@@ -1,8 +1,9 @@
 # Windows transport permissions contract
 
-Source implementation and OS-isolated tests only, 2026-10-25. **Native Windows
-API behavior, a frozen installed package and real Authenticode remain
-unqualified. This change does not make the unsigned Windows beta available.**
+Source implementation, OS-isolated tests and native diagnostic definition,
+2026-10-25. **Native Windows API behavior has not yet been observed by this
+follow-up. A frozen installed package and real Authenticode remain unqualified.
+This change does not make the unsigned Windows beta available.**
 Base: `83af86e6bf3747e362db90870f09a928130623a2` (PR401). No signing purchase,
 installation, credential, provider, dependency constraint or release change.
 
@@ -87,3 +88,45 @@ both successful and failed CreateProcess/signature results. Verify native
 structure layouts and API cleanup, actual installed package/CPython version and
 handle lifetimes; then separately qualify signing, app installation and audio.
 Keep unsigned Windows availability and all existing release holds unchanged.
+
+## Bounded actual Windows diagnostic
+
+The separate follow-up based on
+`005d72a278b68519fa6209bc9933f85eb0ebd902` adds eight native cases to the existing
+unconditional `windows-diagnostic-control` job. It adds no job, dispatch,
+dependency, installer, signature exception or release action. The three-minute
+step runs even when earlier controls fail and retains its JUnit, source/hash and
+environment receipts with the existing control artifacts. A failing native
+control still fails the job.
+
+```text
+python -X dev -m pytest -q tests/native_windows/test_transport_permissions_native.py --confcutdir tests/native_windows --junitxml out/windows-transport-acl-native.xml --basetemp out/windows-transport-acl-native-pytest
+```
+
+The tests load the unchanged production guard directly by file path, without
+the `services` initializer, product dependencies, injected API or synthetic
+descriptors. All ACL changes apply only to a new unique lab tree beneath the
+existing per-user `LOCALAPPDATA`. The system `icacls.exe` is found through
+GetSystemDirectoryW and invoked with exact arguments, no shell and a ten-second
+timeout. Existing ancestors, source interpreter/DLLs and system ACLs are never
+modified. Every real ancestor must pass the actual guard; an unsuitable runner
+ancestry is a retained failure, not a skipped or repaired control.
+
+Intended coverage includes ordinary Windows writable mode bits and read-only
+attributes with safe ACLs; actual file IDs, owner SIDs and DACL decoding;
+Everyone-write file and Everyone-delete-child parent refusals; conflicting
+writer, write/delete/rename sharing refusals; cleanup followed by successful
+write/delete/rename; and a successful copied CI Python `--version` process while
+the executable guard remains held. The Python probe copies at most four
+adjacent interpreter runtime DLLs into the owned tree and supplies only
+`SystemRoot` to the child. It does not launch WebJam, exercise the transport's
+isolated environment, prove package installation, verify Authenticode or test
+audio. The production guard and launch path are unchanged by this follow-up.
+
+Non-Windows collection explicitly skips the eight native cases. Local macOS
+collection and the two static CI wiring checks cannot establish Windows
+acceptance. The source/environment receipt records intended coverage before
+test execution; only the actual Windows pytest exit code and retained JUnit can
+establish which controls passed. Real Windows results remain pending until the
+normal reviewed PR CI runs; all broader release qualification above remains
+required.

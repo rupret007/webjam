@@ -81,6 +81,14 @@ jobs:
           python -m tests.support.diagnose_windows_reference_studio `
             --mode control --output "out\windows-diagnostic-control" `
             --source-head (git rev-parse HEAD).Trim()
+      - name: Prove actual Windows transport ACL and share controls
+        if: always()
+        timeout-minutes: 3
+        run: >-
+          python -X dev -m pytest -q tests/native_windows/test_transport_permissions_native.py
+          --confcutdir tests/native_windows
+          --junitxml out/windows-transport-acl-native.xml
+          --basetemp out/windows-transport-acl-native-pytest
       - name: Retain independent native control evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -89,6 +97,9 @@ jobs:
           path: |
             out/windows-diagnostic-control/
             out/windows-diagnostic-process-tests/
+            out/windows-transport-acl-native/
+            out/windows-transport-acl-native.xml
+            out/windows-transport-acl-native-pytest/
           if-no-files-found: warn
           retention-days: 14
 
