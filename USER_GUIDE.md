@@ -1340,11 +1340,10 @@ tools are for and WebJam never starts, requests, or requires it.
 
 ## Record Session
 
-The host controls the shared multitrack take. When a take says **Ready**,
-**More → Recording Setup… → Show Folder** opens the saved files. Mac hosts
-keep takes under `Library/Application Support/WebJam/JamulusServer/Recordings`.
-Windows and Linux hosts default to `WebJam Recordings` in the home folder.
-Guests often see `Music/WebJam Takes`.
+The host controls the shared multitrack take in profiles that support recording.
+**Music hosting is Mac-only; Windows and Linux users join Music sessions.**
+When a take says **Ready**, use **More → Recording Setup… → Show Folder** to
+find the saved files. Recording locations depend on the profile and its settings.
 
 At the first **Record Session**
 click, choose the profile's shared-only action—**Record Shared Jam Only**,
