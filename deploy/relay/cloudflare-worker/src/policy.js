@@ -182,9 +182,16 @@ function pruneRateStore(store, bucket) {
   if (store.size <= MAX_RATE_STORE_ENTRIES) {
     return;
   }
-  const keys = [...store.keys()].sort(
-    (left, right) => rateStoreBucket(left) - rateStoreBucket(right),
-  );
+  // Prefer evicting entries from older buckets. Current bucket entries are
+  // evicted only when older buckets are exhausted. This preserves live rate
+  // counters unless a single window has more IPs than MAX_RATE_STORE_ENTRIES.
+  const keys = [...store.keys()].sort((left, right) => {
+    const leftBucket = rateStoreBucket(left);
+    const rightBucket = rateStoreBucket(right);
+    // Sort by bucket ascending, so older buckets are evicted first.
+    // Within the same bucket, entries evict in arbitrary order.
+    return leftBucket - rightBucket;
+  });
   for (const existing of keys) {
     if (store.size <= MAX_RATE_STORE_ENTRIES) {
       break;

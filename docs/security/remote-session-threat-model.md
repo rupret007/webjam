@@ -28,11 +28,14 @@ proven.
    guest endpoints for the exact opaque session and generation. Its
    authenticated wrapper enforces replay, size, rate, byte, idle, and lifetime
    budgets and fails closed. Stock TURN authorization alone is insufficient.
-   Ordinary `direct-stun` TURN fallback is exact-pair: CreatePermission and
-   QUIC dial use only the peer's sealed relay candidate, and only when that
-   IPv4 matches the credentialed TURN server (or `allowed_relay_ips` from the
-   short-lived credential document). Long-lived coturn/Cloudflare secrets stay
-   off the shipped binary. Per-session relay bytes are capped at 256 MiB.
+   Ordinary `direct-stun` TURN fallback is exact-pair **on the client side**:
+   CreatePermission and QUIC dial use only the peer's sealed relay candidate,
+   and only when that IPv4 matches the credentialed TURN server (or
+   `allowed_relay_ips` from the short-lived credential document). **The TURN
+   server does not enforce exact-pair; a modified client could use the
+   credential to relay to arbitrary IPs.** Long-lived coturn/Cloudflare secrets
+   stay off the shipped binary. Per-session relay bytes are capped at 256 MiB
+   **client-side**; the server enforces only aggregate monthly caps.
 3. **Keep v3 secrets out of process arguments.** A v3 URL is never accepted
    from `sys.argv` and no invite, capability, credential, address, musician
    name, or private path enters a sidecar command line. macOS may use the Qt
@@ -345,7 +348,7 @@ pre-Jamulus help.
 | Rendezvous candidate injection | Authenticate canonical bundles before ICE; validate address class/count/size | Rendezvous can suppress or delay signaling |
 | Mailbox ciphertext injection | Write-once slots, AEAD bound to session nonce and host SPKI, proof/SPKI still required | An unused mailbox id can be filled with garbage and force the hidden paste fallback |
 | Rendezvous/relay MITM | Host pin from invite, guest key bound to proof, E2E QUIC | Metadata and availability remain exposed |
-| Open relay, SSRF, port scan | Derived short credentials, no destination field, exact paired-address wrapper, fixed profiles, egress policy | The service can still deny service |
+| Open relay, SSRF, port scan | Derived short credentials, no destination field, client-side exact-paired-address wrapper, fixed profiles, egress policy | A modified client can use the short-lived credential for arbitrary relay; the service can still deny service |
 | QUIC handshake or parser flood | Stateless retry, pending limits, deadlines, token buckets, strict lengths, fuzzing | Distributed DDoS cannot be eliminated |
 | Datagram replay, duplicate, reorder | QUIC protection plus app generation/sequence window | Loss and deliberate peer silence remain possible |
 | Malicious enrolled audio | Per-peer socket, direction/size/rate checks, host mute/revoke | An enrolled guest can send objectionable audio |
