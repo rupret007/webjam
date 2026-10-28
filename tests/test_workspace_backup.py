@@ -422,6 +422,44 @@ def test_preview_refuses_restored_bytes_when_ctime_records_an_edit(tmp_path, rec
     assert target.read_bytes() == original
 
 
+def test_aba_write_entirely_before_second_read_is_documented_limitation(tmp_path, record, monkeypatch):
+    """ABA writes that complete before the second capture cannot be detected.
+
+    This test documents the known limitation: if a file is modified (A->B->A)
+    entirely between the two bounded captures AND both reads return A, the
+    check passes. This is a fundamental TOCTOU limitation that cannot be solved
+    by finite reads without external coordination (e.g., file locks).
+    """
+    target = tmp_path / "backup.json"
+    original = _wire(_payload(record))
+    changed = _wire(_payload(replace(record, notes=record.notes.replace("Every line", "Other line"))))
+    assert len(changed) == len(original) and changed != original
+    target.write_bytes(original)
+    before = target.stat()
+    real_capture = backup._bounded_capture
+    capture_count = [0]
+
+    def aba_during_seek(stream):
+        capture_count[0] += 1
+        if capture_count[0] == 1:
+            result = real_capture(stream)
+            # ABA happens entirely before seek/second-read: A->B->A
+            target.write_bytes(changed)
+            target.write_bytes(original)
+            os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+            return result
+        return real_capture(stream)
+
+    monkeypatch.setattr(backup, "_bounded_capture", aba_during_seek)
+    # Documented limitation: this does NOT raise because both reads see 'original'
+    # and metadata is identical. The code comment acknowledges this.
+    preview = preview_workspace_backup(target)
+    assert capture_count[0] == 2
+    # The preview accepts the bytes even though the file was modified.
+    # This is the documented ABA limitation.
+    assert preview.record.notes == record.notes
+
+
 def test_preview_refuses_same_size_edit_during_read_with_unchanged_metadata(tmp_path, record, monkeypatch):
     target = tmp_path / "backup.json"
     original = _wire(_payload(record))

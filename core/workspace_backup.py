@@ -322,7 +322,12 @@ def _read_regular(path: Path) -> bytes:
             # without comparing those different clocks. POSIX keeps the full
             # cross-API check. Exact byte comparison also catches persistent
             # same-tick edits whose size, mtime and ctime are indistinguishable.
-            # This bounded check cannot prove absence of arbitrary ABA writes.
+            # WARNING: This bounded check cannot prove absence of ABA writes
+            # where content is modified (A->B->A) entirely between the two reads.
+            # Such writes would make both reads return identical bytes with
+            # unchanged metadata. Callers must treat the preview as best-effort,
+            # not cryptographically secure. The finite read cycle cannot observe
+            # edits that complete before the second capture begins.
             if data != verification or len(data) != opened.st_size or not stat.S_ISREG(current.st_mode) or not (
                 identity(before) == identity(opened) == identity(captured) == identity(after) == identity(current)
                 and before.st_ctime_ns == current.st_ctime_ns
