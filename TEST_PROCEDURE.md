@@ -193,8 +193,8 @@ for sdist creation while native release jobs install checksum-pinned wheels:
 ```bash
 .venv/bin/python -m pip_audit --progress-spinner off --disable-pip --no-deps -r requirements-lock/windows-x64.txt
 .venv/bin/python -m pip_audit --progress-spinner off --disable-pip --no-deps -r requirements-lock/linux-x64.txt
-.venv/bin/python -m pip_audit --progress-spinner off --disable-pip --no-deps --ignore-vuln PYSEC-2026-3447 -r requirements-lock/macos-x64.txt
-.venv/bin/python -m pip_audit --progress-spinner off --disable-pip --no-deps --ignore-vuln PYSEC-2026-3447 -r requirements-lock/macos-arm64.txt
+.venv/bin/python -m pip_audit --progress-spinner off --disable-pip --no-deps -r requirements-lock/macos-x64.txt
+.venv/bin/python -m pip_audit --progress-spinner off --disable-pip --no-deps -r requirements-lock/macos-arm64.txt
 ```
 
 The GitHub `build-desktop` matrix is the authoritative native package gate.
