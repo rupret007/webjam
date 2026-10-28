@@ -53,7 +53,7 @@ def test_workflow_installs_worker_and_web_join_then_runs_node_test() -> None:
     assert _NODE_VERSION is not None
     assert "working-directory: deploy/relay/cloudflare-worker" in WORKFLOW
     assert "working-directory: web/join" in WORKFLOW
-    assert WORKFLOW.count("npm ci") == 2
+    assert WORKFLOW.count("npm ci") == 3
     assert "node --test" in WORKFLOW
     assert "npm test" in WORKFLOW
     worker_test_index = WORKFLOW.index("node --test")
@@ -87,3 +87,16 @@ def test_web_join_lockfile_matches_package_json_for_npm_ci() -> None:
     meta = json.loads(package.read_text(encoding="utf-8"))
     assert lock["name"] == meta["name"]
     assert lock["lockfileVersion"] >= 3
+
+
+def test_workflow_runs_playwright_e2e_with_go_browser_lab() -> None:
+    assert "web-join-playwright-e2e:" in WORKFLOW
+    assert "name: Web Join Playwright e2e" in WORKFLOW
+    assert "actions/setup-go@" in WORKFLOW
+    assert "cache-dependency-path: transport/go.sum" in WORKFLOW
+    assert "npx playwright install --with-deps chromium webkit" in WORKFLOW
+    assert "npm run test:e2e" in WORKFLOW
+    go_index = WORKFLOW.index("actions/setup-go@")
+    playwright_index = WORKFLOW.index("npx playwright install")
+    e2e_index = WORKFLOW.index("npm run test:e2e")
+    assert go_index < playwright_index < e2e_index
