@@ -166,7 +166,7 @@ jobs:
           # pip-audit also evaluates the bootstrap packaging tools present in
           # the runner.  Keep setuptools above the advisory's fixed version so
           # a docs-only push cannot skip the actual product checks.
-          python -m pip install --upgrade pip "setuptools>=83.0.0"
+          python -m pip install --upgrade pip "setuptools>=84.1.0"
           pip install -r requirements.txt
           pip install pytest "ruff==0.15.22" "pip-audit==2.10.1"
 
@@ -195,16 +195,13 @@ jobs:
             pip-audit --progress-spinner off --disable-pip --no-deps \
               -r "requirements-lock/${lock}"
           done
-          # GHSA-h35f-9h28-mq5c affects sdist creation. The macOS release
-          # installs only hashed wheels and needs the final pkg_resources
-          # release until PyInstaller supports setuptools 82+.
+          # macOS release locks now use setuptools 84.1.0 which includes the
+          # PYSEC-2026-3447 fix.
           for target in macos-x64 macos-arm64; do
             pip-audit --progress-spinner off --disable-pip --no-deps \
-              --ignore-vuln PYSEC-2026-3447 \
               -r "requirements-lock/${target}.txt"
           done
           pip-audit --progress-spinner off --disable-pip --no-deps \
-            --ignore-vuln PYSEC-2026-3447 \
             -r requirements-lock/macos-x64-cryptography-build.txt
 
       - name: Run UX smoke gate
