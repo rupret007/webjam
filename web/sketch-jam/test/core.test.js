@@ -71,6 +71,27 @@ test("invite stays entirely in the fragment and expires at ten minutes", async (
   assert.notEqual(token, await turnToken(invite.capability, crypto.randomUUID()));
 });
 
+test("readInvite rejects invalid timestamp values", () => {
+  const invite = createInvite(1000);
+  const base = inviteFragment(invite);
+  const params = new URLSearchParams(base);
+  const validFragment = (t) => `#k=${params.get("k")}&s=${params.get("s")}&t=${t}`;
+  // Reject negative timestamps (before Unix epoch)
+  assert.throws(() => readInvite(validFragment("-1"), 1000), /Invalid invite link/);
+  // Reject timestamps exceeding safe integer range (16+ digits)
+  assert.throws(() => readInvite(validFragment("9007199254740992"), 1000), /Invalid invite link/);
+  // Reject very large timestamps that would overflow
+  assert.throws(() => readInvite(validFragment("99999999999999999"), 1000), /Invalid invite link/);
+  // Valid 15-digit timestamp within safe integer range (this many digits accepted)
+  // but rejected as "expired" since it's in the far future relative to current time
+  const maxSafe = "100000000000000";
+  assert.doesNotThrow(() => readInvite(validFragment(maxSafe), Number(maxSafe) + 1000));
+  // Reject non-numeric timestamps
+  assert.throws(() => readInvite(validFragment("abc"), 1000), /Invalid invite link/);
+  assert.throws(() => readInvite(validFragment("123abc"), 1000), /Invalid invite link/);
+  assert.throws(() => readInvite(validFragment("1.5"), 1000), /Invalid invite link/);
+});
+
 const audioSdp = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111 0\r\na=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;useinbandfec=0;stereo=0\r\na=ptime:60\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\na=rtpmap:96 VP8/90000\r\na=fmtp:96 x-google-start-bitrate=1000\r\n";
 test("music SDP sets Opus stereo, bitrate, FEC, DTX and audio packet time without changing video", () => {
   const output = musicSdp(audioSdp);

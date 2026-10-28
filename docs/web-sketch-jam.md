@@ -106,13 +106,21 @@ Web TURN uses a distinct Worker-only key so analytics can attribute its
 existing 800 GB cap. Both limits may be lowered. Credentials are minted only
 when both analytics results are readable and under their caps. Missing web
 secrets return 503; caps return 429. Web credentials last at most one hour,
-default ten minutes, and are kept only in memory. The client also sums
-transport bytes across relay peers and stops below 90% of the credential's
-session allowance (at most 256 MiB), reserving room for in-flight audio.
-Unreadable relay byte counters close the session; direct peers can continue
-with unavailable latency statistics. Retain the Workers Free
-plan, SQLite Durable Objects, and the shared free Realtime allowance, with
-no paid add-on or card. Configuration details are in
+default ten minutes, and are kept only in memory.
+
+**Client-side session limits:** The client sums transport bytes across relay
+peers and stops below 90% of the credential's session allowance (at most
+256 MiB), reserving room for in-flight audio. Unreadable relay byte counters
+close the session; direct peers can continue with unavailable latency
+statistics. The credential response includes `allowed_relay_ips` with
+Cloudflare's documented TURN allocation IPs for informational purposes.
+**Neither the per-session byte cap nor the relay IP allowlist is enforced
+server-side**; a modified client could exceed the session cap (consuming
+monthly quota faster) or connect through arbitrary relay IPs. The monthly
+aggregate caps and per-IP rate limits remain the server-side controls.
+
+Retain the Workers Free plan, SQLite Durable Objects, and the shared free
+Realtime allowance, with no paid add-on or card. Configuration details are in
 [the relay guide](../deploy/relay/README.md#sketch-jam-browser-access-unreleased).
 
 ## Repeatable checks

@@ -96,11 +96,15 @@ export function readInvite(hash, now = Date.now()) {
   const keys = [...values.keys()];
   if (keys.some((key) => !["k", "s", "t"].includes(key)) || keys.length !== 3 || new Set(keys).size !== 3) throw new Error("Invalid invite link");
   const t = values.get("t") ?? "";
-  if (!/^\d+$/.test(t)) throw new Error("Invalid invite link");
+  // Reject non-digit strings or strings that would exceed safe integer range
+  // (15 digits max for safe integers). This prevents precision loss and overflow.
+  if (!/^\d{1,15}$/.test(t)) throw new Error("Invalid invite link");
   const capability = fixed(fromBase64Url(values.get("k")), 32);
   const sessionId = values.get("s");
   sessionBytes(sessionId);
   const created = Number(t);
-  if (!Number.isSafeInteger(created) || created > now + 30_000 || now - created >= 600_000) throw new Error("This invite has expired. Create a new Sketch Jam link.");
+  // Validate timestamp is a safe integer within a reasonable range (not in the far future,
+  // not before Unix epoch, and within the 10-minute join window).
+  if (!Number.isSafeInteger(created) || created < 0 || created > now + 30_000 || now - created >= 600_000) throw new Error("This invite has expired. Create a new Sketch Jam link.");
   return { capability, sessionId, created };
 }
