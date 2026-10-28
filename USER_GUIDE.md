@@ -54,12 +54,9 @@ and Jamulus (Music). When the room is ready, **Copy Invite** appears.
 public link, then **Join / Open Meeting**. Drawpile is only for an optional
 shared Art canvas. Art does not record a Music take.
 
-**Where recordings go (Music):** the host chooses **Record Session**. When
-the take says **Ready**, use **More → Recording Setup… → Show Folder**.
-Mac hosts keep takes under
-`Library/Application Support/WebJam/JamulusServer/Recordings`. Windows and
-Linux hosts default to `WebJam Recordings` in the home folder. Guests often
-see `Music/WebJam Takes`.
+**Where recordings go (Music):** the Mac host chooses **Record Session**. When
+the take says **Ready**, use **More → Recording Setup… → Show Folder** to
+find the saved files. Recording locations depend on the profile and its settings.
 
 **Leave:** host **End Session** / **End Room**; guest **Leave Jam** /
 **Leave Room**. The others stay. Your meeting and drawing app stay open.
