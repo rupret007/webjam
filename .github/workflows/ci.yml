@@ -1157,6 +1157,7 @@ jobs:
     needs: [test, integration-jamulus, jamulus-platform-update-inputs, transport, reference-service, pocket-stage-ios]
     if: >-
       github.event_name == 'workflow_dispatch' &&
+      github.event.repository.fork == false &&
       (inputs.final_build ||
        inputs.macos_signing_rehearsal ||
        inputs.windows_signing_rehearsal)
