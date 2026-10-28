@@ -233,7 +233,7 @@ def art_room_presence(
         return ArtRoomPresence(
             label="Set up Paint along",
             description=(
-                "Open Paint along, then choose a local video file or a lesson link."
+                "Open Paint along, then watch a shared lesson or choose a silent file."
             ),
             target=ArtPresenceTarget.VIDEO,
         )

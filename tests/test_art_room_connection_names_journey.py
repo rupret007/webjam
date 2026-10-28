@@ -127,9 +127,9 @@ def _assert_named(rig, *expected):
     assert Counter(_names(panel)) == Counter(expected)
     assert panel._connections_list.isVisibleTo(app.window)
     assert panel._connection.text() == "Connected to your room"
-    assert panel._connection_detail.text() == (
-        "Names guests chose when joining WebJam. Talk and screen sharing are separate."
-    )
+    shown = _names(panel)
+    assert shown
+    assert panel._connection_detail.text() == f"{shown[0]} is here"
     return panel
 
 
@@ -141,13 +141,15 @@ def _assert_private_and_no_external_work(rig, caplog):
         "diagnostics": app._companion_get_diagnostics(),
         "participants": app._companion_get_participants(),
     }, sort_keys=True, default=str)
-    public += repr(panel._overview) + panel.accessibleDescription() + caplog.text
+    public += repr(panel._overview) + caplog.text
     projection = app._room_participant.host_connection_names()
     public += repr(projection)
     for enrolled in rig.private_enrollments:
         for private in (enrolled.display_name, enrolled.installation_id,
                         enrolled.participant_id, enrolled.participant_token):
             assert private not in public
+    # Host-facing room copy may name the guest; telemetry and the overview
+    # projection must not. The visible label is checked by _assert_named.
     app._launch_native_jamulus_for_startup.assert_not_called()
     app._start_hosted_server_for_startup.assert_not_called()
     app.bridge.launch_webex.assert_not_called()
@@ -331,7 +333,7 @@ def test_guest_connection_does_not_invent_names_from_transport_or_personal_profi
     _assert_cleared(app)
     panel = app.window.art_room_overview
     assert panel._connection.text() == "Connected to the host"
-    assert panel._connection_detail.text() == "You’re connected and ready to make."
+    assert panel._connection_detail.text() == "You’re connected to the host."
     assert "does not yet show a full artist list" in panel._connection_detail.accessibleDescription()
     assert "PRIVATE_ARTIST" not in repr(panel._overview) + caplog.text
     app.bridge.launch_webex.assert_not_called()

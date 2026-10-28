@@ -200,7 +200,7 @@ def test_connected_detail_is_short_and_moves_the_roster_caveat_to_the_note(hosti
     assert "does not yet" not in overview.connection_detail
     assert "full artist list" not in overview.connection_detail
     assert overview.connection_detail == (
-        "An artist is here with you." if hosting else "You’re connected and ready to make."
+        "An artist is here with you." if hosting else "You’re connected to the host."
     )
     assert overview.connection_note == "WebJam does not yet show a full artist list."
 

@@ -9,6 +9,7 @@ import {
   UPSTREAM_FETCHES_PER_REQUEST,
   WORKER_WORST_CASE_MS,
   GIGABYTE_BYTES,
+  MAX_RATE_STORE_ENTRIES,
   allowRate,
   analyticsBearerToken,
   decideCap,
@@ -165,6 +166,45 @@ test("rate limiter is per IP and fail-closed without an IP", () => {
   assert.equal(allowRate(store, "203.0.113.10", 1_000, 10), false);
   assert.equal(allowRate(store, "203.0.113.11", 1_000, 10), true);
   assert.equal(allowRate(store, "", 1_000, 10), false);
+});
+
+test("rate limiter store stays bounded when many IPs share one bucket", () => {
+  const store = new Map();
+  const nowMs = 60_000;
+  const limit = 1;
+  for (let i = 0; i < MAX_RATE_STORE_ENTRIES + 64; i += 1) {
+    allowRate(store, `203.0.113.${i % 256}.${(i >> 8) % 256}`, nowMs, limit);
+  }
+  assert.ok(store.size <= MAX_RATE_STORE_ENTRIES);
+  assert.equal(allowRate(store, "198.51.100.42", nowMs, limit), true);
+});
+
+test("rate limiter pruning preserves current bucket entries", () => {
+  const store = new Map();
+  const windowMs = 60_000;
+  const limit = 1;
+  // Fill store with entries from an old bucket
+  const oldBucket = 60_000;
+  for (let i = 0; i < MAX_RATE_STORE_ENTRIES - 10; i += 1) {
+    allowRate(store, `198.51.100.${i % 256}`, oldBucket, limit);
+  }
+  // Add entries in the current bucket
+  const currentBucket = 180_000;
+  const currentIps = [];
+  for (let i = 0; i < 20; i += 1) {
+    const ip = `203.0.113.${i}`;
+    currentIps.push(ip);
+    allowRate(store, ip, currentBucket, limit);
+  }
+  // Trigger pruning with more entries
+  for (let i = 20; i < 80; i += 1) {
+    allowRate(store, `203.0.113.${i}`, currentBucket, limit);
+  }
+  // Verify current bucket entries are preserved (their counters are intact)
+  for (const ip of currentIps) {
+    const key = `${ip}:${Math.floor(currentBucket / windowMs)}`;
+    assert.equal(store.has(key), true, `Current bucket entry ${key} was evicted`);
+  }
 });
 
 test("UTC month range is the first of the month through today", () => {

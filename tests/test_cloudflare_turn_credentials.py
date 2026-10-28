@@ -44,6 +44,17 @@ def test_node_worker_policy_and_fail_closed_cap() -> None:
         )
 
 
+def test_allow_rate_prunes_stale_ips(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(turn_credentials, "_rate", {})
+    now = 1_000_000.0
+    for index in range(50):
+        assert turn_credentials.allow_rate(f"203.0.113.{index}", now, limit=100)
+    assert len(turn_credentials._rate) == 50
+    later = now + turn_credentials.RATE_WINDOW_SECONDS + 1
+    assert turn_credentials.allow_rate("203.0.113.0", later, limit=100)
+    assert len(turn_credentials._rate) == 1
+
+
 def test_documented_cap_formula_is_800_of_1000_decimal_gb() -> None:
     cap = DEFAULT_CAP_GB * GIGABYTE
     assert cap == 800_000_000_000

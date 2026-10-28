@@ -39,6 +39,16 @@ from core.youtube_lesson import YouTubeLesson, parse_youtube_lesson_url
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.scrollable_content import ScrollableContent
 
+
+def _restyle_named_button(button: QPushButton, object_name: str) -> None:
+    if button.objectName() == object_name:
+        return
+    button.setObjectName(object_name)
+    style = button.style()
+    style.unpolish(button)
+    style.polish(button)
+    button.update()
+
 _HOST_EMPTY_HEADLINE = "Choose a silent reference"
 _GUEST_EMPTY_HEADLINE = "Optional silent reference"
 _STANDALONE_SURFACE_FLOOR = 360
@@ -177,6 +187,7 @@ class ReferenceVideoDialog(QDialog):
     def __init__(self, *, hosting: bool, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._hosting = bool(hosting)
+        self._invite_owns_primary = False
         self._embedded = False
         self._duration_s = 0.0
         self._scrubbing = False
@@ -341,6 +352,7 @@ class ReferenceVideoDialog(QDialog):
                 "Open my copy…",
                 "Open your copy of the same file the host is using to follow along.",
                 self._choose_local_copy,
+                object_name="GhostButton",
             )
             self._hide_button = self._add_button(
                 controls,
@@ -498,6 +510,44 @@ class ReferenceVideoDialog(QDialog):
         self._surface_placeholder.setVisible(widget is None)
 
     # -- user intent ---------------------------------------------------
+
+    def set_invite_owns_primary(self, owns: bool) -> None:
+        """HUD Copy Invite is the one orange; ghost Watch a shared lesson."""
+
+        self._invite_owns_primary = bool(owns)
+        self._sync_paint_along_primaries()
+
+    def _sync_paint_along_primaries(self) -> None:
+        """Exactly one orange primary on this panel, or none if the HUD owns it."""
+
+        recovery = False
+        if not self._hosting:
+            snapshot = self._last_follow_snapshot
+            state = snapshot.state if snapshot is not None else ReferenceVideoFollowState.NO_VIDEO
+            recovery = state in {
+                ReferenceVideoFollowState.NEEDS_FILE,
+                ReferenceVideoFollowState.FILE_UNAVAILABLE,
+            }
+        host_transport = False
+        if self._hosting:
+            host = getattr(self, "_last_host_snapshot", None)
+            host_transport = bool(host is not None and host.shared)
+        if self._invite_owns_primary:
+            # HUD Copy Invite is the one orange (one-orange rule vs PR #320).
+            watch_style = "GhostButton"
+            open_style = "GhostButton"
+        elif recovery:
+            watch_style = "GhostButton"
+            open_style = "PrimaryButton"
+        elif host_transport:
+            watch_style = "GhostButton"
+            open_style = "GhostButton"
+        else:
+            watch_style = "PrimaryButton"
+            open_style = "GhostButton"
+        _restyle_named_button(self._watch_lesson_button, watch_style)
+        if not self._hosting:
+            _restyle_named_button(self._open_button, open_style)
 
     def set_watch_lesson_available(self, available: bool) -> None:
         """Navigation follows room ownership, independently of a local file."""
@@ -665,6 +715,7 @@ class ReferenceVideoDialog(QDialog):
             self._position.setVisible(False)
             self._clock.setVisible(False)
             self.attach_surface(None)
+            self._sync_paint_along_primaries()
             return
         self._return_button.setVisible(False)
         self._role.setText("YOU CONTROL")
@@ -741,6 +792,7 @@ class ReferenceVideoDialog(QDialog):
         self._position.setVisible(shared)
         self._position.setEnabled(can_seek)
         self._clock.setVisible(shared)
+        self._sync_paint_along_primaries()
 
     def set_room_available(self, available: bool) -> None:
         """Retained controls and pictures belong only to their current room."""
@@ -888,6 +940,7 @@ class ReferenceVideoDialog(QDialog):
             needs_copy = False
         self._open_button.setVisible(needs_copy)
         self._open_button.setEnabled(needs_copy)
+        self._sync_paint_along_primaries()
         self._hide_button.setVisible(keep_working)
         self._hide_button.setEnabled(keep_working)
         self._hide_button.setText("Show video" if self._hidden else "Hide video")

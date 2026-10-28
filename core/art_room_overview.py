@@ -166,7 +166,7 @@ def art_room_overview(
         detail = (
             "An artist is here with you."
             if hosting
-            else "You’re connected and ready to make."
+            else "You’re connected to the host."
         )
         note = "WebJam does not yet show a full artist list."
         if hosting and named_connections:

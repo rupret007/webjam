@@ -27,9 +27,12 @@ repeating the same steps.
      WebJam, and confirm **Open**.
    - **Ubuntu:** unzip the folder, keep it together, and start `WebJam`.
 3. **Start or join.** Choose **Art** or **Music**, then **Host** or **Join**.
-   The host uses **Copy Invite** and sends the whole message. The friend
-   pastes it on **Join**. Stay on the **same Wi-Fi or local network**. Keep
-   the host's window open.
+   Friends in another house can Host and Join; no extra setup. The host uses
+   **Copy Invite** and sends the whole message. The friend pastes it on
+   **Join**. If WebJam shows a short reply, they send that back and the host
+   chooses **Paste Reply**. Keep the host's window open. If a Join cannot
+   connect, use home Wi-Fi on both computers, not a phone hotspot, and ask
+   for a fresh invite.
 
 **Music Host is Mac-only.** Windows and Linux can Join a Music jam; they
 cannot start one. Any computer can Host or Join Art.
@@ -450,11 +453,11 @@ WebJam waits for the host's room details before offering its activity.
 A native invitation carries no title, so its room is called **Room** until
 you choose another title. A title you type yourself is saved for that workspace.
 
-The usual Art invitation works on the **same Wi-Fi or local network** as the
-host. Keep the host's room open and send the whole copied message. Guests
-open WebJam, choose **Join**, and paste that whole message; they do not need
-to pick the host's activity or extract the link. Follow the invitation's
-network instructions before joining.
+Friends in another house can Join. Keep the host's room open and send the
+whole copied message. Guests open WebJam, choose **Join**, and paste that
+whole message; they do not need to pick the host's activity or extract the
+link. If the invitation says it only works on the host's Wi-Fi, stay on that
+network.
 
 If the room loses contact, shared playback holds. Follow **Reconnecting to
 the room** or the recovery action shown; WebJam does not claim the room is
@@ -861,8 +864,8 @@ extra setup, sound-confirmation, or Enter Jam click. Play a note and make sure
 you can hear each other—WebJam never treats a meter or connection as proof of
 that. Use Music's **Band Check**, Podcast's **Sound Check**, or Review's
 **Session Check (Preview)** if you need help.
-Copy Invite sends the whole message to people on the same Wi-Fi. Keep this
-room open.
+Copy Invite sends the whole message. A friend in another house can Join.
+Keep this room open. If they send a short reply, choose **Paste Reply**.
 
 If setup is interrupted, WebJam keeps only a private, bounded recovery record.
 It reuses progress only when the role and dedicated Jamulus profile fingerprint
@@ -887,8 +890,8 @@ why Join is unavailable. Keyboard order stays **Invite → Join → Back**.
 Paste the complete invitation copied from the host. Harmless
 message whitespace and surrounding punctuation are accepted; incomplete,
 expired, malformed, incompatible, and unsupported invitations are rejected
-with a plain explanation. If the invitation says same network, use the
-host's Wi-Fi or local network first. After a paste error, the invitation
+with a plain explanation. If the invitation says it only works on the
+host's Wi-Fi, join from that network. After a paste error, the invitation
 field keeps keyboard focus so you can paste again. Private invitation values
 are never saved in settings or logs and are not echoed back after a private-link error.
 
@@ -898,8 +901,10 @@ if you chose Art at the door; your saved Art preference stays unchanged.
 An Art invitation follows the waiting and connection states described in
 [Art](#art), without Jamulus. For a Music invitation, the normal visible
 sequence is **Checking invite → Contacting host → Securing connection → Opening
-Jamulus → Connected**. If the invitation says same network, stay on the host's
-Wi-Fi. A Join attempt has a bounded timeout; Music requires
+Jamulus → Connected**. If Join cannot connect, use home Wi-Fi on both
+computers, not a phone hotspot, and ask the host for a fresh invitation.
+If the invitation says it only works on the host's Wi-Fi, stay on that
+network. A Join attempt has a bounded timeout; Music requires
 fresh authenticated Jamulus evidence. At **Needs attention**, use the single
 action shown:
 
