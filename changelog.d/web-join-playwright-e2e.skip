@@ -1,1 +1,0 @@
-CI-only: run Web Join Playwright e2e (Chromium and WebKit) in the browser tests workflow.
