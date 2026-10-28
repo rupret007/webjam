@@ -156,6 +156,59 @@ func TestReliableSendCancelsBlockedWrite(t *testing.T) {
 	assertReliableConnectionReusable(t, host, guest)
 }
 
+func TestReliableSendStopsCancellationBeforeClose(t *testing.T) {
+	t.Parallel()
+	host, guest := newReliableCancellationPair(t)
+	hostPlane, err := NewReliablePlane(host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guestPlane, err := NewReliablePlane(guest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A context cancelled immediately after Send returns must not reset the
+	// queued FIN frame. The receiver must receive the complete frame.
+	for i := range 3 {
+		sendCtx, cancelSend := context.WithCancel(context.Background())
+		acceptCtx, cancelAccept := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancelAccept()
+		want := wire.StreamFrame{
+			Kind: wire.StreamKindControl, Generation: uint32(i + 1), Payload: []byte("retry test"),
+		}
+		received := make(chan struct {
+			frame wire.StreamFrame
+			err   error
+		}, 1)
+		go func() {
+			frame, acceptErr := hostPlane.Accept(acceptCtx)
+			received <- struct {
+				frame wire.StreamFrame
+				err   error
+			}{frame, acceptErr}
+		}()
+		if err = guestPlane.Send(sendCtx, want); err != nil {
+			cancelSend()
+			t.Fatal(err)
+		}
+		// Cancel immediately after successful send. Before the fix this would
+		// trigger CancelWrite, resetting the queued FIN and causing Accept to
+		// fail or receive a truncated frame.
+		cancelSend()
+		select {
+		case r := <-received:
+			if r.err != nil {
+				t.Fatalf("Accept after cancel error = %v", r.err)
+			}
+			if r.frame.Kind != want.Kind || r.frame.Generation != want.Generation || !bytes.Equal(r.frame.Payload, want.Payload) {
+				t.Fatalf("frame = %+v, want %+v", r.frame, want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("Accept timed out; CancelWrite may have reset the queued frame")
+		}
+	}
+}
+
 func assertReliableCancellation(t *testing.T, result <-chan error) {
 	t.Helper()
 	select {

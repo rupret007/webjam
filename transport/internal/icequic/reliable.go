@@ -56,6 +56,9 @@ func (p *ReliablePlane) Send(ctx context.Context, frame wire.StreamFrame) error 
 		stream.CancelWrite(1)
 		return reliableContextError(ctx, err)
 	}
+	// Stop the cancellation callback before Close to prevent CancelWrite from
+	// resetting the queued FIN frame after a successful close.
+	stopCancellation()
 	return reliableContextError(ctx, stream.Close())
 }
 
