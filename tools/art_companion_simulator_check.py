@@ -182,6 +182,11 @@ def _cleanup_simulator(identifier: str) -> None:
     subprocess.run(["xcrun", "simctl", "delete", identifier], check=False, capture_output=True)
 
 
+def _write_evidence(output: Path, evidence: list[dict[str, Any]]) -> None:
+    """Write devices.json, raising on failure."""
+    (output / "devices.json").write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
+
+
 def check_devices(root: Path, output: Path) -> None:
     inventory = json.loads(run("xcrun", "simctl", "list", "--json"))
     runtime = next(
@@ -203,14 +208,34 @@ def check_devices(root: Path, output: Path) -> None:
         try:
             keyboard_setup: KeyboardSetupResult | None = None
             if label == "tablet":
-                keyboard_setup = _disable_hardware_keyboard(identifier)
-                entry["keyboard_setup"] = keyboard_setup.to_dict()
-                if not keyboard_setup.success:
-                    entry["status"] = "keyboard_setup_failed"
+                try:
+                    keyboard_setup = _disable_hardware_keyboard(identifier)
+                    entry["keyboard_setup"] = keyboard_setup.to_dict()
+                    if not keyboard_setup.success:
+                        entry["status"] = "keyboard_setup_failed"
+                        raise SystemExit(
+                            f"iPad keyboard setup failed (fail-closed): {keyboard_setup.error}\n"
+                            f"Details: {json.dumps(keyboard_setup.details, indent=2)}"
+                        )
+                except SystemExit:
+                    raise
+                except BaseException as exc:
+                    import traceback
+                    entry["status"] = "keyboard_setup_exception"
+                    entry["keyboard_setup"] = {
+                        "success": False,
+                        "already_configured": False,
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "details": {
+                            "identifier": identifier,
+                            "exception_type": type(exc).__name__,
+                            "exception_message": str(exc),
+                            "traceback": traceback.format_exc(),
+                        },
+                    }
                     raise SystemExit(
-                        f"iPad keyboard setup failed (fail-closed): {keyboard_setup.error}\n"
-                        f"Details: {json.dumps(keyboard_setup.details, indent=2)}"
-                    )
+                        f"iPad keyboard setup raised exception (fail-closed): {type(exc).__name__}: {exc}"
+                    ) from exc
             max_attempts = 2
             for attempt in range(1, max_attempts + 1):
                 if result.exists():
@@ -263,8 +288,10 @@ def check_devices(root: Path, output: Path) -> None:
                 raise SystemExit("Simulator tests passed, but attachment export failed; inspect the retained result bundle.")
         finally:
             evidence.append(entry)
-            (output / "devices.json").write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
-            _cleanup_simulator(identifier)
+            try:
+                _write_evidence(output, evidence)
+            finally:
+                _cleanup_simulator(identifier)
 
 
 if __name__ == "__main__":

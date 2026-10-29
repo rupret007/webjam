@@ -392,3 +392,153 @@ class TestDisableHardwareKeyboard:
         assert "delete" in source
         check_source = inspect.getsource(simulator_check.check_devices)
         assert "_cleanup_simulator" in check_source
+
+    def test_keyboard_setup_exception_records_diagnostics(self, tmp_path, monkeypatch):
+        """When keyboard setup raises an exception, diagnostics are recorded."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        def mock_disable_keyboard_raises(identifier):
+            raise RuntimeError("simulated plist corruption")
+
+        def mock_run(*args, **kwargs):
+            class Result:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+            return Result()
+
+        def mock_check_output(*args, **kwargs):
+            cmd = args[0]
+            if "list" in cmd:
+                return '{"runtimes":[{"name":"iOS 18.2","isAvailable":true,"identifier":"test-runtime"}],"devicetypes":[{"name":"iPhone SE (3rd generation)","identifier":"phone-type"},{"name":"iPad (10th generation)","identifier":"tablet-type"}]}'
+            if "create" in cmd:
+                return f"TEST-{cmd[4]}-UUID"
+            return ""
+
+        monkeypatch.setattr(simulator_check, "_disable_hardware_keyboard", mock_disable_keyboard_raises)
+        monkeypatch.setattr(simulator_check.subprocess, "run", mock_run)
+        monkeypatch.setattr(simulator_check.subprocess, "check_output", mock_check_output)
+
+        import pytest
+        with pytest.raises(SystemExit) as exc_info:
+            simulator_check.check_devices(tmp_path, output_dir)
+
+        assert "exception" in str(exc_info.value).lower() or "RuntimeError" in str(exc_info.value)
+
+        devices_json = output_dir / "devices.json"
+        assert devices_json.exists(), "devices.json must be written on keyboard exception"
+
+        import json
+        evidence = json.loads(devices_json.read_text())
+        tablet_entry = next((e for e in evidence if e["device"] == "iPad (10th generation)"), None)
+        assert tablet_entry is not None
+        assert tablet_entry["status"] == "keyboard_setup_exception"
+        assert "keyboard_setup" in tablet_entry
+        assert tablet_entry["keyboard_setup"]["success"] is False
+        assert "RuntimeError" in tablet_entry["keyboard_setup"]["error"]
+        assert "simulated plist corruption" in tablet_entry["keyboard_setup"]["error"]
+        assert tablet_entry["keyboard_setup"]["details"]["exception_type"] == "RuntimeError"
+        assert "traceback" in tablet_entry["keyboard_setup"]["details"]
+
+    def test_cleanup_runs_when_evidence_write_fails(self, tmp_path, monkeypatch):
+        """Simulator cleanup runs even when devices.json write fails."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        cleanup_calls = []
+        write_evidence_called = [False]
+
+        def mock_write_evidence(output, evidence):
+            write_evidence_called[0] = True
+            raise OSError("disk full")
+
+        def mock_run(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("args", [])
+            class Result:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+            if cmd[0] == "xcrun" and cmd[1] == "simctl":
+                if cmd[2] in ("shutdown", "delete"):
+                    cleanup_calls.append((cmd[2], cmd[3]))
+            return Result()
+
+        def mock_check_output(*args, **kwargs):
+            cmd = args[0]
+            if "list" in cmd:
+                return '{"runtimes":[{"name":"iOS 18.2","isAvailable":true,"identifier":"test-runtime"}],"devicetypes":[{"name":"iPhone SE (3rd generation)","identifier":"phone-type"},{"name":"iPad (10th generation)","identifier":"tablet-type"}]}'
+            if "create" in cmd:
+                return f"TEST-{cmd[4]}-UUID"
+            return ""
+
+        monkeypatch.setattr(simulator_check, "_write_evidence", mock_write_evidence)
+        monkeypatch.setattr(simulator_check.subprocess, "run", mock_run)
+        monkeypatch.setattr(simulator_check.subprocess, "check_output", mock_check_output)
+
+        import pytest
+        with pytest.raises(OSError, match="disk full"):
+            simulator_check.check_devices(tmp_path, output_dir)
+
+        assert write_evidence_called[0], "_write_evidence must be called"
+        phone_uuid = "TEST-phone-type-UUID"
+        shutdown_calls = [c for c in cleanup_calls if c[0] == "shutdown" and c[1] == phone_uuid]
+        delete_calls = [c for c in cleanup_calls if c[0] == "delete" and c[1] == phone_uuid]
+        assert len(shutdown_calls) >= 1, "simulator must be shutdown even when evidence write fails"
+        assert len(delete_calls) >= 1, "simulator must be deleted even when evidence write fails"
+
+    def test_setup_exception_and_evidence_write_failure_combined(self, tmp_path, monkeypatch):
+        """When keyboard setup raises AND evidence write fails, cleanup still runs."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        cleanup_calls = []
+        write_evidence_calls = []
+
+        def mock_disable_keyboard_raises(identifier):
+            raise ValueError("unexpected config format")
+
+        def mock_write_evidence(output, evidence):
+            write_evidence_calls.append(len(evidence))
+            if any(e.get("device") == "iPad (10th generation)" for e in evidence):
+                raise PermissionError("read-only filesystem")
+
+        def mock_run(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("args", [])
+            class Result:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+            if cmd[0] == "xcrun" and cmd[1] == "simctl":
+                if cmd[2] in ("shutdown", "delete"):
+                    cleanup_calls.append((cmd[2], cmd[3]))
+            return Result()
+
+        def mock_check_output(*args, **kwargs):
+            cmd = args[0]
+            if "list" in cmd:
+                return '{"runtimes":[{"name":"iOS 18.2","isAvailable":true,"identifier":"test-runtime"}],"devicetypes":[{"name":"iPhone SE (3rd generation)","identifier":"phone-type"},{"name":"iPad (10th generation)","identifier":"tablet-type"}]}'
+            if "create" in cmd:
+                return f"TEST-{cmd[4]}-UUID"
+            return ""
+
+        monkeypatch.setattr(simulator_check, "_disable_hardware_keyboard", mock_disable_keyboard_raises)
+        monkeypatch.setattr(simulator_check, "_write_evidence", mock_write_evidence)
+        monkeypatch.setattr(simulator_check.subprocess, "run", mock_run)
+        monkeypatch.setattr(simulator_check.subprocess, "check_output", mock_check_output)
+
+        import pytest
+        with pytest.raises(PermissionError, match="read-only filesystem"):
+            simulator_check.check_devices(tmp_path, output_dir)
+
+        assert len(write_evidence_calls) >= 2, "_write_evidence must be called for both devices"
+        tablet_uuid = "TEST-tablet-type-UUID"
+        shutdown_calls = [c for c in cleanup_calls if c[0] == "shutdown" and c[1] == tablet_uuid]
+        delete_calls = [c for c in cleanup_calls if c[0] == "delete" and c[1] == tablet_uuid]
+        assert len(shutdown_calls) >= 1, "simulator must be shutdown in combined failure"
+        assert len(delete_calls) >= 1, "simulator must be deleted in combined failure"
+
+    def test_write_evidence_helper_exists(self):
+        """_write_evidence helper is used for evidence writing."""
+        import inspect
+        assert hasattr(simulator_check, "_write_evidence")
+        check_source = inspect.getsource(simulator_check.check_devices)
+        assert "_write_evidence" in check_source
