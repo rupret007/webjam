@@ -277,3 +277,118 @@ class TestDisableHardwareKeyboard:
         assert "ConnectHardwareKeyboard" in source
         assert "simctl io" not in source
         assert 'keyboard", "disconnect' not in source
+
+    def test_failed_keyboard_setup_saves_diagnostics_to_devices_json(self, tmp_path, monkeypatch):
+        """When keyboard setup fails, devices.json is written with diagnostics before exit."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        cleanup_calls = []
+
+        def mock_disable_keyboard(identifier):
+            return simulator_check.KeyboardSetupResult(
+                success=False,
+                error="test failure",
+                details={"identifier": identifier, "test_detail": "captured"},
+            )
+
+        def mock_run(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("args", [])
+            class Result:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+            if cmd[0] == "xcrun" and cmd[1] == "simctl":
+                if cmd[2] == "list":
+                    return type("R", (), {
+                        "stdout": '{"runtimes":[{"name":"iOS 18.2","isAvailable":true,"identifier":"test-runtime"}],"devicetypes":[{"name":"iPhone SE (3rd generation)","identifier":"phone-type"},{"name":"iPad (10th generation)","identifier":"tablet-type"}]}',
+                        "returncode": 0
+                    })()
+                if cmd[2] == "create":
+                    return type("R", (), {"stdout": f"TEST-{cmd[3]}-UUID", "returncode": 0})()
+                if cmd[2] in ("shutdown", "delete"):
+                    cleanup_calls.append((cmd[2], cmd[3]))
+            return Result()
+
+        def mock_check_output(*args, **kwargs):
+            cmd = args[0]
+            if "list" in cmd:
+                return '{"runtimes":[{"name":"iOS 18.2","isAvailable":true,"identifier":"test-runtime"}],"devicetypes":[{"name":"iPhone SE (3rd generation)","identifier":"phone-type"},{"name":"iPad (10th generation)","identifier":"tablet-type"}]}'
+            if "create" in cmd:
+                return f"TEST-{cmd[4]}-UUID"
+            return ""
+
+        monkeypatch.setattr(simulator_check, "_disable_hardware_keyboard", mock_disable_keyboard)
+        monkeypatch.setattr(simulator_check.subprocess, "run", mock_run)
+        monkeypatch.setattr(simulator_check.subprocess, "check_output", mock_check_output)
+
+        import pytest
+        with pytest.raises(SystemExit) as exc_info:
+            simulator_check.check_devices(tmp_path, output_dir)
+
+        assert "fail-closed" in str(exc_info.value)
+        devices_json = output_dir / "devices.json"
+        assert devices_json.exists(), "devices.json must be written on keyboard failure"
+
+        import json
+        evidence = json.loads(devices_json.read_text())
+        tablet_entry = next((e for e in evidence if e["device"] == "iPad (10th generation)"), None)
+        assert tablet_entry is not None
+        assert tablet_entry["status"] == "keyboard_setup_failed"
+        assert "keyboard_setup" in tablet_entry
+        assert tablet_entry["keyboard_setup"]["success"] is False
+        assert tablet_entry["keyboard_setup"]["error"] == "test failure"
+        assert tablet_entry["keyboard_setup"]["details"]["test_detail"] == "captured"
+
+    def test_simulator_cleanup_happens_on_keyboard_failure(self, tmp_path, monkeypatch):
+        """Simulator is cleaned up even when keyboard setup fails."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        cleanup_calls = []
+
+        def mock_disable_keyboard(identifier):
+            return simulator_check.KeyboardSetupResult(
+                success=False, error="test failure", details={},
+            )
+
+        def mock_run(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("args", [])
+            class Result:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+            if cmd[0] == "xcrun" and cmd[1] == "simctl":
+                if cmd[2] in ("shutdown", "delete"):
+                    cleanup_calls.append((cmd[2], cmd[3]))
+            return Result()
+
+        def mock_check_output(*args, **kwargs):
+            cmd = args[0]
+            if "list" in cmd:
+                return '{"runtimes":[{"name":"iOS 18.2","isAvailable":true,"identifier":"test-runtime"}],"devicetypes":[{"name":"iPhone SE (3rd generation)","identifier":"phone-type"},{"name":"iPad (10th generation)","identifier":"tablet-type"}]}'
+            if "create" in cmd:
+                return f"TEST-{cmd[4]}-UUID"
+            return ""
+
+        monkeypatch.setattr(simulator_check, "_disable_hardware_keyboard", mock_disable_keyboard)
+        monkeypatch.setattr(simulator_check.subprocess, "run", mock_run)
+        monkeypatch.setattr(simulator_check.subprocess, "check_output", mock_check_output)
+
+        import pytest
+        with pytest.raises(SystemExit):
+            simulator_check.check_devices(tmp_path, output_dir)
+
+        tablet_uuid = "TEST-tablet-type-UUID"
+        shutdown_calls = [c for c in cleanup_calls if c[0] == "shutdown" and c[1] == tablet_uuid]
+        delete_calls = [c for c in cleanup_calls if c[0] == "delete" and c[1] == tablet_uuid]
+        assert len(shutdown_calls) >= 1, "simulator must be shutdown on keyboard failure"
+        assert len(delete_calls) >= 1, "simulator must be deleted on keyboard failure"
+
+    def test_cleanup_simulator_helper_exists(self):
+        """_cleanup_simulator helper is used for consistent cleanup."""
+        import inspect
+        assert hasattr(simulator_check, "_cleanup_simulator")
+        source = inspect.getsource(simulator_check._cleanup_simulator)
+        assert "shutdown" in source
+        assert "delete" in source
+        check_source = inspect.getsource(simulator_check.check_devices)
+        assert "_cleanup_simulator" in check_source

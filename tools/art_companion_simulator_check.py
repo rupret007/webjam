@@ -176,24 +176,22 @@ def _disable_hardware_keyboard(identifier: str) -> KeyboardSetupResult:
         tmp_path.unlink(missing_ok=True)
 
 
+def _cleanup_simulator(identifier: str) -> None:
+    """Shutdown and delete a simulator, ignoring errors."""
+    subprocess.run(["xcrun", "simctl", "shutdown", identifier], check=False, capture_output=True)
+    subprocess.run(["xcrun", "simctl", "delete", identifier], check=False, capture_output=True)
+
+
 def check_devices(root: Path, output: Path) -> None:
     inventory = json.loads(run("xcrun", "simctl", "list", "--json"))
     runtime = next(
         item["identifier"] for item in inventory["runtimes"]
         if item["name"] == "iOS 18.2" and item["isAvailable"]
     )
-    evidence = []
+    evidence: list[dict[str, Any]] = []
     for label, name in (("phone", "iPhone SE (3rd generation)"), ("tablet", "iPad (10th generation)")):
         device_type = next(item["identifier"] for item in inventory["devicetypes"] if item["name"] == name)
         identifier = run("xcrun", "simctl", "create", f"WebJam Art {label}", device_type, runtime)
-        keyboard_setup: KeyboardSetupResult | None = None
-        if label == "tablet":
-            keyboard_setup = _disable_hardware_keyboard(identifier)
-            if not keyboard_setup.success:
-                raise SystemExit(
-                    f"iPad keyboard setup failed (fail-closed): {keyboard_setup.error}\n"
-                    f"Details: {json.dumps(keyboard_setup.details, indent=2)}"
-                )
         result = output / f"{label}.xcresult"
         log = output / f"{label}.log"
         entry: dict[str, Any] = {
@@ -202,9 +200,17 @@ def check_devices(root: Path, output: Path) -> None:
             "exit_code": None,
             "result": result.name,
         }
-        if keyboard_setup is not None:
-            entry["keyboard_setup"] = keyboard_setup.to_dict()
         try:
+            keyboard_setup: KeyboardSetupResult | None = None
+            if label == "tablet":
+                keyboard_setup = _disable_hardware_keyboard(identifier)
+                entry["keyboard_setup"] = keyboard_setup.to_dict()
+                if not keyboard_setup.success:
+                    entry["status"] = "keyboard_setup_failed"
+                    raise SystemExit(
+                        f"iPad keyboard setup failed (fail-closed): {keyboard_setup.error}\n"
+                        f"Details: {json.dumps(keyboard_setup.details, indent=2)}"
+                    )
             max_attempts = 2
             for attempt in range(1, max_attempts + 1):
                 if result.exists():
@@ -251,7 +257,6 @@ def check_devices(root: Path, output: Path) -> None:
                         export_code = 124
                 entry["attachment_export_exit_code"] = export_code
             if entry["exit_code"]:
-                # UI fixture data is synthetic and contains no private invitation.
                 print(log.read_text(encoding="utf-8")[-18000:])
                 raise SystemExit(entry["exit_code"])
             if export_code:
@@ -259,8 +264,7 @@ def check_devices(root: Path, output: Path) -> None:
         finally:
             evidence.append(entry)
             (output / "devices.json").write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
-            subprocess.run(["xcrun", "simctl", "shutdown", identifier], check=False, capture_output=True)
-            subprocess.run(["xcrun", "simctl", "delete", identifier], check=False, capture_output=True)
+            _cleanup_simulator(identifier)
 
 
 if __name__ == "__main__":
