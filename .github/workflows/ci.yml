@@ -1226,6 +1226,13 @@ jobs:
         with:
           python-version: "${{ matrix.python }}"
 
+      - name: Create isolated native build environment
+        timeout-minutes: 3
+        shell: bash
+        run: >-
+          python -I -S tools/native_build_environment.py
+          --target "${{ matrix.target }}" --python-version "${{ matrix.python }}"
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
