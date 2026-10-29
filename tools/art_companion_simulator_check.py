@@ -7,7 +7,9 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+from typing import Any
 
 
 def run(*arguments: str) -> str:
@@ -44,21 +46,134 @@ def main() -> None:
         check_devices(root, output)
 
 
-def _disconnect_hardware_keyboard(identifier: str) -> None:
-    """Disconnect hardware keyboard on iPad so the software keyboard appears in UI tests.
+class KeyboardSetupResult:
+    """Result of attempting to configure simulator keyboard settings."""
 
-    iOS 18.2 iPad simulators ship with hardware keyboard connected, suppressing the
-    software keyboard and causing hasKeyboardFocus checks to fail after tapping text
-    fields. Disconnecting ensures consistent first-responder and keyboard behavior.
+    __slots__ = ("success", "already_configured", "error", "details")
+
+    def __init__(
+        self,
+        *,
+        success: bool,
+        already_configured: bool = False,
+        error: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        self.success = success
+        self.already_configured = already_configured
+        self.error = error
+        self.details = details or {}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "success": self.success,
+            "already_configured": self.already_configured,
+            "error": self.error,
+            "details": self.details,
+        }
+
+
+def _disable_hardware_keyboard(identifier: str) -> KeyboardSetupResult:
+    """Disable hardware keyboard for a simulator so the software keyboard appears.
+
+    iOS 18+ iPad simulators default to hardware keyboard connected, suppressing the
+    software keyboard. This prevents UI tests from verifying keyboard focus and the
+    keyboard toolbar. The fix uses defaults + PlistBuddy to set ConnectHardwareKeyboard
+    to NO for this device before xcodebuild boots it.
+
+    simctl and devicectl have no keyboard connect/disconnect command. The correct
+    mechanism is documented at:
+    - https://stackoverflow.com/questions/55381560 (Xcode 16 answer by Wes Campaigne)
+    - https://github.com/getsentry/XcodeBuildMCP/issues/346
     """
-    subprocess.run(
-        ["xcrun", "simctl", "boot", identifier],
-        check=False, capture_output=True,
-    )
-    subprocess.run(
-        ["xcrun", "simctl", "io", identifier, "keyboard", "disconnect"],
-        check=False, capture_output=True,
-    )
+    plist_path = Path.home() / "Library/Preferences/com.apple.iphonesimulator.plist"
+    details: dict[str, Any] = {"identifier": identifier, "plist_path": str(plist_path)}
+
+    with tempfile.NamedTemporaryFile(suffix=".plist", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+
+    try:
+        export_result = subprocess.run(
+            ["defaults", "export", "com.apple.iphonesimulator", str(tmp_path)],
+            capture_output=True, text=True, check=False,
+        )
+        details["export_exit_code"] = export_result.returncode
+        if export_result.returncode != 0:
+            details["export_stderr"] = export_result.stderr
+            return KeyboardSetupResult(
+                success=False,
+                error=f"defaults export failed: exit {export_result.returncode}",
+                details=details,
+            )
+
+        read_result = subprocess.run(
+            ["/usr/libexec/PlistBuddy", "-c",
+             f"Print :DevicePreferences:{identifier}:ConnectHardwareKeyboard",
+             str(tmp_path)],
+            capture_output=True, text=True, check=False,
+        )
+        details["read_exit_code"] = read_result.returncode
+        current_value = read_result.stdout.strip() if read_result.returncode == 0 else None
+        details["current_value"] = current_value
+
+        if current_value == "false":
+            return KeyboardSetupResult(
+                success=True, already_configured=True, details=details,
+            )
+
+        if current_value is None:
+            plist_cmd = "Add"
+            plist_args = f":DevicePreferences:{identifier}:ConnectHardwareKeyboard bool NO"
+        else:
+            plist_cmd = "Set"
+            plist_args = f":DevicePreferences:{identifier}:ConnectHardwareKeyboard false"
+
+        set_result = subprocess.run(
+            ["/usr/libexec/PlistBuddy", "-c", f"{plist_cmd} {plist_args}", str(tmp_path)],
+            capture_output=True, text=True, check=False,
+        )
+        details["set_exit_code"] = set_result.returncode
+        if set_result.returncode != 0:
+            details["set_stderr"] = set_result.stderr
+            return KeyboardSetupResult(
+                success=False,
+                error=f"PlistBuddy {plist_cmd} failed: exit {set_result.returncode}",
+                details=details,
+            )
+
+        import_result = subprocess.run(
+            ["defaults", "import", "com.apple.iphonesimulator", str(tmp_path)],
+            capture_output=True, text=True, check=False,
+        )
+        details["import_exit_code"] = import_result.returncode
+        if import_result.returncode != 0:
+            details["import_stderr"] = import_result.stderr
+            return KeyboardSetupResult(
+                success=False,
+                error=f"defaults import failed: exit {import_result.returncode}",
+                details=details,
+            )
+
+        verify_result = subprocess.run(
+            ["/usr/libexec/PlistBuddy", "-c",
+             f"Print :DevicePreferences:{identifier}:ConnectHardwareKeyboard",
+             str(plist_path)],
+            capture_output=True, text=True, check=False,
+        )
+        details["verify_exit_code"] = verify_result.returncode
+        details["verify_value"] = verify_result.stdout.strip() if verify_result.returncode == 0 else None
+
+        if details["verify_value"] != "false":
+            return KeyboardSetupResult(
+                success=False,
+                error=f"verification failed: expected false, got {details['verify_value']}",
+                details=details,
+            )
+
+        return KeyboardSetupResult(success=True, details=details)
+
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 def check_devices(root: Path, output: Path) -> None:
@@ -71,11 +186,24 @@ def check_devices(root: Path, output: Path) -> None:
     for label, name in (("phone", "iPhone SE (3rd generation)"), ("tablet", "iPad (10th generation)")):
         device_type = next(item["identifier"] for item in inventory["devicetypes"] if item["name"] == name)
         identifier = run("xcrun", "simctl", "create", f"WebJam Art {label}", device_type, runtime)
+        keyboard_setup: KeyboardSetupResult | None = None
         if label == "tablet":
-            _disconnect_hardware_keyboard(identifier)
+            keyboard_setup = _disable_hardware_keyboard(identifier)
+            if not keyboard_setup.success:
+                raise SystemExit(
+                    f"iPad keyboard setup failed (fail-closed): {keyboard_setup.error}\n"
+                    f"Details: {json.dumps(keyboard_setup.details, indent=2)}"
+                )
         result = output / f"{label}.xcresult"
         log = output / f"{label}.log"
-        entry = {"device": name, "status": "incomplete", "exit_code": None, "result": result.name}
+        entry: dict[str, Any] = {
+            "device": name,
+            "status": "incomplete",
+            "exit_code": None,
+            "result": result.name,
+        }
+        if keyboard_setup is not None:
+            entry["keyboard_setup"] = keyboard_setup.to_dict()
         try:
             max_attempts = 2
             for attempt in range(1, max_attempts + 1):
