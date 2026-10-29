@@ -104,7 +104,7 @@ def test_build_tool_lock_is_exact_hash_locked_and_binary_installed() -> None:
         "cffi": "2.1.0",
         "maturin": "1.14.1",
         "pycparser": "3.0",
-        "setuptools": "81.0.0",
+        "setuptools": "84.1.0",
     }
     assert _pins(BUILD_INPUT) == expected
     assert _pins(BUILD_LOCK) == expected
