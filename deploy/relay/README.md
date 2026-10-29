@@ -53,6 +53,13 @@ refuse when usage_bytes >= cap_bytes
 1 GB = 1,000,000,000 bytes (Cloudflare billing). 800 GB leaves 200 GB of
 the free tier for in-flight allocations and analytics lag (~30 seconds).
 `TURN_MONTHLY_CAP_GB` is a Worker var; secrets stay out of the repo.
+When Sketch Jam's separate `WEB_TURN_KEY_ID` is configured, its usage is
+added to the desktop key's usage before the 800 GB check. Web credentials
+also require that key's own usage to stay below `WEB_TURN_MONTHLY_CAP_GB`
+(default and maximum 200 GB). Both keys are read in one GraphQL request;
+an unreadable result for either key denies new credentials with 503.
+The ingress-plus-egress calculation is intentionally conservative relative
+to [Cloudflare's egress billing](https://developers.cloudflare.com/realtime/turn/faq/).
 
 Exact-pair policy: the sidecar CreatePermission/dials only the peer's
 sealed relay candidate, and only when that IPv4 matches the credentialed
@@ -77,6 +84,42 @@ packaged desktop uses
 the compiled TURN URL does. `WEBJAM_SIGNAL_MAILBOX_URL` remains the
 override (https only; `http://127.0.0.1` and `http://localhost` are
 allowed for local harnesses).
+
+### Sketch Jam browser access (unreleased)
+
+The static client is in `web/sketch-jam/`; see
+[the implementation and test guide](../../docs/web-sketch-jam.md). It uses
+the existing mailbox routes, with `?client=web`, and posts
+`{session_id, invite_token, client: "web"}` to `/turn-credentials`.
+The invite token is independently derived from the fragment capability;
+the raw capability and signaling plaintext never reach the Worker. As on
+desktop, the TURN endpoint checks token **shape**, not room membership.
+
+`CORS_ALLOWED_ORIGINS` contains comma-separated exact serialized origins.
+The default is `https://stalemate.band`. Add an actual preview's exact
+HTTPS origin when reviewing it; no wildcard preview suffix is permitted.
+For local development, set `ENVIRONMENT = "development"` and explicitly
+list each localhost or loopback HTTP origin including its port. A different
+port is a different origin. Production refuses HTTP development entries.
+Denied origins and invalid preflights return 403 before any Durable Object
+access. Responses to allowed browser origins include CORS headers even on
+429/503, so the client can explain the failure.
+
+Browser traffic charges the existing mailbox/TURN counters and a separate
+durable `web` counter, capped at 3,000 requests/day (lowerable with
+`WEB_DAILY_REQUESTS`). Existing 10k request / 10k row-write / 1k GB-s daily
+defaults and per-IP limits still apply. Retain the checked-in limits and
+the Workers Free plan; do not enable paid plans or add-ons. SQLite Durable
+Objects on the [Free plan stop operations at its limits](https://developers.cloudflare.com/durable-objects/platform/pricing/).
+
+Web relay minting additionally requires Worker-only secrets
+`WEB_TURN_KEY_ID` and `WEB_TURN_KEY_API_TOKEN` for a distinct Realtime TURN
+key under the same free allowance. Missing configuration fails closed.
+Web credentials last at most one hour (default 600 seconds), and the client
+holds them only in memory. Neither the API tokens nor key identifiers belong
+in the static client. A cap or unreadable analytics produces the visible
+message “relay busy, try same Wi-Fi or the app”. No Worker or static site
+was deployed as part of this implementation.
 
 ### Deploy
 

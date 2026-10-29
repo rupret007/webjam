@@ -19,6 +19,13 @@ defines the counter semantics. Missing scope or zero scoped traffic fails the
 relay proof even if both sidecars report `session_path=relay`. Loopback-shim
 counts and sidecar `RelayBytes` never supply coturn evidence.
 
+Audio proof sends a fixed stream of 1,000 nonce-bound, numbered UDP frames at
+5 ms intervals. Each frame is sent once. Both peers must verify at least 950
+distinct frames; wrong payloads, duplicates, and out-of-range sequences fail.
+This exercises live audio under the configured 1% loss per direction without
+retransmitting audio or retrying a failed case. Receipts retain `music_frames`.
+The lossless TURN integration test separately requires a single exact echo.
+
 `same-lan`/`cone`: `session_path=direct` and coturn 0. `relay`:
 `session_path=relay` and coturn `rb=`/`sb=`. Dual-STUN.
 `WEBJAM_TEST_HARNESS=1`, `WEBJAM_TEST_STUN_SERVER`; relay also

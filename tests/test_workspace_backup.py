@@ -786,7 +786,9 @@ def test_stage_inspection_failure_closes_descriptor_without_touching_other_files
     def fail(descriptor):
         descriptors.append(descriptor)
         raise OSError("injected stage inspection failure")
-    monkeypatch.setattr(backup.os, "fstat", fail)
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.fstat = fail
+    monkeypatch.setattr(backup, "os", simulated_os)
     with pytest.raises(WorkspaceBackupError):
         export_workspace_backup(record, tmp_path / "backup.json")
     assert len(descriptors) == 1
