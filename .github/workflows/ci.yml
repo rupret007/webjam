@@ -185,24 +185,17 @@ jobs:
 
       - name: Audit native release dependency locks
         run: |
-          for target in windows-x64 linux-x64; do
+          for target in windows-x64 linux-x64 macos-x64 macos-arm64; do
             pip-audit --progress-spinner off --disable-pip --no-deps \
               -r "requirements-lock/${target}.txt"
           done
           for lock in \
             component-catalog-verifier-linux-x64.txt \
-            pocket-stage-integration-macos-arm64.txt; do
+            pocket-stage-integration-macos-arm64.txt \
+            macos-x64-cryptography-build.txt; do
             pip-audit --progress-spinner off --disable-pip --no-deps \
               -r "requirements-lock/${lock}"
           done
-          # macOS release locks now use setuptools 84.1.0 which includes the
-          # PYSEC-2026-3447 fix.
-          for target in macos-x64 macos-arm64; do
-            pip-audit --progress-spinner off --disable-pip --no-deps \
-              -r "requirements-lock/${target}.txt"
-          done
-          pip-audit --progress-spinner off --disable-pip --no-deps \
-            -r requirements-lock/macos-x64-cryptography-build.txt
 
       - name: Run UX smoke gate
         run: python ux_smoke_test.py
@@ -1227,6 +1220,13 @@ jobs:
         with:
           python-version: "${{ matrix.python }}"
 
+      - name: Create isolated native build environment
+        timeout-minutes: 3
+        shell: bash
+        run: >-
+          python -I -S tools/native_build_environment.py
+          --target "${{ matrix.target }}" --python-version "${{ matrix.python }}"
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -1616,16 +1616,17 @@ jobs:
                   print("Owned native workflow diagnostics:")
                   print(stream.read(64 * 1024).decode("utf-8", errors="replace"))
 
-      - name: Verify macOS PyInstaller pkg_resources compatibility
+      - name: Verify macOS PyInstaller setuptools compatibility
         if: startsWith(matrix.target, 'macos-')
         run: |
           python - <<'PY'
           from importlib.metadata import version
-          import pkg_resources
+          from importlib.util import find_spec
 
-          assert version("setuptools") == "81.0.0"
-          assert getattr(pkg_resources, "__file__", None)
-          assert hasattr(pkg_resources, "NullProvider")
+          assert version("setuptools") == "84.1.0"
+          # A clean setuptools 84 environment has no pkg_resources. Stale
+          # remnants can select PyInstaller's obsolete NullProvider hook.
+          assert find_spec("pkg_resources") is None
           PY
 
       - name: Build bundled secure transport

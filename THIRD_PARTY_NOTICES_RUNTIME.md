@@ -50,7 +50,7 @@ exception.
 | `pywin32-ctypes` | `0.2.3` | Build | `BSD-3-Clause` | [project](https://github.com/enthought/pywin32-ctypes) |
 | `segno` | `1.6.6` | Runtime | `BSD-3-Clause` | [project](https://github.com/heuer/segno) |
 | `sentry-sdk` | `2.66.0` | Runtime | `MIT` | [project](https://github.com/getsentry/sentry-python) |
-| `setuptools` | `81.0.0 (macos-arm64, macos-x64); 83.0.0 (linux-x64, windows-x64)` | Runtime | `MIT` | [project](https://github.com/pypa/setuptools) |
+| `setuptools` | `84.1.0` | Runtime | `MIT` | [project](https://github.com/pypa/setuptools) |
 | `shiboken6` | `6.11.1` | Runtime | `LGPL-3.0-only` | [project](https://code.qt.io/cgit/pyside/pyside-setup.git/) |
 | `sounddevice` | `0.5.5` | Runtime | `MIT` | [project](https://github.com/spatialaudio/python-sounddevice) |
 | `soundfile` | `0.14.0` | Runtime | `BSD-3-Clause` | [project](https://github.com/bastibe/python-soundfile) |
