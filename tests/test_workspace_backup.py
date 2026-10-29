@@ -786,12 +786,35 @@ def test_stage_inspection_failure_closes_descriptor_without_touching_other_files
     def fail(descriptor):
         descriptors.append(descriptor)
         raise OSError("injected stage inspection failure")
-    monkeypatch.setattr(backup.os, "fstat", fail)
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.fstat = fail
+    monkeypatch.setattr(backup, "os", simulated_os)
     with pytest.raises(WorkspaceBackupError):
         export_workspace_backup(record, tmp_path / "backup.json")
     assert len(descriptors) == 1
     with pytest.raises(OSError):
         real_fstat(descriptors[0])
+    assert not (tmp_path / "backup.json").exists()
+
+
+def test_stage_inspection_failure_preserves_fd_capture_and_unrelated_files(tmp_path, record, monkeypatch, capfd):
+    keep = tmp_path / "unrelated.bin"
+    keep.write_bytes(b"unrelated original bytes")
+    real_fstat = os.fstat
+    simulated_os = SimpleNamespace(**vars(os))
+    def fail(_descriptor):
+        raise OSError("injected stage inspection failure")
+    simulated_os.fstat = fail
+    monkeypatch.setattr(backup, "os", simulated_os)
+    print("before stage failure")
+    with pytest.raises(WorkspaceBackupError):
+        export_workspace_backup(record, tmp_path / "backup.json")
+    print("after stage failure")
+    assert capfd.readouterr().out == "before stage failure\nafter stage failure\n"
+    assert os.fstat is real_fstat
+    with keep.open("rb") as stream:
+        assert os.fstat(stream.fileno()).st_size == len(b"unrelated original bytes")
+        assert stream.read() == b"unrelated original bytes"
     assert not (tmp_path / "backup.json").exists()
 
 
