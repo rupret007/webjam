@@ -106,3 +106,22 @@ def test_software_keyboard_up_is_the_keyboard_element():
     body = _function_body("softwareKeyboardUp")
     assert "keyboards.element.exists" in body
     assert 'buttons["Done"]' not in body
+
+
+def test_tablet_disconnects_hardware_keyboard():
+    """iPad 10th gen on iOS 18.2 ships with hardware keyboard connected.
+
+    The connected hardware keyboard suppresses the software keyboard and causes
+    hasKeyboardFocus to report incorrectly after tapping text fields. The check
+    script must disconnect the hardware keyboard on iPad before running tests.
+    """
+    import inspect
+    source = inspect.getsource(simulator_check.check_devices)
+    assert "_disconnect_hardware_keyboard" in source
+    assert 'label == "tablet"' in source
+
+    disconnect_source = inspect.getsource(simulator_check._disconnect_hardware_keyboard)
+    assert "simctl" in disconnect_source
+    assert "boot" in disconnect_source
+    assert "keyboard" in disconnect_source
+    assert "disconnect" in disconnect_source

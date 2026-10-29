@@ -44,6 +44,23 @@ def main() -> None:
         check_devices(root, output)
 
 
+def _disconnect_hardware_keyboard(identifier: str) -> None:
+    """Disconnect hardware keyboard on iPad so the software keyboard appears in UI tests.
+
+    iOS 18.2 iPad simulators ship with hardware keyboard connected, suppressing the
+    software keyboard and causing hasKeyboardFocus checks to fail after tapping text
+    fields. Disconnecting ensures consistent first-responder and keyboard behavior.
+    """
+    subprocess.run(
+        ["xcrun", "simctl", "boot", identifier],
+        check=False, capture_output=True,
+    )
+    subprocess.run(
+        ["xcrun", "simctl", "io", identifier, "keyboard", "disconnect"],
+        check=False, capture_output=True,
+    )
+
+
 def check_devices(root: Path, output: Path) -> None:
     inventory = json.loads(run("xcrun", "simctl", "list", "--json"))
     runtime = next(
@@ -54,6 +71,8 @@ def check_devices(root: Path, output: Path) -> None:
     for label, name in (("phone", "iPhone SE (3rd generation)"), ("tablet", "iPad (10th generation)")):
         device_type = next(item["identifier"] for item in inventory["devicetypes"] if item["name"] == name)
         identifier = run("xcrun", "simctl", "create", f"WebJam Art {label}", device_type, runtime)
+        if label == "tablet":
+            _disconnect_hardware_keyboard(identifier)
         result = output / f"{label}.xcresult"
         log = output / f"{label}.log"
         entry = {"device": name, "status": "incomplete", "exit_code": None, "result": result.name}
