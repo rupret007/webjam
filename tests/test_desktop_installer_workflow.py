@@ -383,6 +383,13 @@ def test_native_release_build_uses_exact_hashed_locks_and_bounded_intel_exceptio
         "linux-x64": "84.1.0",
     }
     assert 'python-version: "${{ matrix.python }}"' in build
+    isolated = _workflow_step("Create isolated native build environment")
+    assert "python -I -S tools/native_build_environment.py" in isolated
+    assert '--target "${{ matrix.target }}"' in isolated
+    assert '--python-version "${{ matrix.python }}"' in isolated
+    assert build.index("      - name: Set up Python\n") < build.index(isolated)
+    assert build.index(isolated) < build.index("Install hash-locked pip bootstrap")
+    assert "if:" not in isolated
     assert "Install hash-locked pip bootstrap" in build
     assert "Install binary-only native dependencies" in build
     assert "if: matrix.target != 'macos-x64'" in build
