@@ -8,7 +8,7 @@ altgraph==0.17.5
 annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.14.2
-certifi==2026.6.17
+certifi==2026.10.19
 cffi==2.1.0
 click==8.4.2
 cryptography==50.0.0
@@ -28,11 +28,9 @@ pyinstaller==6.21.0
 pyinstaller-hooks-contrib==2026.6
 segno==1.6.6
 sentry-sdk==2.66.0
-# PyInstaller 6.21's macOS pkg_resources runtime hook still requires
-# pkg_resources.NullProvider. Setuptools 82+ removes pkg_resources entirely,
-# which lets the bundle build but makes the frozen app fail on first launch.
-setuptools==81.0.0; sys_platform == "darwin"
-setuptools==83.0.0; sys_platform != "darwin"
+# GHSA-xmj3-9gf7-h52w is fixed in 84.1.0. Use a clean build environment:
+# older pkg_resources remnants must not select PyInstaller's legacy hook.
+setuptools==84.1.0
 sounddevice==0.5.5
 soundfile==0.14.0
 starlette==1.3.1

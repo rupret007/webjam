@@ -19,6 +19,9 @@ repeating the same steps.
 
 1. **Get the app** from [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
    Choose the download for your computer.
+   For the Stalemate private beta, use its organizer's qualified package.
+   A public download with the same version number may not accept the newer
+   invitation; see [community beta setup](docs/COMMUNITY_MUSIC_BETA.md).
 2. **Open it.**
    - **Windows:** if Windows says it protected your PC, choose **More info**,
      then **Run anyway**. A work PC may still block it; ask IT.
@@ -28,11 +31,18 @@ repeating the same steps.
    - **Ubuntu:** unzip the folder, keep it together, and start `WebJam`.
 3. **Start or join.** Choose **Art** or **Music**, then **Host** or **Join**.
    The host uses **Copy Invite** and sends the whole message. The friend
-   pastes it on **Join**. Stay on the **same Wi-Fi or local network**. Keep
-   the host's window open.
+   pastes it on **Join**. If the invitation says **same network**, use the
+   host's Wi-Fi or local network. Keep the host's window open.
 
 **Music Host is Mac-only.** Windows and Linux can Join a Music jam; they
 cannot start one. Any computer can Host or Join Art.
+
+**Unsigned Windows remote Music is blocked.** The current frozen Windows
+candidate requires a valid signature on its native remote transport. Opening
+the app after a Windows warning does not meet that requirement. A same-network
+invitation uses a different path; do not treat it as proof of remote Music.
+The full community music beta still needs qualified builds and physical
+installation, two-way audio and recovery checks on Mac, Windows and Linux.
 
 **What Host does:** opens your room (Art) or starts the private band server
 and Jamulus (Music). When the room is ready, **Copy Invite** appears.
@@ -910,6 +920,16 @@ action shown:
 After Jamulus connects, the session canvas includes Jamulus band chat. That
 chat is unavailable while the private connection itself is still being set
 up, so use the invitation recovery shown by WebJam for connection trouble.
+
+For the separate opt-in [browser Web Join](docs/web-join.md), an interrupted
+or timed-out Join explains the problem, releases audio resources, and enables
+an explicit retry. **Leave session** remains a deliberate exit; it does not
+automatically reconnect or later show a timeout warning. Joining again still
+requires a valid, unused host invitation. Ask the host for a fresh link if the
+old one has expired or may have been consumed.
+An earlier playback or background-audio resume attempt finishing after Leave
+cannot replace that exit message or disconnect your next Join. A playback problem in the current
+attempt still releases audio and offers an explicit retry.
 
 ## Your Music listening mix
 

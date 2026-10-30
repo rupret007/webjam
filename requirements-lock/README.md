@@ -17,9 +17,12 @@ and platform-trust gate remains **NOT RUN** unless separately recorded against
 an exact package.
 The locks target CPython
 3.11.9 on Windows and both macOS targets, CPython
-3.11.15 on Linux, pip 26.2, setuptools 81.0.0 on macOS, and setuptools 83.0.0
-elsewhere. PyInstaller 6.21's macOS `pkg_resources`
-runtime hook requires `NullProvider`, which setuptools 82+ no longer ships.
+3.11.15 on Linux, pip 26.2, and setuptools 84.1.0 on every target and in the
+Intel cryptography build environment. PyInstaller remains 6.21.0 with hooks
+2026.6. Use a fresh environment: setuptools 84 no longer provides
+`pkg_resources`, and stale namespace/package remnants can select PyInstaller's
+legacy `NullProvider` runtime hook. The macOS preflight rejects those remnants;
+the existing frozen-app runtime gates remain mandatory.
 Regenerate all locks with uv 0.11.29 after a deliberate dependency change,
 then rerun the entire native matrix before creating a release tag:
 
@@ -27,12 +30,25 @@ These lock files alone do not claim signed packages, notarization, or
 physical-audio evidence; they record the dependency graph the release workflow
 must use.
 
-The macOS-only pin is a narrow exception to GHSA-h35f-9h28-mq5c. That issue
-affects Unicode exclusion rules while creating an sdist; this release path
-never creates an sdist. The Intel cryptography exception consumes an upstream
-sdist to create a wheel, which does not exercise the vulnerable setuptools
-sdist-creation path. Remove the exception when PyInstaller supports
-setuptools 82+.
+The current Certifi floor and all four native locks use `2026.10.19` to address
+the `PYSEC-2026-4320` audit finding. The regenerated hashes match the
+[maintainer's PyPI release](https://pypi.org/project/certifi/2026.10.19/).
+The native CI and cross-network harness use Go `1.26.10`, the fixed compiler
+for [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809). These source updates do
+not qualify an older package: repeat the normal native matrix and bind any new
+package evidence to its exact source and hashes.
+
+Setuptools 84.1.0 fixes
+[GHSA-xmj3-9gf7-h52w](https://setuptools.pypa.io/en/latest/history.html#v84-1-0),
+which allowed legacy wheel namespace metadata to select a destination outside
+the requested egg directory. All seven native/auxiliary locks are audited
+without advisory ignores; the former macOS setuptools 81 exception is removed.
+A clean local Apple Silicon app freeze and the existing complete Reference
+Studio runtime smoke passed with the unchanged PyInstaller version and these
+patched dependencies (Python 3.11.16). This is dependency compatibility proof,
+not the pinned 3.11.9 release matrix, a signed installer, physical audio or
+Windows/Intel/Linux runtime acceptance. Repeat the native matrix on the exact
+candidate before distribution.
 
 `cryptography==50.0.0` is the first release fixing all three v0.22.2 audit
 findings. Upstream removed x86_64 macOS wheels and support in 49.0.0, so the

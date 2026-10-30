@@ -1,0 +1,1 @@
+- Update the native certificate bundle to Certifi 2026.10.19 and the reviewed Go build toolchain to 1.26.10, addressing the dependency audit findings while preserving certificate verification, hashed native locks and all release trust gates.
