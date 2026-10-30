@@ -1,2 +1,3 @@
 - Windows transport verification uses system API paths instead of an inherited system-root override. Unavailable or malformed native paths refuse launch.
 - Native verifier failures keep private command details out of exception tracebacks, with additional refusal and real child-start controls.
+- Required signature checks supplement a pinned binary hash; unknown native verification platforms refuse launch. Linux retains its pinned artifact and architecture checks.

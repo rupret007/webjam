@@ -1111,3 +1111,22 @@ def test_successful_signature_precedes_real_transport_start(tmp_path, monkeypatc
         assert process.hello().build == "test-build"
     assert events == ["signature", "spawn"]
     assert not process.running and process.process_id is None
+
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32", "linux", "freebsd"])
+def test_signature_requirement_never_substitutes_for_a_pinned_binary_hash(tmp_path, monkeypatch, platform):
+    target = _sidecar(tmp_path)
+    _synthetic_signature_platform(monkeypatch, platform)
+    verifications = []
+    monkeypatch.setattr(transport_runtime, "_verify_platform_signature", lambda path: verifications.append(path))
+    with pytest.raises(TransportLaunchError, match="not installed safely"):
+        _validated_binary(target, require_platform_signature=True)
+    assert verifications == []
+
+
+def test_required_signature_rejects_unsupported_platform(tmp_path, monkeypatch):
+    target = _sidecar(tmp_path)
+    _synthetic_signature_platform(monkeypatch, "freebsd")
+    with pytest.raises(TransportLaunchError, match="not installed safely"):
+        _validated_binary(target, expected_sha256=hashlib.sha256(target.read_bytes()).hexdigest(), require_platform_signature=True)

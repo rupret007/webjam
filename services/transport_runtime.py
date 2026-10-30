@@ -757,8 +757,12 @@ def _verify_platform_signature(path: Path) -> None:
             "SystemRoot": system_root,
             "WEBJAM_VERIFY_BINARY": str(path),
         }
-    else:
+    elif sys.platform.startswith("linux"):
+        # Linux release trust is the mandatory artifact hash and packaged architecture;
+        # there is no universal native executable-signature verifier to invoke.
         return
+    else:
+        raise TransportLaunchError("The transport process is not installed safely.")
     try:
         result = subprocess.run(
             command,
@@ -784,6 +788,9 @@ def _validated_binary(
     expected_machine: str | None = None,
     require_platform_signature: bool = False,
 ) -> Path:
+    # A generic valid publisher/signature is supplemental, never a binary trust anchor.
+    if require_platform_signature and expected_sha256 is None:
+        raise TransportLaunchError("The transport process is not installed safely.")
     candidate = Path(path).expanduser()
     if not candidate.is_absolute():
         raise TransportLaunchError("The transport process is not installed safely.")
