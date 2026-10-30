@@ -358,7 +358,9 @@ class _NativeWindowsApi:
             _deny()
 
     def open_pinned(self, path, *, directory):
-        access = 0x20000 | 0x80 | (0 if directory else 0x80000000)
+        # FILE_LIST_DIRECTORY activates read sharing checks for directories.
+        # Metadata-only access does not fence existing/future WRITE/DELETE opens.
+        access = 0x20000 | 0x80 | (0x1 if directory else 0x80000000)
         handle = self.create(path, access, 1, None, 3, 0x00200000 | 0x02000000, None)
         if handle in {None, self.c.c_void_p(-1).value}:
             _deny()

@@ -55,6 +55,18 @@ and [the difference between null and empty DACLs](https://learn.microsoft.com/en
 
 ## Replacement fence and scope of tests
 
+Directory pins request FILE_LIST_DIRECTORY as well as READ_CONTROL and
+FILE_READ_ATTRIBUTES: metadata-only opens do not activate read sharing
+accounting. A directory without the required list access is refused; there is
+no metadata-only fallback or ACL repair. The explicit Windows control
+`python -X dev -m tests.support.windows_directory_sharing_control` proves
+directory-only fencing without a leaf handle, reverse-order DELETE conflicts,
+full-guard ancestor deletion/rename and recovery after release. It runs in the
+existing unconditional Windows diagnostic job and refuses selectors, skips
+and non-Windows execution. Only its newly created private lab receives ACL
+changes; real parent directories remain unchanged. This does not qualify
+signing, installation, audio or all other native diagnostic cases.
+
 The adapter uses CreateFileW with OPEN_EXISTING, OPEN_REPARSE_POINT,
 BACKUP_SEMANTICS, no inheritable security attributes and FILE_SHARE_READ only.
 The guard opens root-to-leaf before path resolution, reads handle-bound owner,

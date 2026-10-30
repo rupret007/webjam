@@ -247,7 +247,7 @@ def test_native_open_arguments_are_read_only_noninheritable_and_deny_write_delet
     assert calls == [
         (
             TARGET,
-            0x20000 | 0x80 | (0 if directory else 0x80000000),
+            0x20000 | 0x80 | (0x1 if directory else 0x80000000),
             1,
             None,
             3,
