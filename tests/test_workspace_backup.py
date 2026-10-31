@@ -296,7 +296,7 @@ def test_backup_path_replaced_between_inspection_and_open_is_refused(tmp_path, r
 
 
 @pytest.mark.parametrize("platform", ["posix", "nt"])
-@pytest.mark.parametrize("changed", [None, "path_ctime", "handle_ctime"])
+@pytest.mark.parametrize("changed", [None, "path_ctime", "handle_ctime", "handle_ctime_final"])
 def test_preview_checks_ctime_within_each_api_on_windows(tmp_path, record, monkeypatch, platform, changed):
     target = tmp_path / "backup.json"
     target.write_bytes(_wire(_payload(record)))
@@ -313,6 +313,8 @@ def test_preview_checks_ctime_within_each_api_on_windows(tmp_path, record, monke
         values["st_ctime_ns"] = 1_000_000_000 if source == "path" else 2_000_000_000
         if changed == source + "_ctime" and inspections[source] == 2:
             values["st_ctime_ns"] += 1
+        if changed == "handle_ctime_final" and source == "handle" and inspections[source] == 3:
+            values["st_ctime_ns"] += 1
         return SimpleNamespace(**values)
 
     monkeypatch.setattr(Path, "lstat", lambda path: inspect(real_lstat(path), "path"))
@@ -325,23 +327,233 @@ def test_preview_checks_ctime_within_each_api_on_windows(tmp_path, record, monke
     else:
         with pytest.raises(WorkspaceBackupError, match="changed while"):
             preview_workspace_backup(target)
-    assert inspections == {"path": 2, "handle": 2}
+    # The two captures retain the original path checks and add a final handle check.
+    assert inspections == {"path": 2, "handle": 3}
 
 
 def test_preview_refuses_same_size_edit_during_read_with_restored_mtime(tmp_path, record, monkeypatch):
     target = tmp_path / "backup.json"
     original = _wire(_payload(record))
+    changed = _wire(_payload(replace(record, notes=record.notes.replace("Every line", "Other line"))))
+    assert len(changed) == len(original) and changed != original
     target.write_bytes(original)
     before = target.stat()
     real_fstat = os.fstat
+    real_lstat = Path.lstat
     inspections = []
 
+    def with_ctime(info, ctime):
+        values = {key: getattr(info, key) for key in (
+            "st_mode", "st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")}
+        values["st_ctime_ns"] = ctime
+        return SimpleNamespace(**values)
+
     def edit_after_read(descriptor):
-        if inspections:
-            target.write_bytes(original.replace(b"Every line", b"Other line"))
+        if len(inspections) == 1:
+            target.write_bytes(changed)
             os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+        # Model a visible handle ctime tick independently of the native clock.
+        result = with_ctime(real_fstat(descriptor), before.st_ctime_ns + bool(inspections))
+        inspections.append(result)
+        return result
+
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.fstat = edit_after_read
+    monkeypatch.setattr(backup, "os", simulated_os)
+    monkeypatch.setattr(Path, "lstat", lambda path: with_ctime(real_lstat(path), before.st_ctime_ns)
+                        if path == target else real_lstat(path))
+    with pytest.raises(WorkspaceBackupError, match="changed while"):
+        preview_workspace_backup(target)
+    assert len(inspections) == 3
+    assert inspections[0].st_size == inspections[1].st_size
+    assert inspections[0].st_mtime_ns == inspections[1].st_mtime_ns
+    assert inspections[0].st_ctime_ns != inspections[1].st_ctime_ns
+    assert inspections[1].st_size == inspections[2].st_size
+    assert inspections[1].st_mtime_ns == inspections[2].st_mtime_ns
+    assert inspections[1].st_ctime_ns == inspections[2].st_ctime_ns
+    assert target.read_bytes() == changed
+
+
+def test_preview_refuses_restored_bytes_when_ctime_records_an_edit(tmp_path, record, monkeypatch):
+    target = tmp_path / "backup.json"
+    original = _wire(_payload(record))
+    changed = _wire(_payload(replace(record, notes=record.notes.replace("Every line", "Other line"))))
+    assert len(changed) == len(original) and changed != original
+    target.write_bytes(original)
+    before = target.stat()
+    real_fstat = os.fstat
+    real_lstat = Path.lstat
+    inspections = []
+    mutations = []
+
+    def with_ctime(info, ctime):
+        values = {key: getattr(info, key) for key in (
+            "st_mode", "st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")}
+        values["st_ctime_ns"] = ctime
+        return SimpleNamespace(**values)
+
+    def edit_and_restore_after_read(descriptor):
+        if len(inspections) == 1:
+            target.write_bytes(changed)
+            os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+            mutations.append(target.read_bytes())
+        result = with_ctime(real_fstat(descriptor), before.st_ctime_ns + bool(inspections))
+        inspections.append(result)
+        if len(inspections) == 2:
+            # Both captures see the original bytes; ctime must still reject the edit.
+            target.write_bytes(original)
+            os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+            mutations.append(target.read_bytes())
+        return result
+
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.fstat = edit_and_restore_after_read
+    monkeypatch.setattr(backup, "os", simulated_os)
+    monkeypatch.setattr(Path, "lstat", lambda path: with_ctime(real_lstat(path), before.st_ctime_ns)
+                        if path == target else real_lstat(path))
+    with pytest.raises(WorkspaceBackupError, match="changed while"):
+        preview_workspace_backup(target)
+    assert len(inspections) == 3
+    assert inspections[0].st_size == inspections[1].st_size == inspections[2].st_size
+    assert inspections[0].st_mtime_ns == inspections[1].st_mtime_ns == inspections[2].st_mtime_ns
+    assert inspections[0].st_ctime_ns != inspections[1].st_ctime_ns
+    assert inspections[1].st_ctime_ns == inspections[2].st_ctime_ns
+    assert mutations == [changed, original]
+    assert target.read_bytes() == original
+
+
+def test_aba_write_entirely_before_second_read_is_documented_limitation(tmp_path, record, monkeypatch):
+    """ABA writes that complete before the second capture cannot be detected.
+
+    This test documents the known limitation: if a file is modified (A->B->A)
+    entirely between the two bounded captures AND both reads return A with
+    indistinguishable metadata, the check passes. Real writes often tick ctime
+    even when mtime is restored; those edits are rejected and are not this gap.
+    """
+    target = tmp_path / "backup.json"
+    original = _wire(_payload(record))
+    changed = _wire(_payload(replace(record, notes=record.notes.replace("Every line", "Other line"))))
+    assert len(changed) == len(original) and changed != original
+    target.write_bytes(original)
+    before = target.stat()
+    real_fstat = os.fstat
+    real_lstat = Path.lstat
+    real_capture = backup._bounded_capture
+    capture_count = [0]
+
+    def unchanged_metadata(_info):
+        return SimpleNamespace(**{key: getattr(before, key) for key in (
+            "st_mode", "st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")})
+
+    def aba_during_seek(stream):
+        capture_count[0] += 1
+        if capture_count[0] == 1:
+            result = real_capture(stream)
+            # ABA happens entirely before seek/second-read: A->B->A
+            target.write_bytes(changed)
+            target.write_bytes(original)
+            os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+            return result
+        return real_capture(stream)
+
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.fstat = lambda descriptor: unchanged_metadata(real_fstat(descriptor))
+    monkeypatch.setattr(backup, "os", simulated_os)
+    monkeypatch.setattr(Path, "lstat", lambda path: unchanged_metadata(real_lstat(path))
+                        if path == target else real_lstat(path))
+    monkeypatch.setattr(backup, "_bounded_capture", aba_during_seek)
+    # Documented limitation: identical bytes and metadata across every capture.
+    preview = preview_workspace_backup(target)
+    assert capture_count[0] == 2
+    # The preview accepts the bytes even though the file was modified.
+    # This is the documented ABA limitation.
+    assert preview.record.notes == record.notes
+
+
+def test_preview_refuses_same_size_edit_during_read_with_unchanged_metadata(tmp_path, record, monkeypatch):
+    target = tmp_path / "backup.json"
+    original = _wire(_payload(record))
+    changed = _wire(_payload(replace(record, notes=record.notes.replace("Every line", "Other line"))))
+    assert len(changed) == len(original) and changed != original
+    assert backup._decode(original).record.notes == record.notes
+    assert backup._decode(changed).record.notes == record.notes.replace("Every line", "Other line")
+    target.write_bytes(original)
+    before = target.stat()
+    real_fstat = os.fstat
+    real_lstat = Path.lstat
+    inspections = []
+
+    def unchanged_metadata(_info):
+        # Model a coarse timestamp clock without relying on a native tick.
+        return SimpleNamespace(**{key: getattr(before, key) for key in (
+            "st_mode", "st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")})
+
+    def edit_after_read(descriptor):
+        if len(inspections) == 1:
+            target.write_bytes(changed)
+            os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+        result = unchanged_metadata(real_fstat(descriptor))
+        inspections.append(result)
+        return result
+
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.fstat = edit_after_read
+    monkeypatch.setattr(backup, "os", simulated_os)
+    monkeypatch.setattr(Path, "lstat", lambda path: unchanged_metadata(real_lstat(path))
+                        if path == target else real_lstat(path))
+    with pytest.raises(WorkspaceBackupError, match="changed while"):
+        preview_workspace_backup(target)
+    assert len(inspections) == 3
+    for key in ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns"):
+        assert len({getattr(info, key) for info in inspections}) == 1
+    assert target.read_bytes() == changed
+
+
+def _simulate_backup_path_replacement(monkeypatch, target):
+    """Change the reported path identity without renaming an open Windows file."""
+    real_lstat = Path.lstat
+    before = target.lstat()
+    replaced = False
+    inspections = []
+
+    def inspect(path, *args, **kwargs):
+        if path != target:
+            return real_lstat(path, *args, **kwargs)
+        values = {key: getattr(before, key) for key in (
+            "st_mode", "st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")}
+        # Keep size and timestamps equal so only replacement detection can reject it.
+        values["st_ino"] += replaced
+        result = SimpleNamespace(**values)
+        inspections.append(result)
+        return result
+
+    def replace_path():
+        nonlocal replaced
+        assert not replaced
+        replaced = True
+
+    monkeypatch.setattr(Path, "lstat", inspect)
+    return replace_path, inspections
+
+
+@pytest.mark.parametrize("change", ["replace", "grow", "truncate"])
+def test_preview_refuses_changes_before_readback(tmp_path, record, monkeypatch, change):
+    target = tmp_path / "backup.json"
+    original = _wire(_payload(record))
+    target.write_bytes(original)
+    real_fstat = os.fstat
+    inspections = []
+    if change == "replace":
+        replace_path, path_inspections = _simulate_backup_path_replacement(monkeypatch, target)
+
+    def change_after_capture(descriptor):
+        if len(inspections) == 1:
+            if change == "replace":
+                replace_path()
+            else:
+                target.write_bytes(original + b" " if change == "grow" else original[:-1])
         result = real_fstat(descriptor)
-        if inspections:
+        if inspections and change != "replace":
             # This unit fixture reports a changed ctime deterministically.
             # It tests the ctime guard, not native filesystem clock resolution.
             values = {key: getattr(result, key) for key in (
@@ -352,14 +564,78 @@ def test_preview_refuses_same_size_edit_during_read_with_restored_mtime(tmp_path
         return result
 
     simulated_os = SimpleNamespace(**vars(os))
-    simulated_os.fstat = edit_after_read
+    simulated_os.fstat = change_after_capture
     monkeypatch.setattr(backup, "os", simulated_os)
     with pytest.raises(WorkspaceBackupError, match="changed while"):
         preview_workspace_backup(target)
-    assert len(inspections) == 2
-    assert inspections[0].st_size == inspections[1].st_size
-    assert inspections[0].st_mtime_ns == inspections[1].st_mtime_ns
-    assert inspections[0].st_ctime_ns != inspections[1].st_ctime_ns
+    assert len(inspections) == 3
+    if change == "replace":
+        assert len(path_inspections) == 2
+        assert path_inspections[0].st_ino != path_inspections[1].st_ino
+        for key in ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns"):
+            assert len({getattr(info, key) for info in inspections}) == 1
+        assert target.read_bytes() == original
+    else:
+        assert target.read_bytes() == (original + b" " if change == "grow" else original[:-1])
+
+
+def _limit_backup_reads(monkeypatch, limit):
+    real_fdopen = os.fdopen
+    reads = []
+
+    class LimitedStream:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def __getattr__(self, name):
+            return getattr(self.stream, name)
+
+        def read(self, size):
+            chunk = self.stream.read(min(size, limit))
+            reads.append(len(chunk))
+            return chunk
+
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.fdopen = lambda *args, **kwargs: LimitedStream(real_fdopen(*args, **kwargs))
+    monkeypatch.setattr(backup, "os", simulated_os)
+    return reads
+
+
+def test_preview_fills_short_reads_from_same_descriptor_with_limited_stream(tmp_path, record, monkeypatch):
+    target = tmp_path / "backup.json"
+    target.write_bytes(_wire(_payload(record)))
+    reads = _limit_backup_reads(monkeypatch, 7)
+    assert preview_workspace_backup(target).record == record
+    assert len(reads) > 2 and max(reads) <= 7
+
+
+def test_preview_rejects_valid_prefix_followed_by_unread_bytes_with_limited_stream(tmp_path, record, monkeypatch):
+    target = tmp_path / "backup.json"
+    valid = _wire(_payload(record))
+    target.write_bytes(valid + b"not part of the valid envelope")
+    _limit_backup_reads(monkeypatch, len(valid))
+    with pytest.raises(WorkspaceBackupError):
+        preview_workspace_backup(target)
+
+
+def test_capture_stops_at_existing_size_limit_even_without_eof_in_multiple_chunks():
+    requests = []
+
+    class GrowingStream:
+        def read(self, size):
+            requests.append(size)
+            return b"x" * size
+
+    captured = backup._bounded_capture(GrowingStream())
+    assert len(captured) == sum(requests) == backup.MAX_WORKSPACE_BACKUP_BYTES + 1
+    assert max(requests) <= 64 * 1024
+    assert len(requests) > 1
 
 
 def _open_race_read(path, flags, *, _crt=None):
@@ -528,18 +804,25 @@ def test_preview_refuses_file_changes_after_first_read(tmp_path, record, monkeyp
     target = tmp_path / "backup.json"
     original = _wire(_payload(record))
     target.write_bytes(original)
+    if change == "replace":
+        replace_path, path_inspections = _simulate_backup_path_replacement(monkeypatch, target)
 
     def change_after_first_read(value):
         assert value == original
         if change == "replace":
-            target.rename(tmp_path / "retained.json")
-            target.write_bytes(original)
+            replace_path()
         else:
             target.write_bytes(original + b" " if change == "grow" else original[:-1])
 
     _wrap_backup_reads(monkeypatch, after_read=change_after_first_read)
     with pytest.raises(WorkspaceBackupError, match="changed while"):
         preview_workspace_backup(target)
+    if change == "replace":
+        assert len(path_inspections) == 2
+        assert path_inspections[0].st_ino != path_inspections[1].st_ino
+        assert target.read_bytes() == original
+    else:
+        assert target.read_bytes() == (original + b" " if change == "grow" else original[:-1])
 
 
 def test_preview_fills_short_reads_from_same_descriptor(tmp_path, record, monkeypatch):
@@ -875,13 +1158,22 @@ def test_unimported_v1_bytes_remain_exactly_compatible(tmp_path):
 
 def test_stage_inspection_failure_closes_descriptor_without_touching_other_files(tmp_path, record, monkeypatch):
     real_fstat = os.fstat
+    real_fdopen = backup.os.fdopen
+    stage_descriptors = []
     descriptors = []
-    def fail(descriptor):
-        descriptors.append(descriptor)
-        raise OSError("injected stage inspection failure")
-    simulated_os = SimpleNamespace(**vars(os))
-    simulated_os.fstat = fail
-    monkeypatch.setattr(backup, "os", simulated_os)
+
+    def stage_fdopen(descriptor, *args, **kwargs):
+        stage_descriptors.append(descriptor)
+        return real_fdopen(descriptor, *args, **kwargs)
+
+    def fail_stage_inspection(descriptor):
+        if stage_descriptors and descriptor == stage_descriptors[0]:
+            descriptors.append(descriptor)
+            raise OSError("injected stage inspection failure")
+        return real_fstat(descriptor)
+
+    monkeypatch.setattr(backup.os, "fdopen", stage_fdopen)
+    monkeypatch.setattr(backup.os, "fstat", fail_stage_inspection)
     with pytest.raises(WorkspaceBackupError):
         export_workspace_backup(record, tmp_path / "backup.json")
     assert len(descriptors) == 1
