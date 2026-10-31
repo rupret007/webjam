@@ -1754,7 +1754,6 @@ jobs:
         env:
           WEBJAM_WEB_JOIN_TARGET: ${{ inputs.web_join_target || 'public' }}
         run: |
-          set -euo pipefail
           mkdir -p out
           python -m PyInstaller --clean --noconfirm webjam.spec
           metadata_root=dist/WebJam/_internal

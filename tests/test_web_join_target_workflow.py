@@ -16,7 +16,11 @@ def test_target_input_is_allowlisted_and_passed_as_data():
     assert "WEBJAM_WEB_JOIN_TARGET: ${{ inputs.web_join_target || 'public' }}" in build
     script = build.split("        run: |\n", 1)[1]
     assert "${{ inputs.web_join_target" not in script
-    assert 'set -euo pipefail' in script
+    # Explicit Bash retains Actions' existing -e/pipefail contract. Do not
+    # change unset-variable behavior across the rest of this large build step.
+    assert build.startswith("        shell: bash\n")
+    assert "continue-on-error:" not in build
+    assert "set +e" not in script.split("python -m tests.support.verify_packaged_web_join_target", 1)[0]
 
 
 def test_every_desktop_target_verifies_its_actual_bundled_manifest():
