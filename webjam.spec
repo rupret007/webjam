@@ -189,6 +189,14 @@ a = Analysis(
         # Bundled Inter typeface (OFL — licenses/INTER_OFL.txt)
         (str(ROOT / "webjam_qt" / "theme" / "fonts"), "webjam_qt/theme/fonts"),
         (str(ROOT / "licenses" / "INTER_OFL.txt"), "THIRD_PARTY_LICENSES"),
+        # Qt for Python's LGPL option incorporates the GPLv3 text. Keep both
+        # copies beside the main app's notices, independent of Jamulus's Qt.
+        (str(ROOT / "licenses" / "QT_LGPL-3.0-only.txt"), "THIRD_PARTY_LICENSES"),
+        (str(ROOT / "licenses" / "QT_GPL-3.0-only.txt"), "THIRD_PARTY_LICENSES"),
+        (
+            str(ROOT / "packaging" / "QT-PYSIDE-LICENSE-PROVENANCE.json"),
+            "THIRD_PARTY_LICENSES",
+        ),
         (
             str(ROOT / "licenses" / "CRYPTOGRAPHY_LICENSE.txt"),
             "THIRD_PARTY_LICENSES",
