@@ -114,6 +114,45 @@ def test_malformed_v3_is_never_restored_to_the_join_field(qapp, tmp_path: Path) 
     qapp.processEvents()
 
 
+@pytest.mark.parametrize("role", ["", "join"])
+def test_native_acceptance_without_confirmed_choice_keeps_launcher_open(
+    qapp, tmp_path: Path, role: str,
+) -> None:
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    dialog = LaunchDialog(settings)
+    accepted = []
+    dialog.accepted.connect(lambda: accepted.append(True))
+    dialog.show_join()
+    dialog._invite_input.setText("not-a-webjam-invitation")
+    dialog.selected_role = role
+    dialog.accept()
+    assert accepted == []
+    assert dialog.result() == LaunchDialog.DialogCode.Rejected
+    assert dialog.selected_role == ""
+    assert dialog._invite_input.text() == ""
+    assert not Path(settings.config_file).exists()
+    assert not dialog._submitting
+    dialog.reject()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_invalid_plain_paste_never_accepts_join(qapp, tmp_path: Path) -> None:
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    dialog = LaunchDialog(settings)
+    accepted = []
+    dialog.accepted.connect(lambda: accepted.append(True))
+    dialog.show_join()
+    dialog._invite_input.setText("not-a-webjam-invitation")
+    dialog._join_button_primary.click()
+    assert accepted == []
+    assert dialog.selected_role == ""
+    assert not Path(settings.config_file).exists()
+    dialog.reject()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
 def test_bearer_process_arguments_are_ignored_before_launch_dialog() -> None:
     remote = _issued().private_link.reveal_for_clipboard()
     private = create_invite_link(

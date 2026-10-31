@@ -894,6 +894,9 @@ invitation succeeded.
 The Join door contains one masked invitation field, one **Join** button, and a
 privacy reminder. When the field is empty, “Paste an invite to continue” explains
 why Join is unavailable. Keyboard order stays **Invite → Join → Back**.
+An incomplete launch choice returns to the launcher without starting a
+workspace or audio. Saved Host settings cannot stand in for a missing Join
+invitation; choose Host deliberately or paste a valid invitation to continue.
 Paste the complete invitation copied from the host. Harmless
 message whitespace and surrounding punctuation are accepted; incomplete,
 expired, malformed, incompatible, and unsupported invitations are rejected
