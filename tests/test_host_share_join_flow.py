@@ -14,6 +14,7 @@ from shiboken6 import isValid
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtGui import QAccessible
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
@@ -51,6 +52,12 @@ def _authorize_microphone_permission(monkeypatch: pytest.MonkeyPatch) -> None:
         "webjam_qt.platform_permissions.microphone_permission_status",
         lambda: "authorized",
     )
+
+
+def _accessible_name(widget) -> str:
+    interface = QAccessible.queryAccessibleInterface(widget)
+    assert interface is not None
+    return interface.text(QAccessible.Text.Name)
 
 
 def test_invite_link_round_trip_contains_only_public_connection_data():
@@ -398,6 +405,7 @@ def test_windows_installer_launch_failure_is_actionable(qapp, tmp_path):
     assert dialog._installer_error.text() == (
         "The installer couldn’t open. Re-extract WebJam and try Install the music component again."
     )
+    assert _accessible_name(dialog._installer_error) == dialog._installer_error.text()
     assert dialog._install_jamulus_button.isEnabled()
 
 
@@ -423,6 +431,7 @@ def test_windows_installer_replacement_is_rejected_before_launch(qapp, tmp_path)
         "The included music component installer failed its integrity check. "
         "Re-extract an official WebJam download and try again."
     )
+    assert _accessible_name(dialog._installer_error) == dialog._installer_error.text()
     assert not dialog._install_jamulus_button.isEnabled()
 
 
@@ -481,6 +490,7 @@ def test_invalid_launch_name_blocks_host_and_focuses_the_editable_preview(
     assert not config.exists()
     assert dialog._name_error.isVisibleTo(dialog)
     assert "too long" in dialog._name_error.text()
+    assert _accessible_name(dialog._name_error) == dialog._name_error.text()
     assert dialog._name_input.hasFocus()
     dialog.close()
 
@@ -566,6 +576,57 @@ def _invite_field_matches(dialog, expected: str) -> bool:
 
 
 @pytest.mark.parametrize(
+    "profile", ("music", "podcast_voice", "review_rehearsal", "art")
+)
+def test_join_accessibility_exposes_current_guidance_error_and_retry(
+    qapp, tmp_path, profile
+):
+    config = tmp_path / "settings.json"
+    dialog = LaunchDialog(AppSettings(config_file=str(config)))
+    selector = dialog._creator_profile_selector
+    selector.setCurrentIndex(selector.findData(profile))
+    dialog.show_join()
+    dialog.show()
+    qapp.processEvents()
+    try:
+        for label in (
+            dialog._join_subtitle, dialog._join_privacy, dialog._join_status,
+        ):
+            assert label.text()
+            assert _accessible_name(label) == label.text()
+        assert _accessible_name(dialog._join_status) == "Paste an invite to continue"
+
+        dialog._invite_input.setText("webjam://join?v=1")
+        assert _accessible_name(dialog._join_status) == "Invitation pasted — choose Join"
+        dialog._join_button_primary.click()
+        qapp.processEvents()
+
+        assert dialog.result() != dialog.DialogCode.Accepted
+        assert dialog.selected_role == ""
+        assert not config.exists()
+        assert dialog._invite_input.hasFocus()
+        assert dialog._join_error.isVisibleTo(dialog)
+        assert "whole message" in _accessible_name(dialog._join_error)
+        assert _accessible_name(dialog._join_error) == dialog._join_error.text()
+        assert _accessible_name(dialog._join_status) == "That invite didn't work"
+
+        # Editing clears the old explanation and exposes the new unchecked
+        # paste status, rather than leaving a stale accessible error behind.
+        dialog._invite_input.setText("webjam://join?v=99")
+        assert _accessible_name(dialog._join_error) == ""
+        assert not dialog._join_error.isVisibleTo(dialog)
+        assert _accessible_name(dialog._join_status) == "Invitation pasted — choose Join"
+        dialog._join_button_primary.click()
+        qapp.processEvents()
+        assert dialog.result() != dialog.DialogCode.Accepted
+        assert _accessible_name(dialog._join_error) == dialog._join_error.text()
+        assert dialog._join_error.text()
+        assert dialog._invite_input.hasFocus()
+    finally:
+        dialog.close()
+
+
+@pytest.mark.parametrize(
     "invite_factory",
     (
         lambda: create_invite_link("192.168.1.42", session_name="Keep Paste"),
@@ -601,10 +662,12 @@ def test_invalid_name_keeps_pasted_invite_for_one_retry(
     assert dialog._join_status.text() == "Invitation pasted — choose Join"
     assert dialog._name_error.isVisibleTo(dialog)
     assert dialog._name_error.text() == "Enter a musician name."
+    assert _accessible_name(dialog._name_error) == "Enter a musician name."
     assert dialog._name_input.isVisibleTo(dialog)
     assert dialog._name_input.hasFocus()
 
     dialog._name_input.setText("Artist")
+    assert _accessible_name(dialog._name_error) == ""
     dialog._join()
     qapp.processEvents()
 
@@ -635,6 +698,8 @@ def test_join_door_reports_checking_without_reflecting_private_text(
             dialog._join_privacy.text(),
             dialog._join_button_primary.text(),
             dialog.accessibleDescription(),
+            _accessible_name(dialog._join_error),
+            _accessible_name(dialog._join_status),
         )
     )
     assert dialog._join_status.text() == "That invite didn't work"
@@ -664,6 +729,8 @@ def test_join_door_never_reflects_case_varied_private_invite(
     assert dialog._join_status.text() == "That invite didn't work"
     assert dialog._invite_input.text() == ""
     assert "PRIVATE-UPPER-SENTINEL" not in dialog.accessibleDescription()
+    assert "PRIVATE-UPPER-SENTINEL" not in _accessible_name(dialog._join_error)
+    assert "PRIVATE-UPPER-SENTINEL" not in _accessible_name(dialog._join_status)
     dialog.close()
 
 
@@ -687,7 +754,9 @@ def test_pasted_join_save_failure_is_visible_and_retryable(qapp, tmp_path):
     assert dialog.showing_choices is False
     assert dialog._join_error.isVisibleTo(dialog)
     assert "couldn’t save this choice" in dialog._join_error.text()
+    assert _accessible_name(dialog._join_error) == dialog._join_error.text()
     assert dialog._choice_error.text() == ""
+    assert _accessible_name(dialog._choice_error) == ""
     assert dialog._invite_input.text() == ""
     assert dialog._invite_input.hasFocus()
     assert dialog._join_button_primary.text() == "Join"
