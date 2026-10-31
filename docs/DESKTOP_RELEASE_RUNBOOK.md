@@ -14,6 +14,10 @@ source build and target. Every desktop builder verifies its actual bundled copy
 through `tests.support.verify_packaged_web_join_target`: under
 `Contents/Resources` on Mac and `_internal` on Windows/Linux. Keep that document
 with the bundle and its existing build ID, checksum and signature proof.
+Rollback restores a complete previously qualified application package with its
+matching transport and data. Do not switch destinations by editing or exchanging
+manifest files between packages. User settings and community storage need no
+migration for this build-only routing change.
 
 Private-beta packaging refuses a tag; the release job also requires the public
 target. No private configuration is eligible for the draft/Latest release path.

@@ -84,6 +84,10 @@ def read_target_document(path: Path, expected_build: str) -> str:
 
 
 def _manifest_path() -> Path:
+    if sys.platform == "darwin":
+        # PyInstaller may alias Resources data below Frameworks. Select the
+        # canonical bundle data file, then retain the final-symlink refusal.
+        return Path(sys.executable).resolve().parent.parent / "Resources" / MANIFEST_NAME
     return Path(__file__).resolve().parents[1] / MANIFEST_NAME
 
 

@@ -36,6 +36,26 @@ def test_source_default_does_not_read_a_packaged_or_environment_override(monkeyp
     assert target.web_join_page() == "https://stalemate.band/join/"
 
 
+def test_macos_uses_canonical_resources_instead_of_the_frameworks_data_alias(tmp_path, monkeypatch):
+    contents = tmp_path / "WebJam.app" / "Contents"
+    resources, frameworks = contents / "Resources", contents / "Frameworks"
+    resources.mkdir(parents=True)
+    frameworks.mkdir()
+    executable = contents / "MacOS" / "WebJam"
+    executable.parent.mkdir()
+    executable.touch()
+    (resources / target.MANIFEST_NAME).write_bytes(target.build_target_document("private-beta", BUILD))
+    (frameworks / target.MANIFEST_NAME).write_bytes(b"wrong data location")
+    monkeypatch.setattr(target.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(target.sys, "platform", "darwin")
+    monkeypatch.setattr(target.sys, "executable", str(executable))
+    monkeypatch.setattr(target, "__file__", str(frameworks / "core" / "web_join_target.py"))
+    monkeypatch.setattr(target, "build_id", lambda: BUILD)
+
+    assert target._manifest_path() == resources / target.MANIFEST_NAME
+    assert target.web_join_page() == PRIVATE_PAGE
+
+
 @pytest.mark.parametrize("identifier", ["public", "private-beta"])
 def test_manifest_round_trip_is_bound_to_the_exact_build(identifier):
     document = target.build_target_document(identifier, BUILD)
