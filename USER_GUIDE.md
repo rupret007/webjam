@@ -891,6 +891,9 @@ invitation succeeded.
 The Join door contains one masked invitation field, one **Join** button, and a
 privacy reminder. When the field is empty, “Paste an invite to continue” explains
 why Join is unavailable. Keyboard order stays **Invite → Join → Back**.
+The accessibility interface exposes the visible instructions, privacy reminder,
+current status and error explanation. Editing an invitation clears the previous
+error so assistive tools read the current state.
 An incomplete launch choice returns to the launcher without starting a
 workspace or audio. Saved Host settings cannot stand in for a missing Join
 invitation; choose Host deliberately or paste a valid invitation to continue.
