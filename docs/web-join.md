@@ -127,6 +127,10 @@ quota bypass into direct mode. Pion counts socket traffic in both directions
 (including ICE, DTLS, SRTP, RTCP and TURN transport overhead), closing at a
 maximum 256 MiB per guest session; the credential response may lower that cap.
 
+If that service is unavailable, the guest is asked to try later or contact the
+host. Moving onto the same Wi-Fi does not replace the required web credentials.
+The failure still closes the attempted audio session before a deliberate retry.
+
 Cloudflare currently provides a [shared 1,000 GB monthly SFU/TURN free allowance](https://developers.cloudflare.com/realtime/sfu/platform/pricing/).
 The Worker must remain on Workers Free with dedicated web TURN accounting and
 no paid upgrades. Account-wide usage outside these keys must also stay within
