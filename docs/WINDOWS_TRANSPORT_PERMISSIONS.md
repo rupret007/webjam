@@ -1,8 +1,10 @@
 # Windows transport permissions contract
 
-Source implementation and OS-isolated tests only, 2026-10-25. **Native Windows
-API behavior, a frozen installed package and real Authenticode remain
-unqualified. This change does not make the unsigned Windows beta available.**
+Source implementation, OS-isolated tests and native diagnostic definition,
+2026-10-25. **The earlier eight-case Windows control result is separate from
+qualification of the explicit command below, whose Windows CI rerun is pending.
+A frozen installed package and real Authenticode remain unqualified. This change
+does not make the unsigned Windows beta available.**
 Base: `83af86e6bf3747e362db90870f09a928130623a2` (PR401). No signing purchase,
 installation, credential, provider, dependency constraint or release change.
 
@@ -99,3 +101,74 @@ both successful and failed CreateProcess/signature results. Verify native
 structure layouts and API cleanup, actual installed package/CPython version and
 handle lifetimes; then separately qualify signing, app installation and audio.
 Keep unsigned Windows availability and all existing release holds unchanged.
+
+## Bounded actual Windows diagnostic
+
+The separate follow-up based on
+`005d72a278b68519fa6209bc9933f85eb0ebd902` adds eight native cases to the existing
+unconditional `windows-diagnostic-control` job. It adds no job, dispatch,
+dependency, installer, signature exception or release action. The three-minute
+step runs even when earlier controls fail and retains its JUnit, source/hash and
+environment receipts with the existing control artifacts. A failing native
+control still fails the job. A follow-up moves those unchanged case bodies into
+an explicit support command, outside default portable pytest discovery, without
+a skip/xfail marker or integrity-check exception.
+
+```text
+python -X dev -m tests.support.windows_transport_permissions_native_control
+```
+
+The command accepts no options, including help, output-path or selection flags.
+It refuses inherited `PYTEST_ADDOPTS`/`PYTEST_PLUGINS`, disables plugin autoload
+while running, and uses a new empty configuration and no product conftest.
+Only a fresh `out/windows-transport-acl-native/` can be reserved; existing,
+non-directory, aliased or reparse targets are refused without cleaning them.
+JUnit (`results.xml`), pytest temporary/cache files, configuration and execution
+proof stay inside that new owned directory alongside the environment receipt.
+
+A separate bounded plugin requires the exact eight case IDs and one passing
+setup, call and teardown report for each, with no skips, expected failures,
+duplicates or changed source hashes. Collection-only/subset runs and a runner's
+`SystemExit(0)` cannot return qualification. Both pytest's actual result and this
+`execution.json` proof must succeed before the command returns zero.
+
+On macOS or Linux the CLI exits 2 with an explicit unsupported-host message before
+loading pytest; this is neither a passing control nor a skipped native suite.
+Ordinary recursive pytest uses its existing discovery rules and does not collect
+the support command. Top-level portable controls cover CI wiring, non-overwrite
+refusals and report/exit classification using benign temporary source copies and
+synthetic runner reports. Those controls do not execute native Windows APIs.
+
+The cases load the unchanged production guard directly by file path, without
+the `services` initializer, product dependencies, injected API or synthetic
+descriptors. All ACL changes apply only to a new unique lab tree beneath the
+existing per-user `LOCALAPPDATA`. The system `icacls.exe` is found through
+GetSystemDirectoryW and invoked with exact arguments, no shell and a ten-second
+timeout. Existing ancestors, source interpreter/DLLs and system ACLs are never
+modified. Every real ancestor must pass the actual guard; an unsuitable runner
+ancestry is a retained failure, not a skipped or repaired control.
+
+Intended coverage includes ordinary Windows writable mode bits and read-only
+attributes with safe ACLs; actual file IDs, owner SIDs and DACL decoding;
+Everyone-write file and Everyone-delete-child parent refusals; conflicting
+writer, write/delete/rename sharing refusals; cleanup followed by successful
+write/delete/rename; and a successful copied CI Python `--version` process while
+the executable guard remains held. The Python probe copies at most four
+adjacent interpreter runtime DLLs into the owned tree and supplies only
+`SystemRoot` to the child. It does not launch WebJam, exercise the transport's
+isolated environment, prove package installation, verify Authenticode or test
+audio. The production guard and launch path are unchanged by this follow-up.
+
+Earlier macOS receipts with two static passes/eight skips describe the initial
+diagnostic definition and remain historical evidence; they do not describe this
+explicit command. Application evidence separately retains an eight-case actual
+Windows pass from job `121302109950`, run `40237418806`, before this command change.
+The unchanged case-body comparison preserves its narrow meaning; the new command
+and CI path still require a normal reviewed Windows CI run. Local portable checks
+and an unsupported-host exit cannot establish native acceptance.
+
+The source/environment receipt records intended coverage before test execution;
+only the actual Windows pytest exit code and retained JUnit establish which
+controls passed. Neither that earlier control nor this follow-up qualifies a
+frozen WebJam application, package installation, Authenticode or physical audio.
+All broader release requirements above remain in force.
