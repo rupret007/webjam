@@ -53,12 +53,10 @@ leaves the meeting open.
   WebJam shows a short reply, send that back; the host chooses **Paste
   Reply**. If Join says the invite was already used, ask the host for a
   new one and choose **Paste New Invite**.
-- **Record (Music):** the host chooses **Record Session**. When the take
-  says **Ready**, it is saved. On a Mac host, takes live under
-  `Library/Application Support/WebJam/JamulusServer/Recordings`. On Windows
-  or Linux, the default folder is `WebJam Recordings` in your home folder.
-  Guests often see takes under `Music/WebJam Takes`. Use
-  **More → Recording Setup… → Show Folder** to open the folder.
+- **Record (Music):** the Mac host chooses **Record Session**. When the take
+  says **Ready**, it is saved. Use
+  **More → Recording Setup… → Show Folder** to find the saved files.
+  Recording locations depend on the profile and its settings.
 - **Leave:** the host chooses **End Session** (Music) or **End Room** (Art).
   A guest chooses **Leave Jam** or **Leave Room**. The others stay. Your
   meeting and drawing app stay open. Notes in **Session library** stay on
