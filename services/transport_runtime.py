@@ -692,6 +692,46 @@ def _validate_binary_architecture(path: Path, expected_machine: str) -> None:
             raise TransportLaunchError("The transport process is not installed safely.")
 
 
+def _windows_signature_paths():
+    """Use OS APIs, never an inherited environment or executable search path."""
+    import ctypes
+    from ctypes import wintypes
+    from pathlib import PureWindowsPath
+
+    paths = None
+    try:
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+
+        def directory(symbol):
+            query = getattr(kernel, symbol)
+            query.argtypes = [wintypes.LPWSTR, wintypes.UINT]
+            query.restype = wintypes.UINT
+            buffer = ctypes.create_unicode_buffer(32768)
+            length = query(buffer, len(buffer))
+            if not 0 < length < len(buffer):
+                raise ValueError("Native system directory unavailable")
+            value = buffer.value
+            # The documented Windows-directory root-volume result is 'C:'.
+            if re.fullmatch(r"[A-Za-z]:", value):
+                value += "\\"
+            path = PureWindowsPath(value)
+            if (not path.is_absolute() or not re.fullmatch(r"[A-Za-z]:", path.drive)
+                    or ".." in path.parts):
+                raise ValueError("Native system directory unsupported")
+            return path
+
+        root = directory("GetSystemWindowsDirectoryW")
+        system = directory("GetSystemDirectoryW")
+        if root != system and root not in system.parents:
+            raise ValueError("Native system directories disagree")
+        paths = root, system
+    except (OSError, AttributeError, TypeError, ValueError):
+        pass
+    if paths is None:
+        raise TransportLaunchError("The transport process is not installed safely.")
+    return paths
+
+
 def _verify_platform_signature(path: Path) -> None:
     """Verify the executable's native signature in a frozen desktop build."""
 
@@ -705,8 +745,9 @@ def _verify_platform_signature(path: Path) -> None:
         ]
         environment: dict[str, str] = {}
     elif os.name == "nt":
-        system_root = str(os.environ.get("SystemRoot", r"C:\Windows"))
-        powershell = Path(system_root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        root, system = _windows_signature_paths()
+        system_root = str(root)
+        powershell = system / "WindowsPowerShell" / "v1.0" / "powershell.exe"
         command = [
             str(powershell),
             "-NoProfile",
@@ -718,8 +759,12 @@ def _verify_platform_signature(path: Path) -> None:
             "SystemRoot": system_root,
             "WEBJAM_VERIFY_BINARY": str(path),
         }
-    else:
+    elif sys.platform.startswith("linux"):
+        # Linux release trust is the mandatory artifact hash and packaged architecture;
+        # there is no universal native executable-signature verifier to invoke.
         return
+    else:
+        raise TransportLaunchError("The transport process is not installed safely.")
     try:
         result = subprocess.run(
             command,
@@ -731,11 +776,10 @@ def _verify_platform_signature(path: Path) -> None:
             check=False,
             timeout=8,
         )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise TransportLaunchError(
-            "The transport process is not installed safely."
-        ) from exc
-    if result.returncode != 0:
+    except (OSError, subprocess.SubprocessError):
+        result = None
+    # Raise outside the handler: verifier output must not survive in traceback chains.
+    if result is None or result.returncode != 0:
         raise TransportLaunchError("The transport process is not installed safely.")
 
 
@@ -747,6 +791,9 @@ def _validated_binary(
     require_platform_signature: bool = False,
     _windows_guard: WindowsBinaryGuard | None = None,
 ) -> Path:
+    # A generic valid publisher/signature is supplemental, never a binary trust anchor.
+    if require_platform_signature and expected_sha256 is None:
+        raise TransportLaunchError("The transport process is not installed safely.")
     candidate = Path(path).expanduser()
     if not candidate.is_absolute():
         raise TransportLaunchError("The transport process is not installed safely.")

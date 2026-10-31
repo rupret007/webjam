@@ -78,6 +78,12 @@ jobs:
       - name: Prove native directory ancestor sharing fence
         timeout-minutes: 1
         run: python -X dev -m tests.support.windows_directory_sharing_control
+      - name: Prove frozen Windows smoke failure propagation
+        timeout-minutes: 1
+        run: python -m tests.support.check_windows_frozen_smoke_exit_codes
+      - name: Prove native signature verifier directory provenance
+        timeout-minutes: 1
+        run: python -X dev -m pytest -q tests/test_transport_runtime.py -k windows_signature_native_paths
       - name: Prove native debugger control independently of product gates
         shell: pwsh
         run: |
@@ -2348,9 +2354,11 @@ jobs:
           python -m tests.support.run_frozen_pocket_stage_smoke `
             --binary $app `
             --cwd $appDir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m tests.support.run_frozen_reference_studio_smoke `
             --binary $app `
             --cwd $appDir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:WEBJAM_SMOKE_LAUNCH_ONLY = "1"
           $env:WEBJAM_SMOKE_EXIT_MS = "5000"
           [IO.File]::WriteAllText(
