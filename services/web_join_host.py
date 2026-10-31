@@ -18,13 +18,17 @@ from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_ope
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from core.web_join_target import web_join_page
 from services.transport_runtime import TransportProcess, _decode_web_join_envelope
 
 MAILBOX_ORIGIN = "https://webjam-turn-credentials.jeffstory007.workers.dev"
-JOIN_PAGE = "https://stalemate.band/join/"
 MAX_ENVELOPE = 8192
 CHUNK_BYTES = 2998
 MAX_CHUNKS = 3
+PREPARE_UNAVAILABLE = (
+    "Web Join is unavailable. Use the approved app build, then check the host "
+    "audio bridge and relay service."
+)
 
 
 class WebJoinUnavailable(RuntimeError):
@@ -238,6 +242,9 @@ class WebJoinHost:
             self._generation = generation
             self._state = "preparing"
         try:
+            # Missing/tampered package routing must fail before an audio bridge,
+            # transport, capability or upstream credential can be allocated.
+            join_page = web_join_page()
             if self._bridge_factory is None:
                 from services.web_join_bridge import WebJoinBridge
 
@@ -289,7 +296,7 @@ class WebJoinHost:
                     raise WebJoinUnavailable("Web Join stopped.")
                 if offer_expiry <= time.time():
                     raise WebJoinUnavailable("This web invitation has ended.")
-                self._invite = f"{JOIN_PAGE}#k={_b64(capability)}&s={session.hex()}&g={generation}&e={offer_expiry}"
+                self._invite = f"{join_page}#k={_b64(capability)}&s={session.hex()}&g={generation}&e={offer_expiry}"
                 self._state = "waiting"
                 self._worker = threading.Thread(
                     target=self._wait_guest,
@@ -301,9 +308,7 @@ class WebJoinHost:
                 return self._invite
         except Exception:
             self.stop()
-            raise WebJoinUnavailable(
-                "Web Join is unavailable. Check the host audio bridge and free relay service."
-            ) from None
+            raise WebJoinUnavailable(PREPARE_UNAVAILABLE) from None
 
     def _wait_guest(self, mailbox, process, bridge, generation):
         try:
