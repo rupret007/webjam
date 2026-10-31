@@ -54,7 +54,7 @@ for (const width of [375, 390]) {
     await expect.poll(() => page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);
     await join.click();
     await expect.poll(() => requests).toBe(2);
-    await expect(page.locator('#status')).toContainText('Relay busy');
+    await expect(page.locator('#status')).toContainText('Web Join is unavailable');
     await expect(join).toBeEnabled();
     expect(await page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
   });
@@ -78,7 +78,7 @@ test('Leave during a stalled fetch stays a deliberate exit, then allows another 
   expect(await page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
   await join.click();
   await expect.poll(() => requests).toBe(2);
-  await expect(page.locator('#status')).toContainText('Relay busy');
+  await expect(page.locator('#status')).toContainText('Web Join is unavailable');
 });
 
 for (const scenario of ['left', 'rejoined', 'active']) {
