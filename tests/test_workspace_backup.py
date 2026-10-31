@@ -426,9 +426,9 @@ def test_aba_write_entirely_before_second_read_is_documented_limitation(tmp_path
     """ABA writes that complete before the second capture cannot be detected.
 
     This test documents the known limitation: if a file is modified (A->B->A)
-    entirely between the two bounded captures AND both reads return A, the
-    check passes. This is a fundamental TOCTOU limitation that cannot be solved
-    by finite reads without external coordination (e.g., file locks).
+    entirely between the two bounded captures AND both reads return A with
+    indistinguishable metadata, the check passes. Real writes often tick ctime
+    even when mtime is restored; those edits are rejected and are not this gap.
     """
     target = tmp_path / "backup.json"
     original = _wire(_payload(record))
@@ -436,8 +436,14 @@ def test_aba_write_entirely_before_second_read_is_documented_limitation(tmp_path
     assert len(changed) == len(original) and changed != original
     target.write_bytes(original)
     before = target.stat()
+    real_fstat = os.fstat
+    real_lstat = Path.lstat
     real_capture = backup._bounded_capture
     capture_count = [0]
+
+    def unchanged_metadata(_info):
+        return SimpleNamespace(**{key: getattr(before, key) for key in (
+            "st_mode", "st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")})
 
     def aba_during_seek(stream):
         capture_count[0] += 1
@@ -450,9 +456,13 @@ def test_aba_write_entirely_before_second_read_is_documented_limitation(tmp_path
             return result
         return real_capture(stream)
 
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.fstat = lambda descriptor: unchanged_metadata(real_fstat(descriptor))
+    monkeypatch.setattr(backup, "os", simulated_os)
+    monkeypatch.setattr(Path, "lstat", lambda path: unchanged_metadata(real_lstat(path))
+                        if path == target else real_lstat(path))
     monkeypatch.setattr(backup, "_bounded_capture", aba_during_seek)
-    # Documented limitation: this does NOT raise because both reads see 'original'
-    # and metadata is identical. The code comment acknowledges this.
+    # Documented limitation: identical bytes and metadata across every capture.
     preview = preview_workspace_backup(target)
     assert capture_count[0] == 2
     # The preview accepts the bytes even though the file was modified.
