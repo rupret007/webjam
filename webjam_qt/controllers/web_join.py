@@ -7,7 +7,7 @@ import threading
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
-from services.web_join_host import WebJoinHost
+from services.web_join_host import PREPARE_UNAVAILABLE, WebJoinHost
 
 
 class WebJoinControls(QObject):
@@ -127,7 +127,7 @@ class WebJoinControls(QObject):
             if not self.stop():
                 return
             self._controller.window.flash_message(
-                "Web Join is unavailable. Check the host audio bridge and free relay service.",
+                PREPARE_UNAVAILABLE,
                 ms=7000,
             )
             return

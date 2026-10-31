@@ -44,6 +44,30 @@ scripts. Its only application network origin is the existing relay Worker.
 The invite's `#k=…&s=…&g=…&e=…` fragment contains the random capability, random
 session ID, generation and expiry; none enters the HTTP page request.
 
+### Build-bound community destination
+
+`core/web_join_target.py` maps two reviewed identifiers to exact first-party
+pages: `public` uses `https://stalemate.band/join/`; `private-beta` uses
+`https://stalemate-hangout-beta.jeffstory007.workers.dev/join/`. A private package
+can therefore send an already admitted community guest to the protected page
+without editing the host's invitation or copying community cookies between sites.
+
+PyInstaller writes a canonical, bounded `webjam-web-join-target.json` containing
+the identifier, schema version and exact source build. Frozen apps require that
+file, ignore environment/user URL overrides and verify it before allocating the
+optional bridge, sidecar, capability or upstream credential. Unknown targets,
+extra/duplicate fields, a wrong build, missing data or a final symlink fail closed.
+Source checkouts retain the public default. Branch test packaging selects the
+target through the existing CI's `web_join_target` input; the
+[release runbook](DESKTOP_RELEASE_RUNBOOK.md#private-browser-invitation-target)
+records its packaging gate. Private-beta cannot be built from a tag or published
+by the release job.
+
+Private-beta admission, approved exact Origin configuration, separate web TURN
+credentials, quota and platform-trust checks still apply. Destination validation
+proves routing metadata; installation, browser/forced-relay and physical music
+need separate evidence. Existing provider and public-release holds remain.
+
 ## Authentication and quarantine
 
 Go and WebCrypto share deterministic vectors in `web/join/test/vectors.json`.
@@ -103,7 +127,7 @@ quota bypass into direct mode. Pion counts socket traffic in both directions
 (including ICE, DTLS, SRTP, RTCP and TURN transport overhead), closing at a
 maximum 256 MiB per guest session; the credential response may lower that cap.
 
-Cloudflare currently provides a [shared 1,000 GB monthly SFU/TURN free allowance](https://developers.cloudflare.com/realtime/sfu/pricing/).
+Cloudflare currently provides a [shared 1,000 GB monthly SFU/TURN free allowance](https://developers.cloudflare.com/realtime/sfu/platform/pricing/).
 The Worker must remain on Workers Free with dedicated web TURN accounting and
 no paid upgrades. Account-wide usage outside these keys must also stay within
 that allowance. This change does not deploy, configure an account, mint live

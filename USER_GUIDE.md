@@ -930,6 +930,11 @@ an explicit retry. **Leave session** remains a deliberate exit; it does not
 automatically reconnect or later show a timeout warning. Joining again still
 requires a valid, unused host invitation. Ask the host for a fresh link if the
 old one has expired or may have been consumed.
+Unreleased private-beta test packages can open the protected shared-community
+page for browser invitations. Join that private community in the same browser
+before using the complete host invitation. An unavailable build destination
+leaves this optional invitation off; use the approved app build. Browser audio
+still requires the host's explicit permission and the guest's audio consent.
 An earlier playback or background-audio resume attempt finishing after Leave
 cannot replace that exit message or disconnect your next Join. A playback problem in the current
 attempt still releases audio and offers an explicit retry.

@@ -1,0 +1,1 @@
+- Let private branch test packages direct Web Join invitations to the protected shared community using build-bound first-party metadata. Reject missing, malformed or mismatched destinations before optional audio starts; retain consent, relay and platform-trust checks and exclude private-beta packages from release publication.
