@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 import time
-from http.client import IncompleteRead
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -31,8 +30,6 @@ TTL_SECONDS = 600
 POLL_INTERVAL_SECONDS = 10.0
 POLL_BACKOFF_FACTOR = 1.5
 POLL_MAX_INTERVAL_SECONDS = 20.0
-_CANCEL_CHECK_SECONDS = 0.25
-_RETRYABLE_POLL_STATUSES = {408, 500, 502, 503, 504}
 DEFAULT_WAIT_SECONDS = 30.0
 ORIGIN_ENV = "WEBJAM_SIGNAL_MAILBOX_URL"
 # Packaged default, same Worker origin as the compiled TURN URL.
@@ -61,10 +58,6 @@ def _client(transport):
 
 class MailboxUnavailable(Exception):
     """The current mailbox is missing, expired, or not configured."""
-
-
-class _MailboxConnectionError(MailboxUnavailable):
-    """A temporary network failure; polling may retry within its deadline."""
 
 
 def mailbox_origin() -> str:
@@ -242,24 +235,10 @@ def _poll_slot(
     while True:
         if should_stop is not None and should_stop():
             raise MailboxUnavailable("mailbox wait stopped")
-        remaining = deadline - float(now())
-        if remaining <= 0:
-            raise MailboxUnavailable("mailbox wait timed out")
-        try:
-            request_kwargs = {}
-            if isinstance(client, _HttpTransport):
-                request_kwargs["timeout_seconds"] = min(5.0, remaining)
-            status, body = client.request(
-                "GET",
-                f"/mailbox/{keys['mailbox_id']}/{kind}",
-                **request_kwargs,
-            )
-        except _MailboxConnectionError:
-            status, body = 503, {}
-        if should_stop is not None and should_stop():
-            raise MailboxUnavailable("mailbox wait stopped")
-        if float(now()) >= deadline:
-            raise MailboxUnavailable("mailbox wait timed out")
+        status, body = client.request(
+            "GET",
+            f"/mailbox/{keys['mailbox_id']}/{kind}",
+        )
         if status == 200:
             payload = ""
             if isinstance(body, dict):
@@ -271,35 +250,23 @@ def _poll_slot(
                 session_reference=keys["session_reference"],
                 host_spki_sha256=keys["host_spki_sha256"],
             )
-        if status != 204 and status not in _RETRYABLE_POLL_STATUSES:
+        if status in {410, 404, 429, 503}:
             raise MailboxUnavailable("mailbox is not configured")
+        if float(now()) >= deadline:
+            raise MailboxUnavailable("mailbox expired")
         remaining = deadline - float(now())
         nap = min(interval, max(0.0, remaining))
         waiter = getattr(client, "wait_for_slot", None)
         if callable(waiter):
-            wait_kwargs = {}
-            if isinstance(client, _HttpTransport):
-                wait_kwargs["should_stop"] = should_stop
             waiter(
                 f"/mailbox/{keys['mailbox_id']}/{kind}",
                 nap,
                 now=now,
                 sleeper=sleeper,
-                **wait_kwargs,
             )
         else:
-            _sleep_until(float(now()) + nap, now, sleeper, should_stop)
+            sleeper(nap)
         interval = min(interval * POLL_BACKOFF_FACTOR, POLL_MAX_INTERVAL_SECONDS)
-
-
-def _sleep_until(deadline, now, sleeper, should_stop) -> None:
-    while True:
-        if should_stop is not None and should_stop():
-            return
-        remaining = deadline - float(now())
-        if remaining <= 0:
-            return
-        sleeper(min(remaining, _CANCEL_CHECK_SECONDS) if should_stop else remaining)
 
 
 def _hkdf(ikm: bytes, *, salt: bytes, info: bytes, length: int) -> bytes:
@@ -344,29 +311,18 @@ class _HttpTransport:
     def __init__(self, origin: str) -> None:
         self._origin = origin
 
-    def wait_for_slot(
-        self, path: str, seconds: float, *, now=None, sleeper=None, should_stop=None,
-    ) -> None:
+    def wait_for_slot(self, path: str, seconds: float, *, now=None, sleeper=None) -> None:
         """Prefer the Worker websocket wake; fall back to the spaced poll."""
 
-        now = now or time.monotonic
-        sleeper = sleeper or time.sleep
-        deadline = float(now()) + max(0.0, float(seconds))
         try:
-            self._await_ready(path, seconds, now=now, should_stop=should_stop)
+            self._await_ready(path, seconds)
             return
         except (MailboxUnavailable, OSError, TimeoutError, ValueError):
             pass
-        # A failed websocket may already have spent most or all of this wait.
-        # Repeating the full sleep can push the host beyond its join deadline.
-        _sleep_until(deadline, now, sleeper, should_stop)
+        if sleeper is not None:
+            sleeper(seconds)
 
-    def _await_ready(
-        self, path: str, seconds: float, *, now=time.monotonic, should_stop=None,
-    ) -> None:
-        deadline = float(now()) + max(0.0, float(seconds))
-        if seconds <= 0 or (should_stop is not None and should_stop()):
-            return
+    def _await_ready(self, path: str, seconds: float) -> None:
         try:
             from websockets.exceptions import WebSocketException
             from websockets.sync.client import connect
@@ -384,26 +340,14 @@ class _HttpTransport:
             with connect(
                 f"{ws_origin}{path}",
                 additional_headers={"accept": "application/json"},
-                open_timeout=min(5.0, float(seconds)),
-                # Wakeups are optional hints. Never extend the host's deadline
-                # to wait for a websocket closing handshake.
-                close_timeout=0,
+                open_timeout=min(5.0, max(0.1, float(seconds))),
+                close_timeout=1,
             ) as socket:
-                while should_stop is None or not should_stop():
-                    remaining = deadline - float(now())
-                    if remaining <= 0:
-                        return
-                    try:
-                        socket.recv(timeout=min(remaining, _CANCEL_CHECK_SECONDS))
-                        return
-                    except TimeoutError:
-                        continue
+                socket.recv(timeout=max(0.1, float(seconds)))
         except (WebSocketException, TimeoutError, OSError) as exc:
             raise MailboxUnavailable("mailbox is not configured") from exc
 
-    def request(
-        self, method: str, path: str, body: dict | None = None, *, timeout_seconds=5.0,
-    ):
+    def request(self, method: str, path: str, body: dict | None = None):
         data = None
         headers = {"accept": "application/json"}
         if body is not None:
@@ -416,25 +360,16 @@ class _HttpTransport:
             method=method,
         )
         try:
-            with urlopen(request, timeout=timeout_seconds) as response:
+            with urlopen(request, timeout=5) as response:
                 raw = response.read()
                 parsed = json.loads(raw.decode("utf-8")) if raw else {}
                 return response.status, parsed
         except HTTPError as exc:
-            try:
-                with exc:
-                    raw = exc.read() if exc.fp is not None else b""
-            except (URLError, TimeoutError, OSError, IncompleteRead):
-                # Headers already supplied the authoritative status. A broken
-                # optional error body must not turn expiry/auth/quota rejection
-                # into a retryable network failure.
-                return exc.code, {}
+            raw = exc.read() if exc.fp is not None else b""
             try:
                 parsed = json.loads(raw.decode("utf-8")) if raw else {}
             except ValueError:
                 parsed = {}
             return exc.code, parsed
-        except (URLError, TimeoutError, OSError, IncompleteRead) as exc:
-            raise _MailboxConnectionError("mailbox connection interrupted") from exc
-        except ValueError as exc:
-            raise MailboxUnavailable("mailbox response is not valid") from exc
+        except (URLError, TimeoutError, ValueError, OSError) as exc:
+            raise MailboxUnavailable("mailbox is not configured") from exc
