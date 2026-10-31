@@ -50,6 +50,7 @@ from core.jamulus_name import (
 )
 from core.network_invite import BandInvite
 from core.remote_invitation import RemoteInvitation
+from core.workspace_launch import InvalidWorkspaceLaunch, validate_workspace_launch
 from core.settings import (
     AppSettings,
     hosted_server_recordings_dir,
@@ -1887,6 +1888,15 @@ class LaunchDialog(QDialog):
         return invitation
 
     def done(self, result: int) -> None:
+        if result == QDialog.DialogCode.Accepted:
+            try:
+                validate_workspace_launch(self)
+            except InvalidWorkspaceLaunch:
+                # Native dialog acceptance can occur independently of a role
+                # button. Keep the launcher usable instead of implicitly
+                # opening a live workspace from saved host settings.
+                self.restore_after_workspace_failure()
+                return
         if result != QDialog.DialogCode.Accepted:
             self.invitation_meeting_url = ""
         self._submitting = True
