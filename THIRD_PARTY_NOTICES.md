@@ -19,6 +19,31 @@ every platform.
   at [`licenses/INTER_OFL.txt`](licenses/INTER_OFL.txt). The font is not
   modified and keeps its Reserved Font Name "Inter".
 
+## Qt for Python desktop runtime
+
+WebJam's desktop UI uses PySide6 and Shiboken6, provided by The Qt Company Ltd.
+and other contributors. The current four-platform Python locks select version
+`6.11.1` under `LGPL-3.0-only`. The accompanying GPLv3 text is incorporated by
+that license; including it does not change the selected LGPL option or
+WebJam's own MIT license.
+
+- **Full license copies:** [`licenses/QT_LGPL-3.0-only.txt`](licenses/QT_LGPL-3.0-only.txt)
+  and [`licenses/QT_GPL-3.0-only.txt`](licenses/QT_GPL-3.0-only.txt).
+- **Exact upstream source for these documents:** Qt for Python tag `v6.11.1`,
+  commit `73fb12a067c2e8f7a464a310aaee2860fa2b64d2`. URLs, byte counts and
+  SHA-256 digests are recorded in
+  [`packaging/QT-PYSIDE-LICENSE-PROVENANCE.json`](packaging/QT-PYSIDE-LICENSE-PROVENANCE.json).
+- **Packaged location:** both texts and the provenance file are staged in the
+  main application's `THIRD_PARTY_LICENSES` directory on all four targets.
+  The existing runtime package verifier rejects a missing or altered copy.
+
+These files identify the license documents and do not constitute a full
+runtime source-delivery or redistribution qualification. The separate
+JamulusHeadlessClient companion's Qt `6.10.2` notice and source archive below
+remain specific to that companion. Existing packages are not changed by
+this source update; new package contents still require inspection before
+promotion.
+
 ## Jamulus
 
 WebJam bundles an offline fallback from the official

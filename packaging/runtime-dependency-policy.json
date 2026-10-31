@@ -353,6 +353,21 @@
       "component": "cryptography upstream-wheel OpenSSL provenance",
       "path_suffix": "THIRD_PARTY_LICENSES/CRYPTOGRAPHY-UPSTREAM-WHEEL-PROVENANCE.txt",
       "sha256": "774757f50ed9ea59229b02906bdc6cf7fa23b883a37b1cda0dd1e0e18b292350"
+    },
+    {
+      "component": "Qt for Python LGPLv3 license",
+      "path_suffix": "THIRD_PARTY_LICENSES/QT_LGPL-3.0-only.txt",
+      "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+    },
+    {
+      "component": "Qt for Python incorporated GPLv3 license",
+      "path_suffix": "THIRD_PARTY_LICENSES/QT_GPL-3.0-only.txt",
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    {
+      "component": "Qt for Python license-document provenance",
+      "path_suffix": "THIRD_PARTY_LICENSES/QT-PYSIDE-LICENSE-PROVENANCE.json",
+      "sha256": "987a89215fa8501f7ef67940dbdc7a7235c62eb6569c5df092ea2048c5d6a827"
     }
   ]
 }
