@@ -1749,7 +1749,7 @@ jobs:
             "$output/JamulusHeadlessClient.app" "$expected_machine" \
             "$output/JamulusHeadlessClient.sha256"
 
-      - name: Build desktop artifact
+      - name: Build desktop bundle and verify Web Join target
         shell: bash
         env:
           WEBJAM_WEB_JOIN_TARGET: ${{ inputs.web_join_target || 'public' }}
@@ -1764,6 +1764,10 @@ jobs:
             --manifest "$metadata_root/webjam-web-join-target.json" \
             --build-id "$(git rev-parse HEAD)" \
             --target "$WEBJAM_WEB_JOIN_TARGET"
+
+      - name: Build desktop artifact
+        shell: bash
+        run: |
           dependency_bundle_root=dist/WebJam
           if [[ "${{ matrix.target }}" == macos-* ]]; then
             dependency_bundle_root=dist/WebJam.app
