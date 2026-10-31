@@ -56,5 +56,3 @@ def test_join_refuses_two_invitations_or_wrong_slots(remote):
     for first, second in [(band, remote), (remote, None), (None, band)]:
         with pytest.raises(InvalidWorkspaceLaunch):
             validate_workspace_launch(SimpleNamespace(selected_role="join", band_invite=first, remote_invitation=second))
-
-
