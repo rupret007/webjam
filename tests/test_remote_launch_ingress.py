@@ -123,7 +123,7 @@ def test_native_acceptance_without_confirmed_choice_keeps_launcher_open(
     accepted = []
     dialog.accepted.connect(lambda: accepted.append(True))
     dialog.show_join()
-    dialog._invite_input.setText("not-a-webjam-invitation")
+    dialog._invite_input.setText("webjam://join?v=1")
     dialog.selected_role = role
     dialog.accept()
     assert accepted == []
@@ -137,18 +137,32 @@ def test_native_acceptance_without_confirmed_choice_keeps_launcher_open(
     qapp.processEvents()
 
 
-def test_invalid_plain_paste_never_accepts_join(qapp, tmp_path: Path) -> None:
+def test_malformed_invitation_button_never_accepts_join(qapp, tmp_path: Path) -> None:
     settings = AppSettings(config_file=str(tmp_path / "settings.json"))
     dialog = LaunchDialog(settings)
     accepted = []
     dialog.accepted.connect(lambda: accepted.append(True))
     dialog.show_join()
-    dialog._invite_input.setText("not-a-webjam-invitation")
+    dialog._invite_input.setText("webjam://join?v=1")
     dialog._join_button_primary.click()
     assert accepted == []
     assert dialog.selected_role == ""
     assert not Path(settings.config_file).exists()
     dialog.reject()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_legacy_hostname_paste_remains_an_explicit_typed_join(qapp, tmp_path: Path) -> None:
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    dialog = LaunchDialog(settings)
+    dialog.show_join()
+    dialog._invite_input.setText("legacy-rehearsal.example.test:22124")
+    dialog._join_button_primary.click()
+    assert dialog.result() == LaunchDialog.DialogCode.Accepted
+    assert dialog.selected_role == "join"
+    assert dialog.band_invite.host == "legacy-rehearsal.example.test"
+    assert dialog.remote_invitation is None
     dialog.deleteLater()
     qapp.processEvents()
 

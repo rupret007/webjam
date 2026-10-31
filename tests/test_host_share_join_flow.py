@@ -2394,6 +2394,9 @@ def test_cold_launch_passes_command_line_invite_to_gate(qapp):
     launcher.exec.return_value = LaunchDialog.DialogCode.Accepted
     launcher.selected_role = "join"
     launcher.session_name = "Band Rehearsal"
+    launcher.band_invite = parse_invite_link(link)
+    launcher.remote_invitation = None
+    launcher.take_remote_invitation.return_value = None
     qt_app = MagicMock()
     qt_app.exec.return_value = 0
     with (
@@ -2405,7 +2408,7 @@ def test_cold_launch_passes_command_line_invite_to_gate(qapp):
         patch.object(app_module.QApplication, "instance", return_value=qt_app),
         patch.object(app_module, "load_stylesheet", return_value=""),
         patch.object(app_module, "ConductorWindow", return_value=MagicMock()),
-        patch.object(app_module, "ApplicationController", return_value=MagicMock()),
+        patch.object(app_module, "ApplicationController", return_value=MagicMock()) as controller_class,
         patch.object(app_module.QTimer, "singleShot"),
     ):
         assert app_module.run() == 0
@@ -2413,6 +2416,8 @@ def test_cold_launch_passes_command_line_invite_to_gate(qapp):
         initial,
         initial_invitation=parse_invite_link(link),
     )
+    assert controller_class.call_args.kwargs["session_invite"] == parse_invite_link(link)
+    assert controller_class.call_args.kwargs["remote_invitation"] is None
 
 
 def test_macos_bundle_registers_webjam_invitation_scheme():
