@@ -341,16 +341,235 @@ def test_preview_refuses_same_size_edit_during_read_with_restored_mtime(tmp_path
             target.write_bytes(original.replace(b"Every line", b"Other line"))
             os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
         result = real_fstat(descriptor)
+        if inspections:
+            # This unit fixture reports a changed ctime deterministically.
+            # It tests the ctime guard, not native filesystem clock resolution.
+            values = {key: getattr(result, key) for key in (
+                "st_mode", "st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")}
+            values["st_ctime_ns"] = inspections[0].st_ctime_ns + 1
+            result = SimpleNamespace(**values)
         inspections.append(result)
         return result
 
-    monkeypatch.setattr(backup.os, "fstat", edit_after_read)
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.fstat = edit_after_read
+    monkeypatch.setattr(backup, "os", simulated_os)
     with pytest.raises(WorkspaceBackupError, match="changed while"):
         preview_workspace_backup(target)
     assert len(inspections) == 2
     assert inspections[0].st_size == inspections[1].st_size
     assert inspections[0].st_mtime_ns == inspections[1].st_mtime_ns
     assert inspections[0].st_ctime_ns != inspections[1].st_ctime_ns
+
+
+def _open_race_read(path, flags, *, _crt=None):
+    """Permit a real replacement attack in this test fixture on every OS."""
+    if flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_TRUNC | os.O_APPEND):
+        raise AssertionError("The read-race fixture must not create or write files")
+    if os.name != "nt":
+        return os.open(path, flags)
+
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    crt = msvcrt if _crt is None else _crt
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                       wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
+    create.restype = wintypes.HANDLE
+    close = kernel.CloseHandle
+    close.argtypes = (wintypes.HANDLE,)
+    close.restype = wintypes.BOOL
+    # READ; SHARE_READ | WRITE | DELETE; OPEN_EXISTING; NORMAL | OPEN_REPARSE_POINT.
+    # Stronger mutation conditions belong only to this fixture, not production.
+    handle = create(str(path), 0x80000000, 1 | 2 | 4, None, 3, 0x80 | 0x00200000, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return crt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY | os.O_NOINHERIT)
+    except BaseException:
+        close(handle)
+        raise
+
+
+def _wrap_backup_reads(monkeypatch, after_read=None, limit=None, descriptors=None):
+    real_fdopen = os.fdopen
+    reads = []
+
+    class ObservedStream:
+        def __init__(self, stream):
+            self.stream = stream
+            if descriptors is not None:
+                descriptors.append(stream.fileno())
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def __getattr__(self, name):
+            return getattr(self.stream, name)
+
+        def read(self, size):
+            value = self.stream.read(min(size, limit) if limit else size)
+            reads.append(len(value))
+            if len(reads) == 1 and after_read is not None:
+                after_read(value)
+            return value
+
+    simulated_os = SimpleNamespace(**vars(backup.os))
+    simulated_os.open = _open_race_read
+    simulated_os.fdopen = lambda *args, **kwargs: ObservedStream(real_fdopen(*args, **kwargs))
+    monkeypatch.setattr(backup, "os", simulated_os)
+    return reads
+
+
+def test_read_race_fixture_replaces_path_while_descriptor_pins_original(tmp_path):
+    target = tmp_path / "race.json"
+    retained = tmp_path / "retained.json"
+    target.write_bytes(b"original fixture bytes")
+    descriptor = _open_race_read(target, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+    try:
+        opened = os.fstat(descriptor)
+        assert not os.get_inheritable(descriptor)
+        target.rename(retained)
+        target.write_bytes(b"replacement fixture bytes")
+        assert os.read(descriptor, 64) == b"original fixture bytes"
+        assert (opened.st_dev, opened.st_ino) == (retained.stat().st_dev, retained.stat().st_ino)
+        assert (opened.st_dev, opened.st_ino) != (target.stat().st_dev, target.stat().st_ino)
+        assert target.read_bytes() == b"replacement fixture bytes"
+    finally:
+        os.close(descriptor)
+    with pytest.raises(OSError):
+        os.fstat(descriptor)
+
+
+def test_read_race_fixture_closes_owned_resources_without_changing_files(tmp_path, record, monkeypatch):
+    target = tmp_path / "backup.json"
+    original = _wire(_payload(record))
+    target.write_bytes(original)
+    before_names = sorted(path.name for path in tmp_path.iterdir())
+    opened = []
+
+    def fail_after_read(value):
+        assert value == original
+        raise OSError("injected fixture read callback failure")
+
+    _wrap_backup_reads(monkeypatch, after_read=fail_after_read, descriptors=opened)
+    with pytest.raises(WorkspaceBackupError, match="could not be read safely"):
+        preview_workspace_backup(target)
+    assert len(opened) == 1
+    with pytest.raises(OSError):
+        os.fstat(opened[0])
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        handles = []
+        def fail_transfer(handle, _flags):
+            handles.append(handle)
+            raise OSError("injected fixture CRT transfer failure")
+        with pytest.raises(OSError, match="injected fixture CRT transfer failure"):
+            _open_race_read(target, os.O_RDONLY | os.O_BINARY,
+                            _crt=SimpleNamespace(open_osfhandle=fail_transfer))
+        assert len(handles) == 1
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        information = kernel.GetHandleInformation
+        information.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        information.restype = wintypes.BOOL
+        assert not information(handles[0], ctypes.byref(wintypes.DWORD()))
+        assert ctypes.get_last_error() == 6  # ERROR_INVALID_HANDLE
+    assert target.read_bytes() == original
+    assert sorted(path.name for path in tmp_path.iterdir()) == before_names
+
+
+def test_preview_refuses_same_tick_content_edit_after_first_read(tmp_path, record, monkeypatch):
+    target = tmp_path / "backup.json"
+    original = _wire(_payload(record))
+    changed = _wire(_payload(replace(record, notes=record.notes.replace("Every line", "Other line"))))
+    assert len(changed) == len(original) < 64 * 1024 and changed != original
+    assert backup._decode(original).record.notes == record.notes
+    assert backup._decode(changed).record.notes == record.notes.replace("Every line", "Other line")
+    target.write_bytes(original)
+    before = target.stat()
+    real_lstat = Path.lstat
+    reported = []
+    mutations = []
+
+    def same_metadata():
+        values = {key: getattr(before, key) for key in (
+            "st_mode", "st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")}
+        reported.append(values)
+        return SimpleNamespace(**values)
+
+    def edit_after_first_read(value):
+        assert value == original
+        target.write_bytes(changed)
+        os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+        mutations.append(True)
+
+    _wrap_backup_reads(monkeypatch, after_read=edit_after_first_read)
+    backup.os.fstat = lambda _descriptor: same_metadata()
+    monkeypatch.setattr(Path, "lstat", lambda path: same_metadata()
+                        if path == target else real_lstat(path))
+    try:
+        with pytest.raises(WorkspaceBackupError, match="changed while"):
+            preview_workspace_backup(target)
+    finally:
+        assert mutations == [True]
+        assert target.read_bytes() == changed
+        assert reported and all(info == reported[0] for info in reported)
+
+
+@pytest.mark.parametrize("change", ["replace", "grow", "truncate"])
+def test_preview_refuses_file_changes_after_first_read(tmp_path, record, monkeypatch, change):
+    target = tmp_path / "backup.json"
+    original = _wire(_payload(record))
+    target.write_bytes(original)
+
+    def change_after_first_read(value):
+        assert value == original
+        if change == "replace":
+            target.rename(tmp_path / "retained.json")
+            target.write_bytes(original)
+        else:
+            target.write_bytes(original + b" " if change == "grow" else original[:-1])
+
+    _wrap_backup_reads(monkeypatch, after_read=change_after_first_read)
+    with pytest.raises(WorkspaceBackupError, match="changed while"):
+        preview_workspace_backup(target)
+
+
+def test_preview_fills_short_reads_from_same_descriptor(tmp_path, record, monkeypatch):
+    target = tmp_path / "backup.json"
+    target.write_bytes(_wire(_payload(record)))
+    reads = _wrap_backup_reads(monkeypatch, limit=7)
+    assert preview_workspace_backup(target).record == record
+    assert len(reads) > 2 and max(reads) <= 7
+
+
+def test_preview_rejects_valid_prefix_followed_by_unread_bytes(tmp_path, record, monkeypatch):
+    target = tmp_path / "backup.json"
+    valid = _wire(_payload(record))
+    target.write_bytes(valid + b"not part of the valid envelope")
+    _wrap_backup_reads(monkeypatch, limit=len(valid))
+    with pytest.raises(WorkspaceBackupError):
+        preview_workspace_backup(target)
+
+
+def test_capture_stops_at_existing_size_limit_even_without_eof():
+    requests = []
+
+    class GrowingStream:
+        def read(self, size):
+            requests.append(size)
+            return b"x" * size
+
+    captured = backup._bounded_capture(GrowingStream())
+    assert len(captured) == sum(requests) == backup.MAX_WORKSPACE_BACKUP_BYTES + 1
+    assert max(requests) <= 64 * 1024
 
 
 @pytest.mark.parametrize("field,entry", [
@@ -660,12 +879,35 @@ def test_stage_inspection_failure_closes_descriptor_without_touching_other_files
     def fail(descriptor):
         descriptors.append(descriptor)
         raise OSError("injected stage inspection failure")
-    monkeypatch.setattr(backup.os, "fstat", fail)
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.fstat = fail
+    monkeypatch.setattr(backup, "os", simulated_os)
     with pytest.raises(WorkspaceBackupError):
         export_workspace_backup(record, tmp_path / "backup.json")
     assert len(descriptors) == 1
     with pytest.raises(OSError):
         real_fstat(descriptors[0])
+    assert not (tmp_path / "backup.json").exists()
+
+
+def test_stage_inspection_failure_preserves_fd_capture_and_unrelated_files(tmp_path, record, monkeypatch, capfd):
+    keep = tmp_path / "unrelated.bin"
+    keep.write_bytes(b"unrelated original bytes")
+    real_fstat = os.fstat
+    simulated_os = SimpleNamespace(**vars(os))
+    def fail(_descriptor):
+        raise OSError("injected stage inspection failure")
+    simulated_os.fstat = fail
+    monkeypatch.setattr(backup, "os", simulated_os)
+    print("before stage failure")
+    with pytest.raises(WorkspaceBackupError):
+        export_workspace_backup(record, tmp_path / "backup.json")
+    print("after stage failure")
+    assert capfd.readouterr().out == "before stage failure\nafter stage failure\n"
+    assert os.fstat is real_fstat
+    with keep.open("rb") as stream:
+        assert os.fstat(stream.fileno()).st_size == len(b"unrelated original bytes")
+        assert stream.read() == b"unrelated original bytes"
     assert not (tmp_path / "backup.json").exists()
 
 

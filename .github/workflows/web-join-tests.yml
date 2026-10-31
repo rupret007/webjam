@@ -1,0 +1,80 @@
+name: Web Join browser tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  web-join-unit-tests:
+    name: Web Join and Worker unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.22.3"
+
+      - name: Install Cloudflare Worker dependencies
+        working-directory: deploy/relay/cloudflare-worker
+        run: npm ci
+
+      - name: Run Cloudflare Worker unit tests
+        working-directory: deploy/relay/cloudflare-worker
+        run: node --test
+
+      - name: Install Web Join browser dependencies
+        working-directory: web/join
+        run: npm ci --ignore-scripts
+
+      - name: Run Web Join browser unit tests
+        working-directory: web/join
+        run: npm test
+
+  web-join-playwright-e2e:
+    name: Web Join Playwright e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Go for the browser lab fixture
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.26.9"
+          cache-dependency-path: transport/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22.22.3"
+
+      - name: Install Web Join dependencies
+        working-directory: web/join
+        run: npm ci --ignore-scripts
+
+      - name: Install Playwright browsers
+        working-directory: web/join
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Run Web Join Playwright e2e
+        working-directory: web/join
+        run: npm run test:e2e

@@ -27,6 +27,7 @@ then keeps the technical story.
 | New creator | [Simple-language guide](../README_SIMPLE.md) | Same story as the creator guide, in shorter words |
 | Creator | [Creator guide](../USER_GUIDE.md) | The one complete how-to: install, Host/Join, record, leave, Studio |
 | First-time demo | [First Session](../FIRST_JAM.md) | Shortest live path; details stay in the creator guide |
+| Stalemate music tester | [Community beta setup](COMMUNITY_MUSIC_BETA.md) | Choose the qualified build, check platform/network limits and keep physical music acceptance separate |
 | Follow-along pilot | [First test](FOLLOW_ALONG_FIRST_TEST.md) and [pilot record](FOLLOW_ALONG_PILOT_RECORD.md) | Two-person same-LAN Paint along / Play along; physical rows stay **NOT RUN** until observed |
 | Reference Studio user | [Reference Studio guide](REFERENCE_STUDIO_MUSICIAN_GUIDE.md) | Write, arrange, record, and bounce a local project |
 | Developer | [Development guide](../DEVELOPMENT.md) | Set up the repository, preserve ownership boundaries, and run checks |

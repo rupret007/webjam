@@ -3,13 +3,14 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import stat
 import subprocess
 import sys
 import textwrap
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -524,6 +525,143 @@ def test_binary_manifest_hash_is_verified_before_process_launch(tmp_path: Path) 
         _validated_binary(target, expected_sha256="0" * 64)
 
 
+def _synthetic_signature_platform(monkeypatch, platform: str, system_root=None) -> None:
+    """Select only this module's OS branch; never run a real signing tool.
+
+    Replacing the module bindings avoids changing pathlib's host-platform
+    selection, pytest's OS state, or the developer's actual environment.
+    """
+    environment = {
+        "PATH": "untrusted-signing-search-path",
+        "WEBJAM_ENROLLMENT_CAPABILITY": "synthetic-private-signing-marker",
+    }
+    if system_root is not None:
+        environment["SystemRoot"] = str(system_root)
+    os_proxy = SimpleNamespace(**vars(transport_runtime.os))
+    os_proxy.name = "nt" if platform == "win32" else "posix"
+    os_proxy.environ = environment
+    monkeypatch.setattr(transport_runtime, "os", os_proxy)
+    monkeypatch.setattr(transport_runtime, "sys", SimpleNamespace(platform=platform))
+    if platform == "win32":
+        # These command-contract tests explicitly stand in for ACL qualification;
+        # separate permission tests exercise the real guard against a fake OS.
+        class SyntheticAclGuard:
+            def __init__(self, path): pass
+            def __enter__(self): return self
+            def __exit__(self, *_): pass
+            def check_current(self, path): pass
+        monkeypatch.setattr(transport_runtime, "WindowsBinaryGuard", SyntheticAclGuard)
+        monkeypatch.setattr(transport_runtime, "_windows_signature_paths", lambda: (
+            PureWindowsPath(r"C:\Windows"), PureWindowsPath(r"C:\Windows\System32"),
+        ))
+
+
+@pytest.mark.parametrize("platform,configured_root", [
+    pytest.param("darwin", False, id="macos-codesign"),
+    pytest.param("win32", False, id="windows-default-system-root"),
+    pytest.param("win32", True, id="windows-configured-system-root"),
+])
+def test_platform_signature_command_is_bounded_literal_and_environment_isolated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, platform, configured_root,
+) -> None:
+    # This verifies command construction and the subprocess result contract,
+    # not an actual macOS signature or Windows Authenticode certificate.
+    folder = tmp_path / "Transport 'quotes' $variables; folder"
+    folder.mkdir()
+    target = _sidecar(folder)
+    system_root = tmp_path / "Windows system root" if configured_root else None
+    _synthetic_signature_platform(monkeypatch, platform, system_root)
+    calls = []
+
+    def signed_result(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(transport_runtime.subprocess, "run", signed_result)
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    assert _validated_binary(
+        target, expected_sha256=digest, require_platform_signature=True,
+    ) == target.resolve()
+    assert len(calls) == 1
+    argv, options = calls[0]
+    if platform == "darwin":
+        assert argv == [
+            "/usr/bin/codesign", "--verify", "--strict", "--verbose=2", str(target),
+        ]
+        assert options["env"] == {}
+    else:
+        root = r"C:\Windows"  # Native API result, never the configured environment.
+        assert argv == [
+            str(PureWindowsPath(root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"),
+            "-NoProfile", "-NonInteractive", "-Command",
+            "if ((Get-AuthenticodeSignature -LiteralPath $env:WEBJAM_VERIFY_BINARY).Status -eq 'Valid') { exit 0 } else { exit 1 }",
+        ]
+        assert options["env"] == {"SystemRoot": root, "WEBJAM_VERIFY_BINARY": str(target)}
+        # A caller-selected binary path is data, never part of PowerShell code.
+        assert str(target) not in argv[-1]
+    assert options == {
+        "cwd": str(target.parent), "env": options["env"],
+        "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL, "check": False, "timeout": 8,
+    }
+    assert "synthetic-private-signing-marker" not in str(calls)
+    assert "untrusted-signing-search-path" not in str(calls)
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32"])
+@pytest.mark.parametrize("outcome", [
+    "unsigned-or-invalid", "unexpected-exit", "missing-command", "timeout", "command-error",
+])
+def test_platform_signature_refusal_prevents_transport_spawn_and_keeps_errors_private(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog, platform, outcome,
+) -> None:
+    target = _sidecar(tmp_path)
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    _synthetic_signature_platform(monkeypatch, platform)
+    checks, launches = [], []
+    private_output = "synthetic-private-signing-output"
+
+    def refused_result(argv, **kwargs):
+        checks.append((argv, kwargs))
+        if outcome == "missing-command":
+            raise OSError(private_output)
+        if outcome == "timeout":
+            raise subprocess.TimeoutExpired(argv, kwargs["timeout"], output=private_output)
+        if outcome == "command-error":
+            raise subprocess.CalledProcessError(1, argv, output=private_output)
+        return subprocess.CompletedProcess(
+            argv, 1 if outcome == "unsigned-or-invalid" else 17,
+            stdout=private_output, stderr=private_output,
+        )
+
+    def forbidden_spawn(*args, **kwargs):
+        launches.append((args, kwargs))
+        raise AssertionError("An unverified transport must never spawn")
+
+    monkeypatch.setattr(transport_runtime.subprocess, "run", refused_result)
+    monkeypatch.setattr(transport_runtime.subprocess, "Popen", forbidden_spawn)
+    process = TransportProcess(
+        target, expected_build="test-build", expected_sha256=digest,
+        require_platform_signature=True,
+    )
+    with pytest.raises(TransportLaunchError) as refused:
+        process.start()
+    assert str(refused.value) == "The transport process is not installed safely."
+    assert len(checks) == 1
+    assert checks[0][1]["timeout"] == 8
+    assert launches == []
+    assert not process.running
+    assert process.process_id is None
+    assert process.timeline == ()
+    assert not target.with_suffix(".commands").exists()
+    assert private_output not in str(refused.value)
+    assert private_output not in caplog.text
+    import traceback
+    assert private_output not in "".join(traceback.format_exception(refused.value))
+    assert refused.value.__cause__ is None
+    assert refused.value.__context__ is None
+
+
 def test_linux_elf_machine_is_verified_before_launch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -892,3 +1030,111 @@ def test_enrollment_receipt_must_echo_local_generation_and_profile(monkeypatch, 
         else:
             process.open_guest(_invitation(), generation=23)
     assert isinstance(process._failure, TransportProtocolError)
+
+
+
+@pytest.mark.parametrize("poison", ["", "relative-windows", r"\\untrusted.invalid\share", r"Z:\AttackerWindows"])
+def test_windows_signature_ignores_environment_selected_verifier(tmp_path, monkeypatch, poison):
+    from pathlib import PureWindowsPath
+    target = _sidecar(tmp_path)
+    _synthetic_signature_platform(monkeypatch, "win32", poison)
+    trusted = (PureWindowsPath(r"C:\TrustedWindows"), PureWindowsPath(r"C:\TrustedWindows\System32"))
+    monkeypatch.setattr(transport_runtime, "_windows_signature_paths", lambda: trusted, raising=False)
+    checks = []
+    def verified(argv, **kwargs):
+        checks.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0)
+    monkeypatch.setattr(transport_runtime.subprocess, "run", verified)
+    _validated_binary(target, expected_sha256=hashlib.sha256(target.read_bytes()).hexdigest(), require_platform_signature=True)
+    assert len(checks) == 1
+    assert checks[0][0][0] == str(trusted[1] / "WindowsPowerShell" / "v1.0" / "powershell.exe")
+    assert checks[0][1]["env"]["SystemRoot"] == str(trusted[0])
+
+
+
+@pytest.mark.parametrize("poison", ["", "relative-windows", r"\\untrusted.invalid\share", r"Z:\AttackerWindows"])
+def test_windows_signature_native_paths_ignore_environment(monkeypatch, poison):
+    import os
+    monkeypatch.setenv("SystemRoot", poison)
+    if os.name != "nt":
+        with pytest.raises(TransportLaunchError, match="not installed safely"):
+            transport_runtime._windows_signature_paths()
+        return
+    root, system = transport_runtime._windows_signature_paths()
+    assert root.is_absolute() and system.is_absolute()
+    assert root in system.parents or root == system
+    assert Path(root).is_dir() and Path(system).is_dir()
+    assert (Path(system) / "WindowsPowerShell" / "v1.0" / "powershell.exe").is_file()
+
+
+@pytest.mark.parametrize("problem", ["zero", "truncated", "relative", "network", "parent", "mismatched-root", "unavailable"])
+def test_windows_signature_native_api_failure_is_closed(monkeypatch, problem):
+    import ctypes
+    class Query:
+        def __init__(self, value):
+            self.value = value
+        def __call__(self, buffer, size):
+            buffer.value = self.value
+            return 0 if problem == "zero" else size if problem == "truncated" else len(self.value)
+    root, system = r"C:\Windows", r"C:\Windows\System32"
+    if problem == "relative":
+        system = "relative-system"
+    elif problem == "network":
+        system = r"\\untrusted.invalid\system"
+    elif problem == "parent":
+        system = r"C:\Windows\..\System32"
+    elif problem == "mismatched-root":
+        system = r"D:\OtherWindows\System32"
+    native = SimpleNamespace(GetSystemWindowsDirectoryW=Query(root), GetSystemDirectoryW=Query(system))
+    def load(*args, **kwargs):
+        assert args == ("kernel32",) and kwargs == {"use_last_error": True}
+        if problem == "unavailable":
+            raise OSError("synthetic-private-native-path-error")
+        return native
+    monkeypatch.setattr(ctypes, "WinDLL", load, raising=False)
+    with pytest.raises(TransportLaunchError, match="not installed safely") as error:
+        transport_runtime._windows_signature_paths()
+    assert error.value.__cause__ is None and error.value.__context__ is None
+
+
+
+def test_successful_signature_precedes_real_transport_start(tmp_path, monkeypatch):
+    target = _sidecar(tmp_path)
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    _synthetic_signature_platform(monkeypatch, "darwin")
+    events = []
+    real_popen = subprocess.Popen
+    def verified(argv, **kwargs):
+        events.append("signature")
+        return subprocess.CompletedProcess(argv, 0)
+    def start_child(argv, **kwargs):
+        assert events == ["signature"]
+        events.append("spawn")
+        return real_popen(argv, **kwargs)
+    monkeypatch.setattr(transport_runtime.subprocess, "run", verified)
+    monkeypatch.setattr(transport_runtime.subprocess, "Popen", start_child)
+    with TransportProcess(target, expected_build="test-build", expected_sha256=digest,
+                          require_platform_signature=True) as process:
+        assert process.running and process.process_id is not None
+        assert process.hello().build == "test-build"
+    assert events == ["signature", "spawn"]
+    assert not process.running and process.process_id is None
+
+
+
+@pytest.mark.parametrize("platform", ["darwin", "win32", "linux", "freebsd"])
+def test_signature_requirement_never_substitutes_for_a_pinned_binary_hash(tmp_path, monkeypatch, platform):
+    target = _sidecar(tmp_path)
+    _synthetic_signature_platform(monkeypatch, platform)
+    verifications = []
+    monkeypatch.setattr(transport_runtime, "_verify_platform_signature", lambda path: verifications.append(path))
+    with pytest.raises(TransportLaunchError, match="not installed safely"):
+        _validated_binary(target, require_platform_signature=True)
+    assert verifications == []
+
+
+def test_required_signature_rejects_unsupported_platform(tmp_path, monkeypatch):
+    target = _sidecar(tmp_path)
+    _synthetic_signature_platform(monkeypatch, "freebsd")
+    with pytest.raises(TransportLaunchError, match="not installed safely"):
+        _validated_binary(target, expected_sha256=hashlib.sha256(target.read_bytes()).hexdigest(), require_platform_signature=True)

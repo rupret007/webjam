@@ -19,6 +19,9 @@ repeating the same steps.
 
 1. **Get the app** from [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
    Choose the download for your computer.
+   For the Stalemate private beta, use its organizer's qualified package.
+   A public download with the same version number may not accept the newer
+   invitation; see [community beta setup](docs/COMMUNITY_MUSIC_BETA.md).
 2. **Open it.**
    - **Windows:** if Windows says it protected your PC, choose **More info**,
      then **Run anyway**. A work PC may still block it; ask IT.
@@ -28,11 +31,18 @@ repeating the same steps.
    - **Ubuntu:** unzip the folder, keep it together, and start `WebJam`.
 3. **Start or join.** Choose **Art** or **Music**, then **Host** or **Join**.
    The host uses **Copy Invite** and sends the whole message. The friend
-   pastes it on **Join**. Stay on the **same Wi-Fi or local network**. Keep
-   the host's window open.
+   pastes it on **Join**. If the invitation says **same network**, use the
+   host's Wi-Fi or local network. Keep the host's window open.
 
 **Music Host is Mac-only.** Windows and Linux can Join a Music jam; they
 cannot start one. Any computer can Host or Join Art.
+
+**Unsigned Windows remote Music is blocked.** The current frozen Windows
+candidate requires a valid signature on its native remote transport. Opening
+the app after a Windows warning does not meet that requirement. A same-network
+invitation uses a different path; do not treat it as proof of remote Music.
+The full community music beta still needs qualified builds and physical
+installation, two-way audio and recovery checks on Mac, Windows and Linux.
 
 **What Host does:** opens your room (Art) or starts the private band server
 and Jamulus (Music). When the room is ready, **Copy Invite** appears.
@@ -44,12 +54,9 @@ and Jamulus (Music). When the room is ready, **Copy Invite** appears.
 public link, then **Join / Open Meeting**. Drawpile is only for an optional
 shared Art canvas. Art does not record a Music take.
 
-**Where recordings go (Music):** the host chooses **Record Session**. When
-the take says **Ready**, use **More → Recording Setup… → Show Folder**.
-Mac hosts keep takes under
-`Library/Application Support/WebJam/JamulusServer/Recordings`. Windows and
-Linux hosts default to `WebJam Recordings` in the home folder. Guests often
-see `Music/WebJam Takes`.
+**Where recordings go (Music):** the Mac host chooses **Record Session**. When
+the take says **Ready**, use **More → Recording Setup… → Show Folder** to
+find the saved files. Recording locations depend on the profile and its settings.
 
 **Leave:** host **End Session** / **End Room**; guest **Leave Jam** /
 **Leave Room**. The others stay. Your meeting and drawing app stay open.
@@ -144,6 +151,9 @@ copied; unrelated files and application credentials are not added.
 Choose **Import backup…** and select a JSON backup, media package, or its
 `.webjamreceipt` file. A receipt checks the package beside it against the
 intended checksum. Review the title, profile, counts, prior imports and limits.
+If a metadata backup changes between its capture and verification, preview
+stops; choose a stable saved file again. A completed preview retains its
+reviewed contents even if the source file changes later.
 **Cancel** leaves the open draft unchanged.
 **Import as new** creates a separate saved workspace and keeps your
 current editor and selection. Select the imported entry yourself when ready.
@@ -881,6 +891,12 @@ invitation succeeded.
 The Join door contains one masked invitation field, one **Join** button, and a
 privacy reminder. When the field is empty, “Paste an invite to continue” explains
 why Join is unavailable. Keyboard order stays **Invite → Join → Back**.
+The accessibility interface exposes the visible instructions, privacy reminder,
+current status and error explanation. Editing an invitation clears the previous
+error so assistive tools read the current state.
+An incomplete launch choice returns to the launcher without starting a
+workspace or audio. Saved Host settings cannot stand in for a missing Join
+invitation; choose Host deliberately or paste a valid invitation to continue.
 Paste the complete invitation copied from the host. Harmless
 message whitespace and surrounding punctuation are accepted; incomplete,
 expired, malformed, incompatible, and unsupported invitations are rejected
@@ -907,6 +923,21 @@ action shown:
 After Jamulus connects, the session canvas includes Jamulus band chat. That
 chat is unavailable while the private connection itself is still being set
 up, so use the invitation recovery shown by WebJam for connection trouble.
+
+For the separate opt-in [browser Web Join](docs/web-join.md), an interrupted
+or timed-out Join explains the problem, releases audio resources, and enables
+an explicit retry. **Leave session** remains a deliberate exit; it does not
+automatically reconnect or later show a timeout warning. Joining again still
+requires a valid, unused host invitation. Ask the host for a fresh link if the
+old one has expired or may have been consumed.
+Unreleased private-beta test packages can open the protected shared-community
+page for browser invitations. Join that private community in the same browser
+before using the complete host invitation. An unavailable build destination
+leaves this optional invitation off; use the approved app build. Browser audio
+still requires the host's explicit permission and the guest's audio consent.
+An earlier playback or background-audio resume attempt finishing after Leave
+cannot replace that exit message or disconnect your next Join. A playback problem in the current
+attempt still releases audio and offers an explicit retry.
 
 ## Your Music listening mix
 
@@ -1317,11 +1348,10 @@ tools are for and WebJam never starts, requests, or requires it.
 
 ## Record Session
 
-The host controls the shared multitrack take. When a take says **Ready**,
-**More → Recording Setup… → Show Folder** opens the saved files. Mac hosts
-keep takes under `Library/Application Support/WebJam/JamulusServer/Recordings`.
-Windows and Linux hosts default to `WebJam Recordings` in the home folder.
-Guests often see `Music/WebJam Takes`.
+The host controls the shared multitrack take in profiles that support recording.
+**Music hosting is Mac-only; Windows and Linux users join Music sessions.**
+When a take says **Ready**, use **More → Recording Setup… → Show Folder** to
+find the saved files. Recording locations depend on the profile and its settings.
 
 At the first **Record Session**
 click, choose the profile's shared-only action—**Record Shared Jam Only**,

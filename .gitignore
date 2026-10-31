@@ -44,3 +44,6 @@ audit-v*/
 # Cloudflare Worker local state
 deploy/relay/cloudflare-worker/node_modules/
 deploy/relay/cloudflare-worker/.wrangler/
+
+# Reproducible optional native Web Join codec build output
+native/web-join/

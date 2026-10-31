@@ -73,6 +73,26 @@ _build_info_path.write_text(
     encoding="ascii",
 )
 
+# Only a reviewed first-party target identifier is compiled into the package.
+# Frozen apps read this build-bound document, never an environment URL. Private
+# beta packages cannot be built from a release tag or published by release CI.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+def _web_join_target_document():
+    from core.web_join_target import build_target_document
+
+    return build_target_document(
+        os.environ.get("WEBJAM_WEB_JOIN_TARGET", "public"),
+        _build_id.lower(),
+        git_ref=os.environ.get("GITHUB_REF", ""),
+    )
+
+
+_web_join_target_path = ROOT / "build" / "webjam-web-join-target.json"
+_web_join_target_path.write_bytes(_web_join_target_document())
+
 # Give the Windows executable the same authoritative version metadata as the
 # macOS bundle. CI reads ProductVersion from the built PE before packaging.
 _windows_version_info = None
@@ -124,6 +144,20 @@ if sys.platform == "win32":
 # ``Jamulus/`` distribution dependency after PyInstaller finishes; macOS gets
 # runnable nested app bundles after PyInstaller finishes.
 _extra_datas = []
+_extra_binaries = []
+# Web Join is optional and fails closed without this custom-mode codec.
+# Build it explicitly with packaging/macos/build-web-join-opus.sh; PyInstaller
+# places macOS binaries in Contents/Frameworks for normal bundle signing.
+if sys.platform == "darwin":
+    _web_join_native = ROOT / "native" / "web-join"
+    _web_join_opus = _web_join_native / "libwebjoin_opus.dylib"
+    if _web_join_opus.is_file():
+        for _notice in ("OPUS-COPYING.txt", "OPUS-PROVENANCE.txt"):
+            _notice_path = _web_join_native / _notice
+            if not _notice_path.is_file():
+                raise RuntimeError("Web Join codec requires its license and provenance")
+            _extra_datas.append((str(_notice_path), "THIRD_PARTY_LICENSES/web-join"))
+        _extra_binaries.append((str(_web_join_opus), "."))
 if sys.platform == "win32":
     _vb_dir = ROOT / "VB"
     if _vb_dir.is_dir():
@@ -146,7 +180,7 @@ if sys.platform == "win32":
 a = Analysis(
     [str(ROOT / "webjam_qt_main.py")],
     pathex=[str(ROOT)],
-    binaries=[],
+    binaries=_extra_binaries,
     datas=[
         # QSS stylesheet and theme assets
         (str(ROOT / "webjam_qt" / "theme" / "conductor.qss"), "webjam_qt/theme"),
@@ -236,6 +270,7 @@ a = Analysis(
             "THIRD_PARTY_LICENSES/transport",
         ),
         (str(_build_info_path), "."),
+        (str(_web_join_target_path), "."),
         *_extra_datas,
     ],
     hiddenimports=[
@@ -251,6 +286,8 @@ a = Analysis(
         "services.remote_invitation_owner",
         "services.remote_session_runtime",
         "services.transport_runtime",
+        "services.web_join_host",
+        "services.web_join_bridge",
         "storage.repository",
         "ui.services",
         "core.file_io",
