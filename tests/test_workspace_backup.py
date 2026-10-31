@@ -1055,11 +1055,22 @@ def test_unimported_v1_bytes_remain_exactly_compatible(tmp_path):
 
 def test_stage_inspection_failure_closes_descriptor_without_touching_other_files(tmp_path, record, monkeypatch):
     real_fstat = os.fstat
+    real_fdopen = backup.os.fdopen
+    stage_descriptors = []
     descriptors = []
-    def fail(descriptor):
-        descriptors.append(descriptor)
-        raise OSError("injected stage inspection failure")
-    monkeypatch.setattr(backup.os, "fstat", fail)
+
+    def stage_fdopen(descriptor, *args, **kwargs):
+        stage_descriptors.append(descriptor)
+        return real_fdopen(descriptor, *args, **kwargs)
+
+    def fail_stage_inspection(descriptor):
+        if stage_descriptors and descriptor == stage_descriptors[0]:
+            descriptors.append(descriptor)
+            raise OSError("injected stage inspection failure")
+        return real_fstat(descriptor)
+
+    monkeypatch.setattr(backup.os, "fdopen", stage_fdopen)
+    monkeypatch.setattr(backup.os, "fstat", fail_stage_inspection)
     with pytest.raises(WorkspaceBackupError):
         export_workspace_backup(record, tmp_path / "backup.json")
     assert len(descriptors) == 1
