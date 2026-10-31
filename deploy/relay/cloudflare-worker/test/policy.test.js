@@ -176,7 +176,45 @@ test("rate limiter store stays bounded when many IPs share one bucket", () => {
     allowRate(store, `203.0.113.${i % 256}.${(i >> 8) % 256}`, nowMs, limit);
   }
   assert.ok(store.size <= MAX_RATE_STORE_ENTRIES);
-  assert.equal(allowRate(store, "198.51.100.42", nowMs, limit), true);
+  // Every live entry is at its limit, so admitting a new IP would require
+  // evicting a live counter. The limiter must fail closed instead.
+  assert.equal(allowRate(store, "198.51.100.42", nowMs, limit), false);
+  assert.ok(store.size <= MAX_RATE_STORE_ENTRIES);
+});
+
+test("rate limiter never re-admits an already-denied IP when one window overflows the store", () => {
+  const store = new Map();
+  const nowMs = 60_000;
+  const limit = 1;
+  const denied = "192.0.2.7";
+  assert.equal(allowRate(store, denied, nowMs, limit), true);
+  assert.equal(allowRate(store, denied, nowMs, limit), false);
+  for (let i = 0; i < MAX_RATE_STORE_ENTRIES * 2; i += 1) {
+    allowRate(store, `10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}`, nowMs, limit);
+    assert.ok(store.size <= MAX_RATE_STORE_ENTRIES);
+  }
+  assert.equal(allowRate(store, denied, nowMs, limit), false);
+});
+
+test("rate limiter never re-admits a denied IP when overflow happens in the adjacent window", () => {
+  const store = new Map();
+  const windowMs = 60_000;
+  const limit = 2;
+  const previous = 5 * windowMs;
+  const current = previous + windowMs;
+  for (let i = 0; i < MAX_RATE_STORE_ENTRIES - 1; i += 1) {
+    allowRate(store, `10.1.${(i >> 8) & 255}.${i & 255}`, previous, limit);
+  }
+  const denied = "192.0.2.8";
+  for (let i = 0; i < limit; i += 1) {
+    assert.equal(allowRate(store, denied, current, limit), true);
+  }
+  assert.equal(allowRate(store, denied, current, limit), false);
+  for (let i = 0; i < MAX_RATE_STORE_ENTRIES * 2; i += 1) {
+    allowRate(store, `10.2.${(i >> 8) & 255}.${i & 255}`, current, limit);
+    assert.ok(store.size <= MAX_RATE_STORE_ENTRIES);
+  }
+  assert.equal(allowRate(store, denied, current, limit), false);
 });
 
 test("rate limiter pruning preserves current bucket entries", () => {

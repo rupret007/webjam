@@ -179,25 +179,6 @@ function pruneRateStore(store, bucket) {
       store.delete(existing);
     }
   }
-  if (store.size <= MAX_RATE_STORE_ENTRIES) {
-    return;
-  }
-  // Prefer evicting entries from older buckets. Current bucket entries are
-  // evicted only when older buckets are exhausted. This preserves live rate
-  // counters unless a single window has more IPs than MAX_RATE_STORE_ENTRIES.
-  const keys = [...store.keys()].sort((left, right) => {
-    const leftBucket = rateStoreBucket(left);
-    const rightBucket = rateStoreBucket(right);
-    // Sort by bucket ascending, so older buckets are evicted first.
-    // Within the same bucket, entries evict in arbitrary order.
-    return leftBucket - rightBucket;
-  });
-  for (const existing of keys) {
-    if (store.size <= MAX_RATE_STORE_ENTRIES) {
-      break;
-    }
-    store.delete(existing);
-  }
 }
 
 export function allowRate(store, ip, nowMs, limit, windowMs = RATE_WINDOW_MS) {
@@ -206,12 +187,18 @@ export function allowRate(store, ip, nowMs, limit, windowMs = RATE_WINDOW_MS) {
   }
   const bucket = Math.floor(nowMs / windowMs);
   const key = `${ip}:${bucket}`;
-  const next = (store.get(key) ?? 0) + 1;
-  store.set(key, next);
-  if (store.size > MAX_RATE_STORE_ENTRIES) {
-    pruneRateStore(store, bucket);
+  pruneRateStore(store, bucket);
+  const existing = store.get(key);
+  if (existing !== undefined) {
+    const next = existing + 1;
+    store.set(key, next);
+    return next <= limit;
   }
-  return next <= limit;
+  if (store.size >= MAX_RATE_STORE_ENTRIES) {
+    return false;
+  }
+  store.set(key, 1);
+  return 1 <= limit;
 }
 
 export function readUsageBytes(payload) {
