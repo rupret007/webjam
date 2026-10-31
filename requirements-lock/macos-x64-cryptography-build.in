@@ -3,4 +3,4 @@
 cffi==2.1.0
 maturin==1.14.1
 pycparser==3.0
-setuptools==81.0.0
+setuptools==84.1.0

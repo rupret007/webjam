@@ -2,6 +2,7 @@
 // this exact allowlist is reviewed: https://developers.cloudflare.com/realtime/turn/faq/
 export const RELAY_IPS = Object.freeze(["141.101.90.1", "162.159.207.1"]);
 export const SESSION_BYTES = 256 * 1024 * 1024;
+export const RELAY_UNAVAILABLE_MESSAGE = "Web Join is unavailable. Try again later or ask your host for help.";
 export function publicIPv4(value) {
   if (typeof value !== "string" || !/^(?:0|[1-9][0-9]{0,2})(?:\.(?:0|[1-9][0-9]{0,2})){3}$/.test(value)) return false;
   const [a, b, c, d] = value.split(".").map(Number);
@@ -32,7 +33,7 @@ export function policySdp(sdp, { remote = false } = {}) {
   return `${result.join("\r\n")}\r\n`;
 }
 export function validateCredentials(document, now = Date.now()) {
-  if (!document || document.client !== "web" || !Number.isFinite(document.ttl) || document.ttl <= 0 || document.ttl > 3600 || !Number.isSafeInteger(document.quota_bytes) || document.quota_bytes <= 0 || document.quota_bytes > SESSION_BYTES || !Array.isArray(document.iceServers) || document.iceServers.length < 1 || document.iceServers.length > 8) throw new Error("Relay busy, try same Wi-Fi or the app.");
+  if (!document || document.client !== "web" || !Number.isFinite(document.ttl) || document.ttl <= 0 || document.ttl > 3600 || !Number.isSafeInteger(document.quota_bytes) || document.quota_bytes <= 0 || document.quota_bytes > SESSION_BYTES || !Array.isArray(document.iceServers) || document.iceServers.length < 1 || document.iceServers.length > 8) throw new Error(RELAY_UNAVAILABLE_MESSAGE);
   if (document.allowed_relay_ips !== undefined && (!Array.isArray(document.allowed_relay_ips) || document.allowed_relay_ips.some((ip) => !RELAY_IPS.includes(ip)))) throw new Error("Untrusted relay address");
   let hasTurn = false;
   for (const server of document.iceServers) {
@@ -46,6 +47,6 @@ export function validateCredentials(document, now = Date.now()) {
       }
     }
   }
-  if (!hasTurn) throw new Error("Relay busy, try same Wi-Fi or the app.");
+  if (!hasTurn) throw new Error(RELAY_UNAVAILABLE_MESSAGE);
   return { iceServers: document.iceServers, expiresAt: now + document.ttl * 1000, quotaBytes: document.quota_bytes };
 }

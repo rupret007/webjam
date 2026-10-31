@@ -12,6 +12,7 @@ from shiboken6 import isValid
 from core.session_library import SessionLibrary
 from core import jamulus_profile as startup_module
 from core.settings import AppSettings, save_settings
+from core.workspace_launch import InvalidWorkspaceLaunch
 from webjam_qt import app as app_module
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.controllers import session_library as library_module
@@ -23,6 +24,22 @@ from webjam_qt.windows.launch_dialog import LaunchDialog
 
 class ConstructionFault(RuntimeError):
     pass
+
+
+@pytest.mark.parametrize("role,band,remote", [
+    ("", None, None), ("unexpected", None, None), ("join", None, None),
+    ("join", "PRIVATE-SENTINEL", None), ("join", None, "PRIVATE-SENTINEL"),
+])
+def test_unconfirmed_launch_refuses_before_allocating_any_workspace(
+    tmp_path, monkeypatch, role, band, remote,
+):
+    constructor = Mock(side_effect=AssertionError("No workspace may be allocated"))
+    monkeypatch.setattr(app_module, "ConductorWindow", constructor)
+    launch = SimpleNamespace(selected_role=role, band_invite=band, remote_invitation=remote)
+    with pytest.raises(InvalidWorkspaceLaunch):
+        app_module._create_workspace(None, AppSettings(config_file=str(tmp_path / "unused.json")), launch)
+    constructor.assert_not_called()
+    assert not (tmp_path / "unused.json").exists()
 
 
 @pytest.fixture

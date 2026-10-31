@@ -221,6 +221,54 @@ def test_host_is_off_until_opt_in_and_kick_revokes_invite():
         host.allow(22124, generation=6)
 
 
+def test_private_package_invite_uses_its_build_target_and_normal_stop(tmp_path, monkeypatch):
+    from core import web_join_target as target
+
+    build = "a" * 40
+    manifest = tmp_path / target.MANIFEST_NAME
+    manifest.write_bytes(target.build_target_document("private-beta", build))
+    monkeypatch.setattr(target.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(target, "_manifest_path", lambda: manifest)
+    monkeypatch.setattr(target, "build_id", lambda: build)
+    process = FakeProcess(None)
+    host = WebJoinHost(
+        process_factory=lambda _callback: process,
+        bridge_factory=FakeBridge,
+        mailbox_factory=FakeMailbox,
+    )
+    invite = host.allow(22124, generation=8)
+    parsed = urlsplit(invite)
+    assert parsed.scheme == "https"
+    assert parsed.netloc == "stalemate-hangout-beta.jeffstory007.workers.dev"
+    assert parsed.path == "/join/" and not parsed.query
+    assert set(parse_qs(parsed.fragment)) == {"k", "s", "g", "e"}
+    assert parse_qs(parsed.fragment)["g"] == ["8"]
+    assert invite not in repr(host)
+    host.stop()
+    assert not host.invite and not process.running
+
+
+def test_invalid_package_target_cannot_start_bridge_transport_or_capability(tmp_path, monkeypatch):
+    from core import web_join_target as target
+
+    monkeypatch.setattr(target.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(target, "_manifest_path", lambda: tmp_path / target.MANIFEST_NAME)
+    monkeypatch.setattr(target, "build_id", lambda: "a" * 40)
+
+    def unexpected_start(*_args, **_kwargs):
+        pytest.fail("invalid routing metadata must fail before a resource is allocated")
+
+    monkeypatch.setattr("services.web_join_host.secrets.token_bytes", unexpected_start)
+    host = WebJoinHost(
+        process_factory=unexpected_start,
+        bridge_factory=unexpected_start,
+        mailbox_factory=unexpected_start,
+    )
+    with pytest.raises(WebJoinUnavailable):
+        host.allow(22124)
+    assert not host.invite and host.state == "closed"
+
+
 def test_prepare_failure_closes_owned_bridge_and_sidecar():
     process = FakeProcess(None)
 

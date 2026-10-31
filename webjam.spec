@@ -73,6 +73,26 @@ _build_info_path.write_text(
     encoding="ascii",
 )
 
+# Only a reviewed first-party target identifier is compiled into the package.
+# Frozen apps read this build-bound document, never an environment URL. Private
+# beta packages cannot be built from a release tag or published by release CI.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+def _web_join_target_document():
+    from core.web_join_target import build_target_document
+
+    return build_target_document(
+        os.environ.get("WEBJAM_WEB_JOIN_TARGET", "public"),
+        _build_id.lower(),
+        git_ref=os.environ.get("GITHUB_REF", ""),
+    )
+
+
+_web_join_target_path = ROOT / "build" / "webjam-web-join-target.json"
+_web_join_target_path.write_bytes(_web_join_target_document())
+
 # Give the Windows executable the same authoritative version metadata as the
 # macOS bundle. CI reads ProductVersion from the built PE before packaging.
 _windows_version_info = None
@@ -250,6 +270,7 @@ a = Analysis(
             "THIRD_PARTY_LICENSES/transport",
         ),
         (str(_build_info_path), "."),
+        (str(_web_join_target_path), "."),
         *_extra_datas,
     ],
     hiddenimports=[
