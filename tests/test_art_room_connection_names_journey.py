@@ -150,6 +150,11 @@ def _assert_private_and_no_external_work(rig, caplog):
             assert private not in public
     # Host-facing room copy may name the guest; telemetry and the overview
     # projection must not. The visible label is checked by _assert_named.
+    described = panel.accessibleDescription() + panel._connection_detail.accessibleDescription()
+    for enrolled in rig.private_enrollments:
+        for private in (enrolled.installation_id, enrolled.participant_id,
+                        enrolled.participant_token):
+            assert private not in described
     app._launch_native_jamulus_for_startup.assert_not_called()
     app._start_hosted_server_for_startup.assert_not_called()
     app.bridge.launch_webex.assert_not_called()

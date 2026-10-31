@@ -30,6 +30,7 @@ SESSION_ID_RE = re.compile(
 )
 INVITE_TOKEN_RE = re.compile(r"(?a)^[A-Za-z0-9_-]{32,256}$")
 RATE_WINDOW_SECONDS = 60
+MAX_RATE_KEYS = 4096
 
 
 def _int_env(name: str, default: int) -> int:
@@ -104,7 +105,14 @@ def allow_rate(ip: str, now: float, limit: int = RATE_LIMIT) -> bool:
     if not ip:
         return False
     with _lock:
-        _prune_rate_locked(now)
+        if len(_rate) >= MAX_RATE_KEYS:
+            _prune_rate_locked(now)
+        elif ip in _rate and not any(
+            now - stamp < RATE_WINDOW_SECONDS for stamp in _rate[ip]
+        ):
+            _prune_rate_locked(now)
+        if ip not in _rate and len(_rate) >= MAX_RATE_KEYS:
+            return False
         stamps = [stamp for stamp in _rate.get(ip, []) if now - stamp < RATE_WINDOW_SECONDS]
         if len(stamps) >= limit:
             _rate[ip] = stamps

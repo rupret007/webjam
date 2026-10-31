@@ -44,6 +44,23 @@ def test_node_worker_policy_and_fail_closed_cap() -> None:
         )
 
 
+def test_allow_rate_bounds_one_window_and_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(turn_credentials, "_rate", {})
+    cap = turn_credentials.MAX_RATE_KEYS
+    now = 1_000.0
+    denied = "192.0.2.9"
+    assert turn_credentials.allow_rate(denied, now, limit=1)
+    assert not turn_credentials.allow_rate(denied, now, limit=1)
+    for index in range(cap * 2):
+        turn_credentials.allow_rate(f"10.{(index >> 16) & 255}.{(index >> 8) & 255}.{index & 255}", now, limit=1)
+        assert len(turn_credentials._rate) <= cap
+    assert not turn_credentials.allow_rate(denied, now, limit=1)
+    assert not turn_credentials.allow_rate("198.51.100.77", now, limit=1)
+    later = now + turn_credentials.RATE_WINDOW_SECONDS + 1
+    assert turn_credentials.allow_rate("198.51.100.77", later, limit=1)
+    assert len(turn_credentials._rate) <= cap
+
+
 def test_allow_rate_prunes_stale_ips(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(turn_credentials, "_rate", {})
     now = 1_000_000.0
