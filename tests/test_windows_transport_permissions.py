@@ -595,7 +595,8 @@ def test_guard_exit_failure_after_process_creation_terminates_child_instead_of_o
     )
     monkeypatch.setattr(runtime.subprocess, "Popen", lambda *args, **kwargs: child)
     process = runtime.TransportProcess(
-        target, expected_build="synthetic", require_platform_signature=True
+        target, expected_build="synthetic", require_platform_signature=True,
+        expected_sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
     )
     monkeypatch.setattr(
         process,
