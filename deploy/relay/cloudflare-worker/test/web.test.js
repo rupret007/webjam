@@ -33,16 +33,40 @@ function analytics(desktop = 0, web = 0) {
   }] } } };
 }
 
-function upstream(payload = analytics(), returnedTtl = 600) {
+function upstream(payload = analytics(), returnedTtl = 600, includeTtl = true) {
   const calls = [];
   const fetch = async (url, init) => {
     calls.push({ url, init, body: JSON.parse(init.body) });
     if (url.includes("graphql")) {
       return Response.json(payload);
     }
-    return Response.json({ iceServers: [{ urls: "turn:relay.example:3478", username: "user", credential: "temporary" }], ttl: returnedTtl });
+    return Response.json({ iceServers: [{ urls: "turn:relay.example:3478", username: "user", credential: "temporary" }], ...(includeTtl ? { ttl: returnedTtl } : {}) });
   };
   return { fetch, calls, nowMs: NOW };
+}
+
+// Cloudflare documents a response without ttl; the service must report the
+// lifetime it requested, including nondefault desktop settings. An unexpected
+// upstream ttl must not extend that lifetime.
+// https://developers.cloudflare.com/realtime/turn/generate-credentials/
+for (const { configured, returned } of [
+  { configured: 120 }, { configured: 1800 },
+  { configured: 120, returned: 86400 }, { configured: 600, returned: 86400 },
+]) {
+  test(`desktop TURN TTL stays ${configured}s when upstream ${returned === undefined ? "omits TTL" : `reports ${returned}s`}`, async () => {
+    resetWorkerState();
+    const deps = upstream(analytics(), returned, returned !== undefined);
+    const response = await handleRequest(request("/turn-credentials", {
+      session_id: SESSION, invite_token: INVITE,
+    }, null), { ...env, TURN_CREDENTIAL_TTL_SECONDS: String(configured) }, deps);
+    assert.equal(response.status, 200);
+    const generated = deps.calls.filter(call => call.url.includes("generate-ice-servers"));
+    assert.equal(generated.length, 1);
+    assert.deepEqual(generated[0].body, { ttl: configured });
+    const document = await response.json();
+    assert.equal(document.ttl, configured);
+    assert.equal(document.client, undefined);
+  });
 }
 
 test("CORS denies unlisted, deceptive, opaque and malformed origins before any Durable Object", async () => {

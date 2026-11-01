@@ -332,10 +332,11 @@ async function handleAllowedRequest(request, env, deps) {
   if (document == null) {
     return errorResponse(503, "unavailable");
   }
-  // Do not trust an upstream response to extend the requested browser TTL.
+  // Cloudflare normally omits ttl. Report the lifetime actually requested for
+  // either client, rather than a default or an unexpected upstream ttl field.
+  document.ttl = ttl;
   if (web) {
     document.client = "web";
-    document.ttl = ttl;
     // Reviewed exact allocation IPs: https://developers.cloudflare.com/realtime/turn/faq/
     document.allowed_relay_ips = ["141.101.90.1", "162.159.207.1"];
   }
