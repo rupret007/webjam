@@ -28,7 +28,6 @@ const EXPIRED_SIGNALS = new Set([
   JOIN_SIGNAL.INVITE_EXPIRED,
   JOIN_SIGNAL.INVITE_MAILBOX_EXPIRED,
   JOIN_SIGNAL.INVITE_INVALID,
-  JOIN_SIGNAL.HOST_BINDING,
   JOIN_SIGNAL.RELAY_SESSION_EXPIRED,
 ]);
 
@@ -58,6 +57,15 @@ export function mapJoinError(error) {
       hint: "Make sure the WebJam app is hosting, Web Join is allowed, and your host copied a fresh invite. Then tap Retry.",
       showRetry: true,
       needsFreshInvite: false,
+    };
+  }
+  if (message === JOIN_SIGNAL.HOST_BINDING) {
+    return {
+      kind: "host_binding",
+      headline: message,
+      hint: "The invite or host certificate did not match. Ask your host for a new Web Join link, then tap Retry.",
+      showRetry: true,
+      needsFreshInvite: true,
     };
   }
   if (NETWORK_SIGNALS.has(message)) {
