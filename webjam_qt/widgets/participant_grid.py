@@ -26,7 +26,7 @@ from core.creative_modes import (
     get_creator_profile_by_key_or_default,
 )
 from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
-from webjam_qt.session_state import SessionUiState
+from webjam_qt.session_state import SessionPhase, SessionUiState
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.participant_card import ParticipantCard, ParticipantPresentation
 
@@ -688,6 +688,14 @@ class ParticipantGrid(QScrollArea):
     def set_session_state(self, state: SessionUiState) -> None:
         """Render a centralized Live-workspace state snapshot."""
         self._last_session_state = state
+        hint = state.hint
+        if self._creator_profile.key == "music" and state.phase in {
+            SessionPhase.NOT_CONNECTED,
+            SessionPhase.CONNECTING,
+            SessionPhase.RECONNECTING,
+        }:
+            prep = "Before you jam: use wired internet and wear headphones."
+            hint = prep if not hint else f"{hint} {prep}"
         self.set_empty_state(
             state.phase.value,
             state.title,
@@ -697,7 +705,7 @@ class ParticipantGrid(QScrollArea):
             show_primary=state.show_primary,
             show_ready_check=state.show_ready_check,
             show_practice=state.show_practice,
-            hint=state.hint,
+            hint=hint,
             primary_action=state.primary_action,
             show_empty_state=state.show_empty_state,
         )
