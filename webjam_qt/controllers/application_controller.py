@@ -4726,6 +4726,29 @@ class ApplicationController(QObject):
             presentation.recording_state = states.get(
                 getattr(presentation, "participant_id", "") or "", ""
             )
+        self._apply_latency_presentations_to_participants()
+
+    def _apply_latency_presentations_to_participants(self) -> None:
+        bridge = getattr(self, "bridge", None)
+        adaptive = getattr(bridge, "adaptive_latency", None) if bridge else None
+        if adaptive is None:
+            return
+        try:
+            rows = adaptive.participant_delays()
+        except Exception:  # noqa: BLE001
+            return
+        for presentation in self.participants.values():
+            if presentation.is_local:
+                adaptive.note_local_channel_id(presentation.channel_id)
+            row = rows.get(presentation.channel_id)
+            if row is None and presentation.is_local:
+                row = rows.get(presentation.channel_id)
+            if row is None:
+                presentation.overall_delay_ms = None
+                presentation.delay_status = "unknown"
+                continue
+            presentation.overall_delay_ms = row.overall_delay_ms
+            presentation.delay_status = row.status.value
 
     def _sync_self_mute_button(self) -> None:
         """Compatibility hook that can only clear unsupported transmit state."""

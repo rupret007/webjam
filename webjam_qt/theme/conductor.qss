@@ -521,7 +521,8 @@ QPushButton#SharedTrackLiveState[nextStep="true"]:focus {
     font-size: ${FONT_SIZE_MD}px;
 }
 
-#StageEmptyHint {
+#StageEmptyHint,
+#StageEmptyPrepHint {
     color: ${COLOR_TEXT_MUTED};
     font-size: ${FONT_SIZE_SM}px;
     padding-top: ${SPACE_XS}px;
@@ -590,6 +591,16 @@ QLabel#ParticipantAvatar {
 #ParticipantRole, #FaderValue, QLabel#BodyLabel, #VideoPlaceholder {
     color: ${COLOR_TEXT_SECONDARY};
     font-size: ${FONT_SIZE_SM}px;
+}
+
+#ParticipantDelay {
+    color: ${COLOR_TEXT_SECONDARY};
+    font-size: ${FONT_SIZE_SM}px;
+}
+
+#ParticipantCard[delayStatus="poor"] #ParticipantDelay {
+    color: ${COLOR_TEXT_PRIMARY};
+    font-weight: ${FONT_WEIGHT_BOLD};
 }
 
 #FaderValue {

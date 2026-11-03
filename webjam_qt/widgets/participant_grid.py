@@ -26,7 +26,7 @@ from core.creative_modes import (
     get_creator_profile_by_key_or_default,
 )
 from core.meeting_link import RECORD_SESSION_MEETING_CAPTURE_NOTICE
-from webjam_qt.session_state import SessionUiState
+from webjam_qt.session_state import SessionPhase, SessionUiState
 from webjam_qt.theme.tokens import Space
 from webjam_qt.widgets.participant_card import ParticipantCard, ParticipantPresentation
 
@@ -284,6 +284,12 @@ class ParticipantGrid(QScrollArea):
         actions.addWidget(self._empty_ready)
         actions.addStretch(1)
 
+        self._empty_prep_hint = QLabel()
+        self._empty_prep_hint.setObjectName("StageEmptyPrepHint")
+        self._empty_prep_hint.setWordWrap(True)
+        self._empty_prep_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self._empty_prep_hint.setVisible(False)
+
         self._empty_hint = QLabel()
         self._empty_hint.setObjectName("StageEmptyHint")
         self._empty_hint.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -297,6 +303,7 @@ class ParticipantGrid(QScrollArea):
         layout.addWidget(self._empty_message)
         layout.addSpacing(Space.SM)
         layout.addLayout(actions)
+        layout.addWidget(self._empty_prep_hint)
         layout.addWidget(self._empty_hint)
         return state
 
@@ -517,9 +524,12 @@ class ParticipantGrid(QScrollArea):
             layout.setContentsMargins(margin, margin, margin, margin)
             layout.setSpacing(spacing)
         # The conversation card reduces the stage height on compact screens.
-        # Hide the secondary lobby hint there so the primary session action
+        # Hide secondary lobby hints there so the primary session action
         # remains fully contained above Conversation instead of drawing
-        # behind it. Restore the hint automatically when space returns.
+        # behind it. Restore them automatically when space returns.
+        self._empty_prep_hint.setVisible(
+            bool(self._empty_prep_hint.text()) and not compact_height
+        )
         self._empty_hint.setVisible(
             bool(self._empty_hint.text()) and not compact_height
         )
@@ -607,6 +617,7 @@ class ParticipantGrid(QScrollArea):
         show_ready_check: bool = True,
         show_practice: bool = False,
         hint: str = "",
+        prep_hint: str = "",
         primary_action: str = "start",
         show_empty_state: bool = True,
     ) -> None:
@@ -615,6 +626,7 @@ class ParticipantGrid(QScrollArea):
         message = self._profile_text(message)
         primary_text = self._profile_text(primary_text)
         hint = self._profile_text(hint)
+        prep_hint = self._profile_text(prep_hint)
         if self._creator_profile.key == "art" and (
             not hint
             or "separate tracks" in hint.casefold()
@@ -668,9 +680,12 @@ class ParticipantGrid(QScrollArea):
         self._empty_primary_action = str(primary_action or "start")
         self._empty_ready.setVisible(show_ready_check)
         self._empty_practice.setVisible(show_practice)
+        self._empty_prep_hint.setText(prep_hint)
         self._empty_hint.setText(hint)
         self._empty_hint.setVisible(bool(hint))
         accessible_parts = [title, message]
+        if prep_hint:
+            accessible_parts.append(prep_hint)
         if self._creator_profile.is_preview and self._creator_profile.key != "art":
             accessible_parts.insert(0, f"{self._creator_profile.label} Preview")
             if hint:
@@ -688,6 +703,13 @@ class ParticipantGrid(QScrollArea):
     def set_session_state(self, state: SessionUiState) -> None:
         """Render a centralized Live-workspace state snapshot."""
         self._last_session_state = state
+        prep_hint = ""
+        if self._creator_profile.key == "music" and state.phase in {
+            SessionPhase.NOT_CONNECTED,
+            SessionPhase.CONNECTING,
+            SessionPhase.RECONNECTING,
+        }:
+            prep_hint = "Before you jam: use wired internet and wear headphones."
         self.set_empty_state(
             state.phase.value,
             state.title,
@@ -698,6 +720,7 @@ class ParticipantGrid(QScrollArea):
             show_ready_check=state.show_ready_check,
             show_practice=state.show_practice,
             hint=state.hint,
+            prep_hint=prep_hint,
             primary_action=state.primary_action,
             show_empty_state=state.show_empty_state,
         )
