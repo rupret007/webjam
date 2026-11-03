@@ -19,6 +19,9 @@ export async function acquireMusicStream(mediaDevices) {
   try {
     stream = await mediaDevices.getUserMedia({ video: false, audio: { ...MUSIC_CONSTRAINTS } });
   } catch (error) {
+    if (error.name === "NotAllowedError") {
+      throw new Error("Microphone access was blocked. Allow the mic in your browser settings, then tap Join again.");
+    }
     if (!["OverconstrainedError", "NotSupportedError"].includes(error.name)) throw error;
     fallback = true;
     stream = await mediaDevices.getUserMedia({ video: false, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
@@ -71,10 +74,57 @@ export function musicSdp(sdp, ptime = 20) {
   return `${output.join("\r\n")}\r\n`;
 }
 
-export function tuneReceiver(receiver) {
+export function tuneReceiver(receiver, targetMs = 20) {
   if ("jitterBufferTarget" in receiver) {
-    try { receiver.jitterBufferTarget = 20; } catch { /* Optional browser support. */ }
+    try { receiver.jitterBufferTarget = targetMs; } catch { /* Optional browser support. */ }
   }
+}
+
+const JITTER_TARGET_MIN_MS = 20;
+const JITTER_TARGET_MAX_MS = 120;
+const JITTER_TARGET_DEFAULT_MS = 20;
+
+export function adaptJitterBufferTarget(stats, state = {}) {
+  let rttMs;
+  let jitterMs = 0;
+  let lossRate = 0;
+  let bufferMs = JITTER_TARGET_DEFAULT_MS;
+  for (const report of stats.values()) {
+    if (report.type === "candidate-pair" && (report.nominated || report.selected) && report.state === "succeeded" && Number.isFinite(report.currentRoundTripTime)) {
+      rttMs = report.currentRoundTripTime * 1000;
+    }
+    if (report.type === "inbound-rtp" && (report.kind === "audio" || report.mediaType === "audio")) {
+      if (report.packetsReceived > 0 && Number.isFinite(report.packetsLost)) {
+        lossRate = report.packetsLost / (report.packetsReceived + report.packetsLost);
+      }
+      if (report.jitterBufferEmittedCount > 0 && Number.isFinite(report.jitterBufferDelay)) {
+        bufferMs = (report.jitterBufferDelay / report.jitterBufferEmittedCount) * 1000;
+      }
+      if (Number.isFinite(report.jitter)) {
+        jitterMs = Math.max(jitterMs, report.jitter * 1000);
+      }
+    }
+  }
+  const current = Number.isFinite(state.targetMs) ? state.targetMs : JITTER_TARGET_DEFAULT_MS;
+  let target = current;
+  const stress = (rttMs ?? 0) * 0.25 + jitterMs * 2 + lossRate * 80 + Math.max(0, bufferMs - current);
+  if (stress > 25 && current < JITTER_TARGET_MAX_MS) {
+    target = Math.min(JITTER_TARGET_MAX_MS, current + 10);
+  } else if (stress < 8 && current > JITTER_TARGET_MIN_MS) {
+    target = Math.max(JITTER_TARGET_MIN_MS, current - 5);
+  }
+  const now = Date.now();
+  const lastChange = Number.isFinite(state.lastChangeAt) ? state.lastChangeAt : 0;
+  if (target !== current && now - lastChange < 5000) {
+    target = current;
+  }
+  return { targetMs: target, lastChangeAt: target !== current ? now : lastChange, rttMs, jitterMs, lossRate, bufferMs };
+}
+
+export function applyAdaptiveReceiverTarget(receiver, adaptation) {
+  if (!receiver || !adaptation || !Number.isFinite(adaptation.targetMs)) return adaptation;
+  tuneReceiver(receiver, adaptation.targetMs);
+  return adaptation;
 }
 
 export function latencyMs(stats, baseLatency = 0) {

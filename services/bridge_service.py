@@ -658,6 +658,9 @@ class BridgeService:
             if sys.platform == "darwin" and isinstance(settings, AppSettings)
             else None
         )
+        from services.adaptive_latency_controller import AdaptiveLatencyController
+
+        self.adaptive_latency = AdaptiveLatencyController(self)
         # Production macOS launches retain no-follow directory descriptors and
         # inode proofs for every private path passed to an owned native child.
         # Compatible mocks used by portable unit tests keep the legacy branch;
@@ -2908,6 +2911,19 @@ class BridgeService:
                     if cancelled():
                         return
 
+                    if native_profile is not None and getattr(
+                        native_profile, "profile_path", None
+                    ):
+                        try:
+                            self.adaptive_latency.apply_launch_defaults(
+                                native_profile.profile_path
+                            )
+                        except OSError as exc:
+                            LOGGER.warning(
+                                "Adaptive latency defaults not applied (%s).",
+                                type(exc).__name__,
+                            )
+
                     import secrets as _secrets
                     jsonrpc_secret_args: list[str] = []
                     # This exact constant is shared with JamulusRpcClient; a
@@ -3173,6 +3189,9 @@ class BridgeService:
                                 self.jamulus_controller.start(
                                     process_generation=published_generation,
                                     process_id=published_process_id,
+                                )
+                                self.adaptive_latency.bind_jamulus_controller(
+                                    self.jamulus_controller
                                 )
                             except Exception as exc:
                                 LOGGER.warning(

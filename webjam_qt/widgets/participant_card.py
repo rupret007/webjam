@@ -55,6 +55,8 @@ class ParticipantPresentation:
     # such as "waiting"/"recording"/"conflicted"); empty when no take is
     # active. Presentation-only: it never carries digests or fingerprints.
     recording_state: str = ""
+    overall_delay_ms: float | None = None
+    delay_status: str = ""  # good | fair | poor | unknown
 
 
 class ParticipantCard(QFrame):
@@ -107,6 +109,11 @@ class ParticipantCard(QFrame):
         self._recording_label.setTextFormat(Qt.TextFormat.PlainText)
         self._recording_label.setVisible(False)
         self._role_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._delay_label = QLabel()
+        self._delay_label.setObjectName("ParticipantDelay")
+        self._delay_label.setAccessibleName("Overall delay")
+        self._delay_label.setTextFormat(Qt.TextFormat.PlainText)
+        self._delay_label.setVisible(False)
         self._fader_value = QLabel(self._format_fader(presentation.fader_level))
         self._fader_value.setObjectName("FaderValue")
         self._fader_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -153,6 +160,7 @@ class ParticipantCard(QFrame):
 
         self._compose_layout()
         self._apply_recording_state(presentation.recording_state)
+        self._apply_delay_presentation(presentation)
         self._apply_connection_state()
         self._apply_local_state(presentation.is_local)
         self._update_accessibility()
@@ -179,6 +187,7 @@ class ParticipantCard(QFrame):
         self._apply_solo_state(presentation.solo)
         self._level_meter.set_level(presentation.audio_level)
         self._apply_recording_state(presentation.recording_state)
+        self._apply_delay_presentation(presentation)
         self._apply_connection_state()
         self._apply_local_state(presentation.is_local)
         self._sync_mute_label()
@@ -204,6 +213,32 @@ class ParticipantCard(QFrame):
         if self.property("recordingState") != (state or ""):
             self.setProperty("recordingState", state or "")
             self._repolish(self)
+
+    # The product palette has no status hues, so the words carry the meaning.
+    _DELAY_STATUS_TEXT = {
+        "good": "good",
+        "fair": "okay",
+        "poor": "high",
+    }
+
+    def _apply_delay_presentation(self, presentation: ParticipantPresentation) -> None:
+        delay = presentation.overall_delay_ms
+        status = str(presentation.delay_status or "").lower()
+        if delay is None or not math.isfinite(delay) or status in {"", "unknown"}:
+            self._delay_label.setVisible(False)
+            self.setProperty("delayStatus", "")
+            self._repolish(self._delay_label)
+            return
+        text = f"Overall delay ≈ {round(delay)} ms"
+        word = self._DELAY_STATUS_TEXT.get(status)
+        if word:
+            text = f"{text} · {word}"
+        self._delay_label.setText(text)
+        self._delay_label.setVisible(True)
+        if self.property("delayStatus") != status:
+            self.setProperty("delayStatus", status)
+            self._repolish(self)
+            self._repolish(self._delay_label)
 
     def set_audio_level(self, level: float) -> None:
         """Push instantaneous meter level without rebuilding the whole card."""
@@ -265,6 +300,7 @@ class ParticipantCard(QFrame):
         role_row.addWidget(self._recording_label)
         role_row.addStretch(1)
         identity_col.addLayout(role_row)
+        identity_col.addWidget(self._delay_label)
         identity_row.addLayout(identity_col, stretch=1)
         identity_row.addWidget(self._fader_value)
         body_layout.addLayout(identity_row)
