@@ -19,6 +19,9 @@ export async function acquireMusicStream(mediaDevices) {
   try {
     stream = await mediaDevices.getUserMedia({ video: false, audio: { ...MUSIC_CONSTRAINTS } });
   } catch (error) {
+    if (error.name === "NotAllowedError") {
+      throw new Error("Microphone access was blocked. Allow the mic in your browser settings, then tap Join again.");
+    }
     if (!["OverconstrainedError", "NotSupportedError"].includes(error.name)) throw error;
     fallback = true;
     stream = await mediaDevices.getUserMedia({ video: false, audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });

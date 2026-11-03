@@ -132,3 +132,6 @@ test("session quotas count every transport, fail on unavailable/decreasing count
     assert.equal(errors.length, 1); assert.equal(stops, 1); assert.equal(closes, 1); assert.equal(session.controller.signal.aborted, true);
   }
 });
+test("microphone denial maps to an actionable Join message", async () => {
+  await assert.rejects(acquireMusicStream({ getUserMedia: async () => { throw Object.assign(new Error("denied"), { name: "NotAllowedError" }); } }), /Microphone access was blocked/);
+});
