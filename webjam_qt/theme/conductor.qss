@@ -598,16 +598,9 @@ QLabel#ParticipantAvatar {
     font-size: ${FONT_SIZE_SM}px;
 }
 
-#ParticipantCard[delayStatus="good"] #ParticipantDelay {
-    color: #3d9970;
-}
-
-#ParticipantCard[delayStatus="fair"] #ParticipantDelay {
-    color: #e6b800;
-}
-
 #ParticipantCard[delayStatus="poor"] #ParticipantDelay {
-    color: #e06666;
+    color: ${COLOR_TEXT_PRIMARY};
+    font-weight: ${FONT_WEIGHT_BOLD};
 }
 
 #FaderValue {

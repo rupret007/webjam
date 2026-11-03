@@ -167,6 +167,43 @@ class TestParticipantCard(unittest.TestCase):
         card = ParticipantCard(pres)
         self.assertEqual(card._name_label.text(), "You")
 
+    def test_delay_status_is_spelled_out_not_color_only(self):
+        from webjam_qt.widgets.participant_card import ParticipantCard, ParticipantPresentation
+        cases = (
+            (32.4, "good", "Overall delay ≈ 32 ms · good"),
+            (60.0, "fair", "Overall delay ≈ 60 ms · okay"),
+            (95.6, "poor", "Overall delay ≈ 96 ms · high"),
+        )
+        for delay, status, expected in cases:
+            card = ParticipantCard(ParticipantPresentation(
+                channel_id=0, name="You", overall_delay_ms=delay, delay_status=status,
+            ))
+            self.assertEqual(card._delay_label.text(), expected)
+            self.assertFalse(card._delay_label.isHidden())
+            self.assertEqual(card.property("delayStatus"), status)
+
+    def test_delay_label_hides_without_a_usable_estimate(self):
+        from webjam_qt.widgets.participant_card import ParticipantCard, ParticipantPresentation
+        for delay, status in ((None, "good"), (45.0, "unknown"), (45.0, ""), (float("nan"), "poor"), (float("inf"), "poor")):
+            card = ParticipantCard(ParticipantPresentation(
+                channel_id=0, name="You", overall_delay_ms=delay, delay_status=status,
+            ))
+            self.assertTrue(card._delay_label.isHidden(), (delay, status))
+            self.assertEqual(card.property("delayStatus"), "")
+
+    def test_delay_wording_follows_presentation_updates(self):
+        from webjam_qt.widgets.participant_card import ParticipantCard, ParticipantPresentation
+        card = ParticipantCard(ParticipantPresentation(
+            channel_id=0, name="You", overall_delay_ms=30.0, delay_status="good",
+        ))
+        card.update_presentation(ParticipantPresentation(
+            channel_id=0, name="You", overall_delay_ms=120.0, delay_status="poor",
+        ))
+        self.assertEqual(card._delay_label.text(), "Overall delay ≈ 120 ms · high")
+        self.assertEqual(card.property("delayStatus"), "poor")
+        card.update_presentation(ParticipantPresentation(channel_id=0, name="You"))
+        self.assertTrue(card._delay_label.isHidden())
+
 
 # ---------------------------------------------------------------------------
 # SessionStrip

@@ -214,15 +214,26 @@ class ParticipantCard(QFrame):
             self.setProperty("recordingState", state or "")
             self._repolish(self)
 
+    # The product palette has no status hues, so the words carry the meaning.
+    _DELAY_STATUS_TEXT = {
+        "good": "good",
+        "fair": "okay",
+        "poor": "high",
+    }
+
     def _apply_delay_presentation(self, presentation: ParticipantPresentation) -> None:
         delay = presentation.overall_delay_ms
         status = str(presentation.delay_status or "").lower()
-        if delay is None or status in {"", "unknown"}:
+        if delay is None or not math.isfinite(delay) or status in {"", "unknown"}:
             self._delay_label.setVisible(False)
             self.setProperty("delayStatus", "")
             self._repolish(self._delay_label)
             return
-        self._delay_label.setText(f"Overall delay ≈ {round(delay)} ms")
+        text = f"Overall delay ≈ {round(delay)} ms"
+        word = self._DELAY_STATUS_TEXT.get(status)
+        if word:
+            text = f"{text} · {word}"
+        self._delay_label.setText(text)
         self._delay_label.setVisible(True)
         if self.property("delayStatus") != status:
             self.setProperty("delayStatus", status)
