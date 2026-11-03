@@ -36,6 +36,9 @@ test("headphones gate capture; encrypted offer pin rejection closes fake sine ca
   await expect(page.getByText("Web Join, higher delay (about 60–120 ms).", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => window.captureCalls)).toBe(0);
   await page.getByRole("checkbox").check();
+  await expect(page.getByRole("button", { name: "Join with microphone" })).toBeDisabled();
+  await page.getByRole("button", { name: "Check microphone" }).click();
+  await expect(page.getByText("We can hear you")).toBeVisible();
   await page.getByRole("button", { name: "Join with microphone" }).click();
   await expect(page.locator("#status")).toContainText("Host identity or invite binding did not match");
   expect(await page.evaluate(() => window.captureCalls)).toBe(1);
