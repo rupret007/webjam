@@ -29,6 +29,7 @@ async function openInvitation(page, width = 390) {
   // Local test-only capability, with no corresponding host or mailbox.
   await page.goto(`/#k=${Buffer.alloc(32, 17).toString('base64url')}&s=${'22'.repeat(32)}&g=1&e=${expires}`);
   await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Skip check' }).click();
 }
 
 for (const width of [375, 390]) {

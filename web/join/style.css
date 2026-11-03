@@ -7,12 +7,20 @@ p { line-height: 1.65; }
 #status { padding: 16px; border-left: 3px solid #bbe48b; background: #1b2625; }
 .first-run { margin: 0 0 8px; padding-left: 20px; color: #b4c2bd; line-height: 1.55; }
 .first-run li { margin: 6px 0; }
-.headphones { display: flex; align-items: flex-start; gap: 12px; padding: 18px 0; line-height: 1.5; }
-input { width: 20px; height: 20px; flex-shrink: 0; }
+.prejoin-heading { font-size: 1.25rem; margin: 24px 0 8px; }
+.prejoin-lead { margin-top: 0; color: #b4c2bd; }
+.mic-meter-wrap { margin: 16px 0; }
+.mic-meter { height: 12px; border-radius: 999px; background: #2a3534; overflow: hidden; }
+.mic-meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #7ab648, #bbe48b); transition: width 80ms linear; }
+.mic-heard { margin: 10px 0 0; color: #bbe48b; font-weight: 650; }
+.mic-error { color: #f3d7a5; margin: 12px 0; line-height: 1.5; }
+.headphones { display: flex; align-items: flex-start; gap: 12px; padding: 18px 0 8px; line-height: 1.5; }
+input { width: 20px; height: 20px; flex-shrink: 0; margin-top: 2px; }
 button { font: inherit; font-weight: 650; padding: 14px 22px; border: 0; border-radius: 8px; cursor: pointer; background: #bbe48b; color: #15210c; }
 button:disabled { opacity: .45; cursor: default; }
+button.skip-check { margin-top: 8px; background: transparent; color: #b4c2bd; padding: 10px 0; text-decoration: underline; }
 button:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid white; outline-offset: 4px; }
-.actions { display: flex; gap: 12px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
 .privacy, #latency { color: #b4c2bd; font-size: .9rem; }
 #warnings { color: #f3d7a5; white-space: pre-line; }
 details { margin: 28px 0; }

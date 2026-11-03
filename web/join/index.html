@@ -21,7 +21,21 @@
       <li>Microphone ready — your browser asks after Join</li>
       <li>Join only when you trust the host who sent the link</li>
     </ul>
-    <label class="headphones"><input id="headphones" type="checkbox"> Wear headphones. Echo cancelling is off for music quality.</label>
+    <section id="prejoin" hidden aria-labelledby="prejoin-heading">
+      <h2 id="prejoin-heading" class="prejoin-heading">Before you connect</h2>
+      <p class="prejoin-lead">One quick check so your band hears you clearly.</p>
+      <button type="button" id="check-mic">Check microphone</button>
+      <div class="mic-meter-wrap">
+        <div id="mic-meter" class="mic-meter" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="mic-meter-fill" class="mic-meter-fill"></div>
+        </div>
+        <p id="mic-heard" class="mic-heard" hidden>We can hear you</p>
+      </div>
+      <p id="mic-error" class="mic-error" role="alert"></p>
+      <button type="button" id="mic-retry" hidden>Try again</button>
+      <label class="headphones"><input id="headphones" type="checkbox"> I’m wearing headphones — this stops echo for everyone.</label>
+      <button type="button" id="skip-check" class="skip-check">Skip check</button>
+    </section>
     <div class="actions"><button id="join" disabled>Join with microphone</button><button id="leave" hidden>Leave session</button></div>
     <p id="latency">Estimated listening delay: available after connecting.</p>
     <p id="warnings" role="status"></p>
