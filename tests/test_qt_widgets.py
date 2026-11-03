@@ -865,6 +865,16 @@ class TestParticipantGrid(unittest.TestCase):
         self.assertNotIn("192.168.1.20:22124", g._empty_hint.text())
         self.assertEqual(g._empty_hint.text(), "")
         self.assertTrue(g._empty_hint.isHidden())
+        self.assertIn("wired internet", g._empty_prep_hint.text())
+        lobby_layout = g._empty_state.layout()
+        self.assertGreater(
+            lobby_layout.indexOf(g._empty_prep_hint),
+            lobby_layout.indexOf(g._empty_message),
+        )
+        self.assertGreater(
+            lobby_layout.indexOf(g._empty_hint),
+            lobby_layout.indexOf(g._empty_prep_hint),
+        )
         g.set_session_state(SessionUiState.connecting("192.168.1.20:22124"))
         self.assertTrue(g._empty_practice.isHidden())
         self.assertTrue(g._empty_hint.isHidden())
