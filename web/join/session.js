@@ -1,7 +1,7 @@
 import { open, seal, validateOffer, sdpFingerprint, enrollmentProof } from "./crypto.js";
 import { Mailbox, BUSY_MESSAGE } from "./mailbox.js";
 import { policySdp, SESSION_BYTES } from "./policy.js";
-import { musicSdp, tuneReceiver, latencyMs } from "./audio.js";
+import { musicSdp, tuneReceiver, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget } from "./audio.js";
 
 export function waitFor(target, event, check, signal, timeout, message) {
   return new Promise((resolve, reject) => {
@@ -19,6 +19,7 @@ export class WebJoinSession {
     this.controller = new AbortController();
     this.mailbox = new Mailbox(origin, invite, { signal: this.controller.signal });
     this.authorized = false; this.quotaBytes = SESSION_BYTES; this.previousBytes = 0;
+    this._jitterAdaptation = { targetMs: 20, lastChangeAt: 0 };
     this.stream.getAudioTracks().forEach((track) => { track.enabled = false; });
   }
   async join() {
@@ -35,7 +36,8 @@ export class WebJoinSession {
     // candidates let restrictive networks fall back within the same deadline.
     this.onStatus("Connecting directly, with free relay fallback…");
     pc.addEventListener("track", (event) => {
-      tuneReceiver(event.receiver);
+      tuneReceiver(event.receiver, this._jitterAdaptation.targetMs);
+      this._inboundReceiver = event.receiver;
       const stream = event.streams[0] || new MediaStream([event.track]);
       if (this.authorized) this.onTrack(stream); else this.pendingStream = stream;
     });
@@ -104,6 +106,10 @@ export class WebJoinSession {
       }
       if (!transports || bytes < this.previousBytes || bytes >= this.quotaBytes * 0.9) throw new Error(BUSY_MESSAGE);
       this.previousBytes = bytes;
+      this._jitterAdaptation = adaptJitterBufferTarget(stats, this._jitterAdaptation);
+      if (this._inboundReceiver) {
+        applyAdaptiveReceiverTarget(this._inboundReceiver, this._jitterAdaptation);
+      }
       this.onLatency(latencyMs(stats, this.audioContext.baseLatency));
     } catch (error) { this.fail(error); }
     finally { clearTimeout(timer); this.statsPending = false; }

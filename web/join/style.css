@@ -7,6 +7,8 @@ p { line-height: 1.65; }
 #status { padding: 16px; border-left: 3px solid #bbe48b; background: #1b2625; }
 #status[data-failure="true"] { border-left-color: #f3d7a5; }
 .error-hint { color: #b4c2bd; font-size: .95rem; margin: 12px 0 0; line-height: 1.55; }
+.first-run { margin: 0 0 8px; padding-left: 20px; color: #b4c2bd; line-height: 1.55; }
+.first-run li { margin: 6px 0; }
 .prejoin-heading { font-size: 1.25rem; margin: 24px 0 8px; }
 .prejoin-lead { margin-top: 0; color: #b4c2bd; }
 .mic-meter-wrap { margin: 16px 0; }
