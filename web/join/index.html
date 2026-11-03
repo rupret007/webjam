@@ -15,6 +15,7 @@
     <h1>Join your band from the browser</h1>
     <p><strong>Web Join, higher delay (about 60–120 ms).</strong> Desktop players keep their low-latency app connection. For tight rehearsals use the WebJam app.</p>
     <p id="status" role="status">Open the invite link from your desktop host.</p>
+    <p id="error-hint" class="error-hint" hidden></p>
     <section id="prejoin" hidden aria-labelledby="prejoin-heading">
       <h2 id="prejoin-heading" class="prejoin-heading">Before you connect</h2>
       <p class="prejoin-lead">One quick check so your band hears you clearly.</p>
@@ -30,7 +31,7 @@
       <label class="headphones"><input id="headphones" type="checkbox"> I’m wearing headphones — this stops echo for everyone.</label>
       <button type="button" id="skip-check" class="skip-check">Skip check</button>
     </section>
-    <div class="actions"><button id="join" disabled>Join with microphone</button><button id="leave" hidden>Leave session</button></div>
+    <div class="actions"><button id="join" disabled>Join with microphone</button><button id="retry" hidden>Retry</button><button id="leave" hidden>Leave session</button></div>
     <p id="latency">Estimated listening delay: available after connecting.</p>
     <p id="warnings" role="status"></p>
     <details><summary>Browser and iPhone notes</summary><p>Tap Join to start audio. On iPhone and iPad: listen and play along, best effort. Safari may play mono and add playback buffering; WebRTC and WebAudio have a history of stuttering (WebKit 225880). Keep this page visible. Firefox may send a lower audio bitrate.</p></details>
