@@ -245,6 +245,10 @@ class AppSettings:
     audio_blocksize: int = 0
     audio_samplerate: int = 48000
     audio_latency: str = "low"
+    # Jamulus adaptive latency (ini defaults + policy). Player override stops
+    # automatic buffer stepping; Jamulus Settings remain authoritative.
+    adaptive_latency_enabled: bool = True
+    adaptive_latency_player_override: bool = False
     audio_input_device_index: int = -1  # -1 means "system default / auto-detect"
     # macOS live-music route.  These are CoreAudio UIDs, never PortAudio
     # indexes or display names; blank means resolve the Mac defaults when the
@@ -403,6 +407,8 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
         "WEBJAM_KRITA_RESOURCE_DIRS": "krita_resource_dirs",
         "WEBJAM_COMFYUI_URL": "comfyui_url",
         "WEBJAM_AUDIO_LATENCY": "audio_latency",
+        "WEBJAM_ADAPTIVE_LATENCY_ENABLED": "adaptive_latency_enabled",
+        "WEBJAM_ADAPTIVE_LATENCY_PLAYER_OVERRIDE": "adaptive_latency_player_override",
         "WEBJAM_AUDIO_INPUT_DEVICE_INDEX": "audio_input_device_index",
         "WEBJAM_ENABLE_SENTRY": "enable_sentry",
         "WEBJAM_SENTRY_DSN": "sentry_dsn",
@@ -443,6 +449,8 @@ def load_settings(settings_path: str | None = None) -> AppSettings:
             "local_capture_enabled",
             "local_capture_choice_made",
             "host_server_enabled",
+            "adaptive_latency_enabled",
+            "adaptive_latency_player_override",
         }:
             data[key] = _as_bool(raw)
         elif key in {
