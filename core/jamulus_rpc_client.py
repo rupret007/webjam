@@ -247,6 +247,7 @@ class JamulusRpcClient:
         on_chat_with_source: Callable[[str, JamulusRpcMonitorIdentity], None] | None = None,
         on_recorder_state: Callable[[bool, int], None] | None = None,
         on_recorder_state_with_source: Callable[[bool, int, JamulusRpcMonitorIdentity], None] | None = None,
+        on_server_info_with_source: Callable[[float, JamulusRpcMonitorIdentity], None] | None = None,
         secret_path: Path | None = None,
     ) -> None:
         self._port = port
@@ -260,6 +261,7 @@ class JamulusRpcClient:
         self._on_chat_with_source = on_chat_with_source
         self._on_recorder_state = on_recorder_state
         self._on_recorder_state_with_source = on_recorder_state_with_source
+        self._on_server_info_with_source = on_server_info_with_source
 
         self._available = False
         self._authed = False
@@ -1074,6 +1076,39 @@ class JamulusRpcClient:
         elif method == "jamulusclient/recorderState":
             if isinstance(params, dict):
                 self._emit_recorder_state(params.get("state"), epoch=epoch)
+        elif method == "jamulusclient/serverInfoReceived":
+            if isinstance(params, dict):
+                ping = params.get("pingtime")
+                try:
+                    ping_ms = float(ping)
+                except (TypeError, ValueError):
+                    ping_ms = None
+                if ping_ms is not None:
+                    self._emit_server_info(ping_ms, epoch=epoch)
+
+    def set_server_info_listener(
+        self,
+        listener: Callable[[float, JamulusRpcMonitorIdentity], None] | None,
+    ) -> None:
+        """Register a ping-time listener (Jamulus serverInfoReceived)."""
+
+        self._on_server_info_with_source = listener
+
+    def _emit_server_info(
+        self,
+        ping_ms: float,
+        *,
+        epoch: int | None = None,
+    ) -> None:
+        if self._on_server_info_with_source is None:
+            return
+        self._invoke_epoch_callbacks_with_source(
+            None,
+            self._on_server_info_with_source,
+            ping_ms,
+            epoch=epoch,
+            label="on_server_info",
+        )
 
     @staticmethod
     def _identity_value(value) -> str:
