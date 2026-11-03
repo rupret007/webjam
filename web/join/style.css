@@ -5,6 +5,8 @@ h1 { font-size: clamp(2rem, 6vw, 3rem); line-height: 1.1; letter-spacing: -.04em
 p { line-height: 1.65; }
 .eyebrow { color: #bbe48b; letter-spacing: .14em; text-transform: uppercase; }
 #status { padding: 16px; border-left: 3px solid #bbe48b; background: #1b2625; }
+.first-run { margin: 0 0 8px; padding-left: 20px; color: #b4c2bd; line-height: 1.55; }
+.first-run li { margin: 6px 0; }
 .headphones { display: flex; align-items: flex-start; gap: 12px; padding: 18px 0; line-height: 1.5; }
 input { width: 20px; height: 20px; flex-shrink: 0; }
 button { font: inherit; font-weight: 650; padding: 14px 22px; border: 0; border-radius: 8px; cursor: pointer; background: #bbe48b; color: #15210c; }
