@@ -92,13 +92,17 @@ def test_fit_shortcut_is_bound(window) -> None:
 
 
 @pytest.mark.parametrize("font_size", [14, 20])
-def test_browser_invitation_controls_fit_the_compact_music_window(window, qt_app, font_size):
+@pytest.mark.parametrize("notes_visible", [False, True])
+def test_browser_invitation_controls_fit_the_compact_music_window(window, qt_app, font_size, notes_visible):
     from webjam_qt.theme import load_stylesheet
 
     window.setStyleSheet(load_stylesheet() + f"\nQWidget {{ font-size: {font_size}px; }}")
     panel = window.web_guest_panel
     panel.render("ready", "Ready for one browser guest. Copy the link and share it privately. Headphones required.")
     window.resize(800, 600)
+    window.session_canvas.setVisible(notes_visible)
+    if notes_visible:
+        window.center_splitter.setSizes([520, 280])
     window.show()
     for _ in range(4):
         qt_app.processEvents()

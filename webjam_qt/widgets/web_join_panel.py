@@ -1,7 +1,7 @@
 """Visible Music-room actions; permission and clipboard ownership stay in the controller."""
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtWidgets import QBoxLayout, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 
 class WebJoinPanel(QFrame):
@@ -19,6 +19,10 @@ class WebJoinPanel(QFrame):
         layout.setContentsMargins(16, 6, 16, 6)
         layout.setSpacing(4)
         row = QHBoxLayout()
+        self._actions = row
+        # Start narrow so minimum width cannot prevent the compact resize that
+        # measures both buttons. This follows the existing Art workspace rows.
+        row.setDirection(QBoxLayout.Direction.TopToBottom)
         self.primary = QPushButton("Invite a browser guest")
         self.primary.setObjectName("PrimaryButton")
         self.primary.setMinimumHeight(36)
@@ -66,4 +70,28 @@ class WebJoinPanel(QFrame):
         self.stop_button.setEnabled(state in {"preparing", "ready", "connected", "cleanup"})
         self.stop_button.setText("Retry ending browser guest" if state == "cleanup" else "End browser invite")
         self.status.setText(message)
+        self._sync_actions()
+
+    def _sync_actions(self):
+        margins = self.layout().contentsMargins()
+        parent = self.parentWidget()
+        available = min(self.width(), parent.width()) if parent is not None else self.width()
+        available -= margins.left() + margins.right()
+        buttons = [button for button in (self.primary, self.stop_button) if not button.isHidden()]
+        needed = sum(button.minimumSizeHint().width() for button in buttons)
+        needed += max(0, len(buttons) - 1) * self._actions.spacing()
+        direction = (QBoxLayout.Direction.TopToBottom if needed > available
+                     else QBoxLayout.Direction.LeftToRight)
+        if self._actions.direction() != direction:
+            self._actions.setDirection(direction)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._sync_actions()
+
+    def event(self, event):
+        result = super().event(event)
+        if event.type() == QEvent.Type.LayoutRequest and hasattr(self, "status"):
+            self._sync_actions()
+        return result
 

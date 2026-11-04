@@ -8,8 +8,13 @@ The desktop starter list uses official uploads:
 
 - [A Walk in the Woods, S1 E1](https://www.youtube.com/watch?v=oh5p5f5_-7A)
 - [Northern Lights, S8 E13](https://www.youtube.com/watch?v=vgbMONXc9Cs)
+- [Grey Winter, S7 E11](https://www.youtube.com/watch?v=sS-hNYgDUak)
+- [The Grandeur of Summer, one-hour special](https://www.youtube.com/watch?v=mT0RNrTDHkI)
 
-Titles/IDs were checked against those official video results on November4,2026.
+Titles/IDs and channel ownership were checked against YouTube’s official oEmbed
+metadata on November4,2026; all four identify Bob Ross’s official channel.
+The first two offer a starting landscape and northern lights; the latter two
+add a winter scene and a longer lesson. These are editorial choices.
 These are starter picks, not a verified ranking of the best or most popular
 videos. Availability and embedding remain subject to YouTube and the uploader.
 The app links/embeds; it does not download or redistribute episodes.

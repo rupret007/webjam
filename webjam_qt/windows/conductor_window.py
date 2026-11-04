@@ -222,6 +222,9 @@ class ConductorWindow(QMainWindow):
         stage_layout = QVBoxLayout(stage_container)
         stage_layout.setContentsMargins(0, 0, 0, 0)
         stage_layout.setSpacing(0)
+        # Invitations belong to the Music stage. Keeping them outside the
+        # full-width chrome preserves Notes' editor/recovery height beside it.
+        stage_layout.addWidget(self.web_guest_panel)
 
         self._room_stage = QStackedWidget()
         self._room_stage.setObjectName("RoomStage")
@@ -288,7 +291,6 @@ class ConductorWindow(QMainWindow):
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
         central_layout.addWidget(self.session_strip)
-        central_layout.addWidget(self.web_guest_panel)
         central_layout.addWidget(self.session_hud)
         central_layout.addWidget(self.rehearsal_recap)
         central_layout.addWidget(self._notes_notice)

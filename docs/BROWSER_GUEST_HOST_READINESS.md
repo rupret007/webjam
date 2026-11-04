@@ -26,7 +26,7 @@ is a demonstrated blocker, not proof that every later stage already works.
 - Frozen apps refuse missing owned libraries instead of falling back to a
   machine's unrelated Opus installation. Source development keeps its existing
   explicit/system-library path.
-- Music has a visible Invite a browser guest button, persistent status,
+- Music has a visible Invite a browser guest button in its stage, persistent status,
   Copy browser invite and End browser invite controls. Preparation failures use
   fixed stage-specific messages; private exception strings, keys and links are
   not displayed. The existing menu remains available.
@@ -43,16 +43,27 @@ session, device capture or connection was created for the render.
 
 ## Validation and delivery boundary
 
-120 focused source tests pass for controls, owners/cleanup, bridge framing,
-package rejection, workflow wiring, compact Music layout and packaged data.
-109 further existing profile/offline/compact follow-along checks pass. Ruff and
+The initial120 focused source checks and109 profile/offline checks passed.
+Full60598d5 CI then reproduced five existing compact Notes failures (plus two
+teardown errors), because full-width invitation chrome took editor/recovery
+space. The unchanged Notes suite reproduced those failures locally. Keep the
+invitation in the Music stage, leaving Notes its original vertical space, and
+wrap its actions when the stage narrows. No Notes threshold or test was weakened.
+
+The corrected combined source passes208 focused cases covering controls,
+owners/cleanup, bridge framing, package rejection, workflow wiring, compact Music
+with and without Notes, all19 Notes recovery cases, Paint Along and follow-along
+compact use. The initial changelog check also failed because its entry lacked
+a Markdown bullet; the existing checker now passes after formatting that entry.
+Ruff and
 shell syntax checks pass. Compact800×600 controls/status fit at14px and20px;
 the20px render was inspected. No skip or guard was added to obtain a pass.
 
 Normal CI, a new matching private package cohort and actual bundled-codec ABI
 execution are still required. Reusing the old e101 package, patching its app in
-place or loading a system codec would not demonstrate this correction. Native
-and browser Paint Along changes are separate application PRs. No release tag,
+place or loading a system codec would not demonstrate this correction. Native Paint Along429 is merged (395c3aa) and included in this candidate;
+the small list now has four official Bob Ross uploads plus the custom-link route.
+Browser Paint Along203 and the IRC workspace204 remain separate website PRs. No release tag,
 public navigation, signing enrollment, StoryPool/Karen dispatch or shared core
 change is part of this fix.
 

@@ -64,7 +64,11 @@ def test_host_online_failure_names_the_explicit_shared_lesson_handoff(qapp):
     panel.close()
 
 
-def test_curated_episode_uses_normal_lesson_share_and_respects_room_lifetime(qapp):
+@pytest.mark.parametrize("index, url", [
+    (1, "https://www.youtube.com/watch?v=vgbMONXc9Cs"),
+    (3, "https://www.youtube.com/watch?v=mT0RNrTDHkI"),
+])
+def test_curated_episode_uses_normal_lesson_share_and_respects_room_lifetime(qapp, index, url):
     panel = ReferenceVideoDialog(hosting=True)
     panel.show()
     qapp.processEvents()
@@ -73,9 +77,10 @@ def test_curated_episode_uses_normal_lesson_share_and_respects_room_lifetime(qap
     panel.share_youtube_requested.connect(links.append)
     panel.share_requested.connect(files.append)
     assert panel._episode_picker.isVisible()
-    panel._episode_picker.setCurrentIndex(1)
+    assert panel._episode_picker.count() == 4
+    panel._episode_picker.setCurrentIndex(index)
     panel._episode_button.click()
-    assert links == ["https://www.youtube.com/watch?v=vgbMONXc9Cs"]
+    assert links == [url]
     assert not files
     panel.set_host_snapshot(ReferenceVideoSnapshot(state=ReferenceVideoState.LOADING))
     panel._choose_episode()
