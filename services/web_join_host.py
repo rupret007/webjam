@@ -116,7 +116,7 @@ class WebJoinMailbox:
             MAILBOX_ORIGIN + path,
             data=data,
             method=method,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "User-Agent": "WebJam"},
         )
         try:
             import certifi
