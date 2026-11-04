@@ -64,9 +64,34 @@ def test_host_online_failure_names_the_explicit_shared_lesson_handoff(qapp):
     panel.close()
 
 
+def test_getting_started_is_optional_and_resources_require_an_explicit_click(qapp, monkeypatch):
+    from PySide6.QtGui import QDesktopServices
+
+    opened = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", lambda url: opened.append(url.toString()))
+    panel = ReferenceVideoDialog(hosting=True)
+    panel.show()
+    qapp.processEvents()
+    assert panel._episode_picker.currentData() == "https://www.youtube.com/watch?v=mT0RNrTDHkI"
+    assert panel._paint_resources.isHidden() and not opened
+    panel._getting_started.click()
+    qapp.processEvents()
+    assert panel._paint_resources.isVisible()
+    assert "kit is optional" in panel._paint_resources.text()
+    assert not opened
+    panel._paint_resources.linkActivated.emit("https://www.bobross.com/bob-ross-master-paint-set/")
+    assert opened == ["https://www.bobross.com/bob-ross-master-paint-set/"]
+    panel._paint_resources.linkActivated.emit("https://example.invalid/")
+    panel._paint_resources.linkActivated.emit("javascript:alert(1)")
+    assert len(opened) == 1
+    panel._getting_started.click()
+    assert panel._paint_resources.isHidden()
+    panel.close()
+
+
 @pytest.mark.parametrize("index, url", [
-    (1, "https://www.youtube.com/watch?v=vgbMONXc9Cs"),
-    (3, "https://www.youtube.com/watch?v=mT0RNrTDHkI"),
+    (2, "https://www.youtube.com/watch?v=vgbMONXc9Cs"),
+    (0, "https://www.youtube.com/watch?v=mT0RNrTDHkI"),
 ])
 def test_curated_episode_uses_normal_lesson_share_and_respects_room_lifetime(qapp, index, url):
     panel = ReferenceVideoDialog(hosting=True)
