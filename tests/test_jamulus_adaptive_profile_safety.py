@@ -20,7 +20,7 @@ class AdaptiveProfileSafetyTests(unittest.TestCase):
         values.update(overrides)
         return AdaptiveLatencyController(SimpleNamespace(
             settings=SimpleNamespace(**values),
-            native_profile_plan=lambda: SimpleNamespace(profile_path=self.profile),
+            native_profile_plan=SimpleNamespace(profile_path=self.profile),
         ))
 
     def test_disabled_or_player_override_never_writes_profile(self):
