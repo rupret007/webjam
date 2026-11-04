@@ -184,7 +184,7 @@ def _ensure_client_root(profile_path: Path) -> ElementTree.ElementTree:
         if raw.strip():
             root = ElementTree.fromstring(raw)
             if root.tag != CLIENT_SECTION:
-                root = ElementTree.Element(CLIENT_SECTION)
+                raise ValueError("unsupported Jamulus profile")
             tree = ElementTree.ElementTree(root)
         else:
             tree = ElementTree.ElementTree(ElementTree.Element(CLIENT_SECTION))
@@ -247,8 +247,9 @@ def apply_latency_defaults_to_profile(
     if defaults.jitbuf is not None and not defaults.autojitbuf:
         maybe_set(KEY_JITBUF, str(int(defaults.jitbuf)), SOURCE_WEBJAM_DEFAULT)
 
-    payload = ElementTree.tostring(root, encoding="unicode")
-    atomic_write_text(profile_path, payload, mode=0o600)
+    if written:
+        payload = ElementTree.tostring(root, encoding="unicode")
+        atomic_write_text(profile_path, payload, mode=0o600)
     _save_provenance(provenance_path or profile_path.parent / PROVENANCE_FILENAME, provenance)
     return written
 
@@ -272,6 +273,13 @@ def apply_frame_factor_to_profile(
     provenance = _load_provenance(provenance_path or profile_path.parent / PROVENANCE_FILENAME)
     key = KEY_PREFSNDCRDBUFIDX
     prior = provenance.get("keys", {}).get(key, {})
+    if existing.get(key) and (
+        not isinstance(prior, dict)
+        or prior.get("value") != existing[key]
+    ):
+        # No matching ownership receipt, or a musician changed the value
+        # since WebJam wrote it. Never claim that preference as ours.
+        return False
     if prior.get("source") == SOURCE_MUSICIAN and existing.get(key):
         return False
     if str(existing.get(key, "")) == str(factor):

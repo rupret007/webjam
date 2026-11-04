@@ -1,0 +1,1 @@
+- Preserve Jamulus profile preferences and opt-out during adaptive tuning, and keep future buffer recommendations separate from launch-based delay estimates.
