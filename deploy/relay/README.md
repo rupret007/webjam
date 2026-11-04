@@ -44,7 +44,9 @@ do not authorize a purchase, new provider account or deployment.
 The Worker conservatively counts **ingress + egress** from the GraphQL analytics
 API (`callsTurnUsageAdaptiveGroups`). This operational traffic counter differs
 from Cloudflare's billed egress. It reads `TURN_KEY_ID` and, when configured,
-the distinct `WEB_TURN_KEY_ID`, refusing new credentials when:
+the distinct `WEB_TURN_KEY_ID`. Across these selected keys, the aggregate is
+`usage_bytes = sum(ingressBytes) + sum(egressBytes)`. The per-key breakdown and
+issuance limits are:
 
 ```
 desktop_bytes = sum(ingressBytes) + sum(egressBytes)
