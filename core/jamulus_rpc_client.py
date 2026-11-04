@@ -390,6 +390,7 @@ class JamulusRpcClient:
                 self._rpc_connection_generation = 0
                 self._audio_connection_generation = 0
                 self._audio_connected = False
+                self._server_info_peer = None
                 self._roster_revision = 0
                 self._ordered_roster_proof = None
             if old_sock is not None:
@@ -729,6 +730,7 @@ class JamulusRpcClient:
                 self._available = False
                 self._authed = False
                 self._audio_connected = False
+                self._server_info_peer = None
                 self._ordered_roster_proof = None
             if self._epoch_is_current(epoch) and not stop_event.wait(wait):
                 wait = min(wait * 1.5, 30.0)
@@ -1083,9 +1085,13 @@ class JamulusRpcClient:
                 with self._state_lock:
                     listener = self._on_server_info_with_source
                     expected_peer = self._server_info_peer
-                if expected_peer is None or self._server_ping_peer(params.get("address")) != expected_peer:
+                    connected = self._audio_connected
+                if (not connected or expected_peer is None
+                        or self._server_ping_peer(params.get("address")) != expected_peer):
                     return
                 ping = params.get("pingtime")
+                if isinstance(ping, bool) or not isinstance(ping, (int, float)):
+                    return
                 try:
                     ping_ms = float(ping)
                 except (TypeError, ValueError):
@@ -1122,6 +1128,11 @@ class JamulusRpcClient:
         with self._state_lock:
             self._on_server_info_with_source = listener
             self._server_info_peer = self._server_ping_peer(server_address)
+
+    @property
+    def server_ping_active(self) -> bool:
+        with self._state_lock:
+            return self._audio_connected and self._server_info_peer is not None
 
     def _emit_server_info(
         self,
@@ -1161,6 +1172,9 @@ class JamulusRpcClient:
             if state_changed:
                 self._audio_connection_generation += 1
                 self._ordered_roster_proof = None
+                if not connected:
+                    # A manual server change must not reuse the launch target.
+                    self._server_info_peer = None
             self._audio_connected = bool(connected)
             if not connected:
                 self._local_channel_id = -1

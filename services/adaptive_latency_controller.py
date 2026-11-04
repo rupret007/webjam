@@ -178,7 +178,7 @@ class AdaptiveLatencyController:
                         return
                     current = rpc.monitor_snapshot()
                     if (not current.running or not current.available or not current.authenticated
-                            or current.identity != expected):
+                            or current.identity != expected or not rpc.server_ping_active):
                         return
                     self.note_server_ping(ping_ms)
 
@@ -197,7 +197,7 @@ class AdaptiveLatencyController:
             if self._rpc is not None:
                 snapshot = self._rpc.monitor_snapshot()
                 if (not snapshot.running or not snapshot.available or not snapshot.authenticated
-                        or snapshot.identity != self._rpc_source):
+                        or snapshot.identity != self._rpc_source or not self._rpc.server_ping_active):
                     ping = None
 
         results: dict[int, ParticipantDelayPresentation] = {}

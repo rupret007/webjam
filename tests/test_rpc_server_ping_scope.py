@@ -7,6 +7,7 @@ def client():
     rpc._running = True
     rpc._monitor_epoch = 1
     rpc._monitor_identity = JamulusRpcMonitorIdentity(1, 1, 101)
+    rpc._audio_connected = True
     return rpc
 
 
@@ -43,3 +44,34 @@ def test_loopback_sidecar_and_unresolved_hostname_cannot_claim_wan_ping():
         rpc.set_server_info_listener(lambda *args: observed.append(args), server_address=target)
         emit(rpc, target)
         assert observed == []
+
+
+def test_audio_disconnect_retires_target_until_explicit_rebind():
+    rpc = client()
+    observed = []
+    def listener(*args):
+        observed.append(args)
+    rpc.set_server_info_listener(listener, server_address='192.168.1.20:22124')
+    rpc._set_audio_connected(False, epoch=1)
+    emit(rpc, '192.168.1.20:22124')
+    rpc._set_audio_connected(True, epoch=1)
+    emit(rpc, '192.168.1.20:22124')
+    assert observed == []
+    rpc.set_server_info_listener(listener, server_address='192.168.1.20:22124')
+    emit(rpc, '192.168.1.20:22124')
+    assert len(observed) == 1
+
+
+def test_disconnected_and_malformed_numeric_pings_are_not_observations():
+    rpc = client()
+    observed = []
+    rpc.set_server_info_listener(lambda *args: observed.append(args),
+                                server_address='192.168.1.20:22124')
+    rpc._audio_connected = False
+    emit(rpc, '192.168.1.20:22124')
+    assert observed == []
+    rpc._audio_connected = True
+    for invalid in [True, '12', None, [], {}]:
+        rpc._handle_notification('jamulusclient/serverInfoReceived',
+                                 {'address': '192.168.1.20:22124', 'pingtime': invalid}, epoch=1)
+    assert observed == []

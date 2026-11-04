@@ -64,6 +64,9 @@ the remote Pion path. Those routes remain unknown until qualified route
 measurements exist. Readings expire after eight seconds and are hidden when
 the bound RPC monitor disconnects or changes identity. Invalid readings clear
 the earlier estimate. This is not measured end-to-end audible delay.
+An audio disconnect also retires the numeric target until an explicit binding
+is established again; reconnecting or browsing other servers cannot silently
+reuse that target. Boolean/string ping values do not qualify as measurements.
 
 The optional server-jitter ingestion hook currently has no production caller;
 it does not establish per-remote-player latency. Real device buffer selection,

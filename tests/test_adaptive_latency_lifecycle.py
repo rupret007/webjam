@@ -13,6 +13,7 @@ class Rpc:
     def __init__(self, epoch):
         self.identity = JamulusRpcMonitorIdentity(epoch, epoch, 100 + epoch)
         self.listener = None
+        self.server_ping_active = True
 
     def set_server_info_listener(self, listener, **kwargs):
         self.listener = listener
