@@ -1,0 +1,1 @@
+- Let native invitations and browser-guest signaling reach the relay by identifying mailbox HTTP requests as WebJam, while retaining certificate validation, existing access controls and bounded signaling.
