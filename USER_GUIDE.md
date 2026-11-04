@@ -835,6 +835,11 @@ set `WEBJAM_ADAPTIVE_LATENCY_ENABLED=0` or
 `WEBJAM_ADAPTIVE_LATENCY_PLAYER_OVERRIDE=1`. Delay values are estimates based on
 the launch profile and network observations; saved recommendations take effect
 on a later launch, not as a live buffer adjustment.
+Stopping or replacing a session retires its latency observations and pending
+profile recommendations. Only a ping matching the launched direct numeric
+server can feed this estimate; directory listings and local sidecar pings
+cannot establish internet latency. Missing, disconnected or stale observations
+show unknown. Profile errors stop optional tuning for that launch.
 
 Any meeting platform can provide optional talking/video when its meeting link
 is a public HTTPS URL with a DNS hostname and passes WebJam's safety checks.

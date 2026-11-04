@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import copy
+import math
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 from xml.etree import ElementTree
@@ -22,23 +24,57 @@ from core.jamulus_adaptive_latency import (
     read_client_ini_values,
 )
 from core.jamulus_adaptive_latency import DelayStatus
+from core.jamulus_rpc_client import JamulusRpcMonitorIdentity
 
 if TYPE_CHECKING:
     from services.bridge_service import BridgeService
 
 _logger = logging.getLogger("webjam.adaptive_latency.controller")
+LATENCY_OBSERVATION_MAX_AGE_S = 8.0
 
 
 class AdaptiveLatencyController:
     def __init__(self, bridge: BridgeService) -> None:
         self._bridge = bridge
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._policy = AdaptiveLatencyPolicy()
         self._ping_ms: float | None = None
+        self._ping_at: float | None = None
         self._remote_jitter_blocks: dict[int, int] = {}
         self._local_channel_id: int | None = None
         self._factor_known = False
         self._launch_frame_factor = DEFAULT_FRAME_FACTOR
+        self._profile_path: Path | None = None
+        self._rpc = None
+        self._rpc_source = None
+        self._binding_generation = 0
+        self._tuning_failed = False
+
+    def _retire_binding_locked(self, *, clear_launch: bool) -> None:
+        self._binding_generation += 1
+        if self._rpc is not None:
+            self._rpc.set_server_info_listener(None)
+        self._rpc = None
+        self._rpc_source = None
+        self._ping_ms = None
+        self._ping_at = None
+        self._remote_jitter_blocks = {}
+        self._local_channel_id = None
+        if clear_launch:
+            self._factor_known = False
+            self._launch_frame_factor = DEFAULT_FRAME_FACTOR
+            self._profile_path = None
+            self._tuning_failed = False
+        self._policy = AdaptiveLatencyPolicy(
+            enabled=self._policy.enabled,
+            player_override=self._policy.player_override,
+            current_factor=(self._launch_frame_factor if clear_launch else self._policy.current_factor),
+        )
+
+    def stop(self) -> None:
+        """Retire measurements before the owned Jamulus monitor stops."""
+        with self._lock:
+            self._retire_binding_locked(clear_launch=True)
 
     def configure_from_settings(self) -> None:
         settings = self._bridge.settings
@@ -50,6 +86,12 @@ class AdaptiveLatencyController:
 
     def apply_launch_defaults(self, profile_path: Path) -> list[str]:
         """Fill unset Jamulus latency ini keys before the client starts."""
+
+        with self._lock:
+            self._retire_binding_locked(clear_launch=True)
+            return self._apply_launch_defaults_locked(profile_path)
+
+    def _apply_launch_defaults_locked(self, profile_path: Path) -> list[str]:
 
         self.configure_from_settings()
         with self._lock:
@@ -76,20 +118,22 @@ class AdaptiveLatencyController:
             if self._factor_known:
                 self._policy.current_factor = factor
                 self._launch_frame_factor = factor
+                self._profile_path = Path(profile_path)
             else:
                 self._policy.enabled = False
         return written
 
     def note_server_ping(self, ping_ms: float | None) -> None:
-        if ping_ms is None:
-            return
         try:
             value = float(ping_ms)
         except (TypeError, ValueError):
-            return
+            value = None
+        if value is not None and (not math.isfinite(value) or value <= 0):
+            value = None
         with self._lock:
             self._ping_ms = value
-        self._run_policy_tick()
+            self._ping_at = time.monotonic() if value is not None else None
+            self._run_policy_tick()
 
     def note_local_channel_id(self, channel_id: int | None) -> None:
         with self._lock:
@@ -112,13 +156,33 @@ class AdaptiveLatencyController:
         with self._lock:
             self._remote_jitter_blocks = mapping
 
-    def bind_jamulus_controller(self, controller) -> None:
+    def bind_jamulus_controller(self, controller, *, source=None, server_address=None) -> None:
         rpc = getattr(controller, "rpc_client", None)
         if rpc is None:
             return
-        rpc.set_server_info_listener(
-            lambda ping_ms, _source: self.note_server_ping(ping_ms)
-        )
+        with self._lock:
+            snapshot = rpc.monitor_snapshot()
+            expected = source if source is not None else snapshot.identity
+            if (not isinstance(expected, JamulusRpcMonitorIdentity)
+                    or not expected.is_process_bound or expected.monitor_epoch <= 0
+                    or not snapshot.running or snapshot.identity != expected):
+                return
+            self._retire_binding_locked(clear_launch=False)
+            self._rpc = rpc
+            self._rpc_source = expected
+            generation = self._binding_generation
+
+            def receive_ping(ping_ms, observed_source):
+                with self._lock:
+                    if generation != self._binding_generation or observed_source != expected:
+                        return
+                    current = rpc.monitor_snapshot()
+                    if (not current.running or not current.available or not current.authenticated
+                            or current.identity != expected):
+                        return
+                    self.note_server_ping(ping_ms)
+
+            rpc.set_server_info_listener(receive_ping, server_address=server_address)
 
     def participant_delays(self) -> dict[int, ParticipantDelayPresentation]:
         with self._lock:
@@ -127,6 +191,14 @@ class AdaptiveLatencyController:
             jitter_map = dict(self._remote_jitter_blocks)
             local_id = self._local_channel_id
             factor_known = self._factor_known
+            if (self._ping_at is None
+                    or time.monotonic() - self._ping_at > LATENCY_OBSERVATION_MAX_AGE_S):
+                ping = None
+            if self._rpc is not None:
+                snapshot = self._rpc.monitor_snapshot()
+                if (not snapshot.running or not snapshot.available or not snapshot.authenticated
+                        or snapshot.identity != self._rpc_source):
+                    ping = None
 
         results: dict[int, ParticipantDelayPresentation] = {}
         if local_id is not None:
@@ -159,24 +231,37 @@ class AdaptiveLatencyController:
         return results
 
     def _run_policy_tick(self) -> None:
-        plan = self._bridge.native_profile_plan()
-        profile_path = getattr(plan, "profile_path", None) if plan is not None else None
         with self._lock:
+            if self._tuning_failed:
+                return
+            self.configure_from_settings()
+            plan = self._bridge.native_profile_plan
+            profile_path = getattr(plan, "profile_path", None) if plan is not None else None
+            if (not self._factor_known or profile_path is None
+                    or Path(profile_path) != self._profile_path):
+                return
             observation = LatencyObservation(ping_ms=self._ping_ms)
             previous = copy.copy(self._policy)
             new_factor = self._policy.decide(observation)
-        if new_factor is None or profile_path is None:
-            return
-        if apply_frame_factor_to_profile(Path(profile_path), new_factor):
-            _logger.info(
-                "Adaptive latency stepped prefsndcrdbufidx to %s (%s samples). "
-                "Jamulus 3.12.2 has no JSON-RPC buffer setter; reconnect or adjust "
-                "in Jamulus Settings to apply live.",
-                new_factor,
-                {1: 64, 2: 128, 4: 256}.get(new_factor, "?"),
-            )
-        else:
-            with self._lock:
+            if new_factor is None:
+                return
+            try:
+                written = apply_frame_factor_to_profile(Path(profile_path), new_factor)
+            except (OSError, ValueError, ElementTree.ParseError) as error:
+                self._policy = previous
+                self._policy.enabled = False
+                self._tuning_failed = True
+                _logger.warning("Optional latency tuning stopped (%s).", type(error).__name__)
+                return
+            if written:
+                _logger.info(
+                    "Adaptive latency stepped prefsndcrdbufidx to %s (%s samples). "
+                    "Jamulus 3.12.2 has no JSON-RPC buffer setter; reconnect or adjust "
+                    "in Jamulus Settings to apply live.",
+                    new_factor,
+                    {1: 64, 2: 128, 4: 256}.get(new_factor, "?"),
+                )
+            else:
                 self._policy = previous
 
 

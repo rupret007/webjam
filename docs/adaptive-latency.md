@@ -22,6 +22,13 @@ frame factors are used for launch-based delay estimates; a persisted policy
 recommendation does not represent a live buffer change. Unknown profile formats
 are preserved. A musician edit without matching provenance is never overwritten.
 
+Each launch retires the previous RPC binding, ping, participant IDs and policy
+streaks. Stop drains an entered policy write before returning; saved callbacks
+from a retired binding cannot write the next profile. A late bind for a retired
+RPC identity cannot replace the current binding. File/format errors disable
+optional stepping for the remainder of that launch without breaking monitoring.
+Runtime opt-out/override is checked before each recommendation.
+
 Musician-set values are left untouched; provenance is stored in
 `WebJam-adaptive-latency-provenance-v1.json` next to the profile.
 
@@ -48,6 +55,19 @@ WebJam therefore:
 2. Logs and persists profile changes on policy steps; **live** buffer changes still require Jamulus Settings or reconnect.
 3. Disables automatic stepping when `adaptive_latency_player_override` is set in WebJam settings
    (`WEBJAM_ADAPTIVE_LATENCY_PLAYER_OVERRIDE=1`) or `adaptive_latency_enabled` is off.
+
+The notification includes an `address`; it is not proof of the currently
+connected audio server merely because its monitor identity matches. Accept
+only an exact numeric IPv4/port match to the actual launch target, excluding
+loopback. Do not resolve a hostname or assume a local sidecar ping measures
+the remote Pion path. Those routes remain unknown until qualified route
+measurements exist. Readings expire after eight seconds and are hidden when
+the bound RPC monitor disconnects or changes identity. Invalid readings clear
+the earlier estimate. This is not measured end-to-end audible delay.
+
+The optional server-jitter ingestion hook currently has no production caller;
+it does not establish per-remote-player latency. Real device buffer selection,
+physical dropouts and WAN audibility remain separate test requirements.
 
 ## Web Join
 

@@ -1,0 +1,3 @@
+- Retire adaptive latency observations and profile recommendations with their launch and exact RPC monitor, preserving a replacement session and musician overrides.
+- Read the actual BridgeService profile property and stop optional tuning safely on profile errors.
+- Accept server pings only for the launched direct numeric server; show unknown for local-sidecar, uncorrelated, disconnected or stale measurements.

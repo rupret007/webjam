@@ -36,6 +36,7 @@ ready) every call silently no-ops so startup can wait for authoritative data.
 from __future__ import annotations
 
 import json
+import ipaddress
 import logging
 import socket
 import threading
@@ -262,6 +263,7 @@ class JamulusRpcClient:
         self._on_recorder_state = on_recorder_state
         self._on_recorder_state_with_source = on_recorder_state_with_source
         self._on_server_info_with_source = on_server_info_with_source
+        self._server_info_peer: tuple[str, int] | None = None
 
         self._available = False
         self._authed = False
@@ -1078,33 +1080,61 @@ class JamulusRpcClient:
                 self._emit_recorder_state(params.get("state"), epoch=epoch)
         elif method == "jamulusclient/serverInfoReceived":
             if isinstance(params, dict):
+                with self._state_lock:
+                    listener = self._on_server_info_with_source
+                    expected_peer = self._server_info_peer
+                if expected_peer is None or self._server_ping_peer(params.get("address")) != expected_peer:
+                    return
                 ping = params.get("pingtime")
                 try:
                     ping_ms = float(ping)
                 except (TypeError, ValueError):
                     ping_ms = None
                 if ping_ms is not None:
-                    self._emit_server_info(ping_ms, epoch=epoch)
+                    self._emit_server_info(ping_ms, listener=listener, epoch=epoch)
+
+    @staticmethod
+    def _server_ping_peer(address: object) -> tuple[str, int] | None:
+        """Require an exact direct IPv4 target; sidecar pings are not WAN RTT."""
+        if not isinstance(address, str) or len(address) > 64:
+            return None
+        host, separator, port = address.rpartition(":")
+        if not separator or not port.isascii() or not port.isdigit():
+            return None
+        try:
+            peer = ipaddress.IPv4Address(host)
+        except ValueError:
+            return None
+        number = int(port)
+        if (peer.is_loopback or peer.is_unspecified or peer.is_multicast
+                or not 1 <= number <= 65535):
+            return None
+        return str(peer), number
 
     def set_server_info_listener(
         self,
         listener: Callable[[float, JamulusRpcMonitorIdentity], None] | None,
+        *,
+        server_address: str | None = None,
     ) -> None:
-        """Register a ping-time listener (Jamulus serverInfoReceived)."""
+        """Register pings only for the launched direct numeric server address."""
 
-        self._on_server_info_with_source = listener
+        with self._state_lock:
+            self._on_server_info_with_source = listener
+            self._server_info_peer = self._server_ping_peer(server_address)
 
     def _emit_server_info(
         self,
         ping_ms: float,
         *,
+        listener: Callable | None,
         epoch: int | None = None,
     ) -> None:
-        if self._on_server_info_with_source is None:
+        if listener is None:
             return
         self._invoke_epoch_callbacks_with_source(
             None,
-            self._on_server_info_with_source,
+            listener,
             ping_ms,
             epoch=epoch,
             label="on_server_info",

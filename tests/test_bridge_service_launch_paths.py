@@ -627,6 +627,14 @@ class TestLaunchCommandContract(unittest.TestCase):
 
 
 class TestHostedServerCancellation(unittest.TestCase):
+    def test_user_stop_retires_latency_before_monitor_shutdown(self):
+        bridge = _make_bridge()
+        events = []
+        bridge.adaptive_latency.stop = lambda: events.append("latency retired")
+        bridge.jamulus_controller.stop.side_effect = lambda: events.append("monitor stopped")
+        self.assertTrue(bridge.stop_jamulus())
+        self.assertEqual(events, ["latency retired", "monitor stopped"])
+
     def test_cancelled_host_start_does_not_spawn_a_server(self):
         bridge = _make_bridge()
         bridge.settings.host_server_enabled = True

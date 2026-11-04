@@ -3186,12 +3186,13 @@ class BridgeService:
                             if not monitor_is_current:
                                 return
                             try:
-                                self.jamulus_controller.start(
+                                monitor_source = self.jamulus_controller.start(
                                     process_generation=published_generation,
                                     process_id=published_process_id,
                                 )
                                 self.adaptive_latency.bind_jamulus_controller(
-                                    self.jamulus_controller
+                                    self.jamulus_controller, source=monitor_source,
+                                    server_address=server,
                                 )
                             except Exception as exc:
                                 LOGGER.warning(
@@ -4607,6 +4608,9 @@ class BridgeService:
     def _stop_jamulus_under_lifecycle(self) -> bool:
         """Stop the currently owned client while lifecycle ownership is held."""
 
+        adaptive = getattr(self, "adaptive_latency", None)
+        if adaptive is not None:
+            adaptive.stop()
         with self._reconnect_lock:
             self._reset_jamulus_recovery_locked()
 
