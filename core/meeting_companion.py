@@ -535,7 +535,7 @@ def art_room_hud_active_start_detail(art_start_key: str = "") -> str:
     """
 
     if str(art_start_key or "").strip() == "paint_along":
-        return "Paint along: follow a silent video from a file or lesson link."
+        return "Paint along: choose Bob Ross or your own YouTube lesson."
     return "Make together with your own tools."
 
 

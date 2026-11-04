@@ -101,7 +101,7 @@ def test_art_host_click_selects_only_the_chosen_room_without_a_music_install(doo
     _select_start(dialog, start)
     assert dialog._host_button.isEnabled()
     assert dialog._choice_helper.text() == (
-        "Then watch a shared lesson, or choose a silent file."
+        "Then choose Bob Ross or your own lesson link."
         if start == "paint_along" else
         ""
     )
@@ -243,7 +243,7 @@ def test_failed_save_recovers_same_art_action_and_retry_submits_once(door):
     assert dialog._host_button.isEnabled()
     assert dialog._join_button.isEnabled()
     assert dialog._choice_helper.text() == (
-        "Then watch a shared lesson, or choose a silent file."
+        "Then choose Bob Ross or your own lesson link."
     )
     assert dialog._choice_helper.isVisible()
     assert dialog._choice_error.isVisibleTo(dialog)

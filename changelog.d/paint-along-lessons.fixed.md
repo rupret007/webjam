@@ -1,0 +1,1 @@
+- Paint Along now offers Bob Ross episode choices alongside custom YouTube links, describes the painting activity clearly at entry, and explains the existing shared-lesson sound path separately from the muted reference player.

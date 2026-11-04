@@ -138,7 +138,7 @@ def test_unconfirmed_publication_is_visible_until_current_retry_succeeds(
         assert "not confirmed" not in host_dialog._status.text()
         assert host_dialog._status.text() == {
             "share": "Ready.", "pause": "Paused.",
-            "withdraw": "Choose a local video or YouTube link below for silent playback inside WebJam. You control it.",
+            "withdraw": "Choose Bob Ross, paste your own YouTube link, or open a local video. For lesson sound, choose Watch a shared lesson. The in-app reference is muted.",
         }[action]
     finally:
         coordinator.end()
@@ -149,17 +149,17 @@ def test_the_host_panel_opens_on_the_no_video_path(host_dialog):
     assert host_dialog.windowTitle() == "Paint along"
     assert host_dialog.minimumWidth() == 720
     assert host_dialog.minimumHeight() == 520
-    assert host_dialog._headline.text() == "Choose a silent reference"
+    assert host_dialog._headline.text() == "Choose a painting lesson"
     assert host_dialog._status.text() == (
-        "Choose a local video or YouTube link below for silent playback inside WebJam. You control it."
+        "Choose Bob Ross, paste your own YouTube link, or open a local video. For lesson sound, choose Watch a shared lesson. The in-app reference is muted."
     )
     assert host_dialog._surface_holder.isHidden() is False
     assert host_dialog._surface_placeholder.text() == (
-        "Your silent process video appears here"
+        "Your painting lesson appears here"
     )
     assert host_dialog._role.text() == "YOU CONTROL"
-    assert "silent in webjam" in host_dialog._hint.text().casefold()
-    assert "talk in your meeting" in host_dialog._hint.text().casefold()
+    assert "lesson sound through watch a shared lesson" in host_dialog._hint.text().casefold()
+    assert "paint in your own app or on paper" in host_dialog._hint.text().casefold()
     process_detail = host_dialog._hint.accessibleDescription().casefold()
     for painting_place in ("procreate", "clip studio paint", "krita", "paper"):
         assert painting_place in process_detail
@@ -194,7 +194,7 @@ def test_empty_host_keeps_shared_lesson_first_above_silent_reference(host_dialog
     assert viewport.rect().contains(watch_bounds)
     assert host_dialog._scroll.verticalScrollBar().value() == 0
     assert watch_bounds.bottom() < host_dialog._headline.mapTo(viewport, QPoint()).y()
-    assert host_dialog._headline.text() == "Choose a silent reference"
+    assert host_dialog._headline.text() == "Choose a painting lesson"
     visible_actions = [
         button for button in host_dialog.findChildren(QPushButton)
         if button.isVisible()
@@ -259,7 +259,7 @@ def test_the_host_panel_shows_a_failure_instead_of_a_stale_source(host_dialog):
         )
     )
 
-    assert host_dialog._headline.text() == "Choose a silent reference"
+    assert host_dialog._headline.text() == "Choose a painting lesson"
     assert "couldn't open that video" in host_dialog._status.text()
     assert host_dialog._play_button.isEnabled() is False
     assert host_dialog._clock.text() == "0:00 / 0:00"
@@ -282,7 +282,7 @@ def test_the_host_panel_does_not_keep_paused_copy_after_a_failed_seek(host_dialo
     assert status.startswith("WebJam couldn't move that video on this computer.")
     assert "Paused." not in status
     assert "Choose process video" in status
-    assert host_dialog._headline.text() == "Choose a silent reference"
+    assert host_dialog._headline.text() == "Choose a painting lesson"
     assert host_dialog._play_button.isEnabled() is False
     assert host_dialog._share_button.isHidden() is False
     assert host_dialog._share_button.isEnabled() is True
@@ -322,7 +322,7 @@ def test_the_host_panel_never_claims_the_room_is_watching(host_dialog):
     assert "everyone in the room watches" not in surfaced
     assert "everyone" not in surfaced
     assert "cannot confirm who has opened or watched it" in detail
-    assert "silent in webjam" in surfaced
+    assert "lesson sound through watch a shared lesson" in surfaced
 
 
 def test_a_host_panel_ignores_follower_snapshots(host_dialog):
@@ -352,10 +352,10 @@ def test_a_follower_panel_offers_no_transport_at_all(guest_dialog):
 
 def test_a_follower_panel_starts_on_the_no_video_path(guest_dialog):
     assert guest_dialog.windowTitle() == "Paint along"
-    assert guest_dialog._headline.text() == "Optional silent reference"
+    assert guest_dialog._headline.text() == "Paint along with the host"
     assert "Open your copy" in guest_dialog._status.text()
     assert guest_dialog._surface_placeholder.text() == (
-        "Your silent process video appears here"
+        "Your painting lesson appears here"
     )
     assert guest_dialog._role.text() == "YOU FOLLOW"
     assert guest_dialog._open_button.isEnabled() is True
@@ -573,10 +573,10 @@ def test_the_launch_dialog_offers_art_without_a_local_project(qapp, tmp_path):
         # every caveat, waits until they are in the room.
         cards = {card.start_key: card for card in dialog._visible_start_cards()}
         paint_along = cards["paint_along"].accessibleDescription().casefold()
-        assert "file or lesson link" in paint_along
-        assert "local video file or a lesson link" in paint_along
-        assert "silent and follows the host" in paint_along
-        assert "talk in your meeting" in paint_along
+        assert "bob ross" in paint_along
+        assert "paste a youtube link" in paint_along
+        assert "in-app reference stays muted" in paint_along
+        assert "lesson sound through conversation" in paint_along
     finally:
         dialog.deleteLater()
 
@@ -616,7 +616,7 @@ def test_a_guest_can_prepare_a_copy_without_a_host_video_offer(qapp):
 
         assert dialog._surface_holder.isHidden() is False
         assert dialog._surface_placeholder.text() == (
-            "Your silent process video appears here"
+            "Your painting lesson appears here"
         )
         for button in (
             dialog._hide_button,

@@ -421,11 +421,11 @@ _ART_STARTS = (
     CreatorStart(
         key="paint_along",
         label="Paint along",
-        summary="Follow a silent video from a file or lesson link.",
+        summary="Paint with Bob Ross or bring your own YouTube lesson.",
         detail=(
-            "Choose a local video file or a lesson link in the room. "
-            "The video stays silent and follows the host. "
-            "Use your own tools. Talk in your meeting."
+            "Choose a Bob Ross episode, paste a YouTube link, or open a local video. "
+            "Watch a shared lesson brings lesson sound through Conversation. "
+            "The in-app reference stays muted. Paint in your own app or on paper."
         ),
         reference_video=True,
     ),
