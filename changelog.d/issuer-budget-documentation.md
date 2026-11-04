@@ -1,0 +1,1 @@
+- Clarify the relay issuer's selected-key UTC-month traffic counters and remove guaranteed zero-bill/headroom claims; actual shared provider headroom remains a separate prerequisite.

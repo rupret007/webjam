@@ -1,6 +1,6 @@
-# Always Free TURN for WebJam Host/Join
+# Bounded TURN for WebJam Host/Join
 
-Musicians do **zero setup**. The packaged sidecar fetches short-lived TURN
+The packaged sidecar fetches short-lived TURN
 credentials from a public HTTPS URL compiled in at release (`-ldflags
 -X github.com/rupret007/webjam/transport/internal/directstun.turnCredentialURL=…`).
 Direct ICE is tried first; TURN is used only when that pair fails. The
@@ -22,37 +22,56 @@ into the client.
 Self-hosted coturn on Oracle Always Free remains available behind the same
 `POST /turn-credentials` JSON interface.
 
-## Cost stop ($0)
+## Application admission and traffic limits
+
+These controls reduce application traffic and refuse new work; they are not a
+provider-enforced account spending cap or a promise of a zero bill. Before
+private activation, verify the account's actual entitlement, combined SFU/TURN
+usage, applicable billing period and sufficient remaining headroom. Keep the
+existing provider/release holds until that evidence is available. These notes
+do not authorize a purchase, new provider account or deployment.
 
 | Control | Bound | What happens at the cap |
 | --- | --- | --- |
 | Sidecar compiled quota | **256 MiB per session** | Session closes. Credential JSON may only *lower* this. |
-| Cloudflare Worker | **800 GB / UTC month** of the **1,000 GB** Realtime TURN free allowance | HTTP 429; new sessions stay on direct ICE only. |
+| Cloudflare Worker | **800 GB / UTC month** default combined traffic ceiling for the configured desktop/web TURN keys; separate **200 GB** web sub-cap | HTTP 429; no new credentials. These are application counters, not account-wide billed usage. |
 | Worker fail-closed | Usage analytics unreadable | HTTP 503; same as cap — no new credentials. |
 | Coturn credential endpoint | **8 GiB/day** default | HTTP 429; new sessions stay on direct ICE only. |
 | Oracle Always Free | **10 TB/month outbound**, 1 Ampere A1 VM | Stay on one VM, one public IPv4, no extra block volumes. |
 
-### Cloudflare monthly cap formula
+### Cloudflare issuer counter formula and scope
 
-Cloudflare Realtime TURN counts **ingress + egress** bytes. The Worker
-reads month-to-date usage for `TURN_KEY_ID` from the GraphQL analytics
-API (`callsTurnUsageAdaptiveGroups`) and refuses new credentials when:
+The Worker conservatively counts **ingress + egress** from the GraphQL analytics
+API (`callsTurnUsageAdaptiveGroups`). This operational traffic counter differs
+from Cloudflare's billed egress. It reads `TURN_KEY_ID` and, when configured,
+the distinct `WEB_TURN_KEY_ID`, refusing new credentials when:
 
 ```
-usage_bytes = sum(ingressBytes) + sum(egressBytes)
-              over the UTC calendar month [first-of-month, today]
-              filtered by keyId = TURN_KEY_ID
+desktop_bytes = sum(ingressBytes) + sum(egressBytes)
+                filtered by keyId = TURN_KEY_ID
+web_bytes     = the same sum for WEB_TURN_KEY_ID, when configured
+usage_bytes   = desktop_bytes + web_bytes
+                over the UTC calendar month [first-of-month, today]
 
 cap_bytes   = TURN_MONTHLY_CAP_GB * 1_000_000_000
-              (default 800; free allowance is 1,000 GB)
+              (default and maximum 800 GB; a lower cap is allowed)
+web_cap     = WEB_TURN_MONTHLY_CAP_GB * 1_000_000_000
+              (default and maximum 200 GB)
 
 refuse when usage_bytes >= cap_bytes
+         or a web request has web_bytes >= web_cap
          or the analytics query errors / cannot be parsed
 ```
 
-1 GB = 1,000,000,000 bytes (Cloudflare billing). 800 GB leaves 200 GB of
-the free tier for in-flight allocations and analytics lag (~30 seconds).
-`TURN_MONTHLY_CAP_GB` is a Worker var; secrets stay out of the repo.
+1 GB = 1,000,000,000 bytes. These counters exclude SFU and other TURN keys.
+Cloudflare's [Realtime allowance is shared by SFU and TURN](https://developers.cloudflare.com/realtime/sfu/platform/pricing/),
+and its [billing usage follows the applicable subscription cycle](https://developers.cloudflare.com/billing/manage/billable-usage/).
+Do not assume that cycle starts on the first UTC day or that an 800 GB own-key
+counter leaves 200 GB of account headroom. Verify the actual period and shared
+usage separately; a dashboard saying “No data” is not a verified zero.
+Analytics lag, concurrent usage and issued credentials also limit what the
+issuer can enforce. Worker vars select the lower application ceilings; secrets
+stay out of the repository.
 
 Exact-pair policy: the sidecar CreatePermission/dials only the peer's
 sealed relay candidate, and only when that IPv4 matches the credentialed
@@ -107,9 +126,11 @@ Required permissions:
 2. Account token: `POST https://api.cloudflare.com/client/v4/graphql` with
    **Account Analytics Read** (`callsTurnUsageAdaptiveGroups`)
 
-TTL is 600 seconds so a minted credential cannot overshoot the monthly
-cap for long. Confirm the deployed URL, then release-build the
-sidecar with that path only:
+Credential TTL defaults to 600 seconds. A shorter lifetime does not reserve
+account allowance or turn an application limit into a provider spending cap;
+already-issued credentials are not revoked by a later issuance refusal.
+After the normal owner-controlled deployment and trust checks, confirm the URL
+and release-build the sidecar with that path only:
 
 ```
 go build -ldflags "-X github.com/rupret007/webjam/transport/internal/directstun.turnCredentialURL=https://webjam-turn-credentials.<account>.workers.dev/turn-credentials" ./cmd/webjam-fabric
@@ -121,9 +142,11 @@ Do not put `TURN_KEY_ID`, `TURN_KEY_API_TOKEN`,
 
 ### Remaining human steps
 
-1. Confirm the `webjam-relay` TURN key exists in the Cloudflare dashboard
-   (Realtime → TURN) and that the account is on the **free** 1,000 GB/month
-   allowance with no paid TURN add-on.
+1. Confirm the intended TURN keys exist in the Cloudflare dashboard
+   (Realtime → TURN), then establish actual shared SFU/TURN entitlement and
+   remaining headroom for the applicable period. A free-plan label or the
+   issuer's own-key counter alone does not establish this. Browser music uses
+   separate web credentials; never reuse the desktop pair as that pair.
 2. Put the TURN key ID and TURN key API token with `wrangler secret put`
    (never in the repo).
 3. Create a **separate** account API token with **Account Analytics Read**
