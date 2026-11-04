@@ -1,0 +1,1 @@
+- Give Paint Along a curly-afro mark, put The Grandeur of Summer first in the four Bob Ross starter picks, and add optional official kit/material links that open only when selected.

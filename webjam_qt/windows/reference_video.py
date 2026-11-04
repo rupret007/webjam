@@ -8,8 +8,8 @@ transport control at all, because they have none.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QEvent, Qt, QUrl, Signal
+from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -36,9 +36,9 @@ from core.reference_video import (
     ReferenceVideoState,
     paint_along_watch_lesson_guidance,
 )
-from core.paint_along_lessons import BOB_ROSS_LESSONS
+from core.paint_along_lessons import BOB_ROSS_LESSONS, BOB_ROSS_RESOURCES
 from core.youtube_lesson import YouTubeLesson, parse_youtube_lesson_url
-from webjam_qt.theme.tokens import Space
+from webjam_qt.theme.tokens import Color, Space
 from webjam_qt.widgets.scrollable_content import ScrollableContent
 
 _HOST_EMPTY_HEADLINE = "Choose a painting lesson"
@@ -291,6 +291,28 @@ class ReferenceVideoDialog(QDialog):
             picks.addWidget(self._episode_button)
             lesson_row.addLayout(picks)
 
+        self._getting_started = QToolButton()
+        self._getting_started.setText("Getting started · kit and materials")
+        self._getting_started.setAccessibleName("Getting started: kit and materials")
+        self._getting_started.setCheckable(True)
+        self._getting_started.setArrowType(Qt.ArrowType.RightArrow)
+        self._getting_started.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self._paint_resources = QLabel(
+            "<p>Start with <b>The Grandeur of Summer</b>. Watch, sketch, or paint with what you have.</p>"
+            "<p>For Bob Ross’s oil-painting method, check the lesson’s materials. The kit is optional.</p>"
+            + "<br>".join(f'<a style="color:{Color.TEXT_PRIMARY}" href="{url}">{title}</a>' for title, url in BOB_ROSS_RESOURCES)
+        )
+        self._paint_resources.setTextFormat(Qt.TextFormat.RichText)
+        self._paint_resources.setWordWrap(True)
+        self._paint_resources.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        self._paint_resources.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._paint_resources.setOpenExternalLinks(False)
+        self._paint_resources.linkActivated.connect(self._open_paint_resource)
+        self._paint_resources.hide()
+        self._getting_started.toggled.connect(self._show_paint_resources)
+        lesson_row.addWidget(self._getting_started)
+        lesson_row.addWidget(self._paint_resources)
+
         self._surface_holder = QFrame()
         self._surface_holder.setObjectName("PaintAlongSurface")
         self._surface_holder.setMinimumHeight(_STANDALONE_SURFACE_FLOOR)
@@ -426,6 +448,15 @@ class ReferenceVideoDialog(QDialog):
             self.set_follow_snapshot(ReferenceVideoFollowSnapshot())
 
     # -- construction helpers ------------------------------------------
+
+    def _show_paint_resources(self, expanded):
+        self._paint_resources.setVisible(expanded)
+        self._getting_started.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+
+    def _open_paint_resource(self, url):
+        # Static resources open only after an explicit click, never on entry.
+        if url in {target for _, target in BOB_ROSS_RESOURCES}:
+            QDesktopServices.openUrl(QUrl(url))
 
     def _add_button(
         self, row, text: str, description: str, slot, *, object_name: str = "PrimaryButton",

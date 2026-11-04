@@ -362,7 +362,7 @@ class StartCard(QCommandLinkButton):
         self.setAutoDefault(False)
         self.setDefault(False)
         # The stock control ships a decorative arrow. Clear it on every card
-        # except Paint along, which carries the locked face mark and nothing
+        # except Paint along, which carries the requested curly-afro face mark and nothing
         # else.
         mark = (
             Path(__file__).resolve().parent.parent
@@ -384,7 +384,7 @@ class StartCard(QCommandLinkButton):
                 for state in QIcon.State:
                     icon.addPixmap(pixmap, mode, state)
             self.setIcon(icon)
-            # The source is a wide face mark. A small square request shrank
+            # Keep the established card allocation for the face mark. A small square request shrank
             # its painted content to roughly 40 x 27 pixels, so the only
             # illustrated Art choice read like an incidental thumbnail.
             # Preserve the asset's shape and give it enough area to identify

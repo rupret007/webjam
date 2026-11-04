@@ -1,3 +1,5 @@
+**Current starter flow:** [Grandeur-first, afro mark and optional materials](PAINT_TOGETHER_START.md).
+
 # Paint Along: Bob Ross and custom lessons
 
 The intended experience is painting together while watching and hearing a
@@ -5,6 +7,8 @@ YouTube lesson. Offer an editorial Bob Ross starter list and let hosts paste
 another YouTube video link; a local reference file remains optional.
 
 The desktop starter list uses official uploads:
+
+The default is The Grandeur of Summer, selected by the community as its first lesson.
 
 - [A Walk in the Woods, S1 E1](https://www.youtube.com/watch?v=oh5p5f5_-7A)
 - [Northern Lights, S8 E13](https://www.youtube.com/watch?v=vgbMONXc9Cs)

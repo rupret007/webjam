@@ -297,7 +297,7 @@ def test_art_adds_no_start_action_beyond_the_cards_and_host_join(
 
 
 def test_only_paint_along_shows_the_face_mark(qapp, tmp_path: Path):
-    """Jeff locked the squirrel-face mark on Paint along only."""
+    """Paint along carries the requested face mark; other doors stay plain."""
 
     dialog = _dialog(tmp_path)
     try:
