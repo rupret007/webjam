@@ -606,7 +606,7 @@ class ConductorWindow(QMainWindow):
         self._reference_studio_only = True
         self.setWindowTitle(f"WebJam — Reference Studio (v{__version__})")
         self.session_strip.hide()
-        self.web_guest_panel.hide()
+        self.web_guest_panel.set_music_visible(False)
         self.session_hud.hide()
         self.session_controls.hide()
         self.side_rail.hide()
@@ -1125,7 +1125,7 @@ class ConductorWindow(QMainWindow):
 
         profile_changed = profile != self._creator_profile
         self._creator_profile = profile
-        self.web_guest_panel.setVisible(profile.key == "music" and not self._reference_studio_only)
+        self.web_guest_panel.set_music_visible(profile.key == "music" and not self._reference_studio_only)
         self._sync_session_hud_visibility()
         if profile.key != "art":
             self.art_room_overview.clear_room_connections()

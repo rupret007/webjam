@@ -11,6 +11,7 @@ class WebJoinPanel(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._state = "unavailable"
+        self._music_context = True
         self._context = None
         self._primary_intent = None
         self._stop_intent = None
@@ -60,6 +61,7 @@ class WebJoinPanel(QFrame):
 
     def render(self, state, message, context=None):
         self._state, self._context = state, context
+        self._sync_visibility()
         text = {"preparing": "Preparing invitation…", "ready": "Copy browser invite",
                 "connected": "Browser guest connected", "error": "Retry browser invite"}.get(
                     state, "Invite a browser guest")
@@ -71,6 +73,15 @@ class WebJoinPanel(QFrame):
         self.stop_button.setText("Retry ending browser guest" if state == "cleanup" else "End browser invite")
         self.status.setText(message)
         self._sync_actions()
+
+    def set_music_visible(self, visible):
+        self._music_context = bool(visible)
+        self._sync_visibility()
+
+    def _sync_visibility(self):
+        # Before there is an owned host, retain the lobby and Conversation
+        # space. Once hosting is available the direct action stays on-page.
+        self.setVisible(self._music_context and self._state != "unavailable")
 
     def _sync_actions(self):
         margins = self.layout().contentsMargins()
