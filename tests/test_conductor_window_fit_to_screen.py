@@ -119,8 +119,12 @@ def test_browser_invitation_controls_fit_the_compact_music_window(window, qt_app
 def test_browser_invitation_stays_out_of_art_and_offline_studio(window):
     from core.creative_modes import get_creator_profile_by_key_or_default
 
+    assert window.web_guest_panel.isHidden()  # No owned host yet.
+    window.web_guest_panel.render("available", "Invite one browser guest.")
     window.set_creator_profile(get_creator_profile_by_key_or_default("art"))
     assert window.web_guest_panel.isHidden()
+    window.web_guest_panel.render("available", "Invite one browser guest.")
+    assert window.web_guest_panel.isHidden()  # A timer refresh cannot reveal it in Art.
     window.set_creator_profile(get_creator_profile_by_key_or_default("music"))
     assert not window.web_guest_panel.isHidden()
     window.show_reference_studio_only()

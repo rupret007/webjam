@@ -39,9 +39,11 @@ def test_web_permission_starts_off_and_requires_owned_host(controls):
     assert controls._host is None
     assert controls.allow_action.isEnabled()
     assert not controls.copy_action.isEnabled()
+    assert not controller.window.web_guest_panel.isHidden()
     controller.settings.host_server_enabled = False
     controls._refresh()
     assert not controls.allow_action.isEnabled()
+    assert controller.window.web_guest_panel.isHidden()
     controller.settings.host_server_enabled = True
     controller.bridge.hosted_server_owned = lambda: False
     controls._refresh()

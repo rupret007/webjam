@@ -72,3 +72,15 @@ current account headroom, bounded capture and normal Stop/logout. Record human
 hearing and network/platform scope separately. ARM-native hosting, Windows,
 Ethernet comparison and separate-network music remain outstanding; an Intel
 native host with a Mini browser guest does not replace those trials.
+
+## Owned-host visibility correction
+
+Full6f78014 CI then caught eight existing Conversation/lobby subcases in
+test_qt_widgets: an unavailable invitation panel was still taking space before
+a host existed (idle/reconnect/recovery screens at720×560 and760×600). The
+render now stays hidden while unavailable, appears directly on the Music page
+when an owned host permits it, and keeps error/cleanup controls visible. Art and
+offline context remain hidden even after a timer refresh. Permission checks and
+existing layout assertions are unchanged. The complete Qt widget/Notes/control/
+compact-window selection now passes152 cases and45 subtests locally. Original
+6f CI failure is retained; the corrected exact head still needs normal CI.
