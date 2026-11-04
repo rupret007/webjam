@@ -2,7 +2,8 @@
 
 Updated November4, 2026. The original November3 audit described proposed source
 paths; it did not establish physical music. This worksheet follows current
-source through native423 and the pending native424 lifecycle candidate. It
+source through qualified, merged native423/424. Its documentation PR still
+requires its own checks. It
 creates no deployment, provider or release approval.
 
 Use the canonical [creator guide](../USER_GUIDE.md) for installation and normal
