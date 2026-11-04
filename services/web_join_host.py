@@ -18,6 +18,7 @@ from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_ope
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from core.web_join_invite_share import build_web_join_invite_url
 from core.web_join_target import web_join_page
 from services.transport_runtime import TransportProcess, _decode_web_join_envelope
 
@@ -296,7 +297,13 @@ class WebJoinHost:
                     raise WebJoinUnavailable("Web Join stopped.")
                 if offer_expiry <= time.time():
                     raise WebJoinUnavailable("This web invitation has ended.")
-                self._invite = f"{join_page}#k={_b64(capability)}&s={session.hex()}&g={generation}&e={offer_expiry}"
+                self._invite = build_web_join_invite_url(
+                    join_page,
+                    capability,
+                    session,
+                    generation,
+                    offer_expiry,
+                )
                 self._state = "waiting"
                 self._worker = threading.Thread(
                     target=self._wait_guest,
