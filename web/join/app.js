@@ -7,8 +7,17 @@ import {
   micCheckFailure,
   startMicLevelMonitor,
 } from "./prejoin.js";
+import { applyJoinFailure, clearJoinFailure, mapJoinError } from "./errors.js";
 
 const $ = (id) => document.getElementById(id);
+const failureElements = () => ({
+  status: $("status"),
+  hint: $("error-hint"),
+  retry: $("retry"),
+  join: $("join"),
+  leave: $("leave"),
+});
+
 let invite;
 let session;
 let context;
@@ -24,10 +33,16 @@ let prejoinAbort;
 
 try {
   invite = readInvite(location.hash);
-  $("status").textContent = "Your host invited you. Check your microphone, confirm headphones, then join.";
+  clearJoinFailure(
+    failureElements(),
+    "Your host invited you. Check your microphone, confirm headphones, then join.",
+  );
   $("prejoin").hidden = false;
 } catch (error) {
-  $("status").textContent = error.message;
+  const view = mapJoinError(error);
+  view.showRetry = false;
+  applyJoinFailure(view, failureElements());
+  $("status").dataset.failure = "true";
   $("prejoin").hidden = true;
 }
 
@@ -133,7 +148,7 @@ $("skip-check").addEventListener("click", () => {
   refresh();
 });
 
-function leave(message = "You left the session.") {
+function leave(message = "You left the session.", error) {
   activeAttempt?.abort();
   activeAttempt = null;
   session?.close();
@@ -145,14 +160,23 @@ function leave(message = "You left the session.") {
   context?.close().catch(() => {});
   context = null;
   $("leave").hidden = true;
-  $("status").textContent = message;
+  const elements = failureElements();
+  if (error) {
+    applyJoinFailure(mapJoinError(error), elements);
+    elements.status.dataset.failure = "true";
+  } else {
+    delete elements.status.dataset.failure;
+    clearJoinFailure(elements, message);
+  }
   refresh();
 }
 
-$("join").addEventListener("click", async () => {
+async function startJoin() {
   if (!joinReady() || starting || session) return;
   starting = true;
   refresh();
+  delete $("status").dataset.failure;
+  clearJoinFailure(failureElements(), "Connecting…");
   $("leave").hidden = false;
   const attempt = (activeAttempt = new AbortController());
   let stream;
@@ -204,26 +228,43 @@ $("join").addEventListener("click", async () => {
         });
       },
       onError: (error) => {
-        if (!attempt.signal.aborted) leave(error.message);
+        if (!attempt.signal.aborted) leave(undefined, error);
       },
     });
     await session.join();
+    clearJoinFailure(failureElements(), $("status").textContent);
     starting = false;
     refresh();
   } catch (error) {
     stream?.getTracks().forEach((track) => track.stop());
     if (!attempt.signal.aborted) {
-      leave(
-        error.name === "AbortError"
-          ? "Joining timed out or was interrupted. Check your connection and microphone, then try Join again."
-          : error.message,
-      );
+      if (error.name === "AbortError") {
+        leave(
+          undefined,
+          new Error(
+            "Joining timed out or was interrupted. Check your connection and microphone, then try Join again.",
+          ),
+        );
+      } else {
+        leave(undefined, error);
+      }
     }
   } finally {
     $("leave").removeEventListener("click", cancel);
+    if (attempt.signal.aborted && !session) {
+      stream?.getTracks().forEach((track) => track.stop());
+      starting = false;
+      refresh();
+    }
   }
-});
+}
 
+$("join").addEventListener("click", () => {
+  void startJoin();
+});
+$("retry").addEventListener("click", () => {
+  void startJoin();
+});
 $("leave").addEventListener("click", () => leave());
 window.addEventListener("pagehide", () => leave());
 document.addEventListener("visibilitychange", () => {

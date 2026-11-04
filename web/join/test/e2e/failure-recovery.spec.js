@@ -49,14 +49,16 @@ for (const width of [375, 390]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.clock.fastForward(13000);
     await expect(page.locator('#status')).toContainText('timed out');
-    await expect(join).toBeEnabled();
+    const retry = page.getByRole('button', { name: 'Retry', exact: true });
+    await expect(retry).toBeEnabled();
+    await expect(join).toBeHidden();
     await expect(leave).toBeHidden();
     await expect.poll(() => page.evaluate(() => captureTracks.length > 0 && captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
     await expect.poll(() => page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);
-    await join.click();
+    await retry.click();
     await expect.poll(() => requests).toBe(2);
     await expect(page.locator('#status')).toContainText('Web Join is unavailable');
-    await expect(join).toBeEnabled();
+    await expect(retry).toBeEnabled();
     expect(await page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
   });
 }
@@ -80,6 +82,7 @@ test('Leave during a stalled fetch stays a deliberate exit, then allows another 
   await join.click();
   await expect.poll(() => requests).toBe(2);
   await expect(page.locator('#status')).toContainText('Web Join is unavailable');
+  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
 });
 
 for (const scenario of ['left', 'rejoined', 'active']) {
