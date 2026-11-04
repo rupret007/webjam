@@ -405,7 +405,9 @@ class _HttpTransport:
         self, method: str, path: str, body: dict | None = None, *, timeout_seconds=5.0,
     ):
         data = None
-        headers = {"accept": "application/json"}
+        # The signaling API rejects urllib's generic Python identity at its
+        # edge. Identify this application without impersonating a browser.
+        headers = {"accept": "application/json", "User-Agent": "WebJam"}
         if body is not None:
             data = json.dumps(body).encode("utf-8")
             headers["content-type"] = "application/json"
