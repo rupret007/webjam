@@ -59,6 +59,8 @@ def _library_path(explicit: str | None) -> str:
             path = root / name
             if path.is_file():
                 return str(path)
+    if getattr(sys, "frozen", False):
+        raise BridgeError("This WebJam build is missing its browser-guest audio codec")
     system = ctypes.util.find_library("opus")
     if system:
         return system

@@ -8,6 +8,7 @@ These prove the window now takes the share the layout computes for it.
 from __future__ import annotations
 
 import pytest
+from PySide6.QtCore import QPoint, QRect
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication
 
@@ -88,3 +89,44 @@ def test_fit_to_screen_is_idempotent(window) -> None:
 
 def test_fit_shortcut_is_bound(window) -> None:
     assert window._fit_shortcut.key().toString() in {"Ctrl+Shift+F", "Meta+Shift+F"}
+
+
+@pytest.mark.parametrize("font_size", [14, 20])
+@pytest.mark.parametrize("notes_visible", [False, True])
+def test_browser_invitation_controls_fit_the_compact_music_window(window, qt_app, font_size, notes_visible):
+    from webjam_qt.theme import load_stylesheet
+
+    window.setStyleSheet(load_stylesheet() + f"\nQWidget {{ font-size: {font_size}px; }}")
+    panel = window.web_guest_panel
+    panel.render("ready", "Ready for one browser guest. Copy the link and share it privately. Headphones required.")
+    window.resize(800, 600)
+    window.session_canvas.setVisible(notes_visible)
+    if notes_visible:
+        window.center_splitter.setSizes([520, 280])
+    window.show()
+    for _ in range(4):
+        qt_app.processEvents()
+    assert (window.width(), window.height()) == (800, 600)
+    for widget in (panel.primary, panel.stop_button, panel.status):
+        assert widget.isVisibleTo(window)
+        assert window.rect().contains(QRect(widget.mapTo(window, QPoint()), widget.size()))
+        assert widget.visibleRegion().contains(widget.rect())
+    assert panel.primary.width() >= panel.primary.minimumSizeHint().width()
+    assert panel.stop_button.width() >= panel.stop_button.minimumSizeHint().width()
+    assert panel.status.height() >= panel.status.heightForWidth(panel.status.width())
+
+
+def test_browser_invitation_stays_out_of_art_and_offline_studio(window):
+    from core.creative_modes import get_creator_profile_by_key_or_default
+
+    assert window.web_guest_panel.isHidden()  # No owned host yet.
+    window.web_guest_panel.render("available", "Invite one browser guest.")
+    window.set_creator_profile(get_creator_profile_by_key_or_default("art"))
+    assert window.web_guest_panel.isHidden()
+    window.web_guest_panel.render("available", "Invite one browser guest.")
+    assert window.web_guest_panel.isHidden()  # A timer refresh cannot reveal it in Art.
+    window.set_creator_profile(get_creator_profile_by_key_or_default("music"))
+    assert not window.web_guest_panel.isHidden()
+    window.show_reference_studio_only()
+    window.set_creator_profile(get_creator_profile_by_key_or_default("music"))
+    assert window.web_guest_panel.isHidden()

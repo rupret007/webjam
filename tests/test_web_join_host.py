@@ -284,6 +284,20 @@ def test_prepare_failure_closes_owned_bridge_and_sidecar():
         host.allow(22124)
     assert "private failure" not in str(error.value)
     assert not process.running and bridge.closed.is_set() and not host.invite
+    assert "relay" in host.failure_reason.lower()
+
+
+def test_codec_start_failure_has_a_safe_reason_and_retires_every_owner():
+    process, bridge = FakeProcess(None), FakeBridge(22124)
+    def fail():
+        raise RuntimeError("private raw library path and secret")
+    bridge.start = fail
+    host = WebJoinHost(process_factory=lambda _: process, bridge_factory=lambda _: bridge)
+    with pytest.raises(WebJoinUnavailable):
+        host.allow(22124)
+    assert "browser audio" in host.failure_reason
+    assert "raw library path" not in host.failure_reason and "secret" not in host.failure_reason
+    assert bridge.closed.is_set() and not process.running and not host.invite
 
 
 def test_host_invite_uses_credential_clamped_offer_expiry(monkeypatch):
