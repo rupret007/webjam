@@ -52,7 +52,7 @@ _HOST_EMPTY_STATUS = (
 )
 _EMPTY_SURFACE = "Your painting lesson appears here"
 _SYNC_HONESTY = (
-    "Paint in your own app or on paper · lesson sound through Watch a shared lesson"
+    "Silent reference · paint in your own app or on paper · lesson sound through Watch a shared lesson"
 )
 _SYNC_DETAIL = (
     "Paint along is the process-video companion. Paint in Procreate, Clip "

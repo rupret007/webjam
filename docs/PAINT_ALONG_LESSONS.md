@@ -34,7 +34,7 @@ Music readiness, public-site launch and actual provider/audio trials stay separa
 
 ![Source UI at 800×600; no media loaded](assets/paint-along-lessons-800x600.png)
 
-Validation for this change: 384 focused native/source cases pass, including
+Validation for this change: 460 focused native/source cases pass, including
 host/guest lesson behavior, retired-room requests, restored-room controls,
 800×600 entry layout, keyboard, and platform door behavior. Ruff passes for the
 changed runtime/new test files. The image is an offscreen source render, not a
@@ -43,3 +43,13 @@ collection failed on a Python environment without Qt and an incomplete sparse
 checkout; subsequent runs used the existing Python3.11 Qt environment and this
 isolated worktree's full sources. Intermediate old-copy assertions and a missing
 retirement disable were corrected before the passing run.
+
+The first exact-head CI job126863467423 (run41912505832, source7a6e091)
+failed in test_art_left_out_rules: the short reference hint omitted its existing
+silent-picture qualifier. The correction restores “Silent reference” beside
+the separate lesson-sound path. The original decoded job log is retained
+privately (271,407 bytes; SHA256
+70d72753ea36ce3b384e1d295c7432ef3e0e50d503fee93049a09c3b6deff0f5).
+The expanded460-case local run and refreshed inspected render pass; the new
+exact head still requires normal CI. No fixture, skip, mute guard or workflow
+was weakened to obtain that result.
