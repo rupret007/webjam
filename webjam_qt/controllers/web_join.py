@@ -5,9 +5,9 @@ from __future__ import annotations
 import threading
 
 from PySide6.QtCore import QObject, QTimer, Signal
-from PySide6.QtWidgets import QApplication
 
 from services.web_join_host import PREPARE_UNAVAILABLE, WebJoinHost
+from webjam_qt.windows.web_join_invite_dialog import WebJoinInviteDialog
 
 
 class WebJoinControls(QObject):
@@ -39,6 +39,7 @@ class WebJoinControls(QObject):
         self._timer.setInterval(500)
         self._timer.timeout.connect(self._refresh)
         self._timer.start()
+        self._invite_dialog: WebJoinInviteDialog | None = None
         self._refresh()
 
     def _owned_server(self):
@@ -134,9 +135,32 @@ class WebJoinControls(QObject):
         self.allow_action.setText("Allow a web guest")
         self.copy_action.setEnabled(True)
         self._controller.window.flash_message(
-            "Web invite ready. Choose Web Join → Copy web invite. Expect about 60–120 ms delay; wear headphones.",
+            "Web invite ready. Copy the link or scan the QR for phones.",
             ms=9000,
         )
+        self._show_invite_dialog()
+
+    def _show_invite_dialog(self) -> None:
+        if (
+            self._host is None
+            or not self._host.invite
+            or self._owned_server() is not self._server
+        ):
+            return
+        dialog = self._invite_dialog
+        if dialog is None:
+            dialog = WebJoinInviteDialog(self._controller.window)
+            self._invite_dialog = dialog
+        dialog.set_invite_url(self._host.invite)
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _hide_invite_dialog(self) -> None:
+        dialog = self._invite_dialog
+        if dialog is not None:
+            dialog.hide()
+            dialog.set_invite_url("")
 
     def _copy(self):
         if (
@@ -144,10 +168,9 @@ class WebJoinControls(QObject):
             and self._host.invite
             and self._owned_server() is self._server
         ):
-            QApplication.clipboard().setText(self._host.invite)
-            self._controller.window.flash_message(
-                "Web invite copied. Keep this session open.", ms=5000
-            )
+            self._show_invite_dialog()
+            if self._invite_dialog is not None:
+                self._invite_dialog.copy_invite_link()
 
     def _show_cleanup_pending(self):
         self._cleanup_pending = True
@@ -164,6 +187,7 @@ class WebJoinControls(QObject):
         self.allow_action.blockSignals(False)
         self.copy_action.setEnabled(False)
         self.kick_action.setEnabled(False)
+        self._hide_invite_dialog()
         pending = []
         for host in owners:
             try:
