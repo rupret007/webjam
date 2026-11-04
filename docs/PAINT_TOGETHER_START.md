@@ -59,6 +59,30 @@ Ruff and the existing integrity guard pass. Native entry and expanded materials
 renders were inspected; the link color was corrected to the existing readable
 text token after that first inspection.
 
-This branch stacks on browser-host-readiness430/6f78014. Its own CI and one final
+This branch stacks on browser-host-readiness430/0d47494. Its own CI and one final
 matching private package cohort remain required; the old MacBook app does not
 contain these new assets or source controls.
+
+### Compact guest guidance correction
+
+Full0335084 CI caught eight existing prepared-copy cases: at720×560 and1100×560
+the added collapsed help row pushed the honesty hint five pixels below the407px
+embedded panel. All eight failures reproduced locally. Compact embedded panels
+now use the existing smaller row spacing through the compact-window range,
+keeping the Open my copy action and complete guidance in the first viewport.
+Expanded materials remain optional and scroll within the existing focus-aware
+container; no control, guidance or permission check was removed.
+
+All326 cases across17 existing Paint Along, compact follow-along, surface
+accessibility, reference UI and window-fit modules pass, one fresh process per
+file. The24 prepared-copy cases are included in that total. Ruff passes.
+Original CI job126927015184/log SHA256
+86ae3661e6f6bfafb6e8b13d7869b50333d741ae5889b074689d39d8cd77421c
+is retained locally. Both source renders below were inspected. They open no
+player, external browser, microphone or network connection; they are layout
+evidence, not installed-app or music proof. The corrected exact head still
+requires its normal CI and matching private package.
+
+![Compact guest: controls and guidance visible](assets/paint-together-compact-guest-720x407.png)
+
+![Expanded optional materials in the scrolling panel](assets/paint-together-compact-materials-720x407.png)

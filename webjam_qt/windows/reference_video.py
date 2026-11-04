@@ -508,13 +508,15 @@ class ReferenceVideoDialog(QDialog):
         return _STANDALONE_SURFACE_FLOOR
 
     def _update_layout_spacing(self) -> None:
-        # An inline File/Help menu reduces the compact workspace's height.
-        # Recover space between rows before any video controls or guidance
-        # overlap; larger workspaces keep the original breathing room.
+        # Inline menus and optional lesson help reduce compact workspace space.
+        # Recover row spacing across compact embedded panels before controls or
+        # guidance fall below the viewport; larger panels keep breathing room.
         layout = getattr(self, "_body_layout", None)
         if layout is not None:
             layout.setSpacing(
-                Space.SM if self._embedded and self.height() < 360 else Space.MD
+                Space.SM
+                if self._embedded and self.height() < _COMPACT_WINDOW_HEIGHT
+                else Space.MD
             )
         surface = getattr(self, "_surface_holder", None)
         if surface is not None:
