@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import copy
 import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
+from xml.etree import ElementTree
 
 from core.jamulus_adaptive_latency import (
     DEFAULT_FRAME_FACTOR,
@@ -17,6 +19,7 @@ from core.jamulus_adaptive_latency import (
     classify_delay,
     estimate_overall_delay_ms,
     latency_defaults_for_settings,
+    read_client_ini_values,
 )
 from core.jamulus_adaptive_latency import DelayStatus
 
@@ -34,6 +37,8 @@ class AdaptiveLatencyController:
         self._ping_ms: float | None = None
         self._remote_jitter_blocks: dict[int, int] = {}
         self._local_channel_id: int | None = None
+        self._factor_known = False
+        self._launch_frame_factor = DEFAULT_FRAME_FACTOR
 
     def configure_from_settings(self) -> None:
         settings = self._bridge.settings
@@ -47,15 +52,32 @@ class AdaptiveLatencyController:
         """Fill unset Jamulus latency ini keys before the client starts."""
 
         self.configure_from_settings()
+        with self._lock:
+            if not self._policy.enabled or self._policy.player_override:
+                return []
         defaults = latency_defaults_for_settings(self._bridge.settings)
-        written = apply_latency_defaults_to_profile(Path(profile_path), defaults=defaults)
+        try:
+            written = apply_latency_defaults_to_profile(Path(profile_path), defaults=defaults)
+            values = read_client_ini_values(Path(profile_path).read_bytes())
+            factor = int(values.get("prefsndcrdbufidx", ""))
+        except (ValueError, ElementTree.ParseError):
+            # Optional tuning cannot repair or replace another profile format.
+            with self._lock:
+                self._factor_known = False
+                self._policy.enabled = False
+            return []
         if written:
             _logger.info(
                 "Applied Jamulus latency defaults to unset keys: %s",
                 ", ".join(sorted(written)),
             )
         with self._lock:
-            self._policy.current_factor = defaults.prefsndcrdbufidx
+            self._factor_known = factor in (1, 2, 4)
+            if self._factor_known:
+                self._policy.current_factor = factor
+                self._launch_frame_factor = factor
+            else:
+                self._policy.enabled = False
         return written
 
     def note_server_ping(self, ping_ms: float | None) -> None:
@@ -101,15 +123,16 @@ class AdaptiveLatencyController:
     def participant_delays(self) -> dict[int, ParticipantDelayPresentation]:
         with self._lock:
             ping = self._ping_ms
-            factor = self._policy.current_factor
+            factor = self._launch_frame_factor
             jitter_map = dict(self._remote_jitter_blocks)
             local_id = self._local_channel_id
+            factor_known = self._factor_known
 
         results: dict[int, ParticipantDelayPresentation] = {}
         if local_id is not None:
             jitter = jitter_map.get(local_id)
             overall = estimate_overall_delay_ms(
-                ping_ms=ping,
+                ping_ms=ping if factor_known else None,
                 frame_factor=factor,
                 jitter_buffer_blocks=jitter,
             )
@@ -140,6 +163,7 @@ class AdaptiveLatencyController:
         profile_path = getattr(plan, "profile_path", None) if plan is not None else None
         with self._lock:
             observation = LatencyObservation(ping_ms=self._ping_ms)
+            previous = copy.copy(self._policy)
             new_factor = self._policy.decide(observation)
         if new_factor is None or profile_path is None:
             return
@@ -151,6 +175,9 @@ class AdaptiveLatencyController:
                 new_factor,
                 {1: 64, 2: 128, 4: 256}.get(new_factor, "?"),
             )
+        else:
+            with self._lock:
+                self._policy = previous
 
 
 def _delay_detail(

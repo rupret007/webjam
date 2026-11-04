@@ -829,6 +829,13 @@ Rehearsal. Art rooms do not require it. It owns your interface, inputs, outputs,
 channels, buffer, jitter, feedback protection, and participant mix. Configure
 those in Jamulus, not in WebJam.
 
+Optional adaptive latency can fill unset defaults in WebJam’s dedicated Jamulus
+profile. Your existing preferences remain yours. To keep that profile untouched,
+set `WEBJAM_ADAPTIVE_LATENCY_ENABLED=0` or
+`WEBJAM_ADAPTIVE_LATENCY_PLAYER_OVERRIDE=1`. Delay values are estimates based on
+the launch profile and network observations; saved recommendations take effect
+on a later launch, not as a live buffer adjustment.
+
 Any meeting platform can provide optional talking/video when its meeting link
 is a public HTTPS URL with a DNS hostname and passes WebJam's safety checks.
 Known Webex, Zoom, Microsoft Teams, Google Meet, and FaceTime links receive

@@ -17,6 +17,11 @@ Static defaults (when keys are absent in the WebJam-owned profile):
 - `prefsndcrdbufidx=2` — 128-sample device frame ([`FRAME_SIZE_FACTOR_DEFAULT`](https://github.com/jamulussoftware/jamulus/blob/r3_12_2/src/global.h))
 - `audioquality=1` — normal quality (0..2 in [`audioquality`](https://github.com/jamulussoftware/jamulus/blob/r3_12_2/src/settings.cpp))
 
+Disabled tuning or the player override performs no profile writes. Existing
+frame factors are used for launch-based delay estimates; a persisted policy
+recommendation does not represent a live buffer change. Unknown profile formats
+are preserved. A musician edit without matching provenance is never overwritten.
+
 Musician-set values are left untouched; provenance is stored in
 `WebJam-adaptive-latency-provenance-v1.json` next to the profile.
 
