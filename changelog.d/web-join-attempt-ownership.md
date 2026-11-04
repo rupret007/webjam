@@ -1,0 +1,2 @@
+- Keep delayed Web Join enrollment, audio resume and latency callbacks with their original attempt so Leave and a later Join retain their own status and controls.
+- Stop processing latency stats after the session closes and clarify when microphone access is requested.

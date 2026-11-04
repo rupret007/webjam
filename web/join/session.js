@@ -99,6 +99,7 @@ export class WebJoinSession {
     let timer;
     try {
       const stats = await Promise.race([this.pc.getStats(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(BUSY_MESSAGE)), 3000); })]);
+      if (this.controller.signal.aborted || !this.authorized) return;
       let bytes = 0, transports = 0;
       for (const report of stats.values()) if (report.type === "transport") {
         if (!Number.isSafeInteger(report.bytesSent) || report.bytesSent < 0 || !Number.isSafeInteger(report.bytesReceived) || report.bytesReceived < 0) throw new Error(BUSY_MESSAGE);
@@ -121,6 +122,6 @@ export class WebJoinSession {
     clearInterval(this.statsTimer); clearTimeout(this.expiryTimer); clearTimeout(this.disconnectTimer);
     this.channel?.close(); this.pc?.close();
     this.stream.getTracks().forEach((track) => track.stop());
-    this.pendingStream = null; this.authorized = false;
+    this.pendingStream = null; this._inboundReceiver = null; this.authorized = false;
   }
 }

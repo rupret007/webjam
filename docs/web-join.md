@@ -7,6 +7,11 @@ headphones, and starts audio with a tap. The UI labels the connection **Web Join
 higher delay (about 60–120 ms)**; that is an expectation, not a WAN measurement.
 Safari/iOS is labelled best effort. Desktop players continue using the WebJam app.
 
+**Check microphone** and **Join with microphone** both request microphone
+access. Leave retires the current attempt: delayed enrollment, audio-resume
+and latency callbacks cannot change a later attempt's status or controls.
+Stats returned after close cannot tune the retired audio receiver.
+
 One web guest is admitted at a time. **Kick web guest**, clearing permission,
 resetting the native invitation, stopping the session, replacing the owned
 server, or quitting closes its sidecar and bridge. Permission is never saved.
