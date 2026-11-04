@@ -7,12 +7,15 @@ import pytest
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 from webjam_qt.controllers.web_join import WebJoinControls
+from webjam_qt.widgets.web_join_panel import WebJoinPanel
 
 
 @pytest.fixture
 def controls():
     app = QApplication.instance() or QApplication([])
     window = QMainWindow()
+    window.web_guest_panel = WebJoinPanel(window)
+    window.setCentralWidget(window.web_guest_panel)
     window.flash_message = lambda *args, **kwargs: None
     bridge = SimpleNamespace(
         hosted_server_process=object(), hosted_server_owned=lambda: True
@@ -155,3 +158,58 @@ def test_explicit_false_stop_result_keeps_owner_and_timer_latched(controls):
     assert not controls.allow_action.isEnabled() and controls.kick_action.isEnabled()
     host.stop = lambda: True
     assert controls.stop() is True and controls._host is None
+
+
+def test_visible_browser_button_copy_and_end_use_the_existing_owner(controls):
+    controls, controller, app = controls
+    panel = controller.window.web_guest_panel
+    controller.window.show()
+    app.processEvents()
+    assert panel.primary.isVisible() and panel.primary.text() == "Invite a browser guest"
+    host = SimpleNamespace(state="preparing", invite="", stop=lambda: True)
+    controls._host, controls._server = host, controller.bridge.hosted_server_process
+    controls._refresh()
+    assert not panel.primary.isEnabled() and "Preparing" in panel.status.text()
+    host.state, host.invite = "waiting", "https://invalid/#synthetic-test-only"
+    controls._prepared(host, True)
+    assert panel.primary.text() == "Copy browser invite" and panel.primary.isEnabled()
+    panel.primary.click()
+    assert QApplication.clipboard().text() == host.invite
+    host.state = "connected"
+    controls._refresh()
+    assert not panel.primary.isEnabled() and "connected" in panel.status.text()
+    panel.stop_button.click()
+    assert controls._host is None and not controls.copy_action.isEnabled()
+    QApplication.clipboard().clear()
+
+
+def test_pressed_copy_cannot_become_invite_after_server_replacement(controls, monkeypatch):
+    controls, controller, _ = controls
+    host = SimpleNamespace(state="waiting", invite="https://invalid/#synthetic", stop=lambda: True)
+    controls._host, controls._server = host, controller.bridge.hosted_server_process
+    controls._prepared(host, True)
+    panel = controller.window.web_guest_panel
+    panel.primary.pressed.emit()
+    controller.bridge.hosted_server_process = object()
+    controls._refresh()
+    monkeypatch.setattr("webjam_qt.controllers.web_join.WebJoinHost",
+                        lambda: pytest.fail("Stale copy allocated a new invitation"))
+    panel.primary.clicked.emit()
+    assert controls._host is None and not controls.allow_action.isChecked()
+
+
+def test_preparation_error_is_persistent_and_private_details_are_not_rendered(controls):
+    controls, controller, _ = controls
+    host = SimpleNamespace(state="closed", invite="", stop=lambda: True,
+                           failure_reason="private credential and invitation details")
+    controls._host, controls._server = host, controller.bridge.hosted_server_process
+    controls._prepared(host, False)
+    panel = controller.window.web_guest_panel
+    assert panel.primary.text() == "Retry browser invite"
+    assert "private credential" not in panel.status.text()
+    previous = panel.status.text()
+    controls._refresh()
+    assert panel.status.text() == previous
+    controller.settings.host_server_enabled = False
+    controls._refresh()
+    assert not panel.primary.isEnabled()

@@ -42,3 +42,12 @@ def test_private_target_cannot_create_a_tag_release_draft():
     assert "startsWith(github.ref, 'refs/tags/v')" in release
     assert "inputs.final_build &&" in release
     assert "(inputs.web_join_target == '' || inputs.web_join_target == 'public')" in release
+
+
+def test_mac_host_builds_and_exercises_its_bundled_custom_codec():
+    assert WORKFLOW.index("Build required browser-guest Opus codec (macOS)") < WORKFLOW.index("Build desktop bundle and verify Web Join target")
+    assert '"$GITHUB_WORKSPACE/native/web-join"' in WORKFLOW
+    build = WORKFLOW.split("      - name: Build desktop bundle and verify Web Join target\n", 1)[1].split("\n      - name:", 1)[0]
+    assert "python tools/verify_web_join_codec.py" in build
+    assert "--bundle dist/WebJam.app" in build
+    assert "Build the Web Join custom Opus codec before packaging this Mac host" in SPEC

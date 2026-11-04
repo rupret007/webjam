@@ -202,6 +202,21 @@ def test_native_failure_does_not_leave_open_socket():
     assert bridge.closed.is_set() and bridge._socket is None
 
 
+def test_frozen_app_missing_codec_cannot_load_an_unrelated_system_library(tmp_path, monkeypatch):
+    import services.web_join_bridge as module
+
+    monkeypatch.setattr(module.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(module.sys, "executable", str(tmp_path / "WebJam.app/Contents/MacOS/WebJam"))
+    monkeypatch.setattr(module, "__file__", str(tmp_path / "source/services/web_join_bridge.py"))
+
+    def forbidden(_name):
+        pytest.fail("Frozen package fell back to the host's unrelated Opus installation")
+
+    monkeypatch.setattr(module.ctypes.util, "find_library", forbidden)
+    with pytest.raises(BridgeError, match="missing its browser-guest audio codec"):
+        module._library_path(None)
+
+
 @pytest.mark.requires_local_socket
 def test_jamulus_properties_and_guest_label_match_pinned_server(local_server):
     bridge = WebJoinBridge(local_server.getsockname()[1], codec_factory=FakeCodec)

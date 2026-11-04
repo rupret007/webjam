@@ -145,12 +145,14 @@ if sys.platform == "win32":
 # runnable nested app bundles after PyInstaller finishes.
 _extra_datas = []
 _extra_binaries = []
-# Web Join is optional and fails closed without this custom-mode codec.
+# Every Mac host bundle must include the advertised browser-guest codec.
 # Build it explicitly with packaging/macos/build-web-join-opus.sh; PyInstaller
 # places macOS binaries in Contents/Frameworks for normal bundle signing.
 if sys.platform == "darwin":
     _web_join_native = ROOT / "native" / "web-join"
     _web_join_opus = _web_join_native / "libwebjoin_opus.dylib"
+    if not _web_join_opus.is_file():
+        raise RuntimeError("Build the Web Join custom Opus codec before packaging this Mac host")
     if _web_join_opus.is_file():
         for _notice in ("OPUS-COPYING.txt", "OPUS-PROVENANCE.txt"):
             _notice_path = _web_join_native / _notice

@@ -72,6 +72,7 @@ from webjam_qt.widgets import (
 from webjam_qt.widgets.art_room_overview import ArtRoomOverviewWidget
 from webjam_qt.widgets.rehearsal_recap import RehearsalRecapPanel
 from webjam_qt.widgets.room_help import RoomHelpPanel
+from webjam_qt.widgets.web_join_panel import WebJoinPanel
 
 
 class ConductorWindow(QMainWindow):
@@ -143,6 +144,7 @@ class ConductorWindow(QMainWindow):
         )
         self.session_strip.test_night_requested.connect(self.test_night_requested.emit)
         self.session_hud = SessionHud()
+        self.web_guest_panel = WebJoinPanel(self)
         self.side_rail = SideRail()
         self.participant_grid = ParticipantGrid()
         self.art_room_overview = ArtRoomOverviewWidget()
@@ -286,6 +288,7 @@ class ConductorWindow(QMainWindow):
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
         central_layout.addWidget(self.session_strip)
+        central_layout.addWidget(self.web_guest_panel)
         central_layout.addWidget(self.session_hud)
         central_layout.addWidget(self.rehearsal_recap)
         central_layout.addWidget(self._notes_notice)
@@ -549,6 +552,8 @@ class ConductorWindow(QMainWindow):
         strip = self.session_strip
         order = [
             strip._title_input,
+            self.web_guest_panel.primary,
+            self.web_guest_panel.stop_button,
             strip._reference_track_button,
             strip._shared_track_transport,
             strip._shared_track_stop,
@@ -599,6 +604,7 @@ class ConductorWindow(QMainWindow):
         self._reference_studio_only = True
         self.setWindowTitle(f"WebJam — Reference Studio (v{__version__})")
         self.session_strip.hide()
+        self.web_guest_panel.hide()
         self.session_hud.hide()
         self.session_controls.hide()
         self.side_rail.hide()
@@ -1117,6 +1123,7 @@ class ConductorWindow(QMainWindow):
 
         profile_changed = profile != self._creator_profile
         self._creator_profile = profile
+        self.web_guest_panel.setVisible(profile.key == "music" and not self._reference_studio_only)
         self._sync_session_hud_visibility()
         if profile.key != "art":
             self.art_room_overview.clear_room_connections()

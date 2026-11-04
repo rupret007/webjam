@@ -1749,6 +1749,13 @@ jobs:
             "$output/JamulusHeadlessClient.app" "$expected_machine" \
             "$output/JamulusHeadlessClient.sha256"
 
+      - name: Build required browser-guest Opus codec (macOS)
+        if: startsWith(matrix.target, 'macos-')
+        shell: bash
+        run: |
+          WEBJOIN_BUILD_JOBS=2 packaging/macos/build-web-join-opus.sh \
+            "$GITHUB_WORKSPACE/native/web-join"
+
       - name: Build desktop bundle and verify Web Join target
         shell: bash
         env:
@@ -1764,6 +1771,10 @@ jobs:
             --manifest "$metadata_root/webjam-web-join-target.json" \
             --build-id "$(git rev-parse HEAD)" \
             --target "$WEBJAM_WEB_JOIN_TARGET"
+          if [[ "${{ matrix.target }}" == macos-* ]]; then
+            python tools/verify_web_join_codec.py \
+              --bundle dist/WebJam.app --target "${{ matrix.target }}"
+          fi
 
       - name: Build desktop artifact
         shell: bash
