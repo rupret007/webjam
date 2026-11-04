@@ -79,7 +79,7 @@ def drain(qapp, predicate):
         ("", "Make together with your own tools."),
         (
             "paint_along",
-            "Paint along: follow a silent video from a file or lesson link.",
+            "Paint along: choose Bob Ross or your own YouTube lesson.",
         ),
     ),
 )
@@ -108,7 +108,7 @@ def test_connected_paint_along_guest_hud_uses_host_start(controllers):
     app._room_participant.borrowed_start = "paint_along"
     app._update_session_hud()
     assert app.window.session_hud._detail.text() == (
-        "Paint along: follow a silent video from a file or lesson link."
+        "Paint along: choose Bob Ross or your own YouTube lesson."
     )
 
 
@@ -176,5 +176,5 @@ def test_native_paint_along_guest_hud_names_active_start(
     drain(qapp, lambda: app.creator_profile.key == "art")
     app._update_session_hud()
     assert app.window.session_hud._detail.text() == (
-        "Paint along: follow a silent video from a file or lesson link."
+        "Paint along: choose Bob Ross or your own YouTube lesson."
     )

@@ -363,7 +363,7 @@ def test_a_talk_only_room_leaves_no_empty_video_window_open():
         # talk-only room never presents that window on the artist's behalf.
         assert dialog._surface_holder.isHidden() is False
         assert dialog._surface_placeholder.text() == (
-            "Your silent process video appears here"
+            "Your painting lesson appears here"
         )
     finally:
         dialog.deleteLater()

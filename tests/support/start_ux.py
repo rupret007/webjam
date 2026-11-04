@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QComboBox, QWidget
 
 
 # Substrings: a first-screen phrase must not contain these at all.
+# Bob Ross is intentionally named on Paint Along, per Jeff's lesson-first request.
 FIRST_SCREEN_BANNED_PHRASES = (
     "drawpile",
     "krita",
@@ -27,7 +28,6 @@ FIRST_SCREEN_BANNED_PHRASES = (
     "comfyui",
     "host-clocked",
     "studio visit",
-    "bob ross",
     "stems",
 )
 

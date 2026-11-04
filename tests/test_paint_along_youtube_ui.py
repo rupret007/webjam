@@ -62,3 +62,31 @@ def test_host_online_failure_names_the_explicit_shared_lesson_handoff(qapp):
     panel._watch_lesson_button.click()
     assert handoffs == [True]
     panel.close()
+
+
+def test_curated_episode_uses_normal_lesson_share_and_respects_room_lifetime(qapp):
+    panel = ReferenceVideoDialog(hosting=True)
+    panel.show()
+    qapp.processEvents()
+    links = []
+    files = []
+    panel.share_youtube_requested.connect(links.append)
+    panel.share_requested.connect(files.append)
+    assert panel._episode_picker.isVisible()
+    panel._episode_picker.setCurrentIndex(1)
+    panel._episode_button.click()
+    assert links == ["https://www.youtube.com/watch?v=vgbMONXc9Cs"]
+    assert not files
+    panel.set_host_snapshot(ReferenceVideoSnapshot(state=ReferenceVideoState.LOADING))
+    panel._choose_episode()
+    assert len(links) == 1
+    panel.set_host_snapshot(ReferenceVideoSnapshot())
+    panel.set_room_available(False)
+    panel._choose_episode()
+    assert len(links) == 1
+    assert not panel._episode_button.isEnabled()
+    panel.set_room_available(True)
+    assert panel._episode_button.isVisible() and panel._episode_button.isEnabled()
+    panel._episode_button.click()
+    assert len(links) == 2
+    panel.close()

@@ -1,0 +1,45 @@
+# Paint Along: Bob Ross and custom lessons
+
+The intended experience is painting together while watching and hearing a
+YouTube lesson. Offer an editorial Bob Ross starter list and let hosts paste
+another YouTube video link; a local reference file remains optional.
+
+The desktop starter list uses official uploads:
+
+- [A Walk in the Woods, S1 E1](https://www.youtube.com/watch?v=oh5p5f5_-7A)
+- [Northern Lights, S8 E13](https://www.youtube.com/watch?v=vgbMONXc9Cs)
+
+Titles/IDs were checked against those official video results on November4,2026.
+These are starter picks, not a verified ranking of the best or most popular
+videos. Availability and embedding remain subject to YouTube and the uploader.
+The app links/embeds; it does not download or redistribute episodes.
+
+Desktop: in Paint Along, choose an episode and click Choose episode, or use
+YouTube link for another lesson. Both use the existing host-controlled lesson
+transport and validation. Guests explicitly open the host's lesson. For sound,
+choose Watch a shared lesson and follow Conversation's browser/meeting handoff.
+The existing in-app reference player remains muted: this change does not claim
+that the native embed now plays lesson audio. No microphone or meeting starts
+merely by selecting an episode. Room retirement and loading disable episode
+selection; stale requests cannot share into an ended room.
+
+Website: the Bob Ross room already has episode buttons and a shared canvas.
+The follow-up website change exposes its existing YouTube-link form to the host
+in paint-along rooms as well as watch rooms. Guests follow the selected video;
+host controls remain authoritative. Browser autoplay may require a local tap.
+
+This source change does not update an already-open frozen app. It needs its
+normal application CI and a newly qualified private build before device delivery.
+Music readiness, public-site launch and actual provider/audio trials stay separate.
+
+![Source UI at 800×600; no media loaded](assets/paint-along-lessons-800x600.png)
+
+Validation for this change: 384 focused native/source cases pass, including
+host/guest lesson behavior, retired-room requests, restored-room controls,
+800×600 entry layout, keyboard, and platform door behavior. Ruff passes for the
+changed runtime/new test files. The image is an offscreen source render, not a
+new frozen-package, provider playback, or audibility claim. Earlier local test
+collection failed on a Python environment without Qt and an incomplete sparse
+checkout; subsequent runs used the existing Python3.11 Qt environment and this
+isolated worktree's full sources. Intermediate old-copy assertions and a missing
+retirement disable were corrected before the passing run.
