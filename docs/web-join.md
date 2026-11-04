@@ -124,7 +124,8 @@ unusable guest. Local close has a bounded sidecar shutdown path.
 
 Both clients request `client=web` from the existing `/turn-credentials` endpoint
 and mailbox. The shared Worker enforces exact CORS origins, one-hour maximum
-web credentials, the existing 800 GB monthly TURN cap, a 200 GB web sub-cap,
+web credentials, the existing 800 GB combined own-key UTC-month traffic ceiling,
+a 200 GB web sub-cap,
 3,000 daily web requests and the existing Durable Object budgets. Unreadable
 analytics returns 503; exhausted limits return 429. Host and browser reject
 unscoped responses from older Workers. There is no retry into a paid service or
@@ -139,7 +140,10 @@ The failure still closes the attempted audio session before a deliberate retry.
 Cloudflare currently provides a [shared 1,000 GB monthly SFU/TURN free allowance](https://developers.cloudflare.com/realtime/sfu/platform/pricing/).
 The Worker must remain on Workers Free with dedicated web TURN accounting and
 no paid upgrades. Account-wide usage outside these keys must also stay within
-that allowance. This change does not deploy, configure an account, mint live
+that allowance. The issuer's ingress-plus-egress counter is not all-account
+billed egress and need not cover the subscription's billing period. Verify
+actual combined headroom separately; see the [counter scope](../deploy/relay/README.md#cloudflare-issuer-counter-formula-and-scope).
+This change does not deploy, configure an account, mint live
 credentials during tests, or install a native artifact.
 
 ## Validation and local setup
