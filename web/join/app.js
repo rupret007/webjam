@@ -80,6 +80,8 @@ function joinReady() {
 const refresh = () => {
   $("join").disabled = !joinReady();
   $("skip-check").disabled = !invite || starting || !!session || checkSkipped;
+  $("check-mic").disabled =
+    !invite || starting || !!session || checkRunning || checkSkipped || micHeard || !!stopMeter;
 };
 
 function showMicError(error) {
@@ -92,7 +94,7 @@ function showMicError(error) {
 }
 
 async function runMicCheck() {
-  if (!invite || checkRunning || session) return;
+  if (!invite || checkRunning || starting || session) return;
   resetMicCheck();
   checkRunning = true;
   $("check-mic").disabled = true;
@@ -119,11 +121,13 @@ async function runMicCheck() {
       stream: prejoinStream,
       signal,
       onLevel: (level) => {
+        if (signal.aborted) return;
         const percent = Math.min(100, Math.round(level * 400));
         $("mic-meter-fill").style.width = `${percent}%`;
         $("mic-meter").setAttribute("aria-valuenow", String(percent));
       },
       onHeard: () => {
+        if (signal.aborted) return;
         micHeard = true;
         $("mic-heard").hidden = false;
         refresh();
@@ -179,6 +183,7 @@ async function startJoin() {
   clearJoinFailure(failureElements(), "Connecting…");
   $("leave").hidden = false;
   const attempt = (activeAttempt = new AbortController());
+  const isCurrent = () => activeAttempt === attempt && !attempt.signal.aborted;
   let stream;
   const cancel = () => attempt.abort();
   $("leave").addEventListener("click", cancel, { once: true });
@@ -187,7 +192,7 @@ async function startJoin() {
       context = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
     }
     await context.resume();
-    if (attempt.signal.aborted) return;
+    if (!isCurrent()) return;
     if (prejoinStream?.getAudioTracks().some((track) => track.readyState === "live")) {
       stream = prejoinStream;
       prejoinStream = null;
@@ -198,46 +203,50 @@ async function startJoin() {
       $("status").textContent = "Allow microphone access to play with your host.";
       const capture = await acquireMusicStream(navigator.mediaDevices);
       stream = capture.stream;
-      if (attempt.signal.aborted) {
+      if (!isCurrent()) {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
       $("warnings").textContent = capture.warnings.join("\n");
     }
-    session = new WebJoinSession({
+    const joinedSession = new WebJoinSession({
       origin: RELAY_ORIGIN,
       invite,
       stream,
       audioContext: context,
       onStatus: (message) => {
+        if (!isCurrent()) return;
         $("status").textContent = message;
       },
       onLatency: (milliseconds) => {
+        if (!isCurrent()) return;
         $("latency").textContent =
           milliseconds === null
             ? "Estimated listening delay: unavailable in this browser."
             : `Estimated listening delay: ${Math.round(milliseconds)} ms (network + playback; excludes capture and host bridge).`;
       },
       onTrack: (remote) => {
-        if (attempt.signal.aborted || activeAttempt !== attempt) return;
+        if (!isCurrent()) return;
         $("host-audio").srcObject = remote;
         $("host-audio").play().catch(() => {
-          if (!attempt.signal.aborted && activeAttempt === attempt) {
+          if (isCurrent()) {
             leave("Playback could not start. Tap Join again.");
           }
         });
       },
       onError: (error) => {
-        if (!attempt.signal.aborted) leave(undefined, error);
+        if (isCurrent()) leave(undefined, error);
       },
     });
-    await session.join();
+    session = joinedSession;
+    await joinedSession.join();
+    if (!isCurrent()) return;
     clearJoinFailure(failureElements(), $("status").textContent);
     starting = false;
     refresh();
   } catch (error) {
     stream?.getTracks().forEach((track) => track.stop());
-    if (!attempt.signal.aborted) {
+    if (isCurrent()) {
       if (error.name === "AbortError") {
         leave(
           undefined,
@@ -251,10 +260,8 @@ async function startJoin() {
     }
   } finally {
     $("leave").removeEventListener("click", cancel);
-    if (attempt.signal.aborted && !session) {
+    if (!isCurrent()) {
       stream?.getTracks().forEach((track) => track.stop());
-      starting = false;
-      refresh();
     }
   }
 }
