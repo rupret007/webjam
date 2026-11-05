@@ -40,7 +40,8 @@ export function validateCredentials(document, now = Date.now()) {
     const urls = typeof server.urls === "string" ? [server.urls] : server.urls;
     if (!Array.isArray(urls) || urls.length < 1 || urls.length > 8) throw new Error("Invalid relay configuration");
     for (const url of urls) {
-      if (!/^(?:stun:stun\.cloudflare\.com:3478|stun:turn\.cloudflare\.com:3478|turn:turn\.cloudflare\.com:(?:3478|80|443)\?transport=(?:udp|tcp)|turns:turn\.cloudflare\.com:(?:5349|443)\?transport=tcp)$/.test(url)) throw new Error("Untrusted relay configuration");
+      // The live Cloudflare bundle includes STUN on both 3478 and 443.
+      if (!/^(?:stun:stun\.cloudflare\.com:(?:3478|443)|stun:turn\.cloudflare\.com:3478|turn:turn\.cloudflare\.com:(?:3478|80|443)\?transport=(?:udp|tcp)|turns:turn\.cloudflare\.com:(?:5349|443)\?transport=tcp)$/.test(url)) throw new Error("Untrusted relay configuration");
       if (url.startsWith("turn")) {
         hasTurn = true;
         if (typeof server.username !== "string" || !server.username || typeof server.credential !== "string" || !server.credential || server.username.length > 512 || server.credential.length > 512) throw new Error("Invalid relay credential");
