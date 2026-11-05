@@ -950,9 +950,12 @@ still requires the host's explicit permission and the guest's audio consent.
 An earlier playback or background-audio resume attempt finishing after Leave
 cannot replace that exit message or disconnect your next Join. A playback problem in the current
 attempt still releases audio and offers an explicit retry.
-Microphone access is requested when you choose **Check microphone** or
-**Join with microphone**. An earlier enrollment or latency update finishing
-after Leave cannot change the next attempt's status or retry controls.
+Use **Check microphone** to see your input level. When WebJam detects sound,
+confirm your wired headphones and choose **Join with microphone**. Your browser
+may ask for microphone access during the check or when you join. Open
+**Audio details** for device readings and estimated listening delay. An earlier
+enrollment or latency update finishing after Leave cannot change the next
+attempt's status or retry controls.
 
 ## Your Music listening mix
 
