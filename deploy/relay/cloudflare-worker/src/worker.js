@@ -117,12 +117,12 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all
   if (web) {
     if ((typeof env.MAILBOX_QUOTA?.idFromName !== "function" ||
          typeof env.MAILBOX_QUOTA?.get !== "function") &&
-        !deps.fetch && !deps.mailboxFetch && env.ENVIRONMENT !== "development") {
+        env.ENVIRONMENT !== "development") {
       return errorResponse(503, "misconfigured");
     }
     // One persistent web counter spans both endpoints. Keep the original
     // mailbox/TURN caps too; a browser request never escapes those budgets.
-    const denied = await enforceScope(request, env, nowMs, 0, charge, "web");
+    const denied = await enforceScope(request, env, nowMs, rowWrites, charge, "web");
     if (denied) return denied;
   }
   return enforceScope(request, env, nowMs, rowWrites, charge,
@@ -234,18 +234,16 @@ async function handleMailbox(request, env, deps, mailbox, nowMs, web) {
 
 export async function handleRequest(request, env, deps = {}) {
   env ??= {};
+  const origin = allowedOrigin(request, env);
+  const blocked = requireHttps(request);
+  if (blocked) return withCors(blocked, origin);
   // Origin checks and preflight must finish before any quota/mailbox DO call.
   const cors = corsGate(request, env);
   if (cors) return cors;
-  const origin = allowedOrigin(request, env);
   return withCors(await handleAllowedRequest(request, env, deps), origin);
 }
 
 async function handleAllowedRequest(request, env, deps) {
-  const blocked = requireHttps(request);
-  if (blocked) {
-    return blocked;
-  }
   applyQuotaEnv(env ?? {});
   const fetchImpl = deps.fetch ?? globalThis.fetch;
   const nowMs = Number(deps.nowMs ?? Date.now());
@@ -262,6 +260,10 @@ async function handleAllowedRequest(request, env, deps) {
   if (path !== "/turn-credentials") {
     return errorResponse(404, "not_found");
   }
+
+  const preliminaryWeb = web;
+  const rateDenied = await enforceAccess(request, env, deps, nowMs, 0, "rate", preliminaryWeb);
+  if (rateDenied) return rateDenied;
 
   let body;
   try {
@@ -280,7 +282,11 @@ async function handleAllowedRequest(request, env, deps) {
     return errorResponse(403, "unauthorized");
   }
   web ||= body.client === "web";
-  const denied = await enforceAccess(request, env, deps, nowMs, 0, "all", web);
+  if (web && !preliminaryWeb) {
+    const webRateDenied = await enforceScope(request, env, nowMs, 0, "rate", "web");
+    if (webRateDenied) return webRateDenied;
+  }
+  const denied = await enforceAccess(request, env, deps, nowMs, 0, "daily", web);
   if (denied) return denied;
 
   const desktopKeyId = String(env.TURN_KEY_ID ?? "").trim();
