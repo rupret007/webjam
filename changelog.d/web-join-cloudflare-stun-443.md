@@ -1,0 +1,1 @@
+- Web Join accepts Cloudflare’s alternate STUN endpoint so the browser can continue connecting when Cloudflare includes it in the relay configuration.
