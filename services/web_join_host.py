@@ -18,13 +18,23 @@ from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_ope
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
+from core.web_join_target import web_join_page
 from services.transport_runtime import TransportProcess, _decode_web_join_envelope
 
 MAILBOX_ORIGIN = "https://webjam-turn-credentials.jeffstory007.workers.dev"
-JOIN_PAGE = "https://stalemate.band/join/"
 MAX_ENVELOPE = 8192
 CHUNK_BYTES = 2998
 MAX_CHUNKS = 3
+PREPARE_UNAVAILABLE = (
+    "Web Join is unavailable. Use the approved app build, then check the host "
+    "audio bridge and relay service."
+)
+PREPARATION_FAILURE_MESSAGES = {
+    "package": "This app build cannot create browser invitations. Use the updated private app.",
+    "audio_bridge": "Compatible browser audio could not start. Use the updated private app and retry.",
+    "transport": "The browser connection could not start. Use the updated app and retry.",
+    "relay": "The browser relay could not be reached. Check your connection and retry.",
+}
 
 
 class WebJoinUnavailable(RuntimeError):
@@ -112,7 +122,7 @@ class WebJoinMailbox:
             MAILBOX_ORIGIN + path,
             data=data,
             method=method,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "User-Agent": "WebJam"},
         )
         try:
             import certifi
@@ -209,6 +219,7 @@ class WebJoinHost:
         self._generation = 0
         self._invite = ""
         self._state = "disabled"
+        self._failure_stage = ""
 
     def __repr__(self):
         return f"WebJoinHost(state={self.state!r})"
@@ -222,6 +233,11 @@ class WebJoinHost:
     def invite(self):
         with self._lock:
             return self._invite
+
+    @property
+    def failure_reason(self):
+        with self._lock:
+            return PREPARATION_FAILURE_MESSAGES.get(self._failure_stage, PREPARE_UNAVAILABLE)
 
     def allow(self, jamulus_port: int, *, generation: int = 1) -> str:
         if (
@@ -237,7 +253,12 @@ class WebJoinHost:
             self._used = True
             self._generation = generation
             self._state = "preparing"
+        stage = "package"
         try:
+            # Missing/tampered package routing must fail before an audio bridge,
+            # transport, capability or upstream credential can be allocated.
+            join_page = web_join_page()
+            stage = "audio_bridge"
             if self._bridge_factory is None:
                 from services.web_join_bridge import WebJoinBridge
 
@@ -251,6 +272,7 @@ class WebJoinHost:
                 self._bridge = bridge
                 if self._stop.is_set():
                     raise WebJoinUnavailable("Web Join stopped.")
+            stage = "transport"
             process = self._process_factory(self._on_event)
             with self._lock:
                 self._process = process
@@ -261,14 +283,17 @@ class WebJoinHost:
             with self._cleanup_lock:
                 if self._stop.is_set():
                     raise WebJoinUnavailable("Web Join stopped.")
+                stage = "audio_bridge"
                 bridge.start()
             if self._stop.is_set():
                 raise WebJoinUnavailable("Web Join stopped.")
+            stage = "transport"
             process.start()
             if self._stop.is_set():
                 raise WebJoinUnavailable("Web Join stopped.")
             capability, session = secrets.token_bytes(32), secrets.token_bytes(32)
             expiry = int(time.time()) + 600
+            stage = "relay"
             offer = process.open_web_join(
                 session_id=session,
                 capability=capability,
@@ -289,7 +314,7 @@ class WebJoinHost:
                     raise WebJoinUnavailable("Web Join stopped.")
                 if offer_expiry <= time.time():
                     raise WebJoinUnavailable("This web invitation has ended.")
-                self._invite = f"{JOIN_PAGE}#k={_b64(capability)}&s={session.hex()}&g={generation}&e={offer_expiry}"
+                self._invite = f"{join_page}#k={_b64(capability)}&s={session.hex()}&g={generation}&e={offer_expiry}"
                 self._state = "waiting"
                 self._worker = threading.Thread(
                     target=self._wait_guest,
@@ -300,10 +325,10 @@ class WebJoinHost:
                 self._worker.start()
                 return self._invite
         except Exception:
+            with self._lock:
+                self._failure_stage = stage
             self.stop()
-            raise WebJoinUnavailable(
-                "Web Join is unavailable. Check the host audio bridge and free relay service."
-            ) from None
+            raise WebJoinUnavailable(PREPARE_UNAVAILABLE) from None
 
     def _wait_guest(self, mailbox, process, bridge, generation):
         try:

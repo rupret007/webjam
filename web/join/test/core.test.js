@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { DOMAIN, fromHex, toHex, fromBase64Url, toBase64Url, hkdf, mailboxId, turnToken, seal, open, enrollmentProof, readInvite, validateOffer, sdpFingerprint } from "../crypto.js";
-import { MUSIC_CONSTRAINTS, acquireMusicStream, constraintWarnings, musicSdp, latencyMs } from "../audio.js";
+import { MUSIC_CONSTRAINTS, acquireMusicStream, constraintWarnings, musicSdp, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget } from "../audio.js";
 import { publicIPv4, candidateAllowed, policySdp, validateCredentials, SESSION_BYTES } from "../policy.js";
 import { Mailbox, BUSY_MESSAGE } from "../mailbox.js";
 import { WebJoinSession } from "../session.js";
@@ -56,6 +56,13 @@ test("candidate policy rejects private, host, documentation, mDNS, IPv6 and unli
   assert.equal(candidateAllowed(candidate("8.8.8.8", "host")), false);
   assert.equal(candidateAllowed(candidate("8.8.8.8", "relay")), false);
   assert.equal(candidateAllowed(candidate("141.101.90.1", "relay")), true);
+  for (const ip of ["104.30.136.210", "104.30.137.15", "104.30.148.28", "104.30.151.128"]) {
+    assert.equal(candidateAllowed(candidate(ip, "relay")), true);
+    assert.equal(candidateAllowed(candidate(ip, "relay"), []), false);
+  }
+  for (const ip of ["104.30.135.255", "104.30.138.0", "104.30.152.0"]) {
+    assert.equal(candidateAllowed(candidate(ip, "relay")), false);
+  }
   assert.equal(candidateAllowed(candidate("8.8.8.8").replace("udp", "tcp")), false);
   assert.throws(() => policySdp(sdp + candidate("10.0.0.1", "host"), { remote: true }), /disallowed/);
   assert.doesNotMatch(policySdp(sdp + candidate("10.0.0.1", "host")), /10\.0\.0\.1/);
@@ -65,6 +72,21 @@ test("candidate policy rejects private, host, documentation, mDNS, IPv6 and unli
 test("TURN validation requires web scope, exact provider, TLS fallback, bounded lifetime and quota", () => {
   assert.equal(validateCredentials(credentials()).iceServers.length, 1);
   for (const changed of [{ client: undefined }, { ttl: 3601 }, { ttl: 0 }, { quota_bytes: SESSION_BYTES + 1 }, { allowed_relay_ips: ["8.8.8.8"] }, { iceServers: [{ urls: "turn:evil.example:3478", username: "x", credential: "x" }] }, { iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }] }]) assert.throws(() => validateCredentials({ ...credentials(), ...changed }));
+});
+test("the live Cloudflare web credential bundle accepts STUN on 443 without broadening relay trust", () => {
+  // Endpoint list observed from the private issuer, with synthetic credentials.
+  const document = credentials();
+  document.iceServers = [
+    { urls: ["stun:stun.cloudflare.com:3478", "stun:stun.cloudflare.com:443"] },
+    {
+      urls: ["turn:turn.cloudflare.com:3478?transport=udp", "turn:turn.cloudflare.com:3478?transport=tcp", "turns:turn.cloudflare.com:5349?transport=tcp", "turn:turn.cloudflare.com:443?transport=udp", "turn:turn.cloudflare.com:80?transport=tcp", "turns:turn.cloudflare.com:443?transport=tcp"],
+      username: "temporary", credential: "temporary",
+    },
+  ];
+  assert.deepEqual(validateCredentials(document).iceServers, document.iceServers);
+  for (const url of ["stun:evil.example:443", "stun:stun.cloudflare.com.evil.example:443", "stun:turn.cloudflare.com:443", "stun:stun.cloudflare.com:53", "stun:stun.cloudflare.com:443?transport=tcp", "turn:stun.cloudflare.com:443?transport=udp"]) {
+    assert.throws(() => validateCredentials({ ...document, iceServers: [{ urls: [url] }, document.iceServers[1]] }), /Untrusted relay configuration/, url);
+  }
 });
 test("music SDP sets stereo, bitrate, FEC, packet time and capture warnings retain processing off", async () => {
   const result = musicSdp(sdp);
@@ -79,6 +101,23 @@ test("music SDP sets stereo, bitrate, FEC, packet time and capture warnings reta
   assert.equal(requests[1].audio.echoCancellation, false);
   assert.equal(latencyMs(new Map()), null);
   assert.equal(latencyMs(new Map([["a", { type: "candidate-pair", nominated: true, state: "succeeded", currentRoundTripTime: .04 }], ["b", { type: "inbound-rtp", kind: "audio", jitterBufferDelay: 2, jitterBufferEmittedCount: 100 }]]), .01), 50);
+});
+
+test("adaptJitterBufferTarget raises target under stress and respects bounds", () => {
+  const stats = new Map([
+    ["cp", { type: "candidate-pair", nominated: true, state: "succeeded", currentRoundTripTime: 0.12 }],
+    ["in", { type: "inbound-rtp", kind: "audio", packetsReceived: 100, packetsLost: 8, jitter: 0.03, jitterBufferDelay: 4, jitterBufferEmittedCount: 100 }],
+  ]);
+  const first = adaptJitterBufferTarget(stats, { targetMs: 20, lastChangeAt: 0 });
+  assert.ok(first.targetMs >= 20 && first.targetMs <= 120);
+  const stable = adaptJitterBufferTarget(new Map([
+    ["cp", { type: "candidate-pair", nominated: true, state: "succeeded", currentRoundTripTime: 0.01 }],
+    ["in", { type: "inbound-rtp", kind: "audio", packetsReceived: 200, packetsLost: 0, jitter: 0.001, jitterBufferDelay: 1, jitterBufferEmittedCount: 100 }],
+  ]), { targetMs: 40, lastChangeAt: Date.now() - 10000 });
+  assert.ok(stable.targetMs <= 40);
+  const receiver = { jitterBufferTarget: 20 };
+  applyAdaptiveReceiverTarget(receiver, { targetMs: 35 });
+  assert.equal(receiver.jitterBufferTarget, 35);
 });
 test("bounded mailbox chunks round trip and HTTP reveals only derived addresses and ciphertext", async () => {
   const slots = new Map(), requests = [];
@@ -131,4 +170,7 @@ test("session quotas count every transport, fail on unavailable/decreasing count
     await session.updateStats();
     assert.equal(errors.length, 1); assert.equal(stops, 1); assert.equal(closes, 1); assert.equal(session.controller.signal.aborted, true);
   }
+});
+test("microphone denial maps to an actionable Join message", async () => {
+  await assert.rejects(acquireMusicStream({ getUserMedia: async () => { throw Object.assign(new Error("denied"), { name: "NotAllowedError" }); } }), /Microphone access was blocked/);
 });

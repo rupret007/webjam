@@ -12,14 +12,20 @@ WebJam is a desktop app for people who make music or art together.
   follow a silent lesson. Any computer can Host or Join. A shared drawing
   app is optional. Art does not record a multitrack take.
 
-Friends in another house can Host and Join. No extra setup. Keep the host's
-window open. If a Join cannot connect, use home Wi-Fi on both computers,
-not a phone hotspot.
+For a private test with friends in another house, use the organizer's qualified
+remote-session build on both computers. The public download and a newer test
+candidate can share a version number while accepting different invitations.
+The current unsigned Windows candidate cannot join native remote Music because
+its transport must have a valid Windows signature. See the
+[community beta setup guide](docs/COMMUNITY_MUSIC_BETA.md) for platform limits
+and the remaining physical audio checks. Keep the host's window open.
 
 ### Three steps
 
 1. **Get the app** from [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
    Choose the download for your computer (Windows, Mac, or Ubuntu).
+   For the Stalemate private beta, use the organizer's qualified package instead;
+   do not assume the public download accepts the newer invitation.
 2. **Open it.** Windows may say the app is unrecognized — choose **More info**,
    then **Run anyway**. On a Mac, drag WebJam into Applications. If macOS
    blocks it, open **System Settings → Privacy & Security**, click

@@ -1,0 +1,1 @@
+- Clarify private music trial prerequisites, approved one-host/one-browser scope, packaged routes and honest latency/audio evidence in the acceptance worksheet.

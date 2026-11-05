@@ -45,6 +45,14 @@ because teardown began.
 - Changing views never starts playback, recording, a reference, an external
   application or a connection. Selecting Host/Join at launch retains its
   existing explicit startup authorization.
+- A dialog's Accepted result alone is not a launch choice. Before allocating
+  a workspace, the factory requires an explicit supported role and exactly
+  one typed invitation for Join. Incomplete or ambiguous results fail before
+  a window, controller or background service can start; saved host defaults
+  cannot supply missing launch intent.
+  Qt documents `Accepted` as a dialog result that can also be emitted through
+  programmatic `accept()`/`done()` calls, so the application checks its own
+  launch choice separately: [QDialog completion](https://doc.qt.io/qt-6/qdialog.html#done).
 - Jamulus owns live audio. Reference Studio owns local playback/recording.
   A destination cannot overlap a previous audio owner.
 - Library continuation, take review and portable local projects retain their

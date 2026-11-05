@@ -102,7 +102,7 @@ expected = {
     "maturin": "1.14.1",
     "pip": "26.2",
     "pycparser": "3.0",
-    "setuptools": "81.0.0",
+    "setuptools": "84.1.0",
 }
 for package, wanted in expected.items():
     actual = version(package)

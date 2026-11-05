@@ -1,0 +1,1 @@
+- Web Join shows a first-run checklist (headphones, microphone, host trust) and clearer messaging when the browser blocks microphone access.

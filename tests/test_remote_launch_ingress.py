@@ -114,6 +114,59 @@ def test_malformed_v3_is_never_restored_to_the_join_field(qapp, tmp_path: Path) 
     qapp.processEvents()
 
 
+@pytest.mark.parametrize("role", ["", "join"])
+def test_native_acceptance_without_confirmed_choice_keeps_launcher_open(
+    qapp, tmp_path: Path, role: str,
+) -> None:
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    dialog = LaunchDialog(settings)
+    accepted = []
+    dialog.accepted.connect(lambda: accepted.append(True))
+    dialog.show_join()
+    dialog._invite_input.setText("webjam://join?v=1")
+    dialog.selected_role = role
+    dialog.accept()
+    assert accepted == []
+    assert dialog.result() == LaunchDialog.DialogCode.Rejected
+    assert dialog.selected_role == ""
+    assert dialog._invite_input.text() == ""
+    assert not Path(settings.config_file).exists()
+    assert not dialog._submitting
+    dialog.reject()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_malformed_invitation_button_never_accepts_join(qapp, tmp_path: Path) -> None:
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    dialog = LaunchDialog(settings)
+    accepted = []
+    dialog.accepted.connect(lambda: accepted.append(True))
+    dialog.show_join()
+    dialog._invite_input.setText("webjam://join?v=1")
+    dialog._join_button_primary.click()
+    assert accepted == []
+    assert dialog.selected_role == ""
+    assert not Path(settings.config_file).exists()
+    dialog.reject()
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
+def test_legacy_hostname_paste_remains_an_explicit_typed_join(qapp, tmp_path: Path) -> None:
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    dialog = LaunchDialog(settings)
+    dialog.show_join()
+    dialog._invite_input.setText("legacy-rehearsal.example.test:22124")
+    dialog._join_button_primary.click()
+    assert dialog.result() == LaunchDialog.DialogCode.Accepted
+    assert dialog.selected_role == "join"
+    assert dialog.band_invite.host == "legacy-rehearsal.example.test"
+    assert dialog.remote_invitation is None
+    dialog.deleteLater()
+    qapp.processEvents()
+
+
 def test_bearer_process_arguments_are_ignored_before_launch_dialog() -> None:
     remote = _issued().private_link.reveal_for_clipboard()
     private = create_invite_link(

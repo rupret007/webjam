@@ -50,6 +50,7 @@ from core.jamulus_name import (
 )
 from core.network_invite import BandInvite
 from core.remote_invitation import RemoteInvitation
+from core.workspace_launch import InvalidWorkspaceLaunch, validate_workspace_launch
 from core.settings import (
     AppSettings,
     hosted_server_recordings_dir,
@@ -86,7 +87,7 @@ JOIN_INVITE_FAILED_STATUS = "That invite didn't work"
 # Door next-step matches the empty Paint along orange (PR #320): Watch a
 # shared lesson. Silent file/YouTube stay available as ghosts. When the room
 # HUD owns Copy Invite, that same Watch control is ghosted (one-orange rule).
-PAINT_ALONG_DOOR_HELPER = "Then watch a shared lesson, or choose a silent file."
+PAINT_ALONG_DOOR_HELPER = "Then choose Bob Ross or your own lesson link."
 
 
 @dataclass(frozen=True)
@@ -361,7 +362,7 @@ class StartCard(QCommandLinkButton):
         self.setAutoDefault(False)
         self.setDefault(False)
         # The stock control ships a decorative arrow. Clear it on every card
-        # except Paint along, which carries the locked face mark and nothing
+        # except Paint along, which carries the requested curly-afro face mark and nothing
         # else.
         mark = (
             Path(__file__).resolve().parent.parent
@@ -383,7 +384,7 @@ class StartCard(QCommandLinkButton):
                 for state in QIcon.State:
                     icon.addPixmap(pixmap, mode, state)
             self.setIcon(icon)
-            # The source is a wide face mark. A small square request shrank
+            # Keep the established card allocation for the face mark. A small square request shrank
             # its painted content to roughly 40 x 27 pixels, so the only
             # illustrated Art choice read like an incidental thumbnail.
             # Preserve the asset's shape and give it enough area to identify
@@ -765,7 +766,6 @@ class LaunchDialog(QDialog):
         root.addWidget(self._name_preview)
         self._name_error = QLabel("")
         self._name_error.setObjectName("LaunchError")
-        self._name_error.setAccessibleName("Name error")
         self._name_error.setWordWrap(True)
         self._name_error.setVisible(False)
         root.addWidget(self._name_error)
@@ -917,7 +917,6 @@ class LaunchDialog(QDialog):
 
         self._choice_error = QLabel("")
         self._choice_error.setObjectName("LaunchError")
-        self._choice_error.setAccessibleName("Launch error")
         self._choice_error.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._choice_error.setWordWrap(True)
         self._choice_error.setVisible(False)
@@ -1177,7 +1176,8 @@ class LaunchDialog(QDialog):
 
         self._join_status = QLabel(self._EMPTY_JOIN_PROMPT)
         self._join_status.setObjectName("LaunchJoinStatus")
-        self._join_status.setAccessibleName("Join status")
+        # Let Qt derive label names from their current visible text. Generic
+        # names hide the actual instructions and errors in the macOS AX tree.
         self._join_status.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(self._join_status)
 
@@ -1197,14 +1197,12 @@ class LaunchDialog(QDialog):
 
         self._join_privacy = QLabel(_JOIN_PRIVACY_LINE)
         self._join_privacy.setObjectName("LaunchPrivacyNote")
-        self._join_privacy.setAccessibleName("Invitation privacy")
         self._join_privacy.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._join_privacy.setWordWrap(True)
         layout.addWidget(self._join_privacy)
 
         self._join_error = QLabel("")
         self._join_error.setObjectName("LaunchError")
-        self._join_error.setAccessibleName("Join error")
         self._join_error.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self._join_error.setWordWrap(True)
         self._join_error.setVisible(False)
@@ -1368,7 +1366,6 @@ class LaunchDialog(QDialog):
             self._join_title.setText(copy.join_title)
             self._join_title.setAccessibleName(copy.join_title)
             self._join_subtitle.setText(copy.join_subtitle)
-            self._join_subtitle.setAccessibleName("How to join")
             self._join_subtitle.setAccessibleDescription(copy.join_subtitle)
             self._join_button_primary.setText(copy.join)
             self._join_button_primary.setAccessibleName(copy.join)
@@ -1590,7 +1587,6 @@ class LaunchDialog(QDialog):
         self._installer_error = QLabel()
         self._installer_error.setTextFormat(Qt.TextFormat.PlainText)
         self._installer_error.setWordWrap(True)
-        self._installer_error.setAccessibleName("Music setup status")
         layout.addWidget(self._installer_error)
         back = QPushButton("Back")
         back.clicked.connect(self.show_choices if self._allow_workspace_choices else self.show_join)
@@ -1887,6 +1883,15 @@ class LaunchDialog(QDialog):
         return invitation
 
     def done(self, result: int) -> None:
+        if result == QDialog.DialogCode.Accepted:
+            try:
+                validate_workspace_launch(self)
+            except InvalidWorkspaceLaunch:
+                # Native dialog acceptance can occur independently of a role
+                # button. Keep the launcher usable instead of implicitly
+                # opening a live workspace from saved host settings.
+                self.restore_after_workspace_failure()
+                return
         if result != QDialog.DialogCode.Accepted:
             self.invitation_meeting_url = ""
         self._submitting = True

@@ -274,7 +274,8 @@ def test_candidate_release_is_a_tag_only_draft_from_tested_builds() -> None:
     assert condition == (
         "github.event_name == 'workflow_dispatch' && "
         "startsWith(github.ref, 'refs/tags/v') && "
-        "inputs.final_build"
+        "inputs.final_build && "
+        "(inputs.web_join_target == '' || inputs.web_join_target == 'public')"
     )
     assert "macos_signing_rehearsal" not in condition
     assert "windows_signing_rehearsal" not in condition

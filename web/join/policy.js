@@ -1,24 +1,35 @@
-// Reviewed provider allocation addresses. A provider change fails closed until
-// this exact allowlist is reviewed: https://developers.cloudflare.com/realtime/turn/faq/
+// Reviewed TURN service addresses from the Cloudflare FAQ.
 export const RELAY_IPS = Object.freeze(["141.101.90.1", "162.159.207.1"]);
+// Private beta allocations observed from that service and corroborated by
+// Cloudflare's AS13335 routes in RIPE RIS. Other pools remain fail-closed.
+function reviewedAllocation(address) {
+  const [a, b, c] = address.split(".").map(Number);
+  return a === 104 && b === 30 && (c === 136 || c === 137 || (c >= 144 && c <= 151));
+}
 export const SESSION_BYTES = 256 * 1024 * 1024;
+export const RELAY_UNAVAILABLE_MESSAGE = "Web Join is unavailable. Try again later or ask your host for help.";
 export function publicIPv4(value) {
   if (typeof value !== "string" || !/^(?:0|[1-9][0-9]{0,2})(?:\.(?:0|[1-9][0-9]{0,2})){3}$/.test(value)) return false;
   const [a, b, c, d] = value.split(".").map(Number);
   if ([a, b, c, d].some((part) => part > 255)) return false;
   return !(a === 0 || a === 10 || a === 127 || a >= 224 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && (b === 168 || (b === 0 && (c === 0 || c === 2)) || (b === 88 && c === 99))) || (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) || (a === 203 && b === 0 && c === 113));
 }
-export function candidateAllowed(line, relays = RELAY_IPS) {
+export function candidateAllowed(line, relays = RELAY_IPS, allowReviewedAllocations = true) {
   const fields = line.replace(/^a=/, "").split(/ +/);
   if (fields.length < 8 || !fields[0].startsWith("candidate:") || fields[1] !== "1" || fields[2].toLowerCase() !== "udp" || !/^\d+$/.test(fields[3]) || !publicIPv4(fields[4]) || !/^\d+$/.test(fields[5]) || Number(fields[5]) < 1 || Number(fields[5]) > 65535 || fields[6] !== "typ") return false;
-  return fields[7] === "srflx" || (fields[7] === "relay" && relays.includes(fields[4]));
+  return fields[7] === "srflx" || (fields[7] === "relay" &&
+    (relays.includes(fields[4]) || (allowReviewedAllocations && RELAY_IPS.some(ip => relays.includes(ip)) && reviewedAllocation(fields[4]))));
 }
-export function policySdp(sdp, { remote = false } = {}) {
+export function offerHasReviewedAllocation(sdp) {
+  return sdp.split(/\r?\n/).some(line => line.startsWith("a=candidate:") &&
+    candidateAllowed(line) && !candidateAllowed(line, RELAY_IPS, false));
+}
+export function policySdp(sdp, { remote = false, allowReviewedAllocations = true } = {}) {
   const lines = sdp.split(/\r?\n/).filter(Boolean);
   let count = 0;
   const result = lines.filter((line) => {
     if (!line.startsWith("a=candidate:")) return true;
-    const allowed = candidateAllowed(line);
+    const allowed = candidateAllowed(line, RELAY_IPS, allowReviewedAllocations);
     if (!allowed && remote) throw new Error("Host supplied a disallowed ICE candidate");
     if (allowed && ++count > 32) throw new Error("Too many ICE candidates");
     return allowed;
@@ -32,20 +43,21 @@ export function policySdp(sdp, { remote = false } = {}) {
   return `${result.join("\r\n")}\r\n`;
 }
 export function validateCredentials(document, now = Date.now()) {
-  if (!document || document.client !== "web" || !Number.isFinite(document.ttl) || document.ttl <= 0 || document.ttl > 3600 || !Number.isSafeInteger(document.quota_bytes) || document.quota_bytes <= 0 || document.quota_bytes > SESSION_BYTES || !Array.isArray(document.iceServers) || document.iceServers.length < 1 || document.iceServers.length > 8) throw new Error("Relay busy, try same Wi-Fi or the app.");
+  if (!document || document.client !== "web" || !Number.isFinite(document.ttl) || document.ttl <= 0 || document.ttl > 3600 || !Number.isSafeInteger(document.quota_bytes) || document.quota_bytes <= 0 || document.quota_bytes > SESSION_BYTES || !Array.isArray(document.iceServers) || document.iceServers.length < 1 || document.iceServers.length > 8) throw new Error(RELAY_UNAVAILABLE_MESSAGE);
   if (document.allowed_relay_ips !== undefined && (!Array.isArray(document.allowed_relay_ips) || document.allowed_relay_ips.some((ip) => !RELAY_IPS.includes(ip)))) throw new Error("Untrusted relay address");
   let hasTurn = false;
   for (const server of document.iceServers) {
     const urls = typeof server.urls === "string" ? [server.urls] : server.urls;
     if (!Array.isArray(urls) || urls.length < 1 || urls.length > 8) throw new Error("Invalid relay configuration");
     for (const url of urls) {
-      if (!/^(?:stun:stun\.cloudflare\.com:3478|stun:turn\.cloudflare\.com:3478|turn:turn\.cloudflare\.com:(?:3478|80|443)\?transport=(?:udp|tcp)|turns:turn\.cloudflare\.com:(?:5349|443)\?transport=tcp)$/.test(url)) throw new Error("Untrusted relay configuration");
+      // The live Cloudflare bundle includes STUN on both 3478 and 443.
+      if (!/^(?:stun:stun\.cloudflare\.com:(?:3478|443)|stun:turn\.cloudflare\.com:3478|turn:turn\.cloudflare\.com:(?:3478|80|443)\?transport=(?:udp|tcp)|turns:turn\.cloudflare\.com:(?:5349|443)\?transport=tcp)$/.test(url)) throw new Error("Untrusted relay configuration");
       if (url.startsWith("turn")) {
         hasTurn = true;
         if (typeof server.username !== "string" || !server.username || typeof server.credential !== "string" || !server.credential || server.username.length > 512 || server.credential.length > 512) throw new Error("Invalid relay credential");
       }
     }
   }
-  if (!hasTurn) throw new Error("Relay busy, try same Wi-Fi or the app.");
+  if (!hasTurn) throw new Error(RELAY_UNAVAILABLE_MESSAGE);
   return { iceServers: document.iceServers, expiresAt: now + document.ttl * 1000, quotaBytes: document.quota_bytes };
 }

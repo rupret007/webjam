@@ -408,6 +408,59 @@ def test_bundle_verifier_checks_generated_files_and_license_hashes(
         verify_bundle(tmp_path, test_inventory)
 
 
+@pytest.mark.parametrize("name", ["QT_LGPL-3.0-only.txt", "QT_GPL-3.0-only.txt"])
+def test_qt_runtime_license_copies_are_pinned_and_packaged(name: str) -> None:
+    inventory = validate_policy()
+    suffix = f"THIRD_PARTY_LICENSES/{name}"
+    evidence = {
+        item["path_suffix"]: item
+        for item in inventory.policy["packaged_license_evidence"]
+    }
+    assert suffix in evidence, "main Qt/PySide license copy lacks a package gate"
+    data = (ROOT / "licenses" / name).read_bytes()
+    assert hashlib.sha256(data).hexdigest() == evidence[suffix]["sha256"]
+    assert f'licenses/{name} text eol=lf' in ATTRIBUTES
+    assert f'ROOT / "licenses" / "{name}"' in SPEC
+    assert inventory.policy["packages"]["pyside6"]["license_expression"] == (
+        "LGPL-3.0-only"
+    )
+
+
+@pytest.mark.parametrize("name", ["QT_LGPL-3.0-only.txt", "QT_GPL-3.0-only.txt"])
+def test_bundle_verifier_rejects_missing_or_changed_qt_license(
+    tmp_path: Path, name: str,
+) -> None:
+    inventory = validate_policy()
+    policy = deepcopy(inventory.policy)
+    qt_evidence = [
+        item for item in policy["packaged_license_evidence"]
+        if item["path_suffix"].startswith("THIRD_PARTY_LICENSES/QT_")
+    ]
+    assert len(qt_evidence) == 2, "both LGPL and incorporated GPL copies are required"
+    policy["packaged_license_evidence"] = qt_evidence
+    test_inventory = RuntimeInventory(policy=policy, packages=inventory.packages)
+    licenses = tmp_path / "THIRD_PARTY_LICENSES"
+    licenses.mkdir()
+    (licenses / "THIRD_PARTY_NOTICES_RUNTIME.md").write_text(
+        render_notice(test_inventory), encoding="utf-8",
+    )
+    (licenses / "WebJam-runtime-sbom.cdx.json").write_text(
+        render_sbom(test_inventory), encoding="utf-8",
+    )
+    for item in qt_evidence:
+        filename = Path(item["path_suffix"]).name
+        (licenses / filename).write_bytes((ROOT / "licenses" / filename).read_bytes())
+    verify_bundle(tmp_path, test_inventory)
+    path = licenses / name
+    original = path.read_bytes()
+    path.unlink()
+    with pytest.raises(PolicyError, match="license evidence is missing"):
+        verify_bundle(tmp_path, test_inventory)
+    path.write_bytes(original + b"unreviewed edit\n")
+    with pytest.raises(PolicyError, match="checksum failed"):
+        verify_bundle(tmp_path, test_inventory)
+
+
 def test_bundle_verifier_binds_reviewed_license_evidence_to_platform(
     tmp_path: Path,
 ) -> None:

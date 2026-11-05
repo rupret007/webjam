@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https://webjam-turn-credentials.jeffstory007.workers.dev; media-src 'self' blob:; base-uri 'none'; form-action 'none'">
@@ -15,8 +16,28 @@
     <h1>Join your band from the browser</h1>
     <p><strong>Web Join, higher delay (about 60–120 ms).</strong> Desktop players keep their low-latency app connection. For tight rehearsals use the WebJam app.</p>
     <p id="status" role="status">Open the invite link from your desktop host.</p>
-    <label class="headphones"><input id="headphones" type="checkbox"> Wear headphones. Echo cancelling is off for music quality.</label>
-    <div class="actions"><button id="join" disabled>Join with microphone</button><button id="leave" hidden>Leave session</button></div>
+    <p id="error-hint" class="error-hint" hidden></p>
+    <ul class="first-run" aria-label="Before you join">
+      <li>Wired headphones on (required below)</li>
+      <li>Microphone ready — Check microphone or Join asks for access</li>
+      <li>Join only when you trust the host who sent the link</li>
+    </ul>
+    <section id="prejoin" hidden aria-labelledby="prejoin-heading">
+      <h2 id="prejoin-heading" class="prejoin-heading">Before you connect</h2>
+      <p class="prejoin-lead">One quick check so your band hears you clearly.</p>
+      <button type="button" id="check-mic">Check microphone</button>
+      <div class="mic-meter-wrap">
+        <div id="mic-meter" class="mic-meter" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="mic-meter-fill" class="mic-meter-fill"></div>
+        </div>
+        <p id="mic-heard" class="mic-heard" hidden>We can hear you</p>
+      </div>
+      <p id="mic-error" class="mic-error" role="alert"></p>
+      <button type="button" id="mic-retry" hidden>Try again</button>
+      <label class="headphones"><input id="headphones" type="checkbox"> I’m wearing headphones — this stops echo for everyone.</label>
+      <button type="button" id="skip-check" class="skip-check">Skip check</button>
+    </section>
+    <div class="actions"><button id="join" disabled>Join with microphone</button><button id="retry" hidden>Retry</button><button id="leave" hidden>Leave session</button></div>
     <p id="latency">Estimated listening delay: available after connecting.</p>
     <p id="warnings" role="status"></p>
     <details><summary>Browser and iPhone notes</summary><p>Tap Join to start audio. On iPhone and iPad: listen and play along, best effort. Safari may play mono and add playback buffering; WebRTC and WebAudio have a history of stuttering (WebKit 225880). Keep this page visible. Firefox may send a lower audio bitrate.</p></details>

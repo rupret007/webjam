@@ -16,14 +16,20 @@ The [creator guide](USER_GUIDE.md) is the complete how-to. This page is the
 shortest live path.
 
 **Get the app** from [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
+For the Stalemate private beta, use the organizer's qualified package; a public
+download with the same version number may not accept the beta's invitation.
 Windows may say it protected your PC — choose **More info**, then **Run anyway**.
 On a Mac, drag WebJam into Applications; if macOS blocks it, open
 **System Settings → Privacy & Security**, click **Open Anyway** for WebJam,
 and confirm **Open**.
 
-Friends in another house can Host and Join. No extra setup. Keep the host's
-window open. **A Mac starts a Music jam.** Windows and Linux can Join Music;
-they cannot Host it. Any computer can Host or Join Art.
+Use the host's Wi-Fi or local network for an invitation marked same network.
+A test between different houses needs a compatible, qualified remote-session
+build. The current unsigned Windows candidate cannot join native remote Music;
+opening the app does not satisfy its transport-signature requirement. See the
+[community beta setup guide](docs/COMMUNITY_MUSIC_BETA.md).
+Keep the host's window open. **A Mac starts a Music jam.** Windows and Linux
+have Music Join paths; they cannot Host Music. Any computer can Host or Join Art.
 
 Before Host or Join, choose **Art** or **Music**. Those are the equal first
 clicks. Art then offers **Make together** or **Paint along**, then **Host** or

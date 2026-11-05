@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtGui import QAccessible
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -163,7 +164,9 @@ def test_join_page_fits_compact_larger_text_with_named_tab_order(qapp, tmp_path:
         assert back.accessibleDescription()
         assert dialog._invite_input.accessibleName() == "Paste the invite"
         assert dialog._join_title.accessibleName() == "Join the room."
-        assert dialog._join_subtitle.accessibleName() == "How to join"
+        subtitle = QAccessible.queryAccessibleInterface(dialog._join_subtitle)
+        assert subtitle is not None
+        assert subtitle.text(QAccessible.Text.Name) == dialog._join_subtitle.text()
         dialog._invite_input.setFocus(Qt.FocusReason.TabFocusReason)
         QTest.keyClick(dialog, Qt.Key.Key_Tab)
         _settle(qapp)

@@ -383,6 +383,13 @@ def test_native_release_build_uses_exact_hashed_locks_and_bounded_intel_exceptio
         "linux-x64": "84.1.0",
     }
     assert 'python-version: "${{ matrix.python }}"' in build
+    isolated = _workflow_step("Create isolated native build environment")
+    assert "python -I -S tools/native_build_environment.py" in isolated
+    assert '--target "${{ matrix.target }}"' in isolated
+    assert '--python-version "${{ matrix.python }}"' in isolated
+    assert build.index("      - name: Set up Python\n") < build.index(isolated)
+    assert build.index(isolated) < build.index("Install hash-locked pip bootstrap")
+    assert "if:" not in isolated
     assert "Install hash-locked pip bootstrap" in build
     assert "Install binary-only native dependencies" in build
     assert "if: matrix.target != 'macos-x64'" in build
@@ -441,7 +448,7 @@ def test_cryptography_release_floor_remediates_all_three_audit_findings() -> Non
     assert "static OpenSSL 3.5.7 LTS" in release
 
 
-def test_native_release_locks_are_audited_with_a_narrow_macos_exception() -> None:
+def test_native_release_locks_are_audited_without_advisory_exceptions() -> None:
     audit = _workflow_step("Audit native release dependency locks")
     assert "for target in windows-x64 linux-x64 macos-x64 macos-arm64" in audit
     for auxiliary_lock in (
@@ -717,7 +724,8 @@ def test_signing_rehearsals_do_not_draft_a_github_release() -> None:
     assert condition == (
         "github.event_name == 'workflow_dispatch' && "
         "startsWith(github.ref, 'refs/tags/v') && "
-        "inputs.final_build"
+        "inputs.final_build && "
+        "(inputs.web_join_target == '' || inputs.web_join_target == 'public')"
     )
     assert "macos_signing_rehearsal" not in condition
     assert "windows_signing_rehearsal" not in condition

@@ -19,6 +19,7 @@ from core.creative_modes import (
 from core.logging_config import configure_logging
 from core.network_invite import BandInvite
 from core.settings import load_settings
+from core.workspace_launch import validate_workspace_launch
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.invitation_ingress import (
     Invitation,
@@ -262,6 +263,10 @@ def _run_workspace_callback(controller, callback) -> None:
 
 def _create_workspace(app, settings, launch, *, operator_mode=False, smoke_autostart=False):
     """Construct one fresh workspace after launch explicitly selects its role."""
+    if launch is not None:
+        # Accepted alone must never turn saved host defaults into permission to
+        # start audio. Refuse before any window, controller or service exists.
+        validate_workspace_launch(launch)
     reference_studio_launch = bool(
         launch is not None and launch.selected_role == "studio"
     )

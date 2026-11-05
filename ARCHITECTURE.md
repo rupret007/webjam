@@ -28,6 +28,7 @@ meeting services reached through hardened external links. The boundary is delibe
 | `core/external_program.py` | The one implementation of the honesty rules for a program WebJam did not ship: explicit absolute locations, no PATH search, no glob, and a resolved real executable file |
 | `core/song_*`, `core/project_*`, schema-3 Studio | Portable Reference Studio project/media ownership, local playback/recording, non-destructive arrangement/mix, and bounce |
 | `services/bridge_service.py` | Direct owned-process launch/stop, hosted-server supervision, authenticated Jamulus RPC, and verified managed/embedded/explicit/system component resolution |
+| `core/web_join_target.py` | Build-bound, finite first-party browser invitation destination; frozen metadata validation before optional audio/network allocation, with no relay or room authority |
 | `core/jamulus_profile.py` | Dedicated Jamulus profile launch contract and private, allowlisted restart records |
 | `core/jamulus_compatibility.py`, `core/component_*` | Exact approved Jamulus identities, signed-catalog verification, bounded downloads, per-user component storage, atomic pointers, and rollback |
 | `services/jamulus_component_update.py`, `services/jamulus_component_platform.py` | Async update orchestration, idle proof, explicit OS approval, macOS upstream trust verification, and path-free presentation/diagnostics |

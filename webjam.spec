@@ -73,6 +73,26 @@ _build_info_path.write_text(
     encoding="ascii",
 )
 
+# Only a reviewed first-party target identifier is compiled into the package.
+# Frozen apps read this build-bound document, never an environment URL. Private
+# beta packages cannot be built from a release tag or published by release CI.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+def _web_join_target_document():
+    from core.web_join_target import build_target_document
+
+    return build_target_document(
+        os.environ.get("WEBJAM_WEB_JOIN_TARGET", "public"),
+        _build_id.lower(),
+        git_ref=os.environ.get("GITHUB_REF", ""),
+    )
+
+
+_web_join_target_path = ROOT / "build" / "webjam-web-join-target.json"
+_web_join_target_path.write_bytes(_web_join_target_document())
+
 # Give the Windows executable the same authoritative version metadata as the
 # macOS bundle. CI reads ProductVersion from the built PE before packaging.
 _windows_version_info = None
@@ -125,12 +145,14 @@ if sys.platform == "win32":
 # runnable nested app bundles after PyInstaller finishes.
 _extra_datas = []
 _extra_binaries = []
-# Web Join is optional and fails closed without this custom-mode codec.
+# Every Mac host bundle must include the advertised browser-guest codec.
 # Build it explicitly with packaging/macos/build-web-join-opus.sh; PyInstaller
 # places macOS binaries in Contents/Frameworks for normal bundle signing.
 if sys.platform == "darwin":
     _web_join_native = ROOT / "native" / "web-join"
     _web_join_opus = _web_join_native / "libwebjoin_opus.dylib"
+    if not _web_join_opus.is_file():
+        raise RuntimeError("Build the Web Join custom Opus codec before packaging this Mac host")
     if _web_join_opus.is_file():
         for _notice in ("OPUS-COPYING.txt", "OPUS-PROVENANCE.txt"):
             _notice_path = _web_join_native / _notice
@@ -169,6 +191,14 @@ a = Analysis(
         # Bundled Inter typeface (OFL — licenses/INTER_OFL.txt)
         (str(ROOT / "webjam_qt" / "theme" / "fonts"), "webjam_qt/theme/fonts"),
         (str(ROOT / "licenses" / "INTER_OFL.txt"), "THIRD_PARTY_LICENSES"),
+        # Qt for Python's LGPL option incorporates the GPLv3 text. Keep both
+        # copies beside the main app's notices, independent of Jamulus's Qt.
+        (str(ROOT / "licenses" / "QT_LGPL-3.0-only.txt"), "THIRD_PARTY_LICENSES"),
+        (str(ROOT / "licenses" / "QT_GPL-3.0-only.txt"), "THIRD_PARTY_LICENSES"),
+        (
+            str(ROOT / "packaging" / "QT-PYSIDE-LICENSE-PROVENANCE.json"),
+            "THIRD_PARTY_LICENSES",
+        ),
         (
             str(ROOT / "licenses" / "CRYPTOGRAPHY_LICENSE.txt"),
             "THIRD_PARTY_LICENSES",
@@ -250,6 +280,7 @@ a = Analysis(
             "THIRD_PARTY_LICENSES/transport",
         ),
         (str(_build_info_path), "."),
+        (str(_web_join_target_path), "."),
         *_extra_datas,
     ],
     hiddenimports=[

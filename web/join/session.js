@@ -1,17 +1,36 @@
 import { open, seal, validateOffer, sdpFingerprint, enrollmentProof } from "./crypto.js";
 import { Mailbox, BUSY_MESSAGE } from "./mailbox.js";
-import { policySdp, SESSION_BYTES } from "./policy.js";
-import { musicSdp, tuneReceiver, latencyMs } from "./audio.js";
+import { candidateAllowed, offerHasReviewedAllocation, policySdp, SESSION_BYTES } from "./policy.js";
+import { musicSdp, tuneReceiver, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget } from "./audio.js";
 
-export function waitFor(target, event, check, signal, timeout, message) {
-  return new Promise((resolve, reject) => {
-    const cleanup = () => { clearTimeout(timer); target.removeEventListener(event, changed); signal.removeEventListener("abort", abort); };
-    const changed = () => { if (check()) { cleanup(); resolve(); } };
+export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReviewedAllocations = false } = {}) {
+  await new Promise((resolve, reject) => {
+    let graceElapsed = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      clearTimeout(grace);
+      pc.removeEventListener("icegatheringstatechange", changed);
+      pc.removeEventListener("icecandidate", changed);
+      signal.removeEventListener("abort", abort);
+    };
+    const finish = () => { cleanup(); resolve(); };
+    const changed = () => {
+      if (pc.iceGatheringState === "complete" || (graceElapsed &&
+          pc.localDescription?.sdp.split(/\r?\n/).some(line => line.startsWith("a=candidate:") &&
+            candidateAllowed(line, undefined, allowReviewedAllocations)))) finish();
+    };
     const abort = () => { cleanup(); reject(new DOMException("Stopped", "AbortError")); };
-    const timer = setTimeout(() => { cleanup(); reject(new Error(message)); }, timeout);
-    target.addEventListener(event, changed); signal.addEventListener("abort", abort, { once: true });
+    // Give alternate services time to gather, then signal vetted candidates
+    // while ICE can still use them. Keep waiting if we have no usable path.
+    const grace = setTimeout(() => { graceElapsed = true; changed(); }, Math.min(3500, timeout));
+    const timer = setTimeout(finish, timeout);
+    pc.addEventListener("icegatheringstatechange", changed);
+    pc.addEventListener("icecandidate", changed);
+    signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort(); else changed();
   });
+  if (signal.aborted) throw new DOMException("Stopped", "AbortError");
+  return policySdp(pc.localDescription?.sdp ?? "", { allowReviewedAllocations });
 }
 export class WebJoinSession {
   constructor({ origin, invite, stream, audioContext, onStatus = () => {}, onTrack = () => {}, onLatency = () => {}, onError = () => {} }) {
@@ -19,6 +38,7 @@ export class WebJoinSession {
     this.controller = new AbortController();
     this.mailbox = new Mailbox(origin, invite, { signal: this.controller.signal });
     this.authorized = false; this.quotaBytes = SESSION_BYTES; this.previousBytes = 0;
+    this._jitterAdaptation = { targetMs: 20, lastChangeAt: 0 };
     this.stream.getAudioTracks().forEach((track) => { track.enabled = false; });
   }
   async join() {
@@ -35,7 +55,8 @@ export class WebJoinSession {
     // candidates let restrictive networks fall back within the same deadline.
     this.onStatus("Connecting directly, with free relay fallback…");
     pc.addEventListener("track", (event) => {
-      tuneReceiver(event.receiver);
+      tuneReceiver(event.receiver, this._jitterAdaptation.targetMs);
+      this._inboundReceiver = event.receiver;
       const stream = event.streams[0] || new MediaStream([event.track]);
       if (this.authorized) this.onTrack(stream); else this.pendingStream = stream;
     });
@@ -73,8 +94,9 @@ export class WebJoinSession {
     pc.addTrack(this.stream.getAudioTracks()[0], this.stream);
     const description = await pc.createAnswer();
     await pc.setLocalDescription({ type: "answer", sdp: musicSdp(description.sdp) });
-    await waitFor(pc, "icegatheringstatechange", () => pc.iceGatheringState === "complete", signal, 15000, "Network discovery timed out. Try another network or the app.");
-    const sdp = policySdp(pc.localDescription.sdp);
+    // An older host rejects these addresses in an answer. Its authenticated
+    // offer advertises only the legacy candidates, so keep that answer policy.
+    const sdp = await gatherAnswerSDP(pc, signal, { allowReviewedAllocations: offerHasReviewedAllocation(remoteSDP) });
     answer = { ...offer, kind: "answer", guest_pin: sdpFingerprint(sdp), sdp };
     await this.mailbox.send("answer", await seal(this.invite, answer));
     let timer;
@@ -97,6 +119,7 @@ export class WebJoinSession {
     let timer;
     try {
       const stats = await Promise.race([this.pc.getStats(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(BUSY_MESSAGE)), 3000); })]);
+      if (this.controller.signal.aborted || !this.authorized) return;
       let bytes = 0, transports = 0;
       for (const report of stats.values()) if (report.type === "transport") {
         if (!Number.isSafeInteger(report.bytesSent) || report.bytesSent < 0 || !Number.isSafeInteger(report.bytesReceived) || report.bytesReceived < 0) throw new Error(BUSY_MESSAGE);
@@ -104,6 +127,10 @@ export class WebJoinSession {
       }
       if (!transports || bytes < this.previousBytes || bytes >= this.quotaBytes * 0.9) throw new Error(BUSY_MESSAGE);
       this.previousBytes = bytes;
+      this._jitterAdaptation = adaptJitterBufferTarget(stats, this._jitterAdaptation);
+      if (this._inboundReceiver) {
+        applyAdaptiveReceiverTarget(this._inboundReceiver, this._jitterAdaptation);
+      }
       this.onLatency(latencyMs(stats, this.audioContext.baseLatency));
     } catch (error) { this.fail(error); }
     finally { clearTimeout(timer); this.statsPending = false; }
@@ -115,6 +142,6 @@ export class WebJoinSession {
     clearInterval(this.statsTimer); clearTimeout(this.expiryTimer); clearTimeout(this.disconnectTimer);
     this.channel?.close(); this.pc?.close();
     this.stream.getTracks().forEach((track) => track.stop());
-    this.pendingStream = null; this.authorized = false;
+    this.pendingStream = null; this._inboundReceiver = null; this.authorized = false;
   }
 }

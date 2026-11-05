@@ -7,6 +7,11 @@ headphones, and starts audio with a tap. The UI labels the connection **Web Join
 higher delay (about 60–120 ms)**; that is an expectation, not a WAN measurement.
 Safari/iOS is labelled best effort. Desktop players continue using the WebJam app.
 
+**Check microphone** and **Join with microphone** both request microphone
+access. Leave retires the current attempt: delayed enrollment, audio-resume
+and latency callbacks cannot change a later attempt's status or controls.
+Stats returned after close cannot tune the retired audio receiver.
+
 One web guest is admitted at a time. **Kick web guest**, clearing permission,
 resetting the native invitation, stopping the session, replacing the owned
 server, or quitting closes its sidecar and bridge. Permission is never saved.
@@ -43,6 +48,30 @@ The browser is static under `web/join/`, without build secrets or third-party
 scripts. Its only application network origin is the existing relay Worker.
 The invite's `#k=…&s=…&g=…&e=…` fragment contains the random capability, random
 session ID, generation and expiry; none enters the HTTP page request.
+
+### Build-bound community destination
+
+`core/web_join_target.py` maps two reviewed identifiers to exact first-party
+pages: `public` uses `https://stalemate.band/join/`; `private-beta` uses
+`https://stalemate-hangout-beta.jeffstory007.workers.dev/join/`. A private package
+can therefore send an already admitted community guest to the protected page
+without editing the host's invitation or copying community cookies between sites.
+
+PyInstaller writes a canonical, bounded `webjam-web-join-target.json` containing
+the identifier, schema version and exact source build. Frozen apps require that
+file, ignore environment/user URL overrides and verify it before allocating the
+optional bridge, sidecar, capability or upstream credential. Unknown targets,
+extra/duplicate fields, a wrong build, missing data or a final symlink fail closed.
+Source checkouts retain the public default. Branch test packaging selects the
+target through the existing CI's `web_join_target` input; the
+[release runbook](DESKTOP_RELEASE_RUNBOOK.md#private-browser-invitation-target)
+records its packaging gate. Private-beta cannot be built from a tag or published
+by the release job.
+
+Private-beta admission, approved exact Origin configuration, separate web TURN
+credentials, quota and platform-trust checks still apply. Destination validation
+proves routing metadata; installation, browser/forced-relay and physical music
+need separate evidence. Existing provider and public-release holds remain.
 
 ## Authentication and quarantine
 
@@ -81,13 +110,24 @@ networks without a permitted public or relay path.
 IPv6 candidates are filtered from host offers and rejected in browser answers,
 matching the browser's IPv4-only policy without discarding usable IPv4 fallback.
 
-Cloudflare's reviewed relay IPv4 addresses are `141.101.90.1` and
-`162.159.207.1`; a provider change fails closed until the allowlists in both
-clients are reviewed. Maintain them against [Cloudflare's TURN FAQ](https://developers.cloudflare.com/realtime/turn/faq/).
+Cloudflare's TURN service addresses are `141.101.90.1` and `162.159.207.1`.
+The private beta observed relayed transport addresses in `104.30.136.0/24`,
+`104.30.137.0/24`, and `104.30.144.0/21`. RIPE RIS corroborated that AS13335
+announced those routes. This is a reviewed allowlist for observed allocations,
+not a provider guarantee that all allocations use those routes. An unknown
+pool requires review in both clients. The browser keeps the legacy answer
+allowlist when the authenticated offer contains no allocation from the new
+pools. Publish the compatible browser before rolling out a native host that
+advertises the reviewed pools.
+
+See [Cloudflare's TURN service address guidance](https://developers.cloudflare.com/realtime/turn/faq/)
+and its [description of allocated peer addresses](https://developers.cloudflare.com/realtime/turn/what-is-turn/).
 No public gateway is introduced. The bridge listens on `127.0.0.1` and pins the
 local source socket after token authentication.
 
-Credential HTTP requests have a 12-second deadline, ICE gathering 20 seconds,
+The browser gives ICE services a short gathering grace period, then sends the
+vetted candidates it has. It waits up to 15 seconds when none are usable.
+Credential HTTP requests have a 12-second deadline, host ICE gathering 20 seconds,
 host answer polling 90 seconds, connection establishment 25 seconds, and DTLS
 connection-to-enrollment 10 seconds. Browser networking and enrollment also have
 finite deadlines. Idle/disconnected media paths close instead of retaining an
@@ -95,7 +135,8 @@ unusable guest. Local close has a bounded sidecar shutdown path.
 
 Both clients request `client=web` from the existing `/turn-credentials` endpoint
 and mailbox. The shared Worker enforces exact CORS origins, one-hour maximum
-web credentials, the existing 800 GB monthly TURN cap, a 200 GB web sub-cap,
+web credentials, the existing 800 GB combined own-key UTC-month traffic ceiling,
+a 200 GB web sub-cap,
 3,000 daily web requests and the existing Durable Object budgets. Unreadable
 analytics returns 503; exhausted limits return 429. Host and browser reject
 unscoped responses from older Workers. There is no retry into a paid service or
@@ -103,10 +144,17 @@ quota bypass into direct mode. Pion counts socket traffic in both directions
 (including ICE, DTLS, SRTP, RTCP and TURN transport overhead), closing at a
 maximum 256 MiB per guest session; the credential response may lower that cap.
 
-Cloudflare currently provides a [shared 1,000 GB monthly SFU/TURN free allowance](https://developers.cloudflare.com/realtime/sfu/pricing/).
+If that service is unavailable, the guest is asked to try later or contact the
+host. Moving onto the same Wi-Fi does not replace the required web credentials.
+The failure still closes the attempted audio session before a deliberate retry.
+
+Cloudflare currently provides a [shared 1,000 GB monthly SFU/TURN free allowance](https://developers.cloudflare.com/realtime/sfu/platform/pricing/).
 The Worker must remain on Workers Free with dedicated web TURN accounting and
 no paid upgrades. Account-wide usage outside these keys must also stay within
-that allowance. This change does not deploy, configure an account, mint live
+that allowance. The issuer's ingress-plus-egress counter is not all-account
+billed egress and need not cover the subscription's billing period. Verify
+actual combined headroom separately; see the [counter scope](../deploy/relay/README.md#cloudflare-issuer-counter-formula-and-scope).
+This change does not deploy, configure an account, mint live
 credentials during tests, or install a native artifact.
 
 ## Validation and local setup

@@ -149,7 +149,7 @@ def test_art_door_is_two_starts_then_host_join(qapp, tmp_path: Path):
             ),
             (
                 "Paint along",
-                "Follow a silent video from a file or lesson link.",
+                "Paint with Bob Ross or bring your own YouTube lesson.",
             ),
         ]
         assert others == ["Host", "Join"]

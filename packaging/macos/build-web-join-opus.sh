@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the optional Web Join codec; never run at application startup.
+# Build the Web Join codec required by Mac host packages; never at app startup.
 # Usage: build-web-join-opus.sh /absolute/output-directory
 # Requires a C compiler, make, curl and shasum. Builds only in a new temp dir.
 set -euo pipefail
@@ -24,6 +24,9 @@ case "$(uname -s)" in
   Darwin)
     cp "$build/install/lib/libopus.0.dylib" "$out/libwebjoin_opus.dylib"
     install_name_tool -id @rpath/libwebjoin_opus.dylib "$out/libwebjoin_opus.dylib"
+    # Updating the install name invalidates the compiler's ad-hoc signature.
+    # Sign this newly built dependency before the bundle's real codec smoke.
+    codesign --force --sign - "$out/libwebjoin_opus.dylib"
     ;;
   Linux) cp "$build/install/lib/libopus.so.0" "$out/libwebjoin_opus.so" ;;
   *) echo 'Unsupported codec build platform' >&2; exit 1 ;;

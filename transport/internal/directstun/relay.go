@@ -549,11 +549,7 @@ func credentialsFromDocument(document credentialDocument) (turnCredentials, erro
 	if username == "" || password == "" {
 		return turnCredentials{}, errNoTURN
 	}
-	server, err := firstTURNURL(document.URLs)
-	if err != nil {
-		return turnCredentials{}, err
-	}
-	ip, err := resolveTURNIP(server)
+	server, ip, err := firstTURNServer(document.URLs)
 	if err != nil {
 		return turnCredentials{}, err
 	}
@@ -578,7 +574,7 @@ func credentialsFromDocument(document credentialDocument) (turnCredentials, erro
 	}, nil
 }
 
-func firstTURNURL(raw any) (string, error) {
+func firstTURNServer(raw any) (string, netip.Addr, error) {
 	var urls []string
 	switch value := raw.(type) {
 	case string:
@@ -598,10 +594,14 @@ func firstTURNURL(raw any) (string, error) {
 	for _, item := range urls {
 		hostPort, ok := turnUDPHostPort(item)
 		if ok {
-			return hostPort, nil
+			// The allocator uses udp4. An unsupported address family in a
+			// provider's URL list must not hide a later usable TURN endpoint.
+			if ip, err := resolveTURNIP(hostPort); err == nil {
+				return hostPort, ip, nil
+			}
 		}
 	}
-	return "", errNoTURN
+	return "", netip.Addr{}, errNoTURN
 }
 
 func turnUDPHostPort(raw string) (string, bool) {

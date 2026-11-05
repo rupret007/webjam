@@ -58,6 +58,25 @@ func TestParseDialTargetKeepsSTUNMappedTestNet(t *testing.T) {
 	}
 }
 
+func TestResolveSTUNServerUsesLiteralWithoutLookup(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	resolved, err := resolveSTUNServer(ctx, "203.0.113.5:3478")
+	if err != nil || resolved == nil || resolved.IP.String() != "203.0.113.5" || resolved.Port != 3478 {
+		t.Fatalf("literal resolve = %v, %v", resolved, err)
+	}
+}
+
+func TestResolveSTUNServerHonorsContextDuringLookup(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := resolveSTUNServer(ctx, "stun.example.invalid:3478"); err == nil {
+		t.Fatal("expected lookup to fail")
+	}
+}
+
 func TestStunServerListOverrideIsHarnessOnly(t *testing.T) {
 	t.Setenv(testHarnessEnv, "")
 	t.Setenv(testSTUNEnv, "203.0.113.1:3478")

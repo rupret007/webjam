@@ -381,6 +381,16 @@ def run_case(
                     ports = _mapping_ports(topology, env)
                     verify_mapping_mode(spec.nat_mode, ports[0], ports[1])
                     host_reach = guest_reach = stun_host = stun_guest = True
+                elif spec.case == "same-lan":
+                    stun_procs = [
+                        ns_popen(
+                            topology.host_ns,
+                            python_stun_command(topology.host_addr, (STUN_UDP,)),
+                            cwd=REPO_ROOT, env=env, drop_privs=False,
+                            stderr_path=work_root / "stun.stderr",
+                        )
+                    ]
+                    _pause(0.5)
                 if spec.netem:
                     netem_applied = apply_netem(spec)
                     if not netem_applied:
@@ -389,6 +399,8 @@ def run_case(
                 env["WEBJAM_TEST_HARNESS"] = "1"
                 if topology.inet_addr:
                     env["WEBJAM_TEST_STUN_SERVER"] = f"{topology.inet_addr}:{STUN_UDP}"
+                elif spec.case == "same-lan":
+                    env["WEBJAM_TEST_STUN_SERVER"] = f"{topology.host_addr}:{STUN_UDP}"
                 else:
                     env.pop("WEBJAM_TEST_STUN_SERVER", None)
                 if case == "relay" and topology.inet_addr:

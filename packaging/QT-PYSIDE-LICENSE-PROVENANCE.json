@@ -1,0 +1,21 @@
+{
+  "upstreamRepository": "https://github.com/qtproject/pyside-pyside-setup",
+  "upstreamTag": "v6.11.1",
+  "tagObject": "5d3fd824e2a3ee6af299749f482096d1ef3a2ac7",
+  "commit": "73fb12a067c2e8f7a464a310aaee2860fa2b64d2",
+  "files": [
+    {
+      "filename": "QT_LGPL-3.0-only.txt",
+      "sourceUrl": "https://raw.githubusercontent.com/qtproject/pyside-pyside-setup/73fb12a067c2e8f7a464a310aaee2860fa2b64d2/LICENSES/LGPL-3.0-only.txt",
+      "bytes": 7651,
+      "sha256": "da7eabb7bafdf7d3ae5e9f223aa5bdc1eece45ac569dc21b3b037520b4464768"
+    },
+    {
+      "filename": "QT_GPL-3.0-only.txt",
+      "sourceUrl": "https://raw.githubusercontent.com/qtproject/pyside-pyside-setup/73fb12a067c2e8f7a464a310aaee2860fa2b64d2/LICENSES/GPL-3.0-only.txt",
+      "bytes": 35147,
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    }
+  ],
+  "scope": "Verbatim license document copies from the Qt for Python 6.11.1 source tag. LGPL-3.0-only remains the selected runtime license; its incorporated GPLv3 text is included without changing that selection. This is license-document provenance, not a complete runtime source or package compliance qualification."
+}

@@ -1,0 +1,2 @@
+- Require and verify the custom Opus codec in Mac host packages so browser invitations cannot ship without their audio dependency. Add visible Music-room invite/copy/end controls with persistent, privacy-safe preparation errors and session-bound actions.
+- Keep browser invitations in the Music stage so compact Notes recovery retains its editor space, and offer four curated Bob Ross lessons alongside custom YouTube links in Paint Along.

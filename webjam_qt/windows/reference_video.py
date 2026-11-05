@@ -8,9 +8,10 @@ transport control at all, because they have none.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtCore import QEvent, Qt, QUrl, Signal
+from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QFileDialog,
     QInputDialog,
@@ -35,21 +36,23 @@ from core.reference_video import (
     ReferenceVideoState,
     paint_along_watch_lesson_guidance,
 )
+from core.paint_along_lessons import BOB_ROSS_LESSONS, BOB_ROSS_RESOURCES
 from core.youtube_lesson import YouTubeLesson, parse_youtube_lesson_url
-from webjam_qt.theme.tokens import Space
+from webjam_qt.theme.tokens import Color, Space
 from webjam_qt.widgets.scrollable_content import ScrollableContent
 
-_HOST_EMPTY_HEADLINE = "Choose a silent reference"
-_GUEST_EMPTY_HEADLINE = "Optional silent reference"
+_HOST_EMPTY_HEADLINE = "Choose a painting lesson"
+_GUEST_EMPTY_HEADLINE = "Paint along with the host"
 _STANDALONE_SURFACE_FLOOR = 360
 _COMPACT_SURFACE_FLOOR = 40
 _COMPACT_WINDOW_HEIGHT = 600
 _HOST_EMPTY_STATUS = (
-    "Choose a local video or YouTube link below for silent playback inside WebJam. You control it."
+    "Choose Bob Ross, paste your own YouTube link, or open a local video. "
+    "For lesson sound, choose Watch a shared lesson. The in-app reference is muted."
 )
-_EMPTY_SURFACE = "Your silent process video appears here"
+_EMPTY_SURFACE = "Your painting lesson appears here"
 _SYNC_HONESTY = (
-    "Silent in WebJam · paint in your own app or on paper · talk in your meeting"
+    "Silent reference · paint in your own app or on paper · lesson sound through Watch a shared lesson"
 )
 _SYNC_DETAIL = (
     "Paint along is the process-video companion. Paint in Procreate, Clip "
@@ -273,6 +276,42 @@ class ReferenceVideoDialog(QDialog):
         self._lesson_hint.setWordWrap(True)
         self._lesson_hint.setObjectName("PaintAlongHint")
         lesson_row.addWidget(self._lesson_hint, stretch=1)
+        if self._hosting:
+            picks = QHBoxLayout()
+            self._episode_picker = QComboBox()
+            self._episode_picker.setAccessibleName("Bob Ross episodes")
+            self._episode_picker.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            self._episode_picker.setMinimumWidth(0)
+            for title, url in BOB_ROSS_LESSONS:
+                self._episode_picker.addItem(title, url)
+            picks.addWidget(self._episode_picker, stretch=1)
+            self._episode_button = QPushButton("Choose episode")
+            self._episode_button.setAccessibleDescription("Load the selected Bob Ross painting lesson.")
+            self._episode_button.clicked.connect(self._choose_episode)
+            picks.addWidget(self._episode_button)
+            lesson_row.addLayout(picks)
+
+        self._getting_started = QToolButton()
+        self._getting_started.setText("Getting started · kit and materials")
+        self._getting_started.setAccessibleName("Getting started: kit and materials")
+        self._getting_started.setCheckable(True)
+        self._getting_started.setArrowType(Qt.ArrowType.RightArrow)
+        self._getting_started.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self._paint_resources = QLabel(
+            "<p>Start with <b>The Grandeur of Summer</b>. Watch, sketch, or paint with what you have.</p>"
+            "<p>For Bob Ross’s oil-painting method, check the lesson’s materials. The kit is optional.</p>"
+            + "<br>".join(f'<a style="color:{Color.TEXT_PRIMARY}" href="{url}">{title}</a>' for title, url in BOB_ROSS_RESOURCES)
+        )
+        self._paint_resources.setTextFormat(Qt.TextFormat.RichText)
+        self._paint_resources.setWordWrap(True)
+        self._paint_resources.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        self._paint_resources.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._paint_resources.setOpenExternalLinks(False)
+        self._paint_resources.linkActivated.connect(self._open_paint_resource)
+        self._paint_resources.hide()
+        self._getting_started.toggled.connect(self._show_paint_resources)
+        lesson_row.addWidget(self._getting_started)
+        lesson_row.addWidget(self._paint_resources)
 
         self._surface_holder = QFrame()
         self._surface_holder.setObjectName("PaintAlongSurface")
@@ -410,6 +449,15 @@ class ReferenceVideoDialog(QDialog):
 
     # -- construction helpers ------------------------------------------
 
+    def _show_paint_resources(self, expanded):
+        self._paint_resources.setVisible(expanded)
+        self._getting_started.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+
+    def _open_paint_resource(self, url):
+        # Static resources open only after an explicit click, never on entry.
+        if url in {target for _, target in BOB_ROSS_RESOURCES}:
+            QDesktopServices.openUrl(QUrl(url))
+
     def _add_button(
         self, row, text: str, description: str, slot, *, object_name: str = "PrimaryButton",
     ) -> QPushButton:
@@ -460,13 +508,15 @@ class ReferenceVideoDialog(QDialog):
         return _STANDALONE_SURFACE_FLOOR
 
     def _update_layout_spacing(self) -> None:
-        # An inline File/Help menu reduces the compact workspace's height.
-        # Recover space between rows before any video controls or guidance
-        # overlap; larger workspaces keep the original breathing room.
+        # Inline menus and optional lesson help reduce compact workspace space.
+        # Recover row spacing across compact embedded panels before controls or
+        # guidance fall below the viewport; larger panels keep breathing room.
         layout = getattr(self, "_body_layout", None)
         if layout is not None:
             layout.setSpacing(
-                Space.SM if self._embedded and self.height() < 360 else Space.MD
+                Space.SM
+                if self._embedded and self.height() < _COMPACT_WINDOW_HEIGHT
+                else Space.MD
             )
         surface = getattr(self, "_surface_holder", None)
         if surface is not None:
@@ -553,6 +603,20 @@ class ReferenceVideoDialog(QDialog):
                     and generation == self._meeting_lesson_generation):
                 self._meeting_lesson_candidate = candidate
                 self._meeting_lesson_snapshot = self._last_host_snapshot
+
+    def _choose_episode(self) -> None:
+        if not self._hosting or not self._room_available:
+            return
+        if self._last_host_snapshot and self._last_host_snapshot.state is ReferenceVideoState.LOADING:
+            return
+        self._meeting_lesson_generation += 1
+        generation = self._meeting_lesson_generation
+        self._youtube_url = self._episode_picker.currentData()
+        self.share_youtube_requested.emit(self._youtube_url)
+        if (isValid(self) and self._room_available
+                and generation == self._meeting_lesson_generation):
+            self._meeting_lesson_candidate = self._youtube_url
+            self._meeting_lesson_snapshot = self._last_host_snapshot
 
     def _choose_local_copy(self) -> None:
         if self._hosting or self._copy_opening or not self._room_available:
@@ -656,7 +720,7 @@ class ReferenceVideoDialog(QDialog):
             self._role.setText("CHECK ROOM")
             self._role.setAccessibleName("Check your current room")
             for button in (self._share_button, self._youtube_button, self._play_button, self._pause_button,
-                           self._cancel_open_button):
+                           self._cancel_open_button, self._episode_picker, self._episode_button):
                 button.setVisible(False)
                 button.setEnabled(False)
             self._return_button.setVisible(True)
@@ -672,6 +736,10 @@ class ReferenceVideoDialog(QDialog):
         shared = bool(snapshot.shared)
         state = snapshot.state
         loading = state is ReferenceVideoState.LOADING
+        self._episode_picker.setVisible(True)
+        self._episode_button.setVisible(True)
+        self._episode_picker.setEnabled(self._room_available and not loading)
+        self._episode_button.setEnabled(self._room_available and not loading)
         self._duration_s = float(snapshot.duration_s or 0.0)
         can_seek = shared and self._duration_s > 0.0 and state in {
             ReferenceVideoState.READY,

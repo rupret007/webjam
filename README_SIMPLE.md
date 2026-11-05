@@ -2,9 +2,11 @@
 
 WebJam is a desktop app for people who make music or art together.
 
-Friends in another house can play or make together. No extra setup. Keep the
-host's window open. If Join cannot connect, use home Wi-Fi on both computers,
-not a phone hotspot, and ask for a fresh invite.
+Follow the network named in the invitation. A same-network invitation needs
+the host's Wi-Fi or local network. For friends in another house, ask the test
+organizer for a compatible, qualified build. The current unsigned Windows app
+cannot join remote Music. The [community beta setup guide](docs/COMMUNITY_MUSIC_BETA.md)
+explains what is ready to test on each computer. Keep the host's window open.
 
 The [creator guide](USER_GUIDE.md) is the one complete how-to. This page is
 the short version.
@@ -13,6 +15,8 @@ the short version.
 
 1. **Get the app** from [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
    Pick the file for your computer (Windows, Mac, or Ubuntu).
+   For the Stalemate private beta, use the qualified package from its organizer;
+   the public download may not accept the beta's invitation.
 2. **Open it.**
    - **Windows:** Windows may say it protected your PC. Choose **More info**,
      then **Run anyway**. A work PC may still block it; ask IT. WebJam does
@@ -49,12 +53,10 @@ leaves the meeting open.
   WebJam shows a short reply, send that back; the host chooses **Paste
   Reply**. If Join says the invite was already used, ask the host for a
   new one and choose **Paste New Invite**.
-- **Record (Music):** the host chooses **Record Session**. When the take
-  says **Ready**, it is saved. On a Mac host, takes live under
-  `Library/Application Support/WebJam/JamulusServer/Recordings`. On Windows
-  or Linux, the default folder is `WebJam Recordings` in your home folder.
-  Guests often see takes under `Music/WebJam Takes`. Use
-  **More → Recording Setup… → Show Folder** to open the folder.
+- **Record (Music):** the Mac host chooses **Record Session**. When the take
+  says **Ready**, it is saved. Use
+  **More → Recording Setup… → Show Folder** to find the saved files.
+  Recording locations depend on the profile and its settings.
 - **Leave:** the host chooses **End Session** (Music) or **End Room** (Art).
   A guest chooses **Leave Jam** or **Leave Room**. The others stay. Your
   meeting and drawing app stay open. Notes in **Session library** stay on

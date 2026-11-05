@@ -1,5 +1,31 @@
 # Desktop release runbook
 
+## Private browser invitation target
+
+The Unreleased branch-test workflow accepts `web_join_target=private-beta` to
+build browser invitations for the protected shared-community page. The default
+`public` target preserves the current Stalemate page. These identifiers are a
+fixed first-party registry; URLs are not accepted from workflow inputs, settings,
+environment at runtime or invitations. See the [Web Join contract](web-join.md#build-bound-community-destination).
+
+Use an application branch with `final_build` selected and signing/publication
+holds preserved. `webjam.spec` writes `webjam-web-join-target.json` with the exact
+source build and target. Every desktop builder verifies its actual bundled copy
+through `tests.support.verify_packaged_web_join_target`: under
+`Contents/Resources` on Mac and `_internal` on Windows/Linux. Keep that document
+with the bundle and its existing build ID, checksum and signature proof.
+Rollback restores a complete previously qualified application package with its
+matching transport and data. Do not switch destinations by editing or exchanging
+manifest files between packages. User settings and community storage need no
+migration for this build-only routing change.
+
+Private-beta packaging refuses a tag; the release job also requires the public
+target. No private configuration is eligible for the draft/Latest release path.
+These checks do not register a browser Origin, deploy a Worker, activate TURN,
+provision secrets, or prove the destination page or real music works. Those
+remain separately qualified prerequisites. Do not rewrite a generated invitation
+or remove a platform-trust check to make a different destination work.
+
 ## Current unsigned testing release
 
 Source identity is v0.29.0. [GitHub Latest](https://github.com/rupret007/webjam/releases/latest)

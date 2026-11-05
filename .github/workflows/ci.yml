@@ -39,6 +39,14 @@ on:
         required: false
         type: boolean
         default: true
+      web_join_target:
+        description: Browser invitation destination; private-beta is for branch test packages only
+        required: false
+        type: choice
+        default: public
+        options:
+          - public
+          - private-beta
 
 # Default: read-only. Release job overrides to write.
 permissions:
@@ -75,12 +83,26 @@ jobs:
         run: python -c "from pathlib import Path; Path('out').mkdir(exist_ok=True)"
       - name: Prove native process ownership and startup failure cleanup
         run: python -X dev -m pytest -q tests/test_windows_diagnostic_process.py --basetemp out/windows-diagnostic-process-tests
+      - name: Prove native directory ancestor sharing fence
+        timeout-minutes: 1
+        run: python -X dev -m tests.support.windows_directory_sharing_control
+      - name: Prove frozen Windows smoke failure propagation
+        timeout-minutes: 1
+        run: python -m tests.support.check_windows_frozen_smoke_exit_codes
+      - name: Prove native signature verifier directory provenance
+        timeout-minutes: 1
+        run: python -X dev -m pytest -q tests/test_transport_runtime.py -k windows_signature_native_paths
       - name: Prove native debugger control independently of product gates
         shell: pwsh
         run: |
           python -m tests.support.diagnose_windows_reference_studio `
             --mode control --output "out\windows-diagnostic-control" `
             --source-head (git rev-parse HEAD).Trim()
+      - name: Prove actual Windows transport ACL and share controls
+        if: always()
+        timeout-minutes: 3
+        run: >-
+          python -X dev -m tests.support.windows_transport_permissions_native_control
       - name: Retain independent native control evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -89,6 +111,7 @@ jobs:
           path: |
             out/windows-diagnostic-control/
             out/windows-diagnostic-process-tests/
+            out/windows-transport-acl-native/
           if-no-files-found: warn
           retention-days: 14
 
@@ -1220,6 +1243,13 @@ jobs:
         with:
           python-version: "${{ matrix.python }}"
 
+      - name: Create isolated native build environment
+        timeout-minutes: 3
+        shell: bash
+        run: >-
+          python -I -S tools/native_build_environment.py
+          --target "${{ matrix.target }}" --python-version "${{ matrix.python }}"
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -1719,11 +1749,36 @@ jobs:
             "$output/JamulusHeadlessClient.app" "$expected_machine" \
             "$output/JamulusHeadlessClient.sha256"
 
-      - name: Build desktop artifact
+      - name: Build required browser-guest Opus codec (macOS)
+        if: startsWith(matrix.target, 'macos-')
         shell: bash
+        run: |
+          WEBJOIN_BUILD_JOBS=2 packaging/macos/build-web-join-opus.sh \
+            "$GITHUB_WORKSPACE/native/web-join"
+
+      - name: Build desktop bundle and verify Web Join target
+        shell: bash
+        env:
+          WEBJAM_WEB_JOIN_TARGET: ${{ inputs.web_join_target || 'public' }}
         run: |
           mkdir -p out
           python -m PyInstaller --clean --noconfirm webjam.spec
+          metadata_root=dist/WebJam/_internal
+          if [[ "${{ matrix.target }}" == macos-* ]]; then
+            metadata_root=dist/WebJam.app/Contents/Resources
+          fi
+          python -m tests.support.verify_packaged_web_join_target \
+            --manifest "$metadata_root/webjam-web-join-target.json" \
+            --build-id "$(git rev-parse HEAD)" \
+            --target "$WEBJAM_WEB_JOIN_TARGET"
+          if [[ "${{ matrix.target }}" == macos-* ]]; then
+            python tools/verify_web_join_codec.py \
+              --bundle dist/WebJam.app --target "${{ matrix.target }}"
+          fi
+
+      - name: Build desktop artifact
+        shell: bash
+        run: |
           dependency_bundle_root=dist/WebJam
           if [[ "${{ matrix.target }}" == macos-* ]]; then
             dependency_bundle_root=dist/WebJam.app
@@ -2338,9 +2393,11 @@ jobs:
           python -m tests.support.run_frozen_pocket_stage_smoke `
             --binary $app `
             --cwd $appDir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m tests.support.run_frozen_reference_studio_smoke `
             --binary $app `
             --cwd $appDir
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:WEBJAM_SMOKE_LAUNCH_ONLY = "1"
           $env:WEBJAM_SMOKE_EXIT_MS = "5000"
           [IO.File]::WriteAllText(
@@ -3680,7 +3737,8 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' &&
       startsWith(github.ref, 'refs/tags/v') &&
-      inputs.final_build
+      inputs.final_build &&
+      (inputs.web_join_target == '' || inputs.web_join_target == 'public')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

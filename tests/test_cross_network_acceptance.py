@@ -882,6 +882,7 @@ def test_proof_peers_drive_real_sidecar_not_standalone_ice():
     assert "credential_script" in run and "_post_in_ns" in run
     assert "WEBJAM_TEST_HARNESS" in run and "WEBJAM_TEST_TURN_CREDENTIAL_URL" in run
     assert "WEBJAM_TEST_TURN_SERVER" in run and "WEBJAM_TEST_STUN_SERVER" in run
+    assert 'spec.case == "same-lan"' in run and "python_stun_command(topology.host_addr" in run
     assert "inner.connect(" not in shim and "_udp_loop" in shim
     assert "transport/internal/ipc" in readme and "POST /turn-credentials" in readme
     assert "reference-local" in readme and "directstun" in readme

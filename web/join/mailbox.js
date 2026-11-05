@@ -1,6 +1,6 @@
 import { fromBase64Url, toBase64Url, mailboxId, turnToken, MAX_ENVELOPE } from "./crypto.js";
-import { validateCredentials } from "./policy.js";
-export const BUSY_MESSAGE = "Relay busy, try same Wi-Fi or the app.";
+import { validateCredentials, RELAY_UNAVAILABLE_MESSAGE } from "./policy.js";
+export const BUSY_MESSAGE = RELAY_UNAVAILABLE_MESSAGE;
 async function boundedText(response, limit = 16384) {
   const length = response.headers.get("content-length");
   if (length !== null && (!/^\d+$/.test(length) || Number(length) > limit)) throw new Error("Relay response exceeds the limit");

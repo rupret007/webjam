@@ -241,11 +241,46 @@ func stunServerList() []string {
 	return []string{override}
 }
 
+func resolveSTUNServer(ctx context.Context, server string) (*net.UDPAddr, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	host, port, err := net.SplitHostPort(server)
+	if err != nil {
+		return nil, err
+	}
+	portNum, err := net.LookupPort("udp", port)
+	if err != nil || portNum < 1 {
+		return nil, errNoAddress
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		v4 := ip.To4()
+		if v4 == nil {
+			return nil, errNoAddress
+		}
+		return &net.UDPAddr{IP: v4, Port: portNum}, nil
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, stunAttemptLimit)
+	defer cancel()
+	records, err := net.DefaultResolver.LookupIPAddr(lookupCtx, host)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range records {
+		v4 := record.IP.To4()
+		if v4 == nil {
+			continue
+		}
+		return &net.UDPAddr{IP: v4, Port: portNum}, nil
+	}
+	return nil, errNoAddress
+}
+
 func stunBinding(ctx context.Context, conn *net.UDPConn, server string) (netip.AddrPort, error) {
 	if ctx.Err() != nil {
 		return netip.AddrPort{}, ctx.Err()
 	}
-	resolved, err := net.ResolveUDPAddr("udp4", server)
+	resolved, err := resolveSTUNServer(ctx, server)
 	if err != nil {
 		return netip.AddrPort{}, err
 	}

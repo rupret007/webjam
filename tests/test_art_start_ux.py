@@ -297,7 +297,7 @@ def test_art_adds_no_start_action_beyond_the_cards_and_host_join(
 
 
 def test_only_paint_along_shows_the_face_mark(qapp, tmp_path: Path):
-    """Jeff locked the squirrel-face mark on Paint along only."""
+    """Paint along carries the requested face mark; other doors stay plain."""
 
     dialog = _dialog(tmp_path)
     try:
@@ -309,7 +309,7 @@ def test_only_paint_along_shows_the_face_mark(qapp, tmp_path: Path):
         for button in _visible_buttons(dialog):
             if button is not cards["paint_along"]:
                 assert button.icon().isNull() is True
-        assert "bob ross" not in _first_screen_spoken(dialog)
+        assert "bob ross" in _first_screen_spoken(dialog)
     finally:
         dialog.deleteLater()
 
@@ -373,7 +373,7 @@ def test_choosing_a_card_binds_host_to_that_card(qapp, tmp_path: Path):
         cards["paint_along"].setChecked(True)
         host_described = dialog._host_button.accessibleDescription().casefold()
         assert "start paint along as the host" in host_described
-        assert "local video file or a lesson link" in host_described
+        assert "paste a youtube link" in host_described
     finally:
         dialog.deleteLater()
 
@@ -433,7 +433,7 @@ def test_art_helper_only_adds_the_paint_along_next_step(qapp, tmp_path: Path):
             paint_along = card.start_key == "paint_along"
             assert dialog._choice_helper.isVisibleTo(dialog._choice_page) is paint_along
             assert dialog._choice_helper.text() == (
-                "Then watch a shared lesson, or choose a silent file." if paint_along else ""
+                "Then choose Bob Ross or your own lesson link." if paint_along else ""
             )
         # The two cards carry the instruction, so the headline and the
         # subtitle above them step aside rather than crowd them.
@@ -486,7 +486,7 @@ def test_art_helper_and_actions_survive_start_profile_and_back_changes(
             helper = dialog._choice_helper
             assert helper.isVisible() is paint_along
             assert helper.text() == (
-                "Then watch a shared lesson, or choose a silent file." if paint_along else ""
+                "Then choose Bob Ross or your own lesson link." if paint_along else ""
             )
             cards = _visible_cards(dialog)
             assert len(cards) == 2
@@ -1006,7 +1006,7 @@ def test_art_cards_still_pass_the_ten_second_read(qapp, tmp_path: Path):
             ),
             (
                 "Paint along",
-                "Follow a silent video from a file or lesson link.",
+                "Paint with Bob Ross or bring your own YouTube lesson.",
             ),
         ]
         others = [
@@ -1363,6 +1363,6 @@ def test_live_door_harvest_keeps_other_workspaces_off_screen(qapp, tmp_path, pro
             assert "write songs or play live together" in spoken
             if profile_key == "art":
                 assert "paint, sculpt, 3d print, or just talk" in spoken
-                assert "follow a silent video from a file or lesson link" in spoken
+                assert "paint with bob ross or bring your own youtube lesson" in spoken
     finally:
         dialog.deleteLater()
