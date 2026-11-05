@@ -56,6 +56,13 @@ test("candidate policy rejects private, host, documentation, mDNS, IPv6 and unli
   assert.equal(candidateAllowed(candidate("8.8.8.8", "host")), false);
   assert.equal(candidateAllowed(candidate("8.8.8.8", "relay")), false);
   assert.equal(candidateAllowed(candidate("141.101.90.1", "relay")), true);
+  for (const ip of ["104.30.136.210", "104.30.137.15", "104.30.148.28", "104.30.151.128"]) {
+    assert.equal(candidateAllowed(candidate(ip, "relay")), true);
+    assert.equal(candidateAllowed(candidate(ip, "relay"), []), false);
+  }
+  for (const ip of ["104.30.135.255", "104.30.138.0", "104.30.152.0"]) {
+    assert.equal(candidateAllowed(candidate(ip, "relay")), false);
+  }
   assert.equal(candidateAllowed(candidate("8.8.8.8").replace("udp", "tcp")), false);
   assert.throws(() => policySdp(sdp + candidate("10.0.0.1", "host"), { remote: true }), /disallowed/);
   assert.doesNotMatch(policySdp(sdp + candidate("10.0.0.1", "host")), /10\.0\.0\.1/);

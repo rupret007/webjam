@@ -447,6 +447,13 @@ func TestCandidatePolicy(t *testing.T) {
 	}{
 		{"1 1 udp 1 8.8.8.8 4000 typ srflx raddr 0.0.0.0 rport 0", true},
 		{"1 1 udp 1 141.101.90.1 4000 typ relay raddr 0.0.0.0 rport 0", true},
+		{"1 1 udp 1 104.30.136.210 4000 typ relay", true},
+		{"1 1 udp 1 104.30.137.15 4000 typ relay", true},
+		{"1 1 udp 1 104.30.148.28 4000 typ relay", true},
+		{"1 1 udp 1 104.30.151.128 4000 typ relay", true},
+		{"1 1 udp 1 104.30.135.255 4000 typ relay", false},
+		{"1 1 udp 1 104.30.138.0 4000 typ relay", false},
+		{"1 1 udp 1 104.30.152.0 4000 typ relay", false},
 		{"1 1 udp 1 8.8.8.8 4000 typ relay", false}, {"1 1 udp 1 8.8.8.8 4000 typ host", false},
 		{"1 1 udp 1 8.8.8.8 4000 typ prflx", false}, {"1 1 udp 1 192.168.1.2 4000 typ srflx", false},
 		{"1 1 udp 1 100.64.1.2 4000 typ srflx", false}, {"1 1 udp 1 127.0.0.1 4000 typ host", false},
@@ -461,6 +468,9 @@ func TestCandidatePolicy(t *testing.T) {
 		if got := candidateAllowed(candidate, relay, false); got != tt.allow {
 			t.Errorf("%s: %v", tt.candidate, got)
 		}
+	}
+	if reviewedCloudflareAllocation(netip.MustParseAddr("104.30.148.28"), nil) {
+		t.Fatal("allocation accepted without the approved provider")
 	}
 }
 func TestQuotaConcurrentReservationsFailClosed(t *testing.T) {

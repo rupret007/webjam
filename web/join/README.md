@@ -23,9 +23,13 @@ derived IDs, are at most 4,000 encoded characters, and reassemble to at most
 ICE gathers public server-reflexive and TURN candidates together, letting ICE
 prefer direct connectivity and fall back to UDP/TCP/TLS TURN. Candidate policy
 rejects host, private, reserved, multicast, documentation, mDNS, and unlisted
-relay candidates. The reviewed Cloudflare IPv4 relay allowlist is
-`141.101.90.1` and `162.159.207.1`; provider changes fail closed and require a
-reviewed update to browser and Go policy. See the
+relay candidates. Cloudflare's service addresses are `141.101.90.1` and
+`162.159.207.1`. Private beta tests observed allocations in the reviewed
+`104.30.136.0/24`, `104.30.137.0/24`, and `104.30.144.0/21` routes. The browser
+includes those allocations in an answer only when the authenticated host
+offer advertises one. The browser signals vetted candidates after a short
+gathering grace period and waits longer when none are usable. New allocation
+pools fail closed and require a reviewed update to browser and Go policy. See the
 [provider's address maintenance guidance](https://developers.cloudflare.com/realtime/turn/faq/).
 IPv6-only paths are not yet supported by the browser policy.
 
