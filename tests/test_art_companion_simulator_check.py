@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import pytest
 
 from tools import art_companion_simulator_check as simulator_check
 
@@ -10,6 +13,30 @@ UITESTS = ROOT / "ios/ArtCompanionUITests/ArtCompanionUITests.swift"
 
 def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
+
+
+def test_selects_the_configured_available_ios_runtime(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEBJAM_ART_SIMULATOR_RUNTIME", "iOS 18.5")
+
+    class SimulatorSelected(Exception):
+        pass
+
+    def run(*args):
+        if args == ("xcrun", "simctl", "list", "--json"):
+            return json.dumps({
+                "runtimes": [
+                    {"name": "iOS 18.2", "isAvailable": True, "identifier": "old"},
+                    {"name": "iOS 18.5", "isAvailable": False, "identifier": "unavailable"},
+                    {"name": "iOS 18.5", "isAvailable": True, "identifier": "new"},
+                ],
+                "devicetypes": [{"name": "iPhone SE (3rd generation)", "identifier": "phone"}],
+            })
+        assert args == ("xcrun", "simctl", "create", "WebJam Art phone", "phone", "new")
+        raise SimulatorSelected
+
+    monkeypatch.setattr(simulator_check, "run", run)
+    with pytest.raises(SimulatorSelected):
+        simulator_check.check_devices(tmp_path, tmp_path)
 
 
 def test_retry_is_allowed_for_known_background_assertion_flake(tmp_path):

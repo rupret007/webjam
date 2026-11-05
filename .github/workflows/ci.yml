@@ -925,10 +925,11 @@ jobs:
       !cancelled() &&
       (needs.ios-change-gate.result != 'success' ||
        needs.ios-change-gate.outputs.ios == 'true')
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 40
     env:
-      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      WEBJAM_ART_SIMULATOR_RUNTIME: iOS 18.5
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -986,12 +987,11 @@ jobs:
       !cancelled() &&
       (needs.ios-change-gate.result != 'success' ||
        needs.ios-change-gate.outputs.ios == 'true')
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     env:
-      # macos-14 defaults to Xcode 15.4, whose Swift toolchain does not ship
-      # the Testing module used by the checked-in Swift suites. Xcode 16.2 is
-      # preinstalled on this image and also supplies the iOS 18.2 Simulator SDK.
+      # Keep the checked-in Swift tests and generic simulator build on the
+      # runner's installed Xcode 16.2 and its iOS 18.2 SDK.
       DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
     steps:
       - name: Checkout

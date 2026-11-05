@@ -189,10 +189,14 @@ def _write_evidence(output: Path, evidence: list[dict[str, Any]]) -> None:
 
 def check_devices(root: Path, output: Path) -> None:
     inventory = json.loads(run("xcrun", "simctl", "list", "--json"))
+    runtime_name = os.environ.get("WEBJAM_ART_SIMULATOR_RUNTIME", "iOS 18.2")
     runtime = next(
-        item["identifier"] for item in inventory["runtimes"]
-        if item["name"] == "iOS 18.2" and item["isAvailable"]
+        (item["identifier"] for item in inventory["runtimes"]
+         if item["name"] == runtime_name and item["isAvailable"]),
+        None,
     )
+    if runtime is None:
+        raise SystemExit(f"Required Art simulator runtime is unavailable: {runtime_name}")
     evidence: list[dict[str, Any]] = []
     for label, name in (("phone", "iPhone SE (3rd generation)"), ("tablet", "iPad (10th generation)")):
         device_type = next(item["identifier"] for item in inventory["devicetypes"] if item["name"] == name)
