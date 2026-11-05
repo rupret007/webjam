@@ -188,13 +188,17 @@ class TestPackagedDataFiles(unittest.TestCase):
         self.assertNotIn("pip install ruff build", CI)
 
     def test_ci_selects_swift_testing_capable_xcode_for_pocket_stage(self):
+        job = re.search(r"(?ms)^  pocket-stage-ios:\n(.*?)(?=^  [\w-]+:|\Z)", CI)
+        self.assertIsNotNone(job)
+        pocket_stage = job.group(1)
+        self.assertIn("runs-on: macos-15", pocket_stage)
         self.assertIn(
-            "DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer",
-            CI,
+            "DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer",
+            pocket_stage,
         )
-        self.assertIn('test "$(xcodebuild -version | head -1)" = "Xcode 16.2"', CI)
-        self.assertIn("swift test", CI)
-        self.assertIn("-sdk iphonesimulator", CI)
+        self.assertIn('test "$(xcodebuild -version | head -1)" = "Xcode 16.4"', pocket_stage)
+        self.assertIn("swift test", pocket_stage)
+        self.assertIn("-sdk iphonesimulator", pocket_stage)
 
     def test_linux_release_instructions_and_installer_helper_are_packaged(self):
         linux = ROOT / "packaging" / "linux"
