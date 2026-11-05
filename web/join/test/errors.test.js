@@ -55,10 +55,11 @@ test("network blocked maps direct and relay failure signals with Retry", () => {
   assert.match(relayFailed.hint, /hotspot/i);
 });
 
-test("expired invite and relay session map with Retry and fresh-invite hints", () => {
+test("an expired invite needs a new link and an expired relay session can retry", () => {
   const invite = mapJoinError(new Error(JOIN_SIGNAL.INVITE_EXPIRED));
   assert.equal(invite.kind, "invite_expired");
   assert.equal(invite.needsFreshInvite, true);
+  assert.equal(invite.showRetry, false);
   assert.match(invite.hint, /new Web Join link/i);
   const turn = mapJoinError(new Error(JOIN_SIGNAL.RELAY_SESSION_EXPIRED));
   assert.equal(turn.kind, "turn_expired");

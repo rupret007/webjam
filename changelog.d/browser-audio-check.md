@@ -1,1 +1,2 @@
 - Web Join keeps the microphone check, headphone confirmation, and Join button together. Technical readings are available under Audio details.
+- A replacement Web Join link works in a tab that was showing an expired or ended invitation.

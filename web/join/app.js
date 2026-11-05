@@ -177,7 +177,7 @@ function leave(message = "You left the session.", error) {
   const elements = failureElements();
   if (error) {
     const view = mapJoinError(error);
-    if (view.kind === "session_ended") {
+    if (view.kind === "session_ended" || view.kind === "invite_expired") {
       invite = undefined;
     }
     applyJoinFailure(view, elements);
@@ -287,6 +287,7 @@ $("retry").addEventListener("click", () => {
   void startJoin();
 });
 $("leave").addEventListener("click", () => leave());
+window.addEventListener("hashchange", () => window.location.reload());
 window.addEventListener("pagehide", () => leave());
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && context?.state === "suspended") {
