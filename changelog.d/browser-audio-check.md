@@ -1,0 +1,1 @@
+- Web Join keeps the microphone check, headphone confirmation, and Join button together. Technical readings are available under Audio details.
