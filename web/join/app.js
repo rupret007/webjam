@@ -33,17 +33,21 @@ let prejoinAbort;
 
 try {
   invite = readInvite(location.hash);
-  clearJoinFailure(
-    failureElements(),
-    "Your host invited you. Check your microphone, confirm headphones, then join.",
-  );
-  $("prejoin").hidden = false;
+  clearJoinFailure(failureElements(), "Your host invited you to join.");
 } catch (error) {
   const view = mapJoinError(error);
   view.showRetry = false;
   applyJoinFailure(view, failureElements());
   $("status").dataset.failure = "true";
-  $("prejoin").hidden = true;
+}
+
+function showAudioSettings(stream, warnings = []) {
+  const sampleRate = stream?.getAudioTracks()[0]?.getSettings().sampleRate;
+  $("audio-quality").textContent =
+    sampleRate > 0 && sampleRate < 32000
+      ? "Your mic is using voice-quality audio. Music may sound less clear."
+      : "";
+  $("warnings").textContent = warnings.join("\n");
 }
 
 function stopMicMonitoring(clearHeard = false) {
@@ -60,7 +64,9 @@ function stopMicMonitoring(clearHeard = false) {
   if (clearHeard) {
     micHeard = false;
     $("mic-heard").hidden = true;
+    showAudioSettings();
   }
+  $("mic-progress").textContent = "";
   $("mic-error").textContent = "";
   $("mic-retry").hidden = true;
   $("check-mic").disabled = checkSkipped || micHeard;
@@ -78,6 +84,7 @@ function joinReady() {
 }
 
 const refresh = () => {
+  $("prejoin").hidden = !invite || starting || !!session;
   $("join").disabled = !joinReady();
   $("skip-check").disabled = !invite || starting || !!session || checkSkipped;
   $("check-mic").disabled =
@@ -85,7 +92,8 @@ const refresh = () => {
 };
 
 function showMicError(error) {
-  const failure = micCheckFailure(error);
+  const failure = micCheckFailure(error?.cause ?? error);
+  $("mic-progress").textContent = "";
   $("mic-error").textContent = failure.message;
   $("mic-retry").hidden = !failure.showRetry;
   $("check-mic").disabled = false;
@@ -107,7 +115,7 @@ async function runMicCheck() {
     }
     await context.resume();
     if (signal.aborted) return;
-    $("status").textContent = "Allow microphone access so we can check your level.";
+    $("mic-progress").textContent = "Allow microphone access in your browser.";
     const capture = await beginMicCheck(navigator.mediaDevices);
     if (signal.aborted) {
       capture.stream.getTracks().forEach((track) => track.stop());
@@ -115,7 +123,8 @@ async function runMicCheck() {
     }
     prejoinStream = capture.stream;
     prejoinWarnings = capture.warnings;
-    $("status").textContent = "Play or speak into your mic. We’ll tell you when we hear you.";
+    showAudioSettings(prejoinStream, prejoinWarnings);
+    $("mic-progress").textContent = "Speak or play a note to check your level.";
     stopMeter = startMicLevelMonitor({
       audioContext: context,
       stream: prejoinStream,
@@ -129,6 +138,7 @@ async function runMicCheck() {
       onHeard: () => {
         if (signal.aborted) return;
         micHeard = true;
+        $("mic-progress").textContent = "";
         $("mic-heard").hidden = false;
         refresh();
       },
@@ -148,7 +158,7 @@ $("skip-check").addEventListener("click", () => {
   if (!invite || session || checkSkipped) return;
   resetMicCheck();
   checkSkipped = true;
-  $("status").textContent = "Check skipped. Confirm headphones, then join when ready.";
+  $("mic-progress").textContent = "Mic check skipped. Your browser may ask for access when you join.";
   refresh();
 });
 
@@ -167,9 +177,8 @@ function leave(message = "You left the session.", error) {
   const elements = failureElements();
   if (error) {
     const view = mapJoinError(error);
-    if (view.kind === "session_ended") {
+    if (view.kind === "session_ended" || view.kind === "invite_expired") {
       invite = undefined;
-      $("prejoin").hidden = true;
     }
     applyJoinFailure(view, elements);
     elements.status.dataset.failure = "true";
@@ -203,7 +212,7 @@ async function startJoin() {
       prejoinStream = null;
       stopMeter?.();
       stopMeter = null;
-      $("warnings").textContent = prejoinWarnings.join("\n");
+      showAudioSettings(stream, prejoinWarnings);
     } else {
       $("status").textContent = "Allow microphone access to play with your host.";
       const capture = await acquireMusicStream(navigator.mediaDevices);
@@ -212,7 +221,7 @@ async function startJoin() {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
-      $("warnings").textContent = capture.warnings.join("\n");
+      showAudioSettings(stream, capture.warnings);
     }
     const joinedSession = new WebJoinSession({
       origin: RELAY_ORIGIN,
@@ -278,6 +287,7 @@ $("retry").addEventListener("click", () => {
   void startJoin();
 });
 $("leave").addEventListener("click", () => leave());
+window.addEventListener("hashchange", () => window.location.reload());
 window.addEventListener("pagehide", () => leave());
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && context?.state === "suspended") {

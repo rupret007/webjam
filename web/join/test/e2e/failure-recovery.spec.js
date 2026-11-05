@@ -54,6 +54,21 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
   for (const id of ['join', 'retry', 'leave', 'prejoin']) await expect(page.locator('#' + id)).toBeHidden();
   await expect.poll(() => page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
   await expect.poll(() => page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);
+  const capability = Buffer.alloc(32, 17).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  await page.evaluate(hash => { location.hash = hash; }, `k=${capability}&s=${'23'.repeat(32)}&g=1&e=${now - 60}`);
+  await expect(page.locator('#status')).toHaveText('This invite link is no longer valid.');
+  await expect(page.locator('#error-hint')).toHaveText('Ask your host for a new Web Join link and open it to join.');
+  await expect(page.locator('#retry')).toBeHidden();
+  await page.evaluate(hash => { location.hash = hash; }, `k=${capability}&s=${'24'.repeat(32)}&g=1&e=${now + 300}`);
+  await expect(page.getByRole('heading', { name: 'Check your audio' })).toBeVisible();
+  await expect(page.locator('#join')).toBeDisabled();
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Skip check' }).click();
+  await page.locator('#join').click();
+  await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
+  await page.locator('#leave').click();
+  await expect.poll(() => page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
 });
 
 for (const width of [375, 390]) {

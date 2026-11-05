@@ -130,8 +130,8 @@ function mapExpired(message) {
     headline: turnOnly ? "The free relay session timed out." : "This invite link is no longer valid.",
     hint: turnOnly
       ? "Ask your host for a new invite if Retry does not connect. Retry fetches fresh relay credentials when the link is still good."
-      : "Ask your host to copy a new Web Join link from the desktop app, then open it and tap Retry.",
-    showRetry: true,
+      : "Ask your host for a new Web Join link and open it to join.",
+    showRetry: turnOnly,
     needsFreshInvite: !turnOnly,
   };
 }

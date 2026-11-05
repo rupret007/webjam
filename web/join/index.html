@@ -13,36 +13,37 @@
 <body>
   <main>
     <p class="eyebrow">WebJam</p>
-    <h1>Join your band from the browser</h1>
-    <p><strong>Web Join, higher delay (about 60–120 ms).</strong> Desktop players keep their low-latency app connection. For tight rehearsals use the WebJam app.</p>
-    <p id="status" role="status">Open the invite link from your desktop host.</p>
-    <p id="error-hint" class="error-hint" hidden></p>
-    <ul class="first-run" aria-label="Before you join">
-      <li>Wired headphones on (required below)</li>
-      <li>Microphone ready — Check microphone or Join asks for access</li>
-      <li>Join only when you trust the host who sent the link</li>
-    </ul>
-    <section id="prejoin" hidden aria-labelledby="prejoin-heading">
-      <h2 id="prejoin-heading" class="prejoin-heading">Before you connect</h2>
-      <p class="prejoin-lead">One quick check so your band hears you clearly.</p>
-      <button type="button" id="check-mic">Check microphone</button>
-      <div class="mic-meter-wrap">
+    <h1>Join a WebJam session</h1>
+    <div class="join-card">
+      <p id="status" role="status">Open the invite link from your host.</p>
+      <p id="error-hint" class="error-hint" hidden></p>
+      <section id="prejoin" hidden aria-labelledby="prejoin-heading">
+        <h2 id="prejoin-heading">Check your audio</h2>
+        <div class="mic-actions">
+          <button type="button" id="check-mic" class="secondary">Check microphone</button>
+          <button type="button" id="skip-check" class="skip-check">Skip check</button>
+        </div>
+        <p id="mic-error" class="mic-error" role="alert"></p>
+        <button type="button" id="mic-retry" class="secondary" hidden>Try again</button>
         <div id="mic-meter" class="mic-meter" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div id="mic-meter-fill" class="mic-meter-fill"></div>
         </div>
-        <p id="mic-heard" class="mic-heard" hidden>We can hear you</p>
-      </div>
-      <p id="mic-error" class="mic-error" role="alert"></p>
-      <button type="button" id="mic-retry" hidden>Try again</button>
-      <label class="headphones"><input id="headphones" type="checkbox"> I’m wearing headphones — this stops echo for everyone.</label>
-      <button type="button" id="skip-check" class="skip-check">Skip check</button>
-    </section>
-    <div class="actions"><button id="join" disabled>Join with microphone</button><button id="retry" hidden>Retry</button><button id="leave" hidden>Leave session</button></div>
-    <p id="latency">Estimated listening delay: available after connecting.</p>
-    <p id="warnings" role="status"></p>
-    <details><summary>Browser and iPhone notes</summary><p>Tap Join to start audio. On iPhone and iPad: listen and play along, best effort. Safari may play mono and add playback buffering; WebRTC and WebAudio have a history of stuttering (WebKit 225880). Keep this page visible. Firefox may send a lower audio bitrate.</p></details>
+        <p id="mic-progress" role="status"></p>
+        <p id="mic-heard" class="mic-heard" role="status" hidden>Mic detected. Join when you’re ready.</p>
+        <label class="headphones"><input id="headphones" type="checkbox"> I’m wearing wired headphones to prevent echo.</label>
+      </section>
+      <div class="actions"><button id="join" disabled>Join with microphone</button><button id="retry" hidden>Retry</button><button id="leave" hidden>Leave session</button></div>
+      <p id="audio-quality" role="status"></p>
+    </div>
+    <details>
+      <summary>Audio details</summary>
+      <p>Browser audio usually has more delay than the desktop app (roughly 60–120 ms). For tight rehearsals, use the WebJam app.</p>
+      <p id="latency">Listening delay is estimated after you connect.</p>
+      <p id="warnings"></p>
+      <p>On iPhone and iPad, keep this page visible while you listen or play along. Safari may add playback delay.</p>
+    </details>
     <audio id="host-audio" autoplay playsinline></audio>
-    <p class="privacy">The invite stays in this page’s URL fragment. Signaling is encrypted. No analytics or third-party scripts.</p>
+    <p class="privacy">Join only with an invite from someone you trust. WebJam encrypts connection setup.</p>
   </main>
 </body>
 </html>

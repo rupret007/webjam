@@ -41,17 +41,22 @@ test("fake mic level enables Join after headphones confirmation", async ({ page 
       },
     });
   });
-  await page.setViewportSize({ width: 375, height: 812 });
+  await page.setViewportSize({ width: 375, height: 667 });
   await page.goto(`/${fragment(invite())}`);
   const join = page.getByRole("button", { name: "Join with microphone", exact: true });
   const meter = page.locator("#mic-meter");
+  await expect(join).toBeInViewport({ ratio: 1 });
   await expect(join).toBeDisabled();
   await page.getByRole("button", { name: "Check microphone" }).click();
   await expect(meter).toHaveAttribute("aria-valuenow", /[1-9]/);
-  await expect(page.getByText("We can hear you")).toBeVisible();
+  await expect(page.getByText("Mic detected. Join when you’re ready.")).toBeVisible();
+  await expect(page.getByText("Speak or play a note to check your level.")).toBeHidden();
   await expect(join).toBeDisabled();
   await page.getByRole("checkbox").check();
+  await page.evaluate(() => scrollTo(0, 0));
   await expect(join).toBeEnabled();
+  await expect(join).toBeInViewport({ ratio: 1 });
+  await expect(page.getByRole("checkbox")).toBeInViewport({ ratio: 1 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
