@@ -176,7 +176,8 @@ def test_duplicate_rtp_does_not_consume_quota_or_fill_buffer(local_server):
 
 
 @pytest.mark.requires_local_socket
-def test_valid_media_flood_fails_closed_at_buffer_bound(local_server):
+def test_valid_media_flood_fails_closed_at_buffer_bound(local_server, caplog):
+    caplog.set_level("INFO", logger="webjam.web_join_bridge")
     bridge = WebJoinBridge(local_server.getsockname()[1], codec_factory=FakeCodec)
     bridge.start()
     peer = connect(bridge)
@@ -188,6 +189,27 @@ def test_valid_media_flood_fails_closed_at_buffer_bound(local_server):
                 break  # Bridge can close while the flood is still in progress.
         assert bridge.closed.wait(1)
         assert bridge.close_reason == "browser audio queue exceeded 60 ms"
+        assert "Web Join bridge stopped (browser_audio_queue_full)" in caplog.messages
+    finally:
+        peer.close()
+        bridge.close()
+
+
+@pytest.mark.requires_local_socket
+def test_unknown_bridge_exception_stays_out_of_local_log(local_server, caplog):
+    class FailingCodec(FakeCodec):
+        def decode_web(self, _payload):
+            raise OSError("sensitive test endpoint")
+
+    caplog.set_level("INFO", logger="webjam.web_join_bridge")
+    bridge = WebJoinBridge(local_server.getsockname()[1], codec_factory=FailingCodec)
+    bridge.start()
+    peer = connect(bridge)
+    try:
+        peer.send(make_rtp(b"opus", 1, 0))
+        assert bridge.closed.wait(1)
+        assert "Web Join bridge stopped (bridge_failed)" in caplog.messages
+        assert "sensitive test endpoint" not in caplog.text
     finally:
         peer.close()
         bridge.close()

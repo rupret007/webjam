@@ -1,0 +1,1 @@
+- When a connected browser guest drops, Web Join asks for a fresh invite and the desktop records a fixed bridge diagnostic code.

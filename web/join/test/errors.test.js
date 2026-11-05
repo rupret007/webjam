@@ -11,6 +11,19 @@ function controls() {
   return { status, hint, retry, join, leave, elements: { status, hint, retry, join, leave } };
 }
 
+test("an ended connection requires a fresh invite without blaming the host", () => {
+  const view = mapJoinError(new Error(JOIN_SIGNAL.SESSION_ENDED));
+  const ui = controls();
+  applyJoinFailure(view, ui.elements);
+  assert.equal(view.kind, "session_ended");
+  assert.equal(view.needsFreshInvite, true);
+  assert.equal(ui.status.textContent, "The Web Join connection ended.");
+  assert.match(ui.hint.textContent, /new browser invite/i);
+  assert.equal(ui.retry.hidden, true);
+  assert.equal(ui.join.hidden, true);
+  assert.equal(ui.leave.hidden, true);
+});
+
 test("room full maps from the used-invite mailbox signal with Retry", () => {
   const view = mapJoinError(new Error(JOIN_SIGNAL.ROOM_FULL));
   assert.equal(view.kind, "room_full");

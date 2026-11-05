@@ -407,7 +407,7 @@ jobs:
         include:
           - os: windows-2025
             target: windows-x64
-          - os: macos-14
+          - os: macos-15
             target: macos-universal
     steps:
       - name: Checkout
@@ -925,10 +925,11 @@ jobs:
       !cancelled() &&
       (needs.ios-change-gate.result != 'success' ||
        needs.ios-change-gate.outputs.ios == 'true')
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 40
     env:
-      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      WEBJAM_ART_SIMULATOR_RUNTIME: iOS 18.5
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -986,13 +987,12 @@ jobs:
       !cancelled() &&
       (needs.ios-change-gate.result != 'success' ||
        needs.ios-change-gate.outputs.ios == 'true')
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     env:
-      # macos-14 defaults to Xcode 15.4, whose Swift toolchain does not ship
-      # the Testing module used by the checked-in Swift suites. Xcode 16.2 is
-      # preinstalled on this image and also supplies the iOS 18.2 Simulator SDK.
-      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
+      # Asset catalog compilation needs the installed iOS 18.5 runtime
+      # paired with the Xcode 16.4 simulator SDK.
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -1019,7 +1019,7 @@ jobs:
       - name: Test Pocket Stage wire protocol
         working-directory: ios
         run: |
-          test "$(xcodebuild -version | head -1)" = "Xcode 16.2"
+          test "$(xcodebuild -version | head -1)" = "Xcode 16.4"
           swift test
 
       - name: Prove Swift URLSession against the live pinned-WSS gateway
@@ -1151,7 +1151,7 @@ jobs:
   # Build desktop artifacts
   # Four targets built from webjam.spec (single source of truth):
   #   windows-x64  → windows-2025   (x86-64)
-  #   macos-arm64  → macos-14       (Apple Silicon M1/M2)
+  #   macos-arm64  → macos-15       (Apple Silicon M1/M2)
   #   macos-x64    → macos-15-intel (Intel x86-64)
   #   linux-x64    → ubuntu-22.04   (x86-64, Music join; Art LAN host/join)
   #
@@ -1182,7 +1182,7 @@ jobs:
           - os: windows-2025
             target: windows-x64
             python: "3.11.9"
-          - os: macos-14
+          - os: macos-15
             target: macos-arm64
             python: "3.11.9"
           - os: macos-15-intel

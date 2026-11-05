@@ -32,6 +32,30 @@ async function openInvitation(page, width = 390) {
   await page.getByRole('button', { name: 'Skip check' }).click();
 }
 
+test('a closed enrolled session releases audio and asks for a new invitation', async ({ page }) => {
+  await page.route('**/session.js', route => route.fulfill({
+    contentType: 'application/javascript',
+    body: `import { JOIN_SIGNAL } from './errors.js';
+      export class WebJoinSession {
+        constructor(options) { this.options = options; }
+        async join() {
+          this.options.onStatus('Synthetic session connected.');
+          window.endEnrolledSession = () => this.options.onError(new Error(JOIN_SIGNAL.SESSION_ENDED));
+        }
+        close() { this.options.stream.getTracks().forEach(track => track.stop()); }
+      }`
+  }));
+  await openInvitation(page);
+  await page.locator('#join').click();
+  await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
+  await page.evaluate(() => window.endEnrolledSession());
+  await expect(page.locator('#status')).toHaveText('The Web Join connection ended.');
+  await expect(page.locator('#error-hint')).toContainText('new browser invite');
+  for (const id of ['join', 'retry', 'leave', 'prejoin']) await expect(page.locator('#' + id)).toBeHidden();
+  await expect.poll(() => page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);
+});
+
 for (const width of [375, 390]) {
   test(`a relay timeout releases audio and permits an explicit retry at ${width}px`, async ({ page }) => {
     let requests = 0;
