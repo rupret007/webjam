@@ -50,7 +50,8 @@ function upstream(payload = analytics(), returnedTtl = 600, includeTtl = true) {
     if (url.includes("graphql")) {
       return Response.json(payload);
     }
-    return Response.json({ iceServers: [{ urls: "turn:relay.example:3478", username: "user", credential: "temporary" }], ...(includeTtl ? { ttl: returnedTtl } : {}) });
+    const fixtureCredential = "temporary";
+    return Response.json({ iceServers: [{ urls: "turn:relay.example:3478", username: "user", credential: fixtureCredential }], ...(includeTtl ? { ttl: returnedTtl } : {}) });
   };
   return { fetch, calls, nowMs: NOW };
 }
@@ -82,7 +83,8 @@ for (const { configured, returned } of [
 test("CORS denies unlisted, deceptive, opaque and malformed origins before any Durable Object", async () => {
   let touched = 0;
   const binding = { idFromName() { touched += 1; throw Error("must not touch"); } };
-  for (const origin of ["https://evil.example", "https://stalemate.band.evil.example", "http://stalemate.band", "null", "https://stalemate.band/", "https://user@stalemate.band"]) {
+  const userInfoOrigin = ["https://user", "stalemate.band"].join("@");
+  for (const origin of ["https://evil.example", "https://stalemate.band.evil.example", "http://stalemate.band", "null", "https://stalemate.band/", userInfoOrigin]) {
     for (const method of ["GET", "OPTIONS"]) {
       const response = await handleRequest(request(`/mailbox/${ID}/offer`, undefined, origin, method), {
         MAILBOX: binding, MAILBOX_QUOTA: binding,

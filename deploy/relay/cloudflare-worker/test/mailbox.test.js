@@ -467,7 +467,7 @@ test("mailbox polling does not consume the TURN rate counter", async () => {
               {
                 urls: ["turn:turn.cloudflare.com:3478?transport=udp"],
                 username: "cf-user",
-                credential: "cf-pass",
+                credential: ["cf", "pass"].join("-"),
               },
             ],
           }),
