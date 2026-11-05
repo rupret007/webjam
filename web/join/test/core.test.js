@@ -66,6 +66,21 @@ test("TURN validation requires web scope, exact provider, TLS fallback, bounded 
   assert.equal(validateCredentials(credentials()).iceServers.length, 1);
   for (const changed of [{ client: undefined }, { ttl: 3601 }, { ttl: 0 }, { quota_bytes: SESSION_BYTES + 1 }, { allowed_relay_ips: ["8.8.8.8"] }, { iceServers: [{ urls: "turn:evil.example:3478", username: "x", credential: "x" }] }, { iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }] }]) assert.throws(() => validateCredentials({ ...credentials(), ...changed }));
 });
+test("the live Cloudflare web credential bundle accepts STUN on 443 without broadening relay trust", () => {
+  // Endpoint list observed from the private issuer, with synthetic credentials.
+  const document = credentials();
+  document.iceServers = [
+    { urls: ["stun:stun.cloudflare.com:3478", "stun:stun.cloudflare.com:443"] },
+    {
+      urls: ["turn:turn.cloudflare.com:3478?transport=udp", "turn:turn.cloudflare.com:3478?transport=tcp", "turns:turn.cloudflare.com:5349?transport=tcp", "turn:turn.cloudflare.com:443?transport=udp", "turn:turn.cloudflare.com:80?transport=tcp", "turns:turn.cloudflare.com:443?transport=tcp"],
+      username: "temporary", credential: "temporary",
+    },
+  ];
+  assert.deepEqual(validateCredentials(document).iceServers, document.iceServers);
+  for (const url of ["stun:evil.example:443", "stun:stun.cloudflare.com.evil.example:443", "stun:turn.cloudflare.com:443", "stun:stun.cloudflare.com:53", "stun:stun.cloudflare.com:443?transport=tcp", "turn:stun.cloudflare.com:443?transport=udp"]) {
+    assert.throws(() => validateCredentials({ ...document, iceServers: [{ urls: [url] }, document.iceServers[1]] }), /Untrusted relay configuration/, url);
+  }
+});
 test("music SDP sets stereo, bitrate, FEC, packet time and capture warnings retain processing off", async () => {
   const result = musicSdp(sdp);
   for (const field of ["stereo=1", "sprop-stereo=1", "maxaveragebitrate=128000", "usedtx=0", "useinbandfec=1", "a=ptime:20"]) assert.ok(result.includes(field));
