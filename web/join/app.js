@@ -166,7 +166,12 @@ function leave(message = "You left the session.", error) {
   $("leave").hidden = true;
   const elements = failureElements();
   if (error) {
-    applyJoinFailure(mapJoinError(error), elements);
+    const view = mapJoinError(error);
+    if (view.kind === "session_ended") {
+      invite = undefined;
+      $("prejoin").hidden = true;
+    }
+    applyJoinFailure(view, elements);
     elements.status.dataset.failure = "true";
   } else {
     delete elements.status.dataset.failure;

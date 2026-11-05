@@ -2,6 +2,7 @@
 
 export const JOIN_SIGNAL = Object.freeze({
   ROOM_FULL: "This invitation was already used or expired. Ask the host for a new link.",
+  SESSION_ENDED: "The Web Join connection ended.",
   HOST_NO_ANSWER: "The host did not answer in time. Ask for a new invite.",
   HOST_AUTH_TIMEOUT: "Host authentication timed out. Ask for a new invite.",
   INVITE_EXPIRED: "The invite expired. Ask the host for a new link.",
@@ -41,6 +42,15 @@ const HOST_OFFLINE_SIGNALS = new Set([
 /** @param {unknown} error @returns {JoinFailureView} */
 export function mapJoinError(error) {
   const message = error instanceof Error ? error.message : String(error ?? "");
+  if (message === JOIN_SIGNAL.SESSION_ENDED) {
+    return {
+      kind: "session_ended",
+      headline: message,
+      hint: "Ask your host to create a new browser invite and open that link.",
+      showRetry: false,
+      needsFreshInvite: true,
+    };
+  }
   if (message === JOIN_SIGNAL.ROOM_FULL) {
     return {
       kind: "room_full",
@@ -132,7 +142,7 @@ export function applyJoinFailure(view, elements) {
   elements.hint.textContent = view.hint;
   elements.hint.hidden = !view.hint;
   elements.retry.hidden = !view.showRetry;
-  elements.join.hidden = view.showRetry;
+  elements.join.hidden = view.showRetry || view.needsFreshInvite;
   elements.leave.hidden = true;
   elements.retry.disabled = !view.showRetry;
   if (view.showRetry) elements.join.disabled = false;

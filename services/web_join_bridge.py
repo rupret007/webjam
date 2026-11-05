@@ -15,6 +15,7 @@ import ctypes as C
 import ctypes.util
 import hmac
 import ipaddress
+import logging
 import math
 from pathlib import Path
 import secrets
@@ -39,6 +40,23 @@ MAX_PCM_BYTES = SAMPLE_RATE * CHANNELS * 2 * 60 // 1000
 HELLO = b"WJWB1"
 READY = b"WJWA1"
 CLOSE = b"WJWC1"
+
+_LOG = logging.getLogger("webjam.web_join_bridge")
+_CLOSE_CODES = {
+    "host closed": "host_stop",
+    "endpoint closed": "transport_stop",
+    "session expired": "session_expired",
+    "quota exhausted": "quota_exhausted",
+    "bridge authentication timeout": "bridge_auth_timeout",
+    "browser media timeout": "browser_media_timeout",
+    "Jamulus media timeout": "jamulus_media_timeout",
+    "Jamulus server refused or disconnected guest": "jamulus_disconnected",
+    "Jamulus server requires unsupported license consent": "jamulus_license_required",
+    "Jamulus control backlog exceeded": "jamulus_control_backlog",
+    "browser audio queue exceeded 60 ms": "browser_audio_queue_full",
+    "Web Join accepts only 10 or 20 ms Opus packets": "browser_opus_duration",
+    "Opus codec rejected audio": "opus_rejected",
+}
 
 
 class BridgeError(RuntimeError):
@@ -461,7 +479,12 @@ class WebJoinBridge:
         except Exception:
             self.close_reason = "bridge worker failed"
         finally:
-            self._cleanup()
+            # The internal reason can contain exception text. Only fixed
+            # categories belong in the local application log.
+            try:
+                _LOG.info("Web Join bridge stopped (%s)", _CLOSE_CODES.get(self.close_reason, "bridge_failed"))
+            finally:
+                self._cleanup()
 
     def _cleanup(self):
         if self._jam:

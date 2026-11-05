@@ -2,6 +2,7 @@ import { open, seal, validateOffer, sdpFingerprint, enrollmentProof } from "./cr
 import { Mailbox, BUSY_MESSAGE } from "./mailbox.js";
 import { candidateAllowed, offerHasReviewedAllocation, policySdp, SESSION_BYTES } from "./policy.js";
 import { musicSdp, tuneReceiver, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget } from "./audio.js";
+import { JOIN_SIGNAL } from "./errors.js";
 
 export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReviewedAllocations = false } = {}) {
   await new Promise((resolve, reject) => {
@@ -61,7 +62,9 @@ export class WebJoinSession {
       if (this.authorized) this.onTrack(stream); else this.pendingStream = stream;
     });
     pc.addEventListener("connectionstatechange", () => {
-      if (["failed", "closed"].includes(pc.connectionState) && !signal.aborted) this.fail(new Error("Connection ended. Ask the host for a new invite."));
+      if (["failed", "closed"].includes(pc.connectionState) && !signal.aborted) {
+        this.fail(new Error(this.authorized ? JOIN_SIGNAL.SESSION_ENDED : JOIN_SIGNAL.ICE_CONNECTION_FAILED));
+      }
       if (pc.connectionState === "disconnected") this.disconnectTimer ??= setTimeout(() => this.fail(new Error("The network connection timed out.")), 10000);
       if (pc.connectionState === "connected") { clearTimeout(this.disconnectTimer); this.disconnectTimer = null; }
     });
@@ -84,7 +87,9 @@ export class WebJoinSession {
           if (!sent || message.data !== "authorized" || this.authorized) { reject(new Error("Invalid enrollment response")); this.fail(new Error("Invalid enrollment response")); return; }
           this.authorized = true; resolve();
         });
-        channel.addEventListener("close", () => { if (!signal.aborted) this.fail(new Error("The host ended this web session.")); });
+        channel.addEventListener("close", () => {
+          if (!signal.aborted) this.fail(new Error(this.authorized ? JOIN_SIGNAL.SESSION_ENDED : JOIN_SIGNAL.ICE_CONNECTION_FAILED));
+        });
         prove();
       });
     });
