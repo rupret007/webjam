@@ -455,3 +455,24 @@ test("mailbox aliases cannot bypass an exhausted mailbox quota or consume TURN q
     assert.equal(forwarded, 0);
   }
 });
+
+test("malformed TURN requests consume rate quota and denied requests leave the body unread", async () => {
+  for (const origin of [null, ORIGIN]) {
+    resetWorkerState();
+    const { env: durable } = multiScopeQuotaEnv({ TURN_RATE_LIMIT_PER_MINUTE: "1" });
+    const config = { ...env, ...durable };
+    const deps = upstream();
+    const headers = { "CF-Connecting-IP": "203.0.113.10", "Content-Type": "application/json" };
+    if (origin) headers.Origin = origin;
+    const malformed = new Request("https://worker.test/turn-credentials", {
+      method: "POST", headers, body: "{",
+    });
+    assert.equal((await handleRequest(malformed, config, deps)).status, 403);
+    assert.equal(malformed.bodyUsed, true);
+
+    const next = request("/turn-credentials", token({ client: origin ? "web" : undefined }), origin);
+    assert.equal((await handleRequest(next, config, deps)).status, 429);
+    assert.equal(next.bodyUsed, false);
+    assert.equal(deps.calls.length, 0);
+  }
+});
