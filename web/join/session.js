@@ -1,17 +1,36 @@
 import { open, seal, validateOffer, sdpFingerprint, enrollmentProof } from "./crypto.js";
 import { Mailbox, BUSY_MESSAGE } from "./mailbox.js";
-import { policySdp, SESSION_BYTES } from "./policy.js";
+import { candidateAllowed, offerHasReviewedAllocation, policySdp, SESSION_BYTES } from "./policy.js";
 import { musicSdp, tuneReceiver, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget } from "./audio.js";
 
-export function waitFor(target, event, check, signal, timeout, message) {
-  return new Promise((resolve, reject) => {
-    const cleanup = () => { clearTimeout(timer); target.removeEventListener(event, changed); signal.removeEventListener("abort", abort); };
-    const changed = () => { if (check()) { cleanup(); resolve(); } };
+export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReviewedAllocations = false } = {}) {
+  await new Promise((resolve, reject) => {
+    let graceElapsed = false;
+    const cleanup = () => {
+      clearTimeout(timer);
+      clearTimeout(grace);
+      pc.removeEventListener("icegatheringstatechange", changed);
+      pc.removeEventListener("icecandidate", changed);
+      signal.removeEventListener("abort", abort);
+    };
+    const finish = () => { cleanup(); resolve(); };
+    const changed = () => {
+      if (pc.iceGatheringState === "complete" || (graceElapsed &&
+          pc.localDescription?.sdp.split(/\r?\n/).some(line => line.startsWith("a=candidate:") &&
+            candidateAllowed(line, undefined, allowReviewedAllocations)))) finish();
+    };
     const abort = () => { cleanup(); reject(new DOMException("Stopped", "AbortError")); };
-    const timer = setTimeout(() => { cleanup(); reject(new Error(message)); }, timeout);
-    target.addEventListener(event, changed); signal.addEventListener("abort", abort, { once: true });
+    // Give alternate services time to gather, then signal vetted candidates
+    // while ICE can still use them. Keep waiting if we have no usable path.
+    const grace = setTimeout(() => { graceElapsed = true; changed(); }, Math.min(3500, timeout));
+    const timer = setTimeout(finish, timeout);
+    pc.addEventListener("icegatheringstatechange", changed);
+    pc.addEventListener("icecandidate", changed);
+    signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort(); else changed();
   });
+  if (signal.aborted) throw new DOMException("Stopped", "AbortError");
+  return policySdp(pc.localDescription?.sdp ?? "", { allowReviewedAllocations });
 }
 export class WebJoinSession {
   constructor({ origin, invite, stream, audioContext, onStatus = () => {}, onTrack = () => {}, onLatency = () => {}, onError = () => {} }) {
@@ -75,8 +94,9 @@ export class WebJoinSession {
     pc.addTrack(this.stream.getAudioTracks()[0], this.stream);
     const description = await pc.createAnswer();
     await pc.setLocalDescription({ type: "answer", sdp: musicSdp(description.sdp) });
-    await waitFor(pc, "icegatheringstatechange", () => pc.iceGatheringState === "complete", signal, 15000, "Network discovery timed out. Try another network or the app.");
-    const sdp = policySdp(pc.localDescription.sdp);
+    // An older host rejects these addresses in an answer. Its authenticated
+    // offer advertises only the legacy candidates, so keep that answer policy.
+    const sdp = await gatherAnswerSDP(pc, signal, { allowReviewedAllocations: offerHasReviewedAllocation(remoteSDP) });
     answer = { ...offer, kind: "answer", guest_pin: sdpFingerprint(sdp), sdp };
     await this.mailbox.send("answer", await seal(this.invite, answer));
     let timer;

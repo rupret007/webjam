@@ -110,13 +110,24 @@ networks without a permitted public or relay path.
 IPv6 candidates are filtered from host offers and rejected in browser answers,
 matching the browser's IPv4-only policy without discarding usable IPv4 fallback.
 
-Cloudflare's reviewed relay IPv4 addresses are `141.101.90.1` and
-`162.159.207.1`; a provider change fails closed until the allowlists in both
-clients are reviewed. Maintain them against [Cloudflare's TURN FAQ](https://developers.cloudflare.com/realtime/turn/faq/).
+Cloudflare's TURN service addresses are `141.101.90.1` and `162.159.207.1`.
+The private beta observed relayed transport addresses in `104.30.136.0/24`,
+`104.30.137.0/24`, and `104.30.144.0/21`. RIPE RIS corroborated that AS13335
+announced those routes. This is a reviewed allowlist for observed allocations,
+not a provider guarantee that all allocations use those routes. An unknown
+pool requires review in both clients. The browser keeps the legacy answer
+allowlist when the authenticated offer contains no allocation from the new
+pools. Publish the compatible browser before rolling out a native host that
+advertises the reviewed pools.
+
+See [Cloudflare's TURN service address guidance](https://developers.cloudflare.com/realtime/turn/faq/)
+and its [description of allocated peer addresses](https://developers.cloudflare.com/realtime/turn/what-is-turn/).
 No public gateway is introduced. The bridge listens on `127.0.0.1` and pins the
 local source socket after token authentication.
 
-Credential HTTP requests have a 12-second deadline, ICE gathering 20 seconds,
+The browser gives ICE services a short gathering grace period, then sends the
+vetted candidates it has. It waits up to 15 seconds when none are usable.
+Credential HTTP requests have a 12-second deadline, host ICE gathering 20 seconds,
 host answer polling 90 seconds, connection establishment 25 seconds, and DTLS
 connection-to-enrollment 10 seconds. Browser networking and enrollment also have
 finite deadlines. Idle/disconnected media paths close instead of retaining an

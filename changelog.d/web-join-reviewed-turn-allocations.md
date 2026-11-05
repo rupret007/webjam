@@ -1,0 +1,1 @@
+- Web Join can connect through reviewed Cloudflare relay allocations when direct ICE fails, and no longer waits for every ICE service after a usable candidate is available.
