@@ -68,14 +68,17 @@ function errorResponse(status, code) {
 }
 
 function parseMailboxPath(path) {
-  const parts = String(path || "").split("/").filter(Boolean);
-  if (parts[0] !== "mailbox" || parts.length < 2 || parts.length > 3) {
+  const parts = String(path || "").split("/");
+  const first = parts.findIndex(Boolean);
+  if (parts[first] !== "mailbox") {
     return null;
   }
-  if (!validMailboxId(parts[1])) {
+  // Match the canonical pathname used by the mailbox quota scope and backend.
+  if (first !== 1 || parts.length < 3 || parts.length > 4 ||
+      !validMailboxId(parts[2]) || (parts.length === 4 && !parts[3])) {
     return { invalid: true };
   }
-  return { id: parts[1], slot: parts[2] || "" };
+  return { id: parts[2], slot: parts[3] || "" };
 }
 
 function applyQuotaEnv(env) {

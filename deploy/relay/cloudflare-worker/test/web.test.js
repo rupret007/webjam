@@ -420,3 +420,38 @@ test("desktop turn-credentials behavior when WEB_TURN_KEY_ID is unset vs misconf
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { error: "misconfigured" });
 });
+
+test("mailbox aliases cannot bypass an exhausted mailbox quota or consume TURN quota", async () => {
+  for (const origin of [null, ORIGIN]) {
+    const scopes = [];
+    let forwarded = 0;
+    const env = {
+      MAILBOX_QUOTA: {
+        idFromName(scope) { scopes.push(scope); return scope; },
+        get(scope) {
+          return { fetch() { return new Response(null, { status: scope === "mailbox" ? 429 : 200 }); } };
+        },
+      },
+    };
+    const deps = {
+      mailboxFetch() { forwarded += 1; return new Response(null, { status: 204 }); },
+    };
+
+    for (const path of [
+      `//mailbox/${ID}/offer`,
+      `/mailbox//${ID}/offer`,
+      `/mailbox/${ID}//offer`,
+      `/mailbox/${ID}/offer/`,
+    ]) {
+      const response = await handleRequest(request(path, undefined, origin, "GET"), env, deps);
+      assert.equal(response.status, 404, path);
+      assert.deepEqual(scopes, []);
+      assert.equal(forwarded, 0);
+    }
+
+    const canonical = request(`/mailbox/${ID}/offer`, undefined, origin, "GET");
+    assert.equal((await handleRequest(canonical, env, deps)).status, 429);
+    assert.deepEqual(scopes, origin ? ["web", "mailbox"] : ["mailbox"]);
+    assert.equal(forwarded, 0);
+  }
+});
