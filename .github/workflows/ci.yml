@@ -407,7 +407,7 @@ jobs:
         include:
           - os: windows-2025
             target: windows-x64
-          - os: macos-14
+          - os: macos-15
             target: macos-universal
     steps:
       - name: Checkout
@@ -1151,7 +1151,7 @@ jobs:
   # Build desktop artifacts
   # Four targets built from webjam.spec (single source of truth):
   #   windows-x64  → windows-2025   (x86-64)
-  #   macos-arm64  → macos-14       (Apple Silicon M1/M2)
+  #   macos-arm64  → macos-15       (Apple Silicon M1/M2)
   #   macos-x64    → macos-15-intel (Intel x86-64)
   #   linux-x64    → ubuntu-22.04   (x86-64, Music join; Art LAN host/join)
   #
@@ -1182,7 +1182,7 @@ jobs:
           - os: windows-2025
             target: windows-x64
             python: "3.11.9"
-          - os: macos-14
+          - os: macos-15
             target: macos-arm64
             python: "3.11.9"
           - os: macos-15-intel
