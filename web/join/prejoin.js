@@ -13,7 +13,7 @@ export function micCheckFailure(error) {
   if (error?.name === "NotAllowedError") {
     return {
       message:
-        "Microphone access is blocked. Click the lock or site icon in your browser’s address bar, allow the microphone, then press Try again.",
+        "Microphone access was blocked. Use the site controls beside the address bar to allow your mic, then click Try again.",
       showRetry: true,
     };
   }
