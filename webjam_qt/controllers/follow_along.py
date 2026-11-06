@@ -297,4 +297,4 @@ class FollowAlongController:
         choice.choice_requested.connect(selected)
         choice.show()
         choice.activateWindow()
-        choice.buttons["lesson"].setFocus()
+        choice.buttons["ensemble"].setFocus()

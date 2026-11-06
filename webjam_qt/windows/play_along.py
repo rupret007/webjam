@@ -28,34 +28,48 @@ class PlayAlongDialog(QDialog):
         layout.setSpacing(Space.MD)
         title = QLabel("How do you want to play along?")
         title.setWordWrap(True)
+        title_font = title.font()
+        title_font.setBold(True)
+        title.setFont(title_font)
         layout.addWidget(title)
         self.buttons = {}
         for choice in PLAY_ALONG_CHOICES:
+            section = QVBoxLayout()
+            section.setSpacing(Space.SM)
+            layout.addLayout(section)
+            is_guest_track = choice.key == "ensemble" and not hosting
+            description = (
+                "Your host chooses the file. Use the mixer to balance the track with the musicians."
+                if is_guest_track else choice.description
+            )
             heading = QLabel(choice.title)
             heading.setWordWrap(True)
-            layout.addWidget(heading)
-            detail = QLabel(choice.description)
+            heading_font = heading.font()
+            heading_font.setBold(True)
+            heading.setFont(heading_font)
+            section.addWidget(heading)
+            detail = QLabel(description)
             detail.setWordWrap(True)
-            layout.addWidget(detail)
-            button = QPushButton("Open Jamulus mixer" if choice.key == "ensemble" and not hosting else choice.action)
-            button.setObjectName("GhostButton")
+            section.addWidget(detail)
+            button = QPushButton("Open Jamulus mixer" if is_guest_track else choice.action)
+            button.setObjectName("PrimaryButton" if choice.key == "ensemble" else "GhostButton")
             button.setAutoDefault(False)
-            button.setAccessibleDescription(choice.description)
+            button.setAccessibleDescription(description)
             button.installEventFilter(self)
             button.clicked.connect(lambda _checked=False, key=choice.key: self.choice_requested.emit(key))
             self.buttons[choice.key] = button
-            layout.addWidget(button)
+            section.addWidget(button)
         hint = QLabel(
-            "Video practice uses the meeting's sound. For live playing, listen through Jamulus "
-            "and disconnect meeting audio. Shared Track needs a local audio file and a supported host route."
+            "Shared Track needs a supported Mac audio route. Keep meeting video on and "
+            "disconnect meeting audio while playing."
         )
         hint.setWordWrap(True)
         layout.addWidget(hint)
         if not hosting:
             hint.setText(
-                "The host chooses the backing track. In your Jamulus mixer, balance the WebJam Track "
-                "channel and the other musicians. Disconnect meeting audio while playing; keep its video for faces."
+                "Disconnect meeting audio while playing; keep its video for faces."
             )
+        layout.addStretch(1)
         for label in content.findChildren(QLabel):
             label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
 

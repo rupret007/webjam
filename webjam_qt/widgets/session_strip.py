@@ -350,7 +350,7 @@ class SessionStrip(QFrame):
         self._play_along_button = QPushButton("Play along")
         self._play_along_button.setObjectName("GhostButton")
         self._play_along_button.setAccessibleName("Choose how to play along")
-        self._play_along_button.setToolTip("Follow a YouTube lesson or play together with a Shared Track.")
+        self._play_along_button.setToolTip("Play together with a backing track or follow a YouTube lesson.")
         self._play_along_button.clicked.connect(lambda: self.tool_requested.emit("play_along"))
         self._play_along_button.setVisible(False)
 

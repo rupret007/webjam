@@ -1,0 +1,1 @@
+- Music's Play along menu leads with Shared Track and tells hosts which local audio files they can use.

@@ -612,6 +612,14 @@ Tab reveals the focused control and End/Leave remains outside that scroll.
 
 In Music, choose **Play along** (also in **More → Play along…**):
 
+- **Open Shared Track** lets the host choose a WAV or supported MP3 with
+  **Add Track…**, then press **Play** when the route is ready. Sending the
+  track needs a supported, isolated host route (currently macOS with the
+  certified BlackHole setup). Guests hear it through the jam. Guests using
+  the Jamulus mixer can balance the **WebJam Track** channel with the other
+  musicians. Disconnect Webex audio while playing and keep its video for faces.
+  Judge musical timing by the Jamulus sound; conferencing camera motion
+  arrives later.
 - **Set up video practice** opens Conversation with a host YouTube chooser,
   browser action and meeting controls. Share one video with sound, listen and
   take turns. Your meeting carries the song and voices. If your instrument is
@@ -625,12 +633,6 @@ In Music, choose **Play along** (also in **More → Play along…**):
   people who can open it directly in their browser or meeting app; they do
   not need a WebJam room for meeting video practice. A WebJam room invitation
   still requires an available room and is a separate action.
-- **Open Shared Track** opens the host's existing live-ensemble setup. It needs
-  a local audio file and a supported, isolated host route (currently macOS
-  with the certified BlackHole setup). Guests choose **Open Jamulus mixer**
-  and balance the **WebJam Track** channel with the other musicians. Disconnect
-  Webex audio while playing and keep its video for faces. Judge musical timing
-  by the Jamulus sound; conferencing camera motion arrives later.
 
 Music video practice does not synchronize separate YouTube players or send
 their audio into Jamulus. A browser or meeting handoff confirms only that an

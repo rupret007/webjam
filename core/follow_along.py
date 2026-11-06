@@ -13,14 +13,14 @@ class FollowAlongChoice:
 
 PLAY_ALONG_CHOICES = (
     FollowAlongChoice(
+        "ensemble", "Play together with a backing track",
+        "Choose a local WAV or supported MP3. When you press Play, the backing track joins the jam mix.",
+        "Open Shared Track",
+    ),
+    FollowAlongChoice(
         "lesson", "Learn from a YouTube video",
         "Watch one shared video, talk and take turns. The meeting carries the song and voices.",
         "Set up video practice",
-    ),
-    FollowAlongChoice(
-        "ensemble", "Play together with a backing track",
-        "Hear one song and the musicians through Jamulus. Use Webex for faces; its video arrives later.",
-        "Open Shared Track",
     ),
 )
 
