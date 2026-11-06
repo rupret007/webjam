@@ -178,7 +178,7 @@ _FIRST_SCREEN_PROFILE_KEYS = ("art", "music")
 _ART_PROFILE_SUMMARY = "Make art together."
 _MUSIC_PROFILE_SUMMARY = "Write songs or play live together."
 _START_CARD_HEIGHT = 64
-_PAINT_ALONG_MARK_SIZE = QSize(72, 48)
+_ART_START_MARK_SIZE = QSize(72, 48)
 
 
 class _InvitationInput(QLineEdit):
@@ -361,16 +361,14 @@ class StartCard(QCommandLinkButton):
         # and away from Host.
         self.setAutoDefault(False)
         self.setDefault(False)
-        # The stock control ships a decorative arrow. Clear it on every card
-        # except Paint along, which carries the requested curly-afro face mark and nothing
-        # else.
+        # Use the shared Art illustration in place of the stock arrow.
         mark = (
             Path(__file__).resolve().parent.parent
             / "theme"
             / "assets"
             / "paint_along_mark.png"
         )
-        if start.key == "paint_along" and mark.is_file():
+        if start.key in ("talk_and_make", "paint_along") and mark.is_file():
             # Style this app-owned illustration as neutral chrome. Explicit
             # mode/state pixmaps prevent a platform theme recoloring it.
             source = QImage(str(mark))
@@ -384,12 +382,7 @@ class StartCard(QCommandLinkButton):
                 for state in QIcon.State:
                     icon.addPixmap(pixmap, mode, state)
             self.setIcon(icon)
-            # Keep the established card allocation for the face mark. A small square request shrank
-            # its painted content to roughly 40 x 27 pixels, so the only
-            # illustrated Art choice read like an incidental thumbnail.
-            # Preserve the asset's shape and give it enough area to identify
-            # at a glance without introducing another label or control.
-            self.setIconSize(_PAINT_ALONG_MARK_SIZE)
+            self.setIconSize(_ART_START_MARK_SIZE)
         else:
             self.setIcon(QIcon())
             self.setIconSize(QSize(0, 0))
@@ -397,7 +390,6 @@ class StartCard(QCommandLinkButton):
         # enough to push Host and Join off a supported window. Bounding the
         # height keeps two cards, Host, and Join all on screen at the
         # 760x600 floor while staying a large target.
-        # Keep both choices equal even though only one has an illustration.
         # Sixty-four pixels still leaves both cards and Host / Join inside the
         # supported 760x600 screen floor.
         self.setFixedHeight(_START_CARD_HEIGHT)
