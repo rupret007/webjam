@@ -4,6 +4,9 @@ import { acquireMusicStream } from "./audio.js";
 export const MIC_HEARD_THRESHOLD = 0.012;
 
 export function micCheckFailure(error) {
+  if (error?.name === "OverconstrainedError" && error.constraint === "deviceId") {
+    return { message: "This microphone is unavailable. Choose another input or reconnect it, then try again.", showRetry: true };
+  }
   if (error?.name === "NotFoundError") {
     return {
       message: "No microphone found - plug one in and press Try again.",
@@ -67,13 +70,13 @@ export function startMicLevelMonitor({
   };
 }
 
-export async function beginMicCheck(mediaDevices) {
+export async function beginMicCheck(mediaDevices, deviceId) {
   const devices = await mediaDevices.enumerateDevices();
   if (hasAudioInputDevice(devices)) {
-    return acquireMusicStream(mediaDevices);
+    return acquireMusicStream(mediaDevices, deviceId);
   }
   try {
-    return await acquireMusicStream(mediaDevices);
+    return await acquireMusicStream(mediaDevices, deviceId);
   } catch (error) {
     if (error.name === "NotFoundError") throw error;
     throw error;

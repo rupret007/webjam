@@ -25,12 +25,17 @@
         </div>
         <p id="mic-error" class="mic-error" role="alert"></p>
         <button type="button" id="mic-retry" class="secondary" hidden>Try again</button>
+        <div id="mic-picker" class="mic-picker" hidden>
+          <label for="mic-device">Microphone</label>
+          <select id="mic-device"><option value="">Browser default</option></select>
+        </div>
+        <p id="mic-source" role="status" hidden></p>
         <div id="mic-meter" class="mic-meter" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div id="mic-meter-fill" class="mic-meter-fill"></div>
         </div>
         <p id="mic-progress" role="status"></p>
         <p id="mic-heard" class="mic-heard" role="status" hidden>Mic detected. Join when you’re ready.</p>
-        <label class="headphones"><input id="headphones" type="checkbox"> I’m wearing wired headphones to prevent echo.</label>
+        <label class="headphones"><input id="headphones" type="checkbox"> I’m wearing headphones to prevent echo.</label>
       </section>
       <div class="actions"><button id="join" disabled>Join with microphone</button><button id="retry" hidden>Retry</button><button id="leave" hidden>Leave session</button></div>
       <p id="audio-quality" role="status"></p>

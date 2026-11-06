@@ -50,6 +50,21 @@ function showAudioSettings(stream, warnings = []) {
   $("warnings").textContent = warnings.join("\n");
 }
 
+async function showMicDevices(track, signal) {
+  const source = $("mic-source");
+  source.textContent = track.label ? `Using ${track.label}` : "Microphone connected.";
+  source.hidden = false;
+  const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+  if (signal.aborted) return;
+  const choices = devices.filter(device => device.kind === "audioinput" && device.label &&
+    device.deviceId && !["default", "communications"].includes(device.deviceId));
+  const select = $("mic-device");
+  const selected = select.value;
+  select.replaceChildren(new Option("Browser default", ""), ...choices.map(device => new Option(device.label, device.deviceId)));
+  if (choices.some(device => device.deviceId === selected)) select.value = selected;
+  $("mic-picker").hidden = choices.length < 2;
+}
+
 function stopMicMonitoring(clearHeard = false) {
   prejoinAbort?.abort();
   prejoinAbort = null;
@@ -67,6 +82,7 @@ function stopMicMonitoring(clearHeard = false) {
     showAudioSettings();
   }
   $("mic-progress").textContent = "";
+  $("mic-source").hidden = true;
   $("mic-error").textContent = "";
   $("mic-retry").hidden = true;
   $("check-mic").disabled = checkSkipped || micHeard;
@@ -87,6 +103,7 @@ const refresh = () => {
   $("prejoin").hidden = !invite || starting || !!session;
   $("join").disabled = !joinReady();
   $("skip-check").disabled = !invite || starting || !!session || checkSkipped;
+  $("mic-device").disabled = starting || !!session || checkRunning;
   $("check-mic").disabled =
     !invite || starting || !!session || checkRunning || checkSkipped || micHeard || !!stopMeter;
 };
@@ -105,7 +122,7 @@ async function runMicCheck() {
   if (!invite || checkRunning || starting || session) return;
   resetMicCheck();
   checkRunning = true;
-  $("check-mic").disabled = true;
+  refresh();
   $("mic-error").textContent = "";
   prejoinAbort = new AbortController();
   const { signal } = prejoinAbort;
@@ -116,7 +133,7 @@ async function runMicCheck() {
     await context.resume();
     if (signal.aborted) return;
     $("mic-progress").textContent = "Allow microphone access in your browser.";
-    const capture = await beginMicCheck(navigator.mediaDevices);
+    const capture = await beginMicCheck(navigator.mediaDevices, $("mic-device").value);
     if (signal.aborted) {
       capture.stream.getTracks().forEach((track) => track.stop());
       return;
@@ -124,6 +141,7 @@ async function runMicCheck() {
     prejoinStream = capture.stream;
     prejoinWarnings = capture.warnings;
     showAudioSettings(prejoinStream, prejoinWarnings);
+    void showMicDevices(prejoinStream.getAudioTracks()[0], signal);
     $("mic-progress").textContent = "Speak or play a note to check your level.";
     stopMeter = startMicLevelMonitor({
       audioContext: context,
@@ -154,6 +172,10 @@ async function runMicCheck() {
 $("headphones").addEventListener("change", refresh);
 $("check-mic").addEventListener("click", () => runMicCheck());
 $("mic-retry").addEventListener("click", () => runMicCheck());
+$("mic-device").addEventListener("change", () => {
+  checkSkipped = false;
+  void runMicCheck();
+});
 $("skip-check").addEventListener("click", () => {
   if (!invite || session || checkSkipped) return;
   resetMicCheck();
@@ -177,7 +199,7 @@ function leave(message = "You left the session.", error) {
   const elements = failureElements();
   if (error) {
     const view = mapJoinError(error);
-    if (view.kind === "session_ended" || view.kind === "invite_expired") {
+    if (view.kind === "session_ended" || view.kind === "invite_expired" || view.kind === "room_full") {
       invite = undefined;
     }
     applyJoinFailure(view, elements);
@@ -215,7 +237,7 @@ async function startJoin() {
       showAudioSettings(stream, prejoinWarnings);
     } else {
       $("status").textContent = "Allow microphone access to play with your host.";
-      const capture = await acquireMusicStream(navigator.mediaDevices);
+      const capture = await acquireMusicStream(navigator.mediaDevices, $("mic-device").value);
       stream = capture.stream;
       if (!isCurrent()) {
         stream.getTracks().forEach((track) => track.stop());

@@ -1,0 +1,1 @@
+- Web Join shows the active microphone and lets guests switch inputs during the audio check. Used or expired invites explain how to get a replacement link.
