@@ -175,32 +175,34 @@ def test_duplicate_rtp_does_not_consume_quota_or_fill_buffer(local_server):
         bridge.close()
 
 
-def test_isolated_media_bursts_drop_oldest_pcm_within_the_buffer_bound():
+def test_recurring_media_bursts_at_realtime_rate_drop_oldest_pcm_and_stay_connected():
     bridge = WebJoinBridge(22124)
     packet_size = MAX_PCM_BYTES // 3
-    packets = [bytes([number]) * packet_size for number in range(5)]
-    for packet in packets[:4]:
-        bridge._queue_browser_audio(packet, now=1.0)
-    assert bridge._input == b"".join(packets[1:4])
-    bridge._queue_browser_audio(packets[4], now=2.0)
-    assert bridge._input == b"".join(packets[2:])
+    packets = [bytes([number]) * packet_size for number in range(4)]
+    for burst in range(40):
+        # Four 20 ms packets arrive together every 80 ms. Playout drains
+        # between bursts, but each burst exceeds the 60 ms queue.
+        for packet in packets:
+            bridge._queue_browser_audio(packet, now=1.0 + burst * 0.08)
+        assert bridge._input == b"".join(packets[1:])
+        bridge._input.clear()
 
 
 @pytest.mark.requires_local_socket
-def test_valid_media_flood_fails_closed_at_buffer_bound(local_server, caplog):
+def test_valid_media_flood_fails_closed_at_rate_limit(local_server, caplog):
     caplog.set_level("INFO", logger="webjam.web_join_bridge")
     bridge = WebJoinBridge(local_server.getsockname()[1], codec_factory=FakeCodec)
     bridge.start()
     peer = connect(bridge)
     try:
-        for seq in range(8):
+        for seq in range(32):
             try:
                 peer.send(make_rtp(b"opus", seq, seq * 960))
             except ConnectionRefusedError:
                 break  # Bridge can close while the flood is still in progress.
         assert bridge.closed.wait(1)
-        assert bridge.close_reason == "browser audio queue exceeded 60 ms"
-        assert "Web Join bridge stopped (browser_audio_queue_full)" in caplog.messages
+        assert bridge.close_reason == "browser audio exceeded the media rate limit"
+        assert "Web Join bridge stopped (browser_audio_rate_exceeded)" in caplog.messages
     finally:
         peer.close()
         bridge.close()

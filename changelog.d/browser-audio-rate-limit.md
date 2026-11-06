@@ -1,0 +1,1 @@
+- Browser music guests stay connected through recurring packet bursts while WebJam keeps the playback buffer bounded.
