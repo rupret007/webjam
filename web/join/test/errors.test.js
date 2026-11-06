@@ -24,16 +24,16 @@ test("an ended connection requires a fresh invite without blaming the host", () 
   assert.equal(ui.leave.hidden, true);
 });
 
-test("room full maps from the used-invite mailbox signal with Retry", () => {
+test("the used-invite mailbox signal asks for a fresh link", () => {
   const view = mapJoinError(new Error(JOIN_SIGNAL.ROOM_FULL));
   assert.equal(view.kind, "room_full");
-  assert.equal(view.showRetry, true);
-  assert.match(view.headline, /already has a web guest/i);
+  assert.equal(view.showRetry, false);
+  assert.match(view.hint, /fresh Web Join link/i);
   const ui = controls();
   applyJoinFailure(view, ui.elements);
-  assert.equal(ui.retry.hidden, false);
+  assert.equal(ui.retry.hidden, true);
   assert.equal(ui.join.hidden, true);
-  assert.equal(ui.retry.disabled, false);
+  assert.equal(ui.retry.disabled, true);
 });
 
 test("host offline maps from no-answer and authentication timeout signals with Retry", () => {

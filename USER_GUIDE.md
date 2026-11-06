@@ -959,6 +959,10 @@ attempt's status or retry controls.
 After a short burst of delayed audio, Web Join may skip a moment of sound as it
 catches up.
 
+Web Join shows which microphone the browser opened. If the meter stays flat
+and a **Microphone** list appears, select the input you want. The check starts
+again with that input.
+
 ## Your Music listening mix
 
 The participant cards control what you hear through the Music connection.

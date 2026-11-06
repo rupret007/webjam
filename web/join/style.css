@@ -18,6 +18,9 @@ p { line-height: 1.5; }
 #prejoin { margin-top: 16px; }
 #prejoin-heading { margin: 0 0 10px; font-size: 1.15rem; }
 .mic-actions, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.mic-picker { margin-top: 10px; }
+.mic-picker select { display: block; width: 100%; margin-top: 4px; padding: 8px; font: inherit; color: inherit; background: #23312e; border: 1px solid #73877c; border-radius: 8px; }
+#mic-source { margin: 6px 0 0; font-size: .9rem; color: #b4c2bd; }
 .actions { margin-top: 12px; }
 .mic-meter { height: 8px; margin-top: 12px; border-radius: 999px; background: #364341; overflow: hidden; }
 .mic-meter-fill { height: 100%; width: 0%; background: #bbe48b; transition: width 80ms linear; }
@@ -32,7 +35,7 @@ button { font: inherit; font-weight: 650; min-height: 44px; padding: 9px 14px; b
 button.secondary { border-color: #73877c; background: #23312e; color: #edf2eb; }
 button.skip-check { background: transparent; color: #b4c2bd; padding-inline: 4px; text-decoration: underline; }
 button:disabled { opacity: .55; cursor: default; }
-button:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid white; outline-offset: 3px; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid white; outline-offset: 3px; }
 #join { flex: 1 1 100%; }
 details, .privacy { color: #b4c2bd; font-size: .9rem; }
 details { margin-top: 12px; }

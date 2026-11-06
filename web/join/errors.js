@@ -54,9 +54,9 @@ export function mapJoinError(error) {
   if (message === JOIN_SIGNAL.ROOM_FULL) {
     return {
       kind: "room_full",
-      headline: "This session already has a web guest.",
-      hint: "Only one browser guest can join at a time. Ask your host to kick the other guest or send a new invite after they reset Web Join.",
-      showRetry: true,
+      headline: "This browser invite could not be used.",
+      hint: "Ask your host for a fresh Web Join link. If another browser guest is connected, they’ll need to leave first.",
+      showRetry: false,
       needsFreshInvite: true,
     };
   }
