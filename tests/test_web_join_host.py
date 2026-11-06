@@ -85,6 +85,29 @@ def test_mailbox_publishes_commit_chunk_last_and_assembles_answer():
     assert all(capability.hex() not in path for _, path, _ in calls)
 
 
+def test_mailbox_accepts_an_answer_after_the_old_90_second_limit(monkeypatch):
+    now = 0.0
+    monkeypatch.setattr("services.web_join_host.time.monotonic", lambda: now)
+
+    class Clock(NoWait):
+        def wait(self, seconds):
+            nonlocal now
+            now += seconds
+            return False
+
+    session, capability = b"s" * 32, b"k" * 32
+    chunks = encode_chunks(ENVELOPE)
+    indices = {mailbox_chunk_id(capability, session, "answer", i): i for i in range(3)}
+
+    def request(_method, path, _body):
+        if now < 95:
+            return 204, None
+        return 200, {"payload": chunks[indices[path.split("/")[2]]]}
+
+    mailbox = WebJoinMailbox(capability, session, request=request, cancel=Clock())
+    assert mailbox.poll_answer(timeout=110) == ENVELOPE
+
+
 @pytest.mark.parametrize("status", [301, 403, 429, 503])
 def test_mailbox_denial_fails_closed(status):
     mailbox = WebJoinMailbox(
@@ -300,24 +323,44 @@ def test_codec_start_failure_has_a_safe_reason_and_retires_every_owner():
     assert bridge.closed.is_set() and not process.running and not host.invite
 
 
-def test_host_invite_uses_credential_clamped_offer_expiry(monkeypatch):
-    monkeypatch.setattr("services.web_join_host.time.time", lambda: 1700000000)
+@pytest.mark.parametrize("offer_expiry", [1700000090, 1700000600])
+def test_host_polls_until_the_published_invite_expiry(monkeypatch, offer_expiry):
+    now = 1700000000
+    monkeypatch.setattr("services.web_join_host.time.time", lambda: now)
     process, bridge = FakeProcess(None), FakeBridge(22124)
+    waiting = threading.Event()
+    timeouts = []
+
+    class TimedMailbox(FakeMailbox):
+        def publish_offer(self, offer):
+            nonlocal now
+            super().publish_offer(offer)
+            now += 8
+
+        def poll_answer(self, *, timeout):
+            timeouts.append(timeout)
+            waiting.set()
+            return super().poll_answer()
 
     def open_web_join(**kwargs):
         assert kwargs["expires_at_unix"] == 1700000600
-        # The sidecar sealed the offer with the shorter Worker credential TTL.
-        return SimpleNamespace(signal=ENVELOPE, expires_at_unix=1700000090)
+        return SimpleNamespace(signal=ENVELOPE, expires_at_unix=offer_expiry)
+
+    def make_bridge(port, *, authentication_timeout_s):
+        assert port == 22124 and authentication_timeout_s == 600
+        return bridge
 
     process.open_web_join = open_web_join
+    monkeypatch.setattr("services.web_join_bridge.WebJoinBridge", make_bridge)
     host = WebJoinHost(
         process_factory=lambda _: process,
-        bridge_factory=lambda _: bridge,
-        mailbox_factory=FakeMailbox,
+        mailbox_factory=TimedMailbox,
     )
     try:
         invite = host.allow(22124)
-        assert parse_qs(urlsplit(invite).fragment)["e"] == ["1700000090"]
+        assert parse_qs(urlsplit(invite).fragment)["e"] == [str(offer_expiry)]
+        assert waiting.wait(1)
+        assert timeouts == [offer_expiry - now]
     finally:
         host.stop()
 

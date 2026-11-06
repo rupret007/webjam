@@ -21,6 +21,8 @@ class WebJoinControls(QObject):
         self._cleanup_pending = False
         self._server = None
         self._generation = 0
+        self._copy_when_ready = False
+        self._invite_copied = False
         self._error = ""
         self._error_server = None
         self._panel = getattr(controller.window, "web_guest_panel", None)
@@ -100,6 +102,7 @@ class WebJoinControls(QObject):
         if action == "copy" and self._host is not None and self.copy_action.isEnabled():
             self._copy()
         elif action == "invite" and self._host is None and self.allow_action.isEnabled():
+            self._copy_when_ready = True
             self.allow_action.setChecked(True)
 
     def _render_panel(self):
@@ -119,15 +122,18 @@ class WebJoinControls(QObject):
         elif self._host is not None:
             state = self._host.state
             if state == "waiting" and self.copy_action.isEnabled():
-                render("ready", "Ready for one browser guest. Copy the link and share it privately. Headphones required.")
+                if self._invite_copied:
+                    render("ready", "Link copied. Paste it into a private message and keep this Music session open.")
+                else:
+                    render("ready", "The link is ready to copy. Headphones required.")
             elif state == "connected":
                 render("connected", "One browser guest is connected. End the invite to disconnect them.")
             else:
-                render("preparing", "Preparing the browser connection…")
+                render("preparing", "Preparing a private link for one browser guest…")
         elif self._error:
             render("error", self._error)
         else:
-            render("available", "Invite one browser guest. Higher delay than the desktop app; headphones required.")
+            render("available", "Send a private link to one browser guest. Headphones required.")
 
     def _toggle(self, allowed):
         if not allowed:
@@ -200,23 +206,27 @@ class WebJoinControls(QObject):
             return
         self.allow_action.setText("Allow a web guest")
         self.copy_action.setEnabled(True)
-        self._render_panel()
-        self._controller.window.flash_message(
-            "Web invite ready. Click Copy browser invite. Expect about 60–120 ms delay; wear headphones.",
-            ms=9000,
-        )
+        if self._copy_when_ready:
+            self._copy_when_ready = False
+            self._copy()
+        else:
+            self._render_panel()
 
     def _copy(self):
         if (
             self._host is not None
-            and self._host.invite
             and self._host.state == "waiting"
             and self.copy_action.isEnabled()
             and self._owned_server() is self._server
         ):
-            QApplication.clipboard().setText(self._host.invite)
+            invite = self._host.invite
+            if not invite:
+                return
+            QApplication.clipboard().setText(invite)
+            self._invite_copied = True
+            self._render_panel()
             self._controller.window.flash_message(
-                "Web invite copied. Keep this session open.", ms=5000
+                "Browser invite copied. Paste it into a private message.", ms=5000
             )
 
     def _show_cleanup_pending(self):
@@ -230,6 +240,8 @@ class WebJoinControls(QObject):
     def stop(self) -> bool:
         self._error = ""
         self._error_server = None
+        self._copy_when_ready = False
+        self._invite_copied = False
         owners = ([self._host] if self._host is not None else []) + self._retired_hosts
         self.allow_action.blockSignals(True)
         self.allow_action.setChecked(False)
