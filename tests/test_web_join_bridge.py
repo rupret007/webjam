@@ -8,7 +8,7 @@ import time
 import pytest
 
 from services.web_join_bridge import (
-    BridgeError, CLOSE, HELLO, READY, JAMULUS_BYTES, MAX_QUOTA_BYTES,
+    BridgeError, CLOSE, HELLO, READY, JAMULUS_BYTES, MAX_PCM_BYTES, MAX_QUOTA_BYTES,
     WebJoinBridge, _control, _parse_control, make_rtp, parse_rtp,
 )
 
@@ -173,6 +173,17 @@ def test_duplicate_rtp_does_not_consume_quota_or_fill_buffer(local_server):
     finally:
         peer.close()
         bridge.close()
+
+
+def test_isolated_media_bursts_drop_oldest_pcm_within_the_buffer_bound():
+    bridge = WebJoinBridge(22124)
+    packet_size = MAX_PCM_BYTES // 3
+    packets = [bytes([number]) * packet_size for number in range(5)]
+    for packet in packets[:4]:
+        bridge._queue_browser_audio(packet, now=1.0)
+    assert bridge._input == b"".join(packets[1:4])
+    bridge._queue_browser_audio(packets[4], now=2.0)
+    assert bridge._input == b"".join(packets[2:])
 
 
 @pytest.mark.requires_local_socket

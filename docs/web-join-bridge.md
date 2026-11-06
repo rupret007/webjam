@@ -23,7 +23,9 @@ The existing monitoring adapter uses a different wire format, so this audio
 client only reuses its CRC calculation.
 
 The worker bounds incoming PCM at 60 ms, drops duplicate/stale RTP sequence
-numbers, rejects oversized and malformed RTP, and stops on queue overload.
+numbers, and rejects oversized and malformed RTP. An isolated queue burst drops
+the oldest audio so the guest can stay connected. Sustained queue overload
+still closes the bridge.
 Defaults are a 180-second dormant authentication deadline, a 5-second server
 media deadline, a 15-second browser media deadline, and a one-hour lifetime.
 The bridge independently caps combined RTP input/output at 256 MiB; the Pion

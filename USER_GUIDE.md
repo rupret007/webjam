@@ -956,6 +956,8 @@ may ask for microphone access during the check or when you join. Open
 **Audio details** for device readings and estimated listening delay. An earlier
 enrollment or latency update finishing after Leave cannot change the next
 attempt's status or retry controls.
+After a short burst of delayed audio, Web Join may skip a moment of sound as it
+catches up.
 
 ## Your Music listening mix
 
