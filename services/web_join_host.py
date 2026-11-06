@@ -165,13 +165,18 @@ class WebJoinMailbox:
             self._call("POST", "offer", index, {"payload": chunks[index]})
 
     def poll_answer(self, *, timeout: float = INVITE_LIFETIME_SECONDS) -> bytes:
-        deadline = time.monotonic() + min(INVITE_LIFETIME_SECONDS, max(0, timeout))
+        started = time.monotonic()
+        deadline = started + min(INVITE_LIFETIME_SECONDS, max(0, timeout))
         chunks: list[bytes] = []
         count = None
         while time.monotonic() < deadline:
             status, result = self._call("GET", "answer", len(chunks))
             if status == 204:
-                if self._cancel.wait(min(5, max(0, deadline - time.monotonic()))):
+                now = time.monotonic()
+                # Keep immediate joins responsive and use fewer relay requests
+                # for an idle invite. Stay below the guest's 30-second timeout.
+                interval = 5 if now - started < 30 else 15
+                if self._cancel.wait(min(interval, max(0, deadline - now))):
                     break
                 continue
             if not isinstance(result, dict) or set(result) != {"payload"}:

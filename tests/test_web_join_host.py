@@ -108,6 +108,31 @@ def test_mailbox_accepts_an_answer_after_the_old_90_second_limit(monkeypatch):
     assert mailbox.poll_answer(timeout=110) == ENVELOPE
 
 
+def test_idle_browser_invite_preserves_relay_request_budget(monkeypatch):
+    now = 0.0
+    polls = []
+    monkeypatch.setattr("services.web_join_host.time.monotonic", lambda: now)
+
+    class Clock(NoWait):
+        def wait(self, seconds):
+            nonlocal now
+            now += seconds
+            return False
+
+    def request(_method, _path, _body):
+        polls.append(now)
+        return 204, None
+
+    mailbox = WebJoinMailbox(b"k" * 32, b"s" * 32, request=request, cancel=Clock())
+
+    with pytest.raises(WebJoinUnavailable, match="did not join in time"):
+        mailbox.poll_answer()
+
+    assert polls[:7] == [0, 5, 10, 15, 20, 25, 30]
+    assert len(polls) == 44
+    assert now == 600
+
+
 @pytest.mark.parametrize("status", [301, 403, 429, 503])
 def test_mailbox_denial_fails_closed(status):
     mailbox = WebJoinMailbox(
