@@ -36,7 +36,10 @@ JAMULUS_BYTES = 106
 WEB_FRAMES = 960
 MAX_OPUS_BYTES = 1275
 MAX_QUOTA_BYTES = 256 * 1024 * 1024
-MAX_PCM_BYTES = SAMPLE_RATE * CHANNELS * 2 * 60 // 1000
+PCM_BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * 2
+MAX_PCM_BYTES = PCM_BYTES_PER_SECOND * 60 // 1000
+BROWSER_BURST_BYTES = PCM_BYTES_PER_SECOND // 4
+BROWSER_MAX_BYTES_PER_SECOND = PCM_BYTES_PER_SECOND * 5 // 4
 HELLO = b"WJWB1"
 READY = b"WJWA1"
 CLOSE = b"WJWC1"
@@ -53,7 +56,7 @@ _CLOSE_CODES = {
     "Jamulus server refused or disconnected guest": "jamulus_disconnected",
     "Jamulus server requires unsupported license consent": "jamulus_license_required",
     "Jamulus control backlog exceeded": "jamulus_control_backlog",
-    "browser audio queue exceeded 60 ms": "browser_audio_queue_full",
+    "browser audio exceeded the media rate limit": "browser_audio_rate_exceeded",
     "Web Join accepts only 10 or 20 ms Opus packets": "browser_opus_duration",
     "Opus codec rejected audio": "opus_rejected",
 }
@@ -270,8 +273,8 @@ class WebJoinBridge:
         self._peer = None
         self.port = 0
         self._input, self._output = bytearray(), bytearray()
-        self._input_drop_budget = MAX_PCM_BYTES
-        self._last_input_drop = 0.0
+        self._browser_budget = BROWSER_BURST_BYTES
+        self._last_browser_packet = 0.0
         self._last_sequence = None
         self._control_count = 0
         self._pending: dict[tuple[int, int], tuple[bytes, float]] = {}
@@ -404,18 +407,18 @@ class WebJoinBridge:
         return next_tick
 
     def _queue_browser_audio(self, pcm: bytes, now: float) -> None:
+        # Limit decoded media by arrival rate. Playback backlog can recur at a
+        # normal media rate when the network or the local scheduler batches packets.
+        self._browser_budget = min(
+            BROWSER_BURST_BYTES,
+            self._browser_budget + (now - self._last_browser_packet) * BROWSER_MAX_BYTES_PER_SECOND,
+        )
+        self._last_browser_packet = now
+        if len(pcm) > self._browser_budget:
+            raise BridgeError("browser audio exceeded the media rate limit")
+        self._browser_budget -= len(pcm)
         overflow = len(self._input) + len(pcm) - MAX_PCM_BYTES
         if overflow > 0:
-            # Recover an isolated burst by dropping the oldest PCM. Refill one
-            # buffer of drop allowance per second so sustained floods still stop.
-            self._input_drop_budget = min(
-                MAX_PCM_BYTES,
-                self._input_drop_budget + (now - self._last_input_drop) * MAX_PCM_BYTES,
-            )
-            self._last_input_drop = now
-            if overflow > self._input_drop_budget:
-                raise BridgeError("browser audio queue exceeded 60 ms")
-            self._input_drop_budget -= overflow
             del self._input[:overflow]
         self._input.extend(pcm)
 
