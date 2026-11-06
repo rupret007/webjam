@@ -217,6 +217,7 @@ def test_copy_button_prepares_and_copies_only_for_the_current_invitation(control
         app.processEvents()
         panel.primary.click()
         assert panel.primary.text() == "Preparing link…"
+        assert panel.stop_button.text() == "Cancel"
         assert clipboard.text() == "clipboard already in use"
         if cancel:
             panel.stop_button.click()

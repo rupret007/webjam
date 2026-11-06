@@ -69,7 +69,11 @@ class WebJoinPanel(QFrame):
         self.primary.setEnabled(state in {"available", "ready", "error"})
         self.stop_button.setVisible(state in {"preparing", "ready", "connected", "cleanup"})
         self.stop_button.setEnabled(state in {"preparing", "ready", "connected", "cleanup"})
-        self.stop_button.setText("Retry ending browser guest" if state == "cleanup" else "End browser invite")
+        self.stop_button.setText(
+            {"preparing": "Cancel", "cleanup": "Retry ending browser guest"}.get(
+                state, "End browser invite"
+            )
+        )
         self.status.setText(message)
         self._sync_actions()
 
