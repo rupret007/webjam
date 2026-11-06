@@ -7,7 +7,7 @@ import {
   micCheckFailure,
   startMicLevelMonitor,
 } from "./prejoin.js";
-import { applyJoinFailure, clearJoinFailure, mapJoinError } from "./errors.js";
+import { JOIN_SIGNAL, applyJoinFailure, clearJoinFailure, mapJoinError } from "./errors.js";
 
 const $ = (id) => document.getElementById(id);
 const failureElements = () => ({
@@ -93,6 +93,13 @@ function resetMicCheck() {
   $("check-mic").disabled = false;
 }
 
+function watchMicrophone(track, signal, onLost) {
+  track.addEventListener("ended", onLost, { once: true, signal });
+  if (track.readyState === "live") return true;
+  onLost();
+  return false;
+}
+
 function joinReady() {
   if (!invite || starting || session) return false;
   if (checkSkipped) return $("headphones").checked;
@@ -140,8 +147,14 @@ async function runMicCheck() {
     }
     prejoinStream = capture.stream;
     prejoinWarnings = capture.warnings;
+    const track = prejoinStream.getAudioTracks()[0];
+    if (!watchMicrophone(track, signal, () => {
+      stopMicMonitoring(true);
+      $("mic-device").value = "";
+      showMicError(new Error("Microphone disconnected. Reconnect it or choose another input, then try again."));
+    })) return;
     showAudioSettings(prejoinStream, prejoinWarnings);
-    void showMicDevices(prejoinStream.getAudioTracks()[0], signal);
+    void showMicDevices(track, signal);
     $("mic-progress").textContent = "Speak or play a note to check your level.";
     stopMeter = startMicLevelMonitor({
       audioContext: context,
@@ -199,7 +212,7 @@ function leave(message = "You left the session.", error) {
   const elements = failureElements();
   if (error) {
     const view = mapJoinError(error);
-    if (view.kind === "session_ended" || view.kind === "invite_expired" || view.kind === "room_full") {
+    if (view.needsFreshInvite && !view.showRetry) {
       invite = undefined;
     }
     applyJoinFailure(view, elements);
@@ -232,6 +245,8 @@ async function startJoin() {
     if (prejoinStream?.getAudioTracks().some((track) => track.readyState === "live")) {
       stream = prejoinStream;
       prejoinStream = null;
+      prejoinAbort?.abort();
+      prejoinAbort = null;
       stopMeter?.();
       stopMeter = null;
       showAudioSettings(stream, prejoinWarnings);
@@ -245,6 +260,9 @@ async function startJoin() {
       }
       showAudioSettings(stream, capture.warnings);
     }
+    if (!watchMicrophone(stream.getAudioTracks()[0], attempt.signal, () => {
+      leave(undefined, new Error(JOIN_SIGNAL.MICROPHONE_ENDED));
+    })) return;
     const joinedSession = new WebJoinSession({
       origin: RELAY_ORIGIN,
       invite,

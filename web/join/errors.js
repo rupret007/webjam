@@ -3,6 +3,7 @@
 export const JOIN_SIGNAL = Object.freeze({
   ROOM_FULL: "This invitation was already used or expired. Ask the host for a new link.",
   SESSION_ENDED: "The Web Join connection ended.",
+  MICROPHONE_ENDED: "Microphone disconnected.",
   HOST_NO_ANSWER: "The host did not answer in time. Ask for a new invite.",
   HOST_AUTH_TIMEOUT: "Host authentication timed out. Ask for a new invite.",
   INVITE_EXPIRED: "The invite expired. Ask the host for a new link.",
@@ -42,6 +43,15 @@ const HOST_OFFLINE_SIGNALS = new Set([
 /** @param {unknown} error @returns {JoinFailureView} */
 export function mapJoinError(error) {
   const message = error instanceof Error ? error.message : String(error ?? "");
+  if (message === JOIN_SIGNAL.MICROPHONE_ENDED) {
+    return {
+      kind: "microphone_ended",
+      headline: message,
+      hint: "Reconnect your microphone or choose another input. Ask your host for a new browser invite.",
+      showRetry: false,
+      needsFreshInvite: true,
+    };
+  }
   if (message === JOIN_SIGNAL.SESSION_ENDED) {
     return {
       kind: "session_ended",
