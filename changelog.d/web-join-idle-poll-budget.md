@@ -1,0 +1,1 @@
+- Open browser invites use fewer relay requests after the first 30 seconds, so idle links are less likely to exhaust a network's shared allowance.
