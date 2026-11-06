@@ -213,6 +213,9 @@ func (s *runnerState) handleWebJoin(ctx context.Context, command *Command, event
 		openCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
 		defer cancel()
 		ice, err := webjoin.FetchICE(openCtx, w.session, w.capability)
+		if err == webjoin.ErrICERateLimited {
+			return failure(CodeWebJoinRateLimited)
+		}
 		if err != nil {
 			return failure(CodeOpenFailed)
 		}

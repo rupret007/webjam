@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/netip"
@@ -24,6 +25,8 @@ import (
 // or an invite. Credentials exist only in memory. No redirects carry the proof.
 var credentialURL = "https://webjam-turn-credentials.jeffstory007.workers.dev/turn-credentials"
 var providerRelayIPs = []string{"141.101.90.1", "162.159.207.1"}
+
+var ErrICERateLimited = errors.New("web join relay request limited")
 
 type ICEConfig struct {
 	Servers               []webrtc.ICEServer
@@ -125,6 +128,9 @@ func fetchICE(ctx context.Context, client *http.Client, endpoint string, session
 		return ICEConfig{}, ErrICE
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusTooManyRequests {
+		return ICEConfig{}, ErrICERateLimited
+	}
 	if response.StatusCode != http.StatusOK {
 		return ICEConfig{}, ErrICE
 	}

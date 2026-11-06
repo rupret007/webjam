@@ -777,7 +777,7 @@ var (
 	}
 	allowedEventCodes = map[string]struct{}{
 		CodeOK: {}, CodeProtocolViolation: {}, CodePeerAlreadyOpen: {}, CodePeerNotOpen: {},
-		CodeOpenFailed: {}, CodeIdentityNotPrepared: {}, CodeUnsupportedProfile: {}, CodeEnrollmentInvalid: {},
+		CodeOpenFailed: {}, CodeWebJoinRateLimited: {}, CodeIdentityNotPrepared: {}, CodeUnsupportedProfile: {}, CodeEnrollmentInvalid: {},
 		CodeTimedOut:     {},
 		CodeRoomNotReady: {}, CodeRoomInvalid: {}, CodeRoomRateLimited: {}, CodePeerProtocolUnsupported: {},
 		CodeHelpNotReady: {}, CodeHelpInvalid: {}, CodeHelpRateLimited: {}, CodeHelpQueueFull: {},
