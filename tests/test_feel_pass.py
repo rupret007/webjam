@@ -207,14 +207,14 @@ def test_clicking_art_shows_the_two_starts(qapp, tmp_path: Path):
         dialog.deleteLater()
 
 
-def test_only_paint_along_keeps_the_squirrel_face(qapp, tmp_path: Path):
+def test_art_activity_cards_keep_the_face_mark(qapp, tmp_path: Path):
     dialog = _dialog(tmp_path, "art")
     try:
         cards = {card.start_key: card for card in dialog._visible_start_cards()}
-        assert cards["paint_along"].icon().isNull() is False
-        assert cards["paint_along"].iconSize() == QSize(72, 48)
-        assert cards["talk_and_make"].icon().isNull() is True
         assert set(cards) == {"talk_and_make", "paint_along"}
+        for card in cards.values():
+            assert not card.icon().isNull()
+            assert card.iconSize() == QSize(72, 48)
         assert dialog._art_profile_card.icon().isNull() is True
         assert dialog._music_profile_card.icon().isNull() is True
     finally:

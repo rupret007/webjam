@@ -296,18 +296,22 @@ def test_art_adds_no_start_action_beyond_the_cards_and_host_join(
 
 
 
-def test_only_paint_along_shows_the_face_mark(qapp, tmp_path: Path):
-    """Paint along carries the requested face mark; other doors stay plain."""
+def test_both_art_starts_show_the_same_face_mark(qapp, tmp_path: Path):
+    """Both Art activities carry the face mark and other buttons stay plain."""
 
     dialog = _dialog(tmp_path)
     try:
         cards = {card.start_key: card for card in _visible_cards(dialog)}
-        assert cards["paint_along"].icon().isNull() is False
-        assert cards["paint_along"].iconSize() == QSize(72, 48)
-        assert cards["talk_and_make"].icon().isNull() is True
         assert set(cards) == {"talk_and_make", "paint_along"}
+        for card in cards.values():
+            assert not card.icon().isNull()
+            assert card.iconSize() == QSize(72, 48)
+        make, paint = cards["talk_and_make"], cards["paint_along"]
+        make_icon = make.icon().pixmap(make.iconSize()).toImage()
+        paint_icon = paint.icon().pixmap(paint.iconSize()).toImage()
+        assert make_icon == paint_icon
         for button in _visible_buttons(dialog):
-            if button is not cards["paint_along"]:
+            if button not in cards.values():
                 assert button.icon().isNull() is True
         assert "bob ross" in _first_screen_spoken(dialog)
     finally:
