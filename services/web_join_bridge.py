@@ -270,6 +270,8 @@ class WebJoinBridge:
         self._peer = None
         self.port = 0
         self._input, self._output = bytearray(), bytearray()
+        self._input_drop_budget = MAX_PCM_BYTES
+        self._last_input_drop = 0.0
         self._last_sequence = None
         self._control_count = 0
         self._pending: dict[tuple[int, int], tuple[bytes, float]] = {}
@@ -401,6 +403,22 @@ class WebJoinBridge:
             next_tick += JAMULUS_FRAMES / SAMPLE_RATE
         return next_tick
 
+    def _queue_browser_audio(self, pcm: bytes, now: float) -> None:
+        overflow = len(self._input) + len(pcm) - MAX_PCM_BYTES
+        if overflow > 0:
+            # Recover an isolated burst by dropping the oldest PCM. Refill one
+            # buffer of drop allowance per second so sustained floods still stop.
+            self._input_drop_budget = min(
+                MAX_PCM_BYTES,
+                self._input_drop_budget + (now - self._last_input_drop) * MAX_PCM_BYTES,
+            )
+            self._last_input_drop = now
+            if overflow > self._input_drop_budget:
+                raise BridgeError("browser audio queue exceeded 60 ms")
+            self._input_drop_budget -= overflow
+            del self._input[:overflow]
+        self._input.extend(pcm)
+
     def _run(self):
         started = last_web = last_jam = time.monotonic()
         next_tick = started
@@ -446,10 +464,8 @@ class WebJoinBridge:
                         self._charge(len(raw))
                         self._last_sequence = seq
                         pcm = self._codec.decode_web(payload)
-                        if len(self._input) + len(pcm) > MAX_PCM_BYTES:
-                            raise BridgeError("browser audio queue exceeded 60 ms")
-                        self._input.extend(pcm)
                         last_web = time.monotonic()
+                        self._queue_browser_audio(pcm, last_web)
                     else:
                         control = _parse_control(raw)
                         if control:
