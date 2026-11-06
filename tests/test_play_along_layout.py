@@ -38,7 +38,11 @@ def test_choice_scrolls_full_guidance_and_reveals_keyboard_actions(qapp, hosting
             assert button.width() >= button.minimumSizeHint().width()
             QTest.keyClick(button, Qt.Key.Key_Space)
             assert events[-1] == key
-        assert events == ["lesson", "ensemble"]
+        assert events == ["ensemble", "lesson"]
+        backing_track = dialog.buttons["ensemble"]
+        assert backing_track.objectName() == "PrimaryButton"
+        assert backing_track.text() == ("Open Shared Track" if hosting else "Open Jamulus mixer")
+        assert ("WAV" in backing_track.accessibleDescription()) == hosting
     finally:
         dialog.close()
         dialog.deleteLater()
