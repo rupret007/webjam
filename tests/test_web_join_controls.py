@@ -1,9 +1,11 @@
 import os
+import threading
 from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 from webjam_qt.controllers.web_join import WebJoinControls
@@ -167,7 +169,7 @@ def test_visible_browser_button_copy_and_end_use_the_existing_owner(controls):
     panel = controller.window.web_guest_panel
     controller.window.show()
     app.processEvents()
-    assert panel.primary.isVisible() and panel.primary.text() == "Invite a browser guest"
+    assert panel.primary.isVisible() and panel.primary.text() == "Copy browser invite"
     host = SimpleNamespace(state="preparing", invite="", stop=lambda: True)
     controls._host, controls._server = host, controller.bridge.hosted_server_process
     controls._refresh()
@@ -183,6 +185,57 @@ def test_visible_browser_button_copy_and_end_use_the_existing_owner(controls):
     panel.stop_button.click()
     assert controls._host is None and not controls.copy_action.isEnabled()
     QApplication.clipboard().clear()
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_copy_button_prepares_and_copies_only_for_the_current_invitation(controls, monkeypatch, cancel):
+    controls, controller, app = controls
+    panel = controller.window.web_guest_panel
+    finish = threading.Event()
+    returned = threading.Event()
+
+    class Host:
+        state = "preparing"
+        invite = ""
+
+        def allow(self, port, *, generation):
+            assert port == 22124 and generation == 1
+            assert finish.wait(2)
+            self.state, self.invite = "waiting", "https://invalid/#synthetic-test-only"
+            returned.set()
+
+        def stop(self):
+            self.state, self.invite = "closed", ""
+            return True
+
+    host = Host()
+    monkeypatch.setattr("webjam_qt.controllers.web_join.WebJoinHost", lambda: host)
+    clipboard = QApplication.clipboard()
+    clipboard.setText("clipboard already in use")
+    try:
+        controller.window.show()
+        app.processEvents()
+        panel.primary.click()
+        assert panel.primary.text() == "Preparing link…"
+        assert clipboard.text() == "clipboard already in use"
+        if cancel:
+            panel.stop_button.click()
+        finish.set()
+        assert returned.wait(1)
+        for _ in range(50):
+            app.processEvents()
+            if (cancel and host.state == "closed") or (not cancel and "Link copied" in panel.status.text()):
+                break
+            QTest.qWait(10)
+        if cancel:
+            assert host.state == "closed"
+            assert clipboard.text() == "clipboard already in use"
+        else:
+            assert clipboard.text() == host.invite
+            assert "Paste it into a private message" in panel.status.text()
+    finally:
+        finish.set()
+        clipboard.clear()
 
 
 def test_pressed_copy_cannot_become_invite_after_server_replacement(controls, monkeypatch):
@@ -207,7 +260,7 @@ def test_preparation_error_is_persistent_and_private_details_are_not_rendered(co
     controls._host, controls._server = host, controller.bridge.hosted_server_process
     controls._prepared(host, False)
     panel = controller.window.web_guest_panel
-    assert panel.primary.text() == "Retry browser invite"
+    assert panel.primary.text() == "Retry copying invite"
     assert "private credential" not in panel.status.text()
     previous = panel.status.text()
     controls._refresh()

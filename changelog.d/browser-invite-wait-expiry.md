@@ -1,0 +1,2 @@
+- Browser invitations stay available while a guest gets their audio ready, up to the expiry advertised by the link.
+- Copy browser invite prepares the link and copies it in one step from the Music room.

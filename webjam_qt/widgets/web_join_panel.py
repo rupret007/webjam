@@ -24,7 +24,7 @@ class WebJoinPanel(QFrame):
         # Start narrow so minimum width cannot prevent the compact resize that
         # measures both buttons. This follows the existing Art workspace rows.
         row.setDirection(QBoxLayout.Direction.TopToBottom)
-        self.primary = QPushButton("Invite a browser guest")
+        self.primary = QPushButton("Copy browser invite")
         self.primary.setObjectName("PrimaryButton")
         self.primary.setMinimumHeight(36)
         self.primary.pressed.connect(self._remember_primary)
@@ -62,9 +62,8 @@ class WebJoinPanel(QFrame):
     def render(self, state, message, context=None):
         self._state, self._context = state, context
         self._sync_visibility()
-        text = {"preparing": "Preparing invitation…", "ready": "Copy browser invite",
-                "connected": "Browser guest connected", "error": "Retry browser invite"}.get(
-                    state, "Invite a browser guest")
+        text = {"preparing": "Preparing link…", "connected": "Browser guest connected",
+                "error": "Retry copying invite"}.get(state, "Copy browser invite")
         self.primary.setText(text)
         self.primary.setAccessibleName(text)
         self.primary.setEnabled(state in {"available", "ready", "error"})
