@@ -25,6 +25,7 @@ MAILBOX_ORIGIN = "https://webjam-turn-credentials.jeffstory007.workers.dev"
 MAX_ENVELOPE = 8192
 CHUNK_BYTES = 2998
 MAX_CHUNKS = 3
+INVITE_LIFETIME_SECONDS = 600
 PREPARE_UNAVAILABLE = (
     "Web Join is unavailable. Use the approved app build, then check the host "
     "audio bridge and relay service."
@@ -163,14 +164,14 @@ class WebJoinMailbox:
         for index in list(range(1, len(chunks))) + [0]:
             self._call("POST", "offer", index, {"payload": chunks[index]})
 
-    def poll_answer(self, *, timeout: float = 90) -> bytes:
-        deadline = time.monotonic() + min(90, max(0, timeout))
+    def poll_answer(self, *, timeout: float = INVITE_LIFETIME_SECONDS) -> bytes:
+        deadline = time.monotonic() + min(INVITE_LIFETIME_SECONDS, max(0, timeout))
         chunks: list[bytes] = []
         count = None
         while time.monotonic() < deadline:
             status, result = self._call("GET", "answer", len(chunks))
             if status == 204:
-                if self._cancel.wait(5):
+                if self._cancel.wait(min(5, max(0, deadline - time.monotonic()))):
                     break
                 continue
             if not isinstance(result, dict) or set(result) != {"payload"}:
@@ -258,14 +259,16 @@ class WebJoinHost:
             # Missing/tampered package routing must fail before an audio bridge,
             # transport, capability or upstream credential can be allocated.
             join_page = web_join_page()
+            expiry = int(time.time()) + INVITE_LIFETIME_SECONDS
             stage = "audio_bridge"
             if self._bridge_factory is None:
                 from services.web_join_bridge import WebJoinBridge
 
-                factory = WebJoinBridge
+                bridge = WebJoinBridge(
+                    jamulus_port, authentication_timeout_s=INVITE_LIFETIME_SECONDS
+                )
             else:
-                factory = self._bridge_factory
-            bridge = factory(jamulus_port)
+                bridge = self._bridge_factory(jamulus_port)
             # Publish each owner before the next factory can fail. A cancellation
             # while a factory runs still leaves cleanup with a concrete handle.
             with self._lock:
@@ -292,7 +295,6 @@ class WebJoinHost:
             if self._stop.is_set():
                 raise WebJoinUnavailable("Web Join stopped.")
             capability, session = secrets.token_bytes(32), secrets.token_bytes(32)
-            expiry = int(time.time()) + 600
             stage = "relay"
             offer = process.open_web_join(
                 session_id=session,
@@ -318,7 +320,7 @@ class WebJoinHost:
                 self._state = "waiting"
                 self._worker = threading.Thread(
                     target=self._wait_guest,
-                    args=(mailbox, process, bridge, generation),
+                    args=(mailbox, process, bridge, generation, offer_expiry),
                     name="webjam-web-join",
                     daemon=True,
                 )
@@ -330,9 +332,9 @@ class WebJoinHost:
             self.stop()
             raise WebJoinUnavailable(PREPARE_UNAVAILABLE) from None
 
-    def _wait_guest(self, mailbox, process, bridge, generation):
+    def _wait_guest(self, mailbox, process, bridge, generation, offer_expiry):
         try:
-            answer = mailbox.poll_answer(timeout=90)
+            answer = mailbox.poll_answer(timeout=offer_expiry - time.time())
             if self._stop.is_set():
                 return
             process.apply_web_join_answer(answer, generation=generation)

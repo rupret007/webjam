@@ -28,8 +28,11 @@ audio so the guest can stay connected through recurring delivery bursts. A
 separate media rate limit allows up to 250 ms of accumulated burst credit and
 refills at 125% of the nominal sample rate. Traffic that exhausts this credit
 closes the bridge.
-Defaults are a 180-second dormant authentication deadline, a 5-second server
-media deadline, a 15-second browser media deadline, and a one-hour lifetime.
+The host waits for a guest until the advertised invite expiry, up to ten
+minutes. The standalone bridge defaults to a 180-second dormant authentication
+deadline. Host-created browser bridges use the ten-minute invite limit. Media
+deadlines are five seconds for the server and 15 seconds for the browser, and
+the bridge has a one-hour lifetime.
 The bridge independently caps combined RTP input/output at 256 MiB; the Pion
 endpoint independently enforces the cap for the one web guest supported by
 this implementation. Failure closes sockets,

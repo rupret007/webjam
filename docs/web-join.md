@@ -1,9 +1,10 @@
 # Web Join (spec A from #385)
 
-This draft implements a browser guest in a desktop-hosted music session.
-It starts disabled. While hosting an owned server, choose **Web Join →
-Allow a web guest**, then **Copy web invite**. A guest opens the link, confirms
-headphones, and starts audio with a tap. The UI labels the connection **Web Join,
+Web Join supports one browser guest in a desktop-hosted music session.
+While hosting, choose **Copy browser invite** in the Music room. WebJam prepares
+the link and copies it. Paste it into a private message and keep the session open.
+The guest opens the link, confirms headphones, and starts audio with a tap.
+The connection is **Web Join,
 higher delay (about 60–120 ms)**; that is an expectation, not a WAN measurement.
 Safari/iOS is labelled best effort. Desktop players continue using the WebJam app.
 
@@ -127,8 +128,9 @@ local source socket after token authentication.
 
 The browser gives ICE services a short gathering grace period, then sends the
 vetted candidates it has. It waits up to 15 seconds when none are usable.
-Credential HTTP requests have a 12-second deadline, host ICE gathering 20 seconds,
-host answer polling 90 seconds, connection establishment 25 seconds, and DTLS
+Credential HTTP requests have a 12-second deadline and host ICE gathering takes
+up to 20 seconds. The host polls for an answer until the published invitation
+expires. Connection establishment has 25 seconds, and DTLS
 connection-to-enrollment 10 seconds. Browser networking and enrollment also have
 finite deadlines. Idle/disconnected media paths close instead of retaining an
 unusable guest. Local close has a bounded sidecar shutdown path.
