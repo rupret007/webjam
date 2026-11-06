@@ -1,0 +1,1 @@
+- WebJam explains when the browser relay reaches a usage limit and tells hosts they can keep their Music room open.

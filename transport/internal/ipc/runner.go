@@ -23,6 +23,7 @@ const (
 	CodePeerAlreadyOpen         = "peer_already_open"
 	CodePeerNotOpen             = "peer_not_open"
 	CodeOpenFailed              = "open_failed"
+	CodeWebJoinRateLimited      = "web_join_rate_limited"
 	CodeIdentityNotPrepared     = "identity_not_prepared"
 	CodeUnsupportedProfile      = "unsupported_profile"
 	CodeEnrollmentInvalid       = "enrollment_invalid"

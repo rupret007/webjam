@@ -973,6 +973,20 @@ def test_rate_limit_error_outside_connected_room_publish_is_not_retryable(comman
     assert not isinstance(error.value, TransportRoomRateLimitedError)
 
 
+@pytest.mark.parametrize("command", ["web_join_open", "web_join_answer"])
+def test_relay_limit_applies_only_to_browser_invite_creation(command) -> None:
+    from services.transport_runtime import TransportWebJoinRateLimitedError
+
+    process = TransportProcess("/private/webjam-fabric", expected_build="test-build")
+    process._waiting.add(7)
+    process._pending[7] = parse_transport_event(
+        b'{"version":1,"id":7,"type":"error","code":"web_join_rate_limited","state":"idle"}\n'
+    )
+    with pytest.raises(TransportProcessError) as error:
+        process._wait_response(7, 0.1, command_type=command)
+    assert isinstance(error.value, TransportWebJoinRateLimitedError) == (command == "web_join_open")
+
+
 def test_failed_child_reap_retains_handle_and_requires_actual_retry(monkeypatch) -> None:
     class UnreapedChild:
         pid = 987654321

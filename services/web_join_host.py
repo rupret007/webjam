@@ -19,7 +19,11 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from core.web_join_target import web_join_page
-from services.transport_runtime import TransportProcess, _decode_web_join_envelope
+from services.transport_runtime import (
+    TransportProcess,
+    TransportWebJoinRateLimitedError,
+    _decode_web_join_envelope,
+)
 
 MAILBOX_ORIGIN = "https://webjam-turn-credentials.jeffstory007.workers.dev"
 MAX_ENVELOPE = 8192
@@ -35,6 +39,7 @@ PREPARATION_FAILURE_MESSAGES = {
     "audio_bridge": "Compatible browser audio could not start. Use the updated private app and retry.",
     "transport": "The browser connection could not start. Use the updated app and retry.",
     "relay": "The browser relay could not be reached. Check your connection and retry.",
+    "relay_limit": "The browser relay reached a usage limit. Keep the Music room open and try a new browser invite later.",
 }
 
 
@@ -331,9 +336,11 @@ class WebJoinHost:
                 )
                 self._worker.start()
                 return self._invite
-        except Exception:
+        except Exception as error:
             with self._lock:
-                self._failure_stage = stage
+                self._failure_stage = (
+                    "relay_limit" if isinstance(error, TransportWebJoinRateLimitedError) else stage
+                )
             self.stop()
             raise WebJoinUnavailable(PREPARE_UNAVAILABLE) from None
 

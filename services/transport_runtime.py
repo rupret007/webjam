@@ -100,6 +100,7 @@ _EVENT_CODES = frozenset(
         "peer_already_open",
         "peer_not_open",
         "open_failed",
+        "web_join_rate_limited",
         "identity_not_prepared",
         "unsupported_profile",
         "enrollment_invalid",
@@ -141,6 +142,10 @@ class TransportPeerProtocolError(TransportProcessError):
 
 class TransportRoomRateLimitedError(TransportProcessError):
     """A matched room publish may retry its newest snapshot after a short delay."""
+
+
+class TransportWebJoinRateLimitedError(TransportProcessError):
+    """The relay declined a browser invitation because of a request or usage limit."""
 
 
 class TransportLaunchError(TransportProcessError):
@@ -1414,6 +1419,8 @@ class TransportProcess:
                 raise self._failure
             event = self._pending.pop(command_id)
         if event.event_type == "error":
+            if command_type == "web_join_open" and event.code == "web_join_rate_limited":
+                raise TransportWebJoinRateLimitedError("The browser relay reached a usage limit.")
             if (command_type == "publish_room_state"
                     and event.code == "room_state_rate_limited"
                     and event.state == "connected"):

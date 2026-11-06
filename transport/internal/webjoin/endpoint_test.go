@@ -522,6 +522,9 @@ func TestFetchICEWebScopeAndCaps(t *testing.T) {
 			if (err == nil) != (mode == "valid") {
 				t.Fatalf("got %v", err)
 			}
+			if (err == ErrICERateLimited) != (mode == "429") {
+				t.Fatalf("relay limit classification: got %v", err)
+			}
 			if err == nil && len(cfg.Servers[0].URLs) != 3 {
 				t.Fatal("TCP/TLS fallback dropped")
 			}

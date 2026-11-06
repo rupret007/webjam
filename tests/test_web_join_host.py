@@ -11,6 +11,7 @@ from services.transport_runtime import (
     parse_transport_event,
     TransportProtocolError,
     TransportProcess,
+    TransportWebJoinRateLimitedError,
 )
 from services.web_join_host import (
     WebJoinHost,
@@ -317,11 +318,15 @@ def test_invalid_package_target_cannot_start_bridge_transport_or_capability(tmp_
     assert not host.invite and host.state == "closed"
 
 
-def test_prepare_failure_closes_owned_bridge_and_sidecar():
+@pytest.mark.parametrize("failure, reason", [
+    (RuntimeError, "could not be reached"),
+    (TransportWebJoinRateLimitedError, "reached a usage limit"),
+])
+def test_prepare_failure_closes_owned_bridge_and_sidecar(failure, reason):
     process = FakeProcess(None)
 
     def fail(**_kwargs):
-        raise RuntimeError("private failure")
+        raise failure("private failure")
 
     process.open_web_join = fail
     bridge = FakeBridge(22124)
@@ -332,7 +337,7 @@ def test_prepare_failure_closes_owned_bridge_and_sidecar():
         host.allow(22124)
     assert "private failure" not in str(error.value)
     assert not process.running and bridge.closed.is_set() and not host.invite
-    assert "relay" in host.failure_reason.lower()
+    assert reason in host.failure_reason
 
 
 def test_codec_start_failure_has_a_safe_reason_and_retires_every_owner():
