@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
 
-async function openInvitation(page, width = 390) {
+async function openInvitation(page, width = 390, skipCheck = true) {
   await page.setViewportSize({ width, height: 844 });
   await page.clock.install();
-  await page.addInitScript(() => {
+  await page.addInitScript(({ skipCheck }) => {
     window.captureTracks = [];
     const nativeContext = window.AudioContext;
     window.audioContexts = [];
@@ -13,9 +13,18 @@ async function openInvitation(page, width = 390) {
     Object.defineProperty(Object.getPrototypeOf(navigator.mediaDevices), 'getUserMedia', {
       configurable: true,
       value: async () => {
-        // Synthetic silent audio only; never request the tester's microphone.
+        // Synthetic audio only; never request the tester's microphone.
         const context = new AudioContext();
-        const stream = context.createMediaStreamDestination().stream;
+        const output = context.createMediaStreamDestination();
+        const { stream } = output;
+        if (!skipCheck) {
+          const oscillator = context.createOscillator();
+          const gain = context.createGain();
+          gain.gain.value = 0.08;
+          oscillator.connect(gain).connect(output);
+          oscillator.start();
+          await context.resume();
+        }
         for (const track of stream.getTracks()) {
           const stop = track.stop.bind(track);
           track.stop = () => { stop(); context.close().catch(() => {}); };
@@ -24,12 +33,61 @@ async function openInvitation(page, width = 390) {
         return stream;
       }
     });
-  });
+  }, { skipCheck });
   const expires = Math.floor(Date.now() / 1000) + 300;
   // Local test-only capability, with no corresponding host or mailbox.
   await page.goto(`/#k=${Buffer.alloc(32, 17).toString('base64url')}&s=${'22'.repeat(32)}&g=1&e=${expires}`);
   await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: 'Skip check' }).click();
+  if (skipCheck) await page.getByRole('button', { name: 'Skip check' }).click();
+}
+
+test('losing the checked microphone clears Join readiness until a deliberate recheck', async ({ page }) => {
+  await openInvitation(page, 390, false);
+  await page.getByRole('button', { name: 'Check microphone', exact: true }).click();
+  await expect(page.locator('#join')).toBeEnabled();
+  await page.evaluate(() => {
+    captureTracks[0].stop();
+    captureTracks[0].dispatchEvent(new Event('ended'));
+  });
+  await expect(page.locator('#mic-error')).toContainText('Microphone disconnected');
+  await expect(page.locator('#mic-heard')).toBeHidden();
+  await expect(page.locator('#join')).toBeDisabled();
+  expect(await page.evaluate(() => captureTracks.length)).toBe(1);
+  await page.getByRole('button', { name: 'Try again', exact: true }).click();
+  await expect(page.locator('#join')).toBeEnabled();
+  expect(await page.evaluate(() => captureTracks.length)).toBe(2);
+  await page.evaluate(() => captureTracks[0].dispatchEvent(new Event('ended')));
+  await expect(page.locator('#join')).toBeEnabled();
+});
+
+for (const skipCheck of [false, true]) {
+  test(`losing an enrolled microphone closes the audio session after ${skipCheck ? 'skipping' : 'passing'} the mic check`, async ({ page }) => {
+    await page.route('**/session.js', route => route.fulfill({ contentType: 'text/javascript', body: `
+      export class WebJoinSession {
+        constructor(options) { this.options = options; }
+        async join() { this.options.onStatus('Synthetic session connected.'); }
+        close() {
+          window.micLossSessionClosed = true;
+          this.options.stream.getTracks().forEach(track => track.stop());
+        }
+      }` }));
+    await openInvitation(page, 390, skipCheck);
+    if (!skipCheck) {
+      await page.getByRole('button', { name: 'Check microphone', exact: true }).click();
+      await expect(page.locator('#join')).toBeEnabled();
+    }
+    await page.locator('#join').click();
+    await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
+    await page.evaluate(() => {
+      captureTracks[0].stop();
+      captureTracks[0].dispatchEvent(new Event('ended'));
+    });
+    await expect(page.locator('#status')).toHaveText('Microphone disconnected.');
+    await expect(page.locator('#error-hint')).toContainText('new browser invite');
+    for (const id of ['join', 'retry', 'leave', 'prejoin']) await expect(page.locator('#' + id)).toBeHidden();
+    await expect.poll(() => page.evaluate(() => window.micLossSessionClosed && audioContexts.every(context => context.state === 'closed'))).toBe(true);
+    expect(await page.evaluate(() => captureTracks.length)).toBe(1);
+  });
 }
 
 test('a closed enrolled session releases audio and asks for a new invitation', async ({ page }) => {

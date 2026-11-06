@@ -1,0 +1,1 @@
+- Web Join shows a recovery step when the browser loses the microphone before or during a session.
