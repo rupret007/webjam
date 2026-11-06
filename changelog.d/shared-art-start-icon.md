@@ -1,0 +1,1 @@
+- Make together and Paint along now share the same illustration on the Art menu.
