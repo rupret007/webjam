@@ -12,6 +12,17 @@ misconfigured Worker fails closed. No provider key, API token, analytics token,
 or long-lived credential belongs in these static files. TURN credentials stay
 in memory and expire in at most one hour.
 
+Daily request and storage-write allowances are separate from monthly relay
+bandwidth. A confirmed daily `429 {"error":"cap"}` includes a `Retry-After`
+delta through the next UTC midnight, exposed only to an allowed browser origin.
+The client accepts integer values from 1 to 86,400 seconds and shows an
+approximate local date/time. It still stops guest audio, retires that invite and
+requires the host to share a fresh link; it does not retry automatically. Missing
+or malformed hints retain generic cap recovery. Monthly bandwidth caps do not
+receive this daily reset hint. Resetting one allowance does not establish that
+the other independent budgets have room. No quota value or admission rule is
+changed by this hint.
+
 The fragment contains `k` (32-byte unpadded base64url capability), `s` (32-byte
 lowercase hexadecimal session), `g` (generation), and `e` (Unix expiry seconds).
 The HTTP request never includes the fragment. `crypto.js` implements the shared

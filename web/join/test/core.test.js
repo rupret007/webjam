@@ -167,6 +167,18 @@ test("a confirmed 429 cap differs from temporary rate limiting and outage respon
     await assert.rejects(client.credentials(), { message });
   }
 });
+test("daily reset hints are accepted only as bounded integer seconds on a confirmed cap", async () => {
+  for (const [retry, expected] of [["1", 1], ["86400", 86400], ["0", undefined], ["86401", undefined], ["-1", undefined], ["60.5", undefined], ["tomorrow", undefined], ["9".repeat(500), undefined]]) {
+    const client = new Mailbox("https://relay.example", invite, {
+      interval: 0, fetchImpl: async () => Response.json({ error: "cap" }, { status: 429, headers: { "Retry-After": retry } }),
+    });
+    await assert.rejects(client.credentials(), error => {
+      assert.equal(error.message, JOIN_SIGNAL.RELAY_CAP_REACHED);
+      assert.equal(error.retryAfterSeconds, expected);
+      return true;
+    });
+  }
+});
 test("mailbox rejects oversized streaming and declared responses before parsing", async () => {
   for (const response of [new Response("x".repeat(16385)), new Response("{}", { headers: { "content-length": "999999" } })]) {
     const mailbox = new Mailbox("https://relay.example", invite, { interval: 0, fetchImpl: async () => response });

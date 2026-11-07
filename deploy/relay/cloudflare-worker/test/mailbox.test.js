@@ -1531,6 +1531,7 @@ test("web quota survives Worker resets, shares the desktop mailbox budget, and f
   resetWorkerState();
   const capped = await handleRequest(webRequest(), env, deps);
   assert.equal(capped.status, 429);
+  assert.equal(capped.headers.get("Retry-After"), "86400");
   assert.deepEqual(await capped.json(), { error: "cap" });
   assert.equal(mailboxCalls, 2);
   assert.equal(memories.get("web").data.get("quota:web").requests, 2);

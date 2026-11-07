@@ -1,0 +1,1 @@
+- Web Join shows the daily request allowance's approximate local reset time when the relay supplies it. Daily-cap replies expose a bounded Retry-After hint; quota limits, admission, microphone cleanup and the requirement for a fresh invite stay unchanged.

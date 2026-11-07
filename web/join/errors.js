@@ -107,10 +107,16 @@ export function mapJoinError(error) {
     return mapExpired(message);
   }
   if (message === JOIN_SIGNAL.RELAY_CAP_REACHED) {
+    const seconds = error instanceof Error ? error.retryAfterSeconds : null;
+    const dailyReset = Number.isInteger(seconds) && seconds >= 1 && seconds <= 86400
+      ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }).format(Date.now() + seconds * 1000)
+      : null;
     return {
       kind: "relay_cap",
       headline: message,
-      hint: "Your host can keep the Music room open. Ask for a new browser invite when Web Join is available again.",
+      hint: dailyReset
+        ? `This daily request allowance resets around ${dailyReset}. Your host can keep the Music room open and share a fresh browser invite afterward.`
+        : "Your host can keep the Music room open. Ask for a new browser invite when Web Join is available again.",
       showRetry: false,
       needsFreshInvite: true,
     };

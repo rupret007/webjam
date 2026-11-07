@@ -2,6 +2,19 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { JOIN_SIGNAL, mapJoinError, applyJoinFailure, clearJoinFailure } from "../errors.js";
 
+test("daily reset copy stays non-retrying and malformed hints retain generic cap recovery", () => {
+  for (const seconds of [1, 86400, 0, 86401, -1, 1.5, "60", Infinity, null]) {
+    const error = new Error(JOIN_SIGNAL.RELAY_CAP_REACHED);
+    error.retryAfterSeconds = seconds;
+    const view = mapJoinError(error);
+    assert.equal(view.kind, "relay_cap");
+    assert.equal(view.showRetry, false);
+    assert.equal(view.needsFreshInvite, true);
+    if (seconds === 1 || seconds === 86400) assert.match(view.hint, /daily request allowance resets around/);
+    else assert.doesNotMatch(view.hint, /daily request allowance/);
+  }
+});
+
 function controls() {
   const status = { textContent: "", dataset: {}, hidden: false };
   const hint = { textContent: "", hidden: true };

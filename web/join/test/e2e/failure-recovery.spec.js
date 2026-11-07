@@ -170,17 +170,17 @@ for (const width of [375, 390]) {
   });
 }
 
-test('a confirmed relay cap closes guest audio and asks for a fresh invite', async ({ page }) => {
+for (const dailyHint of [false, true]) test(`a confirmed relay cap closes guest audio and asks for a fresh invite (daily reset hint: ${dailyHint})`, async ({ page }) => {
   let requests = 0;
   await page.route('https://webjam-turn-credentials.jeffstory007.workers.dev/**', async (route) => {
     requests++;
-    if (requests === 1) await route.fulfill({ status: 429, json: { error: 'cap' } });
+    if (requests === 1) await route.fulfill({ status: 429, json: { error: 'cap' }, ...(dailyHint ? { headers: { 'Retry-After': '60', 'Access-Control-Expose-Headers': 'Retry-After' } } : {}) });
     else await route.fulfill({ status: 503, json: { error: 'unavailable' } });
   });
   await openInvitation(page);
   await page.getByRole('button', { name: 'Join with microphone', exact: true }).click();
   await expect(page.locator('#status')).toHaveText('Web Join reached a usage limit.');
-  await expect(page.locator('#error-hint')).toContainText('Ask for a new browser invite');
+  await expect(page.locator('#error-hint')).toContainText(dailyHint ? 'daily request allowance resets around' : 'Ask for a new browser invite');
   for (const id of ['join', 'retry', 'leave', 'prejoin']) await expect(page.locator('#' + id)).toBeHidden();
   await expect.poll(() => page.evaluate(() => captureTracks.length === 1 && captureTracks[0].readyState === 'ended')).toBe(true);
   await expect.poll(() => page.evaluate(() => audioContexts.map(context => context.state))).toEqual(['closed', 'closed']);

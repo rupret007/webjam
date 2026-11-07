@@ -26,6 +26,26 @@ function request(path = "/turn-credentials", body, origin = ORIGIN, method = "PO
 }
 
 const token = (extra = {}) => ({ session_id: SESSION, invite_token: INVITE, client: "web", ...extra });
+
+test("daily cap exposes its UTC reset to an allowed browser and recovers at midnight", async () => {
+  resetWorkerState();
+  const config = { ENVIRONMENT: "development", WEB_DAILY_REQUESTS: "1" };
+  const deps = { nowMs: Date.parse("2026-11-06T23:59:59.900Z"), mailboxFetch: async () => new Response(null, { status: 204 }) };
+  const call = () => handleRequest(request(`/mailbox/${ID}/offer?client=web`, undefined, ORIGIN, "GET"), config, deps);
+  assert.equal((await call()).status, 204);
+  const denied = await call();
+  assert.equal(denied.status, 429);
+  assert.deepEqual(await denied.json(), { error: "cap" });
+  assert.equal(denied.headers.get("Retry-After"), "1");
+  assert.equal(denied.headers.get("Access-Control-Allow-Origin"), ORIGIN);
+  assert.equal(denied.headers.get("Access-Control-Expose-Headers"), "Retry-After");
+  assert.equal(denied.headers.has("Access-Control-Allow-Credentials"), false);
+  deps.nowMs = Date.parse("2026-11-07T00:00:00Z");
+  const allowed = await call();
+  assert.equal(allowed.status, 204);
+  assert.equal(allowed.headers.has("Retry-After"), false);
+  assert.equal((await call()).status, 429);
+});
 function analytics(desktop = 0, web = 0) {
   const groups = (bytes) => [{ sum: { ingressBytes: bytes, egressBytes: 0 } }];
   return { data: { viewer: { accounts: [{
@@ -167,6 +187,7 @@ test("web monthly subcap and summed global cap fail closed without minting", asy
     const response = await handleRequest(request("/turn-credentials", token({ client }), client ? ORIGIN : null), env, deps);
     assert.equal(response.status, 429);
     assert.deepEqual(await response.json(), { error: "cap" });
+    assert.equal(response.headers.has("Retry-After"), false);
     assert.equal(deps.calls.length, 1);
   }
 });

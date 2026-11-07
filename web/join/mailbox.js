@@ -59,7 +59,14 @@ export class Mailbox {
           } catch (error) {
             if (controller.signal.aborted) throw error;
           }
-          if (code === "cap") throw new Error(JOIN_SIGNAL.RELAY_CAP_REACHED);
+          if (code === "cap") {
+            const error = new Error(JOIN_SIGNAL.RELAY_CAP_REACHED);
+            const retry = response.headers.get("Retry-After");
+            if (typeof retry === "string" && /^\d{1,5}$/.test(retry) && Number(retry) >= 1 && Number(retry) <= 86400) {
+              error.retryAfterSeconds = Number(retry);
+            }
+            throw error;
+          }
         }
         if ([429, 503].includes(response.status)) throw new Error(BUSY_MESSAGE);
         if ([204, 410].includes(response.status)) return { status: response.status, body: null };
