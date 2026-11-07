@@ -170,6 +170,35 @@ for (const width of [375, 390]) {
   });
 }
 
+test('a confirmed relay cap closes guest audio and asks for a fresh invite', async ({ page }) => {
+  let requests = 0;
+  await page.route('https://webjam-turn-credentials.jeffstory007.workers.dev/**', async (route) => {
+    requests++;
+    if (requests === 1) await route.fulfill({ status: 429, json: { error: 'cap' } });
+    else await route.fulfill({ status: 503, json: { error: 'unavailable' } });
+  });
+  await openInvitation(page);
+  await page.getByRole('button', { name: 'Join with microphone', exact: true }).click();
+  await expect(page.locator('#status')).toHaveText('Web Join reached a usage limit.');
+  await expect(page.locator('#error-hint')).toContainText('Ask for a new browser invite');
+  for (const id of ['join', 'retry', 'leave', 'prejoin']) await expect(page.locator('#' + id)).toBeHidden();
+  await expect.poll(() => page.evaluate(() => captureTracks.length === 1 && captureTracks[0].readyState === 'ended')).toBe(true);
+  await expect.poll(() => page.evaluate(() => audioContexts.map(context => context.state))).toEqual(['closed', 'closed']);
+  await page.clock.fastForward(30000);
+  expect(requests).toBe(1);
+
+  const capability = Buffer.alloc(32, 17).toString('base64url');
+  const expires = Math.floor(Date.now() / 1000) + 300;
+  await page.evaluate(hash => { location.hash = hash; }, `k=${capability}&s=${'24'.repeat(32)}&g=1&e=${expires}`);
+  await expect(page.getByRole('heading', { name: 'Check your audio' })).toBeVisible();
+  await page.getByRole('checkbox').check();
+  await page.getByRole('button', { name: 'Skip check' }).click();
+  await page.getByRole('button', { name: 'Join with microphone', exact: true }).click();
+  await expect(page.locator('#status')).toContainText('Web Join is unavailable');
+  await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
+  expect(requests).toBe(2);
+});
+
 test('Leave during a stalled fetch stays a deliberate exit, then allows another Join', async ({ page }) => {
   let requests = 0;
   await page.route('https://webjam-turn-credentials.jeffstory007.workers.dev/**', async (route) => {

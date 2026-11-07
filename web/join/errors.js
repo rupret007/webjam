@@ -11,6 +11,7 @@ export const JOIN_SIGNAL = Object.freeze({
   INVITE_INVALID: "This Web Join invite is invalid or expired. Ask the host for a new link.",
   HOST_BINDING: "Host identity or invite binding did not match",
   RELAY_SESSION_EXPIRED: "The free relay session expired. Ask the host for a new invite.",
+  RELAY_CAP_REACHED: "Web Join reached a usage limit.",
   RELAY_UNAVAILABLE: "Web Join is unavailable. Try again later or ask your host for help.",
   ICE_GATHER_TIMEOUT: "Network discovery timed out. Try another network or the app.",
   ICE_CONNECTION_FAILED: "Connection ended. Ask the host for a new invite.",
@@ -104,6 +105,15 @@ export function mapJoinError(error) {
   }
   if (EXPIRED_SIGNALS.has(message)) {
     return mapExpired(message);
+  }
+  if (message === JOIN_SIGNAL.RELAY_CAP_REACHED) {
+    return {
+      kind: "relay_cap",
+      headline: message,
+      hint: "Your host can keep the Music room open. Ask for a new browser invite when Web Join is available again.",
+      showRetry: false,
+      needsFreshInvite: true,
+    };
   }
   if (message === JOIN_SIGNAL.RELAY_UNAVAILABLE) {
     return {

@@ -5,6 +5,7 @@ import { DOMAIN, fromHex, toHex, fromBase64Url, toBase64Url, hkdf, mailboxId, tu
 import { MUSIC_CONSTRAINTS, acquireMusicStream, constraintWarnings, musicSdp, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget } from "../audio.js";
 import { publicIPv4, candidateAllowed, policySdp, validateCredentials, SESSION_BYTES } from "../policy.js";
 import { Mailbox, BUSY_MESSAGE } from "../mailbox.js";
+import { JOIN_SIGNAL } from "../errors.js";
 import { WebJoinSession } from "../session.js";
 const vector = JSON.parse(await readFile(new URL("vectors.json", import.meta.url)));
 const invite = { capability: fromHex(vector.capability_hex), session: vector.session, generation: vector.generation, expiresAt: vector.expires_at };
@@ -152,6 +153,19 @@ test("mailbox request timeout and leave cancel pending network work", async () =
   const mailbox = new Mailbox("https://relay.example", invite, { signal: controller.signal, interval: 0, timeout: 10, fetchImpl: async (_url, { signal }) => new Promise((_, reject) => { signal.addEventListener("abort", () => reject(new DOMException("Stopped", "AbortError")), { once: true }); }) });
   await assert.rejects(mailbox.request("/test"), { name: "AbortError" });
   controller.abort(); await assert.rejects(mailbox.request("/test"), { name: "AbortError" });
+});
+test("a confirmed 429 cap differs from temporary rate limiting and outage responses", async () => {
+  for (const [status, body, message] of [
+    [429, '{"error":"cap"}', JOIN_SIGNAL.RELAY_CAP_REACHED],
+    [429, '{"error":"rate"}', BUSY_MESSAGE],
+    [429, '{"error":"cap","pad":"' + 'x'.repeat(1024) + '"}', BUSY_MESSAGE],
+    [503, '{"error":"cap"}', BUSY_MESSAGE],
+  ]) {
+    const client = new Mailbox("https://relay.example", invite, {
+      interval: 0, fetchImpl: async () => new Response(body, { status }),
+    });
+    await assert.rejects(client.credentials(), { message });
+  }
 });
 test("mailbox rejects oversized streaming and declared responses before parsing", async () => {
   for (const response of [new Response("x".repeat(16385)), new Response("{}", { headers: { "content-length": "999999" } })]) {

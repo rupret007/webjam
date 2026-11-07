@@ -1,0 +1,1 @@
+- Web Join distinguishes a confirmed usage cap from a temporary outage and tells the guest when to ask for a fresh invite.
