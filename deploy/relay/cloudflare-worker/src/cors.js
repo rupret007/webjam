@@ -52,6 +52,7 @@ export function corsGate(request, env) {
 
 export function withCors(response, origin) {
   if (!origin) return response;
+  if (response.status === 101) return response;
   const headers = new Headers(response.headers);
   headers.set("Access-Control-Allow-Origin", origin);
   const vary = String(headers.get("Vary") ?? "").split(",").map((value) => value.trim()).filter(Boolean);
