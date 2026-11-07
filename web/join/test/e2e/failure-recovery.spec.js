@@ -6,11 +6,12 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/*', route => new URL(route.request().url()).origin === 'http://127.0.0.1:4174' ? route.continue() : route.abort());
 });
 
-async function openInvitation(page, width = 390, skipCheck = true) {
+async function openInvitation(page, width = 390, skipCheck = true, delayCapture = false) {
   await page.setViewportSize({ width, height: 844 });
   await page.clock.install();
-  await page.addInitScript(({ skipCheck }) => {
+  await page.addInitScript(({ skipCheck, delayCapture }) => {
     window.captureTracks = [];
+    if (delayCapture) window.pendingCaptures = [];
     const nativeContext = window.AudioContext;
     window.audioContexts = [];
     window.AudioContext = class extends nativeContext {
@@ -36,10 +37,11 @@ async function openInvitation(page, width = 390, skipCheck = true) {
           track.stop = () => { stop(); context.close().catch(() => {}); };
           window.captureTracks.push(track);
         }
+        if (delayCapture) return new Promise(resolve => pendingCaptures.push(() => resolve(stream)));
         return stream;
       }
     });
-  }, { skipCheck });
+  }, { skipCheck, delayCapture });
   const expires = Math.floor(Date.now() / 1000) + 300;
   // Local test-only capability, with no corresponding host or mailbox.
   await page.goto(`/#k=${Buffer.alloc(32, 17).toString('base64url')}&s=${'22'.repeat(32)}&g=1&e=${expires}`);
@@ -398,23 +400,9 @@ test('a retired initial resume cannot enable Join while the next resume is pendi
 });
 
 test('capture arriving after Leave releases only its own tracks during the next Join', async ({ page }) => {
-  await openInvitation(page);
-  await page.evaluate(() => {
-    window.pendingCaptures = [];
-    const capture = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-    const delayedCapture = async () => {
-      const stream = await capture();
-      return new Promise(resolve => pendingCaptures.push(() => resolve(stream)));
-    };
-    // Assignment can silently leave WebKit's inherited non-writable fixture
-    // in place. Define the own property so this test really delays capture.
-    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
-      configurable: true, value: delayedCapture,
-    });
-    if (navigator.mediaDevices.getUserMedia !== delayedCapture) {
-      throw new Error('The delayed-capture fixture was not installed');
-    }
-  });
+  // Install the pending-capture behavior before application code loads, using
+  // the same generated stream and native context as the other recovery cases.
+  await openInvitation(page, 390, true, true);
   const join = page.getByRole('button', { name: 'Join with microphone', exact: true });
   const leave = page.getByRole('button', { name: 'Leave session', exact: true });
   await join.click(); await expect.poll(() => page.evaluate(() => pendingCaptures.length)).toBe(1);
