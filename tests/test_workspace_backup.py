@@ -1172,8 +1172,10 @@ def test_stage_inspection_failure_closes_descriptor_without_touching_other_files
             raise OSError("injected stage inspection failure")
         return real_fstat(descriptor)
 
-    monkeypatch.setattr(backup.os, "fdopen", stage_fdopen)
-    monkeypatch.setattr(backup.os, "fstat", fail_stage_inspection)
+    simulated_os = SimpleNamespace(**vars(os))
+    simulated_os.fdopen = stage_fdopen
+    simulated_os.fstat = fail_stage_inspection
+    monkeypatch.setattr(backup, "os", simulated_os)
     with pytest.raises(WorkspaceBackupError):
         export_workspace_backup(record, tmp_path / "backup.json")
     assert len(descriptors) == 1

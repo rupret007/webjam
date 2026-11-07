@@ -459,7 +459,7 @@ def test_native_release_locks_are_audited_without_advisory_exceptions() -> None:
         assert auxiliary_lock in audit
     assert "--disable-pip --no-deps" in audit
     assert "--ignore-vuln" not in audit
-    assert 'setuptools>=84.1.0' in REQUIREMENTS
+    assert "setuptools>=84.1.0" in REQUIREMENTS
 
 
 def test_pocket_stage_integration_uses_its_complete_hash_locked_environment() -> None:
@@ -765,6 +765,7 @@ def test_transport_uses_the_reviewed_patched_go_toolchain_everywhere() -> None:
     assert "1.26.9" not in WORKFLOW + cross_network
     assert "1.25.12" not in WORKFLOW
     assert re.search(r"(?m)^go 1\.25\.13$", TRANSPORT_GO_MOD)
+    assert re.search(r"(?m)^toolchain go1\.26\.10$", TRANSPORT_GO_MOD)
 
 
 def test_release_generates_and_verifies_checksum_manifest_for_exact_assets() -> None:

@@ -2,6 +2,8 @@ module github.com/rupret007/webjam/transport
 
 go 1.25.13
 
+toolchain go1.26.10
+
 require (
 	github.com/pion/ice/v4 v4.3.0
 	github.com/pion/logging v0.2.4
