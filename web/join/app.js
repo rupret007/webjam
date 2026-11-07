@@ -209,6 +209,8 @@ function leave(message = "You left the session.", error) {
   context?.close().catch(() => {});
   context = null;
   $("leave").hidden = true;
+  $("connection-route").hidden = true;
+  $("latency").textContent = "Listening delay is estimated after you connect.";
   const elements = failureElements();
   if (error) {
     const view = mapJoinError(error);
@@ -278,6 +280,12 @@ async function startJoin() {
           milliseconds === null
             ? "Estimated listening delay: unavailable in this browser."
             : `Estimated listening delay: ${Math.round(milliseconds)} ms (network + playback; excludes capture and host bridge).`;
+      },
+      onRoute: (route) => {
+        if (!isCurrent()) return;
+        const indicator = $("connection-route");
+        if (route) indicator.textContent = route === "relayed" ? "Relayed connection" : "Direct connection";
+        indicator.hidden = route === null;
       },
       onTrack: (remote) => {
         if (!isCurrent()) return;

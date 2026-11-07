@@ -1,7 +1,7 @@
 import { open, seal, validateOffer, sdpFingerprint, enrollmentProof } from "./crypto.js";
 import { Mailbox, BUSY_MESSAGE } from "./mailbox.js";
 import { candidateAllowed, offerHasReviewedAllocation, policySdp, SESSION_BYTES } from "./policy.js";
-import { musicSdp, tuneReceiver, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget } from "./audio.js";
+import { musicSdp, tuneReceiver, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget, connectionRoute } from "./audio.js";
 import { JOIN_SIGNAL } from "./errors.js";
 
 export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReviewedAllocations = false } = {}) {
@@ -34,11 +34,12 @@ export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReview
   return policySdp(pc.localDescription?.sdp ?? "", { allowReviewedAllocations });
 }
 export class WebJoinSession {
-  constructor({ origin, invite, stream, audioContext, onStatus = () => {}, onTrack = () => {}, onLatency = () => {}, onError = () => {} }) {
-    Object.assign(this, { invite, stream, audioContext, onStatus, onTrack, onLatency, onError });
+  constructor({ origin, invite, stream, audioContext, onStatus = () => {}, onTrack = () => {}, onLatency = () => {}, onRoute = () => {}, onError = () => {} }) {
+    Object.assign(this, { invite, stream, audioContext, onStatus, onTrack, onLatency, onRoute, onError });
     this.controller = new AbortController();
     this.mailbox = new Mailbox(origin, invite, { signal: this.controller.signal });
     this.authorized = false; this.quotaBytes = SESSION_BYTES; this.previousBytes = 0;
+    this.route = null;
     this._jitterAdaptation = { targetMs: 20, lastChangeAt: 0 };
     this.stream.getAudioTracks().forEach((track) => { track.enabled = false; });
   }
@@ -125,10 +126,11 @@ export class WebJoinSession {
     try {
       const stats = await Promise.race([this.pc.getStats(), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(BUSY_MESSAGE)), 3000); })]);
       if (this.controller.signal.aborted || !this.authorized) return;
-      let bytes = 0, transports = 0;
+      let bytes = 0, transports = 0, selectedPairId;
       for (const report of stats.values()) if (report.type === "transport") {
         if (!Number.isSafeInteger(report.bytesSent) || report.bytesSent < 0 || !Number.isSafeInteger(report.bytesReceived) || report.bytesReceived < 0) throw new Error(BUSY_MESSAGE);
         bytes += report.bytesSent + report.bytesReceived; transports++;
+        selectedPairId = report.selectedCandidatePairId;
       }
       if (!transports || bytes < this.previousBytes || bytes >= this.quotaBytes * 0.9) throw new Error(BUSY_MESSAGE);
       this.previousBytes = bytes;
@@ -137,6 +139,14 @@ export class WebJoinSession {
         applyAdaptiveReceiverTarget(this._inboundReceiver, this._jitterAdaptation);
       }
       this.onLatency(latencyMs(stats, this.audioContext.baseLatency));
+      // Web Join bundles audio and enrollment on one transport. With missing
+      // or ambiguous stats, leave the route unknown.
+      const route = transports === 1 && this.pc.connectionState === "connected"
+        ? connectionRoute(stats, selectedPairId) : null;
+      if (route !== this.route) {
+        this.route = route;
+        this.onRoute(route);
+      }
     } catch (error) { this.fail(error); }
     finally { clearTimeout(timer); this.statsPending = false; }
   }

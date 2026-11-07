@@ -159,5 +159,19 @@ test("real browser sine reaches Pion after enrollment and returns through the ho
   }
   const stats = await (await request.get("http://127.0.0.1:4175/status")).json();
   expect(stats.received).toBeGreaterThan(0); expect(stats.sent).toBeGreaterThan(0);
+  if (browserName === "chromium") {
+    const { types, route } = await page.evaluate(async () => {
+      const { connectionRoute } = await import("/audio.js");
+      const stats = await window.labPC.getStats();
+      const transport = [...stats.values()].find(report => report.type === "transport");
+      const pair = stats.get(transport?.selectedCandidatePairId);
+      const types = [stats.get(pair?.localCandidateId)?.candidateType, stats.get(pair?.remoteCandidateId)?.candidateType];
+      return { types, route: connectionRoute(stats, transport?.selectedCandidatePairId) };
+    });
+    // The lab has no relay, but a browser can learn an unadvertised address
+    // during connectivity checks. The UI should leave that route unclassified.
+    for (const type of types) expect(["host", "prflx"]).toContain(type);
+    expect(route).toBe(types.includes("prflx") ? null : "direct");
+  }
   await page.evaluate(async () => { window.labPC.close(); window.labCapture.getTracks().forEach((track) => track.stop()); await window.labContext.close(); });
 });

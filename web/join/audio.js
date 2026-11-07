@@ -128,6 +128,17 @@ export function applyAdaptiveReceiverTarget(receiver, adaptation) {
   return adaptation;
 }
 
+export function connectionRoute(stats, selectedPairId) {
+  const pair = stats.get(selectedPairId);
+  if (pair?.type !== "candidate-pair" || pair.state !== "succeeded") return null;
+  const local = stats.get(pair.localCandidateId);
+  const remote = stats.get(pair.remoteCandidateId);
+  const types = [local?.candidateType, remote?.candidateType];
+  if (types.includes("relay")) return "relayed";
+  // A peer-reflexive address learned during checks has no advertised origin.
+  return types.every(type => type === "host" || type === "srflx") ? "direct" : null;
+}
+
 export function latencyMs(stats, baseLatency = 0) {
   let rtt;
   let buffer;

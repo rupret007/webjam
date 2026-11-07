@@ -150,6 +150,11 @@ If that service is unavailable, the guest is asked to try later or contact the
 host. Moving onto the same Wi-Fi does not replace the required web credentials.
 The failure still closes the attempted audio session before a deliberate retry.
 
+After joining, the browser shows **Direct connection** or **Relayed connection**
+when it can identify the selected audio route. The label reflects the active
+connection, even if another route was available during setup. It is hidden
+when the route is unavailable. The indicator uses candidate types only.
+
 Cloudflare currently provides a [shared 1,000 GB monthly SFU/TURN free allowance](https://developers.cloudflare.com/realtime/sfu/platform/pricing/).
 The Worker must remain on Workers Free with dedicated web TURN accounting and
 no paid upgrades. Account-wide usage outside these keys must also stay within
