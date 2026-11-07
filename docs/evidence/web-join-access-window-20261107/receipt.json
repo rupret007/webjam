@@ -1,0 +1,30 @@
+{
+  "baseSource": "e735a048de82e26c424e31964a30f1dfbd548df9",
+  "observedAt": "2026-11-07T08:41:00.439780+00:00",
+  "scope": "Two WebKit UI lifecycle fixtures and all browser-module Node units; no physical capture/provider/native audio lab",
+  "nodeUnitsPassed": 34,
+  "webKitUiFixturesPassed": 2,
+  "retries": 0,
+  "sdk": "1.64.1",
+  "runtimeHashes": {
+    "app.js": "52fa8d275ad1c3efa0b428670c1e99a4db16a21f65f00ccc79124cf0db869596",
+    "session.js": "1855ed9acb576cad13230f1a422578c848af35173887a9c797209689d2d3d044",
+    "style.css": "af2689b995cefcc4cb67377d5dbddcd7824aff764c1fd32e4117dc6ae4217369",
+    "index.html": "7c43dd28e955dbe54c221924c11137ad65669cf2ff6975bb9f46077ddb960a3e"
+  },
+  "screenshots": {
+    "access-window-390.png": "4387b062690af6858ea1ad3d4ca07bf9022f7f33496633f1ba9f55f864fe8069",
+    "access-window-375.png": "2933bba583c6d77b46fb92c0fb499478232b5002c0bc454ed94b82d378b7b078"
+  },
+  "physicalCapture": false,
+  "realCredentialIssuance": false,
+  "nativeAudioLabRun": false,
+  "fullCurrentHeadCIPending": true,
+  "firstFailurePreserved": "Initial second fixture used an obsolete host-end message; corrected to imported production JOIN_SIGNAL.SESSION_ENDED without changing error mapping. Initial stage path filter rejected .gitignore before any file/test; empty owned directory verified before resume.",
+  "screenshotsVisuallyInspected": [
+    375,
+    390
+  ],
+  "keyboardFocusVerified": "Connected Leave button receives focus without scrolling",
+  "uiFixtureSha256": "975d8070e7bb987a89f5139cc61728590849c4be1f98a468389215c75a676d5b"
+}

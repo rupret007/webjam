@@ -51,6 +51,13 @@ certificate-bound proof over DTLS. Displayed delay is an estimate from network
 RTT, receiver buffering, and local playback latency; it excludes capture and
 the host bridge. iOS/Safari and Firefox limitations are shown in the page.
 
+Once connected, the page shows when this browser's access expires and gives one
+warning in the final minute. The host may end the session sooner. The clock is
+quiet for screen readers; the warning is announced once. Leave is the available
+session action, and leaving or an error clears the countdown. The display does
+not renew credentials, extend a session, change a quota, or reuse an expired
+invitation. Continuing after expiry requires a fresh invitation from the host.
+
 ## Checks
 
 From the repository root:

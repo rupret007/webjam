@@ -15,6 +15,11 @@ p { line-height: 1.5; }
 #status { margin: 0; font-weight: 650; }
 #status[data-failure="true"] { color: #f3d7a5; }
 .error-hint { color: #b4c2bd; font-size: .95rem; margin: 8px 0 0; }
+.access-window { margin-top: 16px; padding-top: 12px; border-top: 1px solid #384744; }
+.access-window p { margin: 0; }
+#access-time { font-variant-numeric: tabular-nums; font-weight: 650; }
+.access-window .access-note { margin-top: 4px; color: #b4c2bd; font-size: .9rem; }
+#access-warning { margin-top: 8px; color: #f3d7a5; font-size: .95rem; }
 #prejoin { margin-top: 16px; }
 #prejoin-heading { margin: 0 0 10px; font-size: 1.15rem; }
 .mic-actions, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
