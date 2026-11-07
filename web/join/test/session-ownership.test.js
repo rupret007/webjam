@@ -73,7 +73,7 @@ test('connection diagnostics use the selected pair and clear when the path is un
     ['direct', { type: 'candidate-pair', state: 'succeeded', localCandidateId: 'local', remoteCandidateId: 'remote' }],
     ['relay', { type: 'candidate-pair', state: 'succeeded', nominated: true, localCandidateId: 'local', remoteCandidateId: 'relay-remote' }],
     ['local', { type: 'local-candidate', candidateType: 'srflx' }],
-    ['remote', { type: 'remote-candidate', candidateType: 'prflx' }],
+    ['remote', { type: 'remote-candidate', candidateType: 'srflx' }],
     ['relay-remote', { type: 'remote-candidate', candidateType: 'relay' }],
   ]);
   const session = new WebJoinSession({ origin: 'https://relay.example', invite: {},
@@ -82,6 +82,8 @@ test('connection diagnostics use the selected pair and clear when the path is un
   session.pc = { connectionState: 'connected', getStats: async () => stats, close() {} };
   session.authorized = true;
   await session.updateStats();
+  await session.updateStats();
+  stats.get('remote').candidateType = 'prflx';
   await session.updateStats();
   stats.delete('remote');
   await session.updateStats();

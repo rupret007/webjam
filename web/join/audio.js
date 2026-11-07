@@ -135,7 +135,8 @@ export function connectionRoute(stats, selectedPairId) {
   const remote = stats.get(pair.remoteCandidateId);
   const types = [local?.candidateType, remote?.candidateType];
   if (types.includes("relay")) return "relayed";
-  return types.every(type => ["host", "srflx", "prflx"].includes(type)) ? "direct" : null;
+  // A peer-reflexive address learned during checks has no advertised origin.
+  return types.every(type => type === "host" || type === "srflx") ? "direct" : null;
 }
 
 export function latencyMs(stats, baseLatency = 0) {
