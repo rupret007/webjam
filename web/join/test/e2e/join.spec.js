@@ -159,5 +159,14 @@ test("real browser sine reaches Pion after enrollment and returns through the ho
   }
   const stats = await (await request.get("http://127.0.0.1:4175/status")).json();
   expect(stats.received).toBeGreaterThan(0); expect(stats.sent).toBeGreaterThan(0);
+  if (browserName === "chromium") {
+    const route = await page.evaluate(async () => {
+      const { connectionRoute } = await import("/audio.js");
+      const stats = await window.labPC.getStats();
+      const transport = [...stats.values()].find(report => report.type === "transport");
+      return connectionRoute(stats, transport?.selectedCandidatePairId);
+    });
+    expect(route).toBe("direct");
+  }
   await page.evaluate(async () => { window.labPC.close(); window.labCapture.getTracks().forEach((track) => track.stop()); await window.labContext.close(); });
 });

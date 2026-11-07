@@ -98,16 +98,26 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
         constructor(options) { this.options = options; }
         async join() {
           this.options.onStatus('Synthetic session connected.');
+          window.reportConnectionRoute = this.options.onRoute;
           window.endEnrolledSession = () => this.options.onError(new Error(JOIN_SIGNAL.SESSION_ENDED));
         }
         close() { this.options.stream.getTracks().forEach(track => track.stop()); }
       }`
   }));
   await openInvitation(page);
+  const routeIndicator = page.locator('#connection-route');
+  await expect(routeIndicator).toBeHidden();
   await page.locator('#join').click();
   await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
+  await page.evaluate(() => window.reportConnectionRoute('direct'));
+  await expect(routeIndicator).toHaveText('Direct connection');
+  await expect(routeIndicator).toBeVisible();
+  await page.evaluate(() => window.reportConnectionRoute('relayed'));
+  await expect(routeIndicator).toHaveText('Relayed connection');
   await page.evaluate(() => window.endEnrolledSession());
   await expect(page.locator('#status')).toHaveText('The Web Join connection ended.');
+  await page.evaluate(() => window.reportConnectionRoute('relayed'));
+  await expect(routeIndicator).toBeHidden();
   await expect(page.locator('#error-hint')).toContainText('new browser invite');
   for (const id of ['join', 'retry', 'leave', 'prejoin']) await expect(page.locator('#' + id)).toBeHidden();
   await expect.poll(() => page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
