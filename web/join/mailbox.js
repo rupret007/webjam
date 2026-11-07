@@ -1,5 +1,6 @@
 import { fromBase64Url, toBase64Url, mailboxId, turnToken, MAX_ENVELOPE } from "./crypto.js";
 import { validateCredentials, RELAY_UNAVAILABLE_MESSAGE } from "./policy.js";
+import { JOIN_SIGNAL } from "./errors.js";
 export const BUSY_MESSAGE = RELAY_UNAVAILABLE_MESSAGE;
 async function boundedText(response, limit = 16384) {
   const length = response.headers.get("content-length");
@@ -51,6 +52,15 @@ export class Mailbox {
       const timer = setTimeout(abort, this.timeout);
       try {
         const response = await this.fetchImpl(`${this.origin}${path}`, { ...init, credentials: "omit", referrerPolicy: "no-referrer", cache: "no-store", redirect: "error", signal: controller.signal });
+        if (response.status === 429) {
+          let code;
+          try {
+            code = JSON.parse(await boundedText(response, 1024))?.error;
+          } catch (error) {
+            if (controller.signal.aborted) throw error;
+          }
+          if (code === "cap") throw new Error(JOIN_SIGNAL.RELAY_CAP_REACHED);
+        }
         if ([429, 503].includes(response.status)) throw new Error(BUSY_MESSAGE);
         if ([204, 410].includes(response.status)) return { status: response.status, body: null };
         const text = await boundedText(response);

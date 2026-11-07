@@ -148,7 +148,9 @@ maximum 256 MiB per guest session; the credential response may lower that cap.
 
 If that service is unavailable, the guest is asked to try later or contact the
 host. Moving onto the same Wi-Fi does not replace the required web credentials.
-The failure still closes the attempted audio session before a deliberate retry.
+The failure closes the attempted audio session. A reported usage cap retires
+the invitation in that browser and asks the guest to get a fresh link once the
+service is available again. Temporary rate limiting and outages allow Retry.
 
 After joining, the browser shows **Direct connection** or **Relayed connection**
 when it can identify the selected audio route. The label reflects the active
