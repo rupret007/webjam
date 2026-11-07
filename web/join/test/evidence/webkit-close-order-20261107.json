@@ -1,0 +1,496 @@
+{
+  "version": 1,
+  "kind": "macos-webkit-close-order-evidence",
+  "recordedAt": "2026-11-07T20:23:39.317442+00:00",
+  "issue": "https://github.com/rupret007/webjam/issues/448",
+  "platform": "Intel MacBook macOS15.7.9, Playwright1.64.1/WebKit27.2",
+  "baselineSource": "3ae314eee41d05ae953d8c34a2c537eac46d823e",
+  "testedCandidateSource": "3652ef637364ec55a38bc73b9c574513bb65eaba",
+  "originalSpecSha256": "097522243d20a244637f909412c857772eee3817badce30730c747c7020a3023",
+  "originalTestAndAssertionsUnchanged": true,
+  "originalPerTestTimeoutMs": 30000,
+  "originalAssertionTimeoutMs": 10000,
+  "retries": 0,
+  "physicalMicrophonePermissionGranted": false,
+  "physicalCaptureOrRecording": false,
+  "liveProviderCredentialsOrNativeHost": false,
+  "diagnosticConfig": "Same static app server/origin127.0.0.1:4174. Original generated-media fixture unchanged. Unused Go fixture server omitted; no microphone permission granted. This is not the full Go/Pion/provider-start CI mode.",
+  "baselineTwoCaps": {
+    "stats": {
+      "startTime": "2026-11-07T20:09:58.060Z",
+      "duration": 23900.932,
+      "expected": 0,
+      "skipped": 0,
+      "unexpected": 2,
+      "flaky": 0
+    },
+    "failure": "Both original line186 comparisons expected [closed,closed], observed [running,closed]. Generated tracks had already ended.",
+    "reportSha256": "b41db573e7f15e606aa45bdf09425be7a70d83e2196139b464ab714fcb679089",
+    "logSha256": "f36a96f01a8dc4a23b53f544ed52d6f3d43cb727738dd6e644e03ae4443ff1fd"
+  },
+  "candidateTwoCaps": {
+    "stats": {
+      "startTime": "2026-11-07T20:14:55.362Z",
+      "duration": 3526.971,
+      "expected": 2,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "reportSha256": "92fb8d2eafdf86feabf2ef42f638229feb97f1e31d2b58249c55514bd2ab729c",
+    "logSha256": "fb180a113baf0d9c4659437db38c46af23f1fd5389f5327dbf4b2c2922638de0"
+  },
+  "candidateUnits": {
+    "summary": [
+      "# tests 40",
+      "# pass 40",
+      "# fail 0",
+      "# cancelled 0",
+      "# skipped 0",
+      "# todo 0"
+    ],
+    "logSha256": "24d59a69712fda8ed2d783f482c39678c5fd16c9fc6bda7ae3d40b5735ff149d"
+  },
+  "candidateFullRecoveryFile": {
+    "stats": {
+      "startTime": "2026-11-07T20:18:15.071Z",
+      "duration": 14945.512999999999,
+      "expected": 19,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "reportSha256": "133cc3d66953135550cfc74c44a7d546760df46fee59f71839612d30d6f05ea4",
+    "logSha256": "f32de772c1c09af3a1be978a5987a6b7d3041916300b79bb95b8c3cd78e59864",
+    "sourceHashes": {
+      "app.js": "8658f6eddfd77cb2587b4d5b3e27482324b3fd0869a2aa50f4d2087ac701dabc",
+      "audio.js": "b08d16ad514606206754dd926a231ee35f7aca3e6450ad0f40ee516a9bf5d04b",
+      "test/e2e/failure-recovery.spec.js": "097522243d20a244637f909412c857772eee3817badce30730c747c7020a3023"
+    }
+  },
+  "nativeOnlyOrderingObservations": [
+    {
+      "method": "immediate close",
+      "browserVersion": "27.2",
+      "startedAt": "2026-11-07T19:54:42.628Z",
+      "cases": [
+        {
+          "options": {
+            "sampleRate": 48000,
+            "latencyHint": "interactive"
+          },
+          "observations": [
+            {
+              "label": "resumed",
+              "state": "running",
+              "time": 0,
+              "at": 267
+            },
+            {
+              "label": "statechange",
+              "state": "running",
+              "time": 0,
+              "at": 268
+            },
+            {
+              "label": "close fulfilled",
+              "state": "closed",
+              "time": 0,
+              "at": 268
+            },
+            {
+              "label": "statechange",
+              "state": "closed",
+              "time": 0,
+              "at": 271
+            },
+            {
+              "label": "statechange",
+              "state": "running",
+              "time": 0,
+              "at": 324
+            },
+            {
+              "label": "1200 ms later",
+              "state": "running",
+              "time": 0,
+              "at": 1468
+            }
+          ]
+        },
+        {
+          "options": null,
+          "observations": [
+            {
+              "label": "resumed",
+              "state": "running",
+              "time": 0,
+              "at": 100
+            },
+            {
+              "label": "statechange",
+              "state": "running",
+              "time": 0,
+              "at": 100
+            },
+            {
+              "label": "close fulfilled",
+              "state": "closed",
+              "time": 0,
+              "at": 101
+            },
+            {
+              "label": "statechange",
+              "state": "closed",
+              "time": 0,
+              "at": 104
+            },
+            {
+              "label": "statechange",
+              "state": "running",
+              "time": 0,
+              "at": 159
+            },
+            {
+              "label": "1200 ms later",
+              "state": "running",
+              "time": 0,
+              "at": 1303
+            }
+          ]
+        }
+      ],
+      "originalReceiptSha256": "20b1c660914e2c7affca835a4fa65c2869850e7a892958299cf48243487a0ba2"
+    },
+    {
+      "method": "200ms initialization observation",
+      "browserVersion": "27.2",
+      "startedAt": "2026-11-07T19:56:30.581Z",
+      "cases": [
+        {
+          "options": {
+            "sampleRate": 48000,
+            "latencyHint": "interactive"
+          },
+          "observations": [
+            {
+              "label": "statechange",
+              "state": "running",
+              "time": 0,
+              "at": 279
+            },
+            {
+              "label": "resumed",
+              "state": "running",
+              "time": 0,
+              "at": 339
+            },
+            {
+              "label": "before close after200ms",
+              "state": "running",
+              "time": 0.20266666666666666,
+              "at": 540
+            },
+            {
+              "label": "close fulfilled",
+              "state": "closed",
+              "time": 0.20266666666666666,
+              "at": 541
+            },
+            {
+              "label": "statechange",
+              "state": "closed",
+              "time": 0.20266666666666666,
+              "at": 541
+            },
+            {
+              "label": "1200 ms later",
+              "state": "closed",
+              "time": 0.20266666666666666,
+              "at": 1743
+            }
+          ]
+        },
+        {
+          "options": null,
+          "observations": [
+            {
+              "label": "resumed",
+              "state": "running",
+              "time": 0,
+              "at": 89
+            },
+            {
+              "label": "statechange",
+              "state": "running",
+              "time": 0,
+              "at": 90
+            },
+            {
+              "label": "before close after200ms",
+              "state": "running",
+              "time": 0.14133333333333334,
+              "at": 291
+            },
+            {
+              "label": "close fulfilled",
+              "state": "closed",
+              "time": 0.14133333333333334,
+              "at": 292
+            },
+            {
+              "label": "statechange",
+              "state": "closed",
+              "time": 0.14133333333333334,
+              "at": 293
+            },
+            {
+              "label": "1200 ms later",
+              "state": "closed",
+              "time": 0.14133333333333334,
+              "at": 1492
+            }
+          ]
+        }
+      ],
+      "originalReceiptSha256": "e1ba08d14adc253237128ffe177f41e2596ecda078729f2814ff8213ceaaea94"
+    },
+    {
+      "method": "await suspension then close",
+      "browserVersion": "27.2",
+      "startedAt": "2026-11-07T19:57:44.481Z",
+      "cases": [
+        {
+          "options": {
+            "sampleRate": 48000,
+            "latencyHint": "interactive"
+          },
+          "observations": [
+            {
+              "label": "resumed",
+              "state": "running",
+              "time": 0,
+              "at": 250
+            },
+            {
+              "label": "statechange",
+              "state": "running",
+              "time": 0,
+              "at": 250
+            },
+            {
+              "label": "suspend fulfilled",
+              "state": "suspended",
+              "time": 0,
+              "at": 313
+            },
+            {
+              "label": "statechange",
+              "state": "suspended",
+              "time": 0,
+              "at": 313
+            },
+            {
+              "label": "close fulfilled",
+              "state": "closed",
+              "time": 0,
+              "at": 314
+            },
+            {
+              "label": "statechange",
+              "state": "closed",
+              "time": 0,
+              "at": 314
+            },
+            {
+              "label": "1200 ms later",
+              "state": "closed",
+              "time": 0,
+              "at": 1515
+            }
+          ]
+        },
+        {
+          "options": null,
+          "observations": [
+            {
+              "label": "resumed",
+              "state": "running",
+              "time": 0,
+              "at": 101
+            },
+            {
+              "label": "statechange",
+              "state": "running",
+              "time": 0,
+              "at": 101
+            },
+            {
+              "label": "suspend fulfilled",
+              "state": "suspended",
+              "time": 0,
+              "at": 160
+            },
+            {
+              "label": "statechange",
+              "state": "suspended",
+              "time": 0,
+              "at": 160
+            },
+            {
+              "label": "close fulfilled",
+              "state": "closed",
+              "time": 0,
+              "at": 160
+            },
+            {
+              "label": "statechange",
+              "state": "closed",
+              "time": 0,
+              "at": 160
+            },
+            {
+              "label": "1200 ms later",
+              "state": "closed",
+              "time": 0,
+              "at": 1360
+            }
+          ]
+        }
+      ],
+      "originalReceiptSha256": "67ad599b0067320a17bfdc2832886516082b32e72b52bc159d883d01d754962c"
+    },
+    {
+      "method": "request suspension without awaiting",
+      "browserVersion": "27.2",
+      "startedAt": "2026-11-07T19:59:41.187Z",
+      "cases": [
+        {
+          "options": {
+            "sampleRate": 48000,
+            "latencyHint": "interactive"
+          },
+          "observations": [
+            {
+              "label": "resumed",
+              "state": "running",
+              "time": 0,
+              "at": 264
+            },
+            {
+              "label": "suspend requested",
+              "state": "running",
+              "time": 0,
+              "at": 265
+            },
+            {
+              "label": "statechange",
+              "state": "running",
+              "time": 0,
+              "at": 265
+            },
+            {
+              "label": "close fulfilled",
+              "state": "closed",
+              "time": 0,
+              "at": 265
+            },
+            {
+              "label": "statechange",
+              "state": "closed",
+              "time": 0,
+              "at": 267
+            },
+            {
+              "label": "suspend rejected: InvalidStateError",
+              "state": "closed",
+              "time": 0,
+              "at": 267
+            },
+            {
+              "label": "statechange",
+              "state": "running",
+              "time": 0,
+              "at": 323
+            },
+            {
+              "label": "1200 ms later",
+              "state": "running",
+              "time": 0,
+              "at": 1466
+            }
+          ]
+        },
+        {
+          "options": null,
+          "observations": [
+            {
+              "label": "resumed",
+              "state": "running",
+              "time": 0,
+              "at": 89
+            },
+            {
+              "label": "suspend requested",
+              "state": "running",
+              "time": 0,
+              "at": 89
+            },
+            {
+              "label": "statechange",
+              "state": "running",
+              "time": 0,
+              "at": 90
+            },
+            {
+              "label": "close fulfilled",
+              "state": "closed",
+              "time": 0,
+              "at": 90
+            },
+            {
+              "label": "statechange",
+              "state": "closed",
+              "time": 0,
+              "at": 93
+            },
+            {
+              "label": "suspend rejected: InvalidStateError",
+              "state": "closed",
+              "time": 0,
+              "at": 93
+            },
+            {
+              "label": "statechange",
+              "state": "running",
+              "time": 0,
+              "at": 147
+            },
+            {
+              "label": "1200 ms later",
+              "state": "running",
+              "time": 0,
+              "at": 1292
+            }
+          ]
+        }
+      ],
+      "originalReceiptSha256": "b532b3f2803267d598f7356c8319674a0f698ebb88ab47baaa7c54855578d1b4"
+    }
+  ],
+  "independentReadback": {
+    "sameRemoteReportsLogsAndSourceHashesVerified": true,
+    "runnerProcessesAndServerGone": true,
+    "originalRealEightHourObserverStillLive": true,
+    "originalReceiptSha256": "df3ed4dc6e7ea9576a66529698315ffdb8f28a3e09433ac1be6c6d2bb0107fa8"
+  },
+  "retainedSetupStop": "First selector incorrectly anchored a short test title; Playwright reported No tests found, with zero cases executed. That first result/log remain owner-only. The corrected unanchored selector listed the same two original cases before execution. No assertion, timeout or retry changed.",
+  "limits": [
+    "Ordering observations support a startup/shutdown race investigation, not a confirmed upstream root cause",
+    "Native context states are not proof of all CoreAudio/system-resource release",
+    "Physical Safari and the new helper on ARM macOS remain unverified",
+    "Not a physical music, SharedTrack, second-network, Webex or release-readiness qualification",
+    "No app deployment, normal fixture rewrite, original test relaxation or public activation occurred"
+  ],
+  "primarySpecification": "https://webaudio.github.io/web-audio-api/#dom-audiocontext-close"
+}
