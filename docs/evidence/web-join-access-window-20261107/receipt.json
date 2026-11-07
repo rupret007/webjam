@@ -26,5 +26,17 @@
     390
   ],
   "keyboardFocusVerified": "Connected Leave button receives focus without scrolling",
-  "uiFixtureSha256": "975d8070e7bb987a89f5139cc61728590849c4be1f98a468389215c75a676d5b"
+  "uiFixtureSha256": "975d8070e7bb987a89f5139cc61728590849c4be1f98a468389215c75a676d5b",
+  "existingRecoveryWebKitCasesPassed": 6,
+  "existingRecoveryObservedAt": "2026-11-07T08:54:59.872514+00:00",
+  "originalCiFailure": {
+    "head": "a387fc57472deb47e71b45e6df1f5f0b88ad1b80",
+    "run": 42356697246,
+    "job": 128356229073,
+    "browserCasesPassed": 47,
+    "browserCasesFailed": 4,
+    "reason": "Two existing rejoined-session tests in Chromium and WebKit searched only visible roles for Join, which the intended connected UI now hides.",
+    "correction": "Inspect the Join element by ID, retain its accessible-name and disabled checks, explicitly require hidden while joined and visible/enabled after Leave. All stream, context, status and live-session ownership assertions remain.",
+    "originalJobLogPreservedLocally": true
+  }
 }
