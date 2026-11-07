@@ -1,0 +1,261 @@
+{
+  "scope": "Application microphone-check cleanup, generated media only; not a private deployment or physical music qualification",
+  "parent": "f5c53f37c2099dc2ea8213815e67e37ea73c83bb",
+  "testedSource": "8ab3ced30e5ba1c0fa751771fa7341ca2618fb2b",
+  "platform": "Intel macOS 15.7.9, Playwright1.64.1 WebKit27.2",
+  "before": {
+    "input": "Synthetic NotAllowedError from microphone check",
+    "observed": "Retry UI shown and one request made, but application AudioContext remained running after 2000ms; expected closed",
+    "stats": {
+      "startTime": "2026-11-07T21:06:28.511Z",
+      "duration": 4029.664,
+      "expected": 0,
+      "skipped": 0,
+      "unexpected": 1,
+      "flaky": 0
+    },
+    "reportSha256": "c1845e5c7fefd2908c95f59d9116d312d1d044ae242bb983c30f327e6995075e",
+    "probeSha256": "4f3079b8323703ffb6c4696dda896a394a99be2a1dead7cb10517cab772fe584",
+    "runnerGone": true,
+    "loopbackListenerGone": true,
+    "originalExpiryObserverStillLive": true
+  },
+  "change": "Before projecting a microphone-check error, stop its meter/capture, retire its abort signal, and close its owned context with the existing bounded helper. The next explicit check receives a fresh context.",
+  "after": {
+    "unitTestsPassed": 40,
+    "browserStats": {
+      "startTime": "2026-11-07T21:09:00.056Z",
+      "duration": 18675.161,
+      "expected": 24,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "cases": [
+      {
+        "title": "access time is visible, warns once near expiry, and stops updating on Leave",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a fresh attempt has its own access window and a host-end error clears it",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "losing the checked microphone clears Join readiness until a deliberate recheck",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "losing an enrolled microphone closes the audio session after passing the mic check",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "losing an enrolled microphone closes the audio session after skipping the mic check",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a closed enrolled session releases audio and asks for a new invitation",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a relay timeout releases audio and permits an explicit retry at 375px",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a relay timeout releases audio and permits an explicit retry at 390px",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a confirmed relay cap closes guest audio and asks for a fresh invite (daily reset hint: false)",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a confirmed relay cap closes guest audio and asks for a fresh invite (daily reset hint: true)",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "Leave during a stalled fetch stays a deliberate exit, then allows another Join",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a late playback rejection preserves a deliberate Leave",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a late playback rejection preserves the next Join",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a late playback rejection preserves cleanup for the active Join",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a late audio-resume rejection preserves a deliberate Leave",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a late audio-resume rejection preserves the next Join",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a late audio-resume rejection preserves cleanup for the active Join",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "retired enrollment callbacks preserve the rejoining attempt",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "retired enrollment callbacks preserve the failed attempt",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a retired initial resume cannot enable Join while the next resume is pending",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "capture arriving after Leave releases only its own tracks during the next Join",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a NotAllowedError microphone check closes audio before an explicit retry",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "a NotFoundError microphone check closes audio before an explicit retry",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      },
+      {
+        "title": "input-meter startup failure stops acquired capture and closes application audio",
+        "status": "expected",
+        "results": [
+          "passed"
+        ]
+      }
+    ],
+    "sourceHashes": {
+      "app.js": "990d454aebd785661388f0b1e0e829a32bd00185a7fdb482dc625dd05b62f25f",
+      "audio.js": "b08d16ad514606206754dd926a231ee35f7aca3e6450ad0f40ee516a9bf5d04b",
+      "test/e2e/access-window.spec.js": "e72e1ad768fb64ae722fbb020c475fd771c31aebc9831fa48fa1ce9e892c396f",
+      "test/e2e/failure-recovery.spec.js": "004861218921b44ffc481b0162586a49865a5e75a2d871e196e72f71a72ba797",
+      "test/audio-close.test.js": "ee7d458eb25123d910da0a11e704a45055d8c237bad808c554e3e1889ceb4261",
+      "test/e2e/mic-error-cleanup.spec.js": "65c130529cd6e2aa2a101fa0784590f5f8ae5d56c60253452219755afd8729e9"
+    },
+    "reportSha256": "e0a16f315c54f39698e2f02ebb0027468d9606cdaa28c8d52459ebf7991eb003",
+    "logSha256": "146bc25df2ba93cf7466003102ae4fcb5cee039c3f44c8f37078f28ed651bc37",
+    "originalAssertionsPreserved": true,
+    "additionalExistingTestAssertion": "Disconnected prejoin microphone closes the application context before retry",
+    "newCases": [
+      "Denied microphone closes context, explicit retry starts and closes a fresh context",
+      "Missing microphone closes context, explicit retry starts and closes a fresh context",
+      "Input-meter startup failure stops already acquired generated capture and closes application context"
+    ],
+    "ownedRunnerGone": true,
+    "loopbackListenerGone": true,
+    "originalExpiryObserverStillLive": true
+  },
+  "parentWindowsReference": {
+    "source": "f5c53f37c2099dc2ea8213815e67e37ea73c83bb",
+    "platform": "Windows11 installed signed Chrome156.0.8078.80, normal interactive isolated profile muted, Node24.14.0",
+    "unitTestsPassed": 40,
+    "browserStats": {
+      "startTime": "2026-11-07T21:00:58.612Z",
+      "duration": 15631.766,
+      "expected": 21,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "reportSha256": "5eee42660b64803fea6545f18179b4f6328d5364ded74780225959d5af2da54c",
+    "logSha256": "3faf8f690623c5f45723977d53edf13ba1b059b2deab3dfd3c8595e8e9021da1",
+    "proofSha256": "f7dad245612164bdc38fdc98b54392df8ce29a7c623511c63b3938dc6e2f178e",
+    "adapter": "Only spec import adapted for existing Chrome via loopback CDP; all assertions unchanged; unused Go bridge omitted",
+    "allOwnedProcessesListenersAndTemporaryTaskGone": true,
+    "executionPolicyUnchanged": "Restricted",
+    "firstLaunchStop": "Encoded command too long before launch; separate readback confirmed no profile/task/listener before corrected bounded commands",
+    "notEvidenceForNewMicrophoneFix": true
+  },
+  "limits": {
+    "physicalMicrophoneCapture": false,
+    "liveProviderRequests": 0,
+    "recordings": false,
+    "unusedGoBridgeStarted": false,
+    "normalCiSeparate": true,
+    "pending": [
+      "Exact-head normal application CI/review",
+      "Windows execution of this new microphone-error fix",
+      "ARM execution when normal resource guard permits",
+      "Physical Safari and operating-system resource qualification",
+      "Mac-to-Windows physical speech/music and Shared Track",
+      "Original real eight-hour private expiry result"
+    ]
+  }
+}
