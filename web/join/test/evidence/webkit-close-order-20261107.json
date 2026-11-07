@@ -492,5 +492,70 @@
     "Not a physical music, SharedTrack, second-network, Webex or release-readiness qualification",
     "No app deployment, normal fixture rewrite, original test relaxation or public activation occurred"
   ],
-  "primarySpecification": "https://webaudio.github.io/web-audio-api/#dom-audiocontext-close"
+  "primarySpecification": "https://webaudio.github.io/web-audio-api/#dom-audiocontext-close",
+  "followupFixtureQualification": {
+    "testedSource": "e729afcb1a0a3e791078edebbb3654d3583f9f45",
+    "runtimeUnchangedSince": "3652ef637364ec55a38bc73b9c574513bb65eaba",
+    "platform": "Intel macOS 15.7.9, Playwright 1.64.1 / WebKit 27.2",
+    "units": {
+      "passed": 40,
+      "failed": 0,
+      "skipped": 0
+    },
+    "browser": {
+      "startTime": "2026-11-07T20:46:05.828Z",
+      "duration": 16679.326,
+      "expected": 21,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "browserScope": "19 existing recovery cases and two countdown cases; no Go bridge, no physical microphone permission",
+    "sourceHashes": {
+      "app.js": "8658f6eddfd77cb2587b4d5b3e27482324b3fd0869a2aa50f4d2087ac701dabc",
+      "audio.js": "b08d16ad514606206754dd926a231ee35f7aca3e6450ad0f40ee516a9bf5d04b",
+      "test/e2e/access-window.spec.js": "e72e1ad768fb64ae722fbb020c475fd771c31aebc9831fa48fa1ce9e892c396f",
+      "test/e2e/failure-recovery.spec.js": "076f02042def08a48b4b701094d6abee809219e996b8e67581ab5aa3cabc86eb",
+      "test/audio-close.test.js": "ee7d458eb25123d910da0a11e704a45055d8c237bad808c554e3e1889ceb4261"
+    },
+    "reportSha256": "b5d8e8f42b62484d52f6d3038efdf29ecfdf0d6ea18c4ea04db147eaf3f5bf13",
+    "logSha256": "5f0ef90ec24fecd48a07ac02ddef90b49011ced00736a3347eeb67ad4a4ea4dd",
+    "originalRecoveryAssertionsIdentical": true,
+    "cleanup": {
+      "ownedRunnerGone": true,
+      "port4174Gone": true,
+      "originalExpiryObserverStillLive": true
+    },
+    "retainedIntermediateFailures": [
+      {
+        "source": "2101a8deffc3a22ec5df750958607133445421d6",
+        "ciRun": 42411108106,
+        "ciJob": 128519241138,
+        "failed": 4,
+        "passed": 47,
+        "reason": "Countdown fixture replaced audio.js without exporting the newly imported cleanup helper; restored production cleanup through a loopback query import."
+      },
+      {
+        "source": "a70c04ccb010ab0d9d370b3b0d24b0febde5ffd6",
+        "reportSha256": "6146688a7a95ccccac5c77a9380c86e9763519b75c346186566acfd3c7647084",
+        "passed": 20,
+        "failed": 1,
+        "reason": "Late-capture fixture did not reach its delayed promise. Instrumentation observed a synthetic mailbox fetch rejected by live-service CORS403; no media connection established."
+      },
+      {
+        "source": "cd3d31c26c4a42874d0eb1e72499673a46674db2",
+        "reportSha256": "df69c6736c6f7417f8b1023516574fcd00307cc0f49e0beed0548b79dcda2e4e",
+        "passed": 20,
+        "failed": 1,
+        "reason": "Explicit own-property replacement alone did not resolve the late-capture fixture; non-loopback requests were now denied."
+      }
+    ],
+    "diagnosticQualification": "A native descriptor probe allowed both assignment and explicit definition. Do not claim non-writable descriptors as an established cause. A separately instrumented case passed but does not erase the original failures. Configure delayed capture in the existing generated-media init script before loading the application, and deny all non-loopback requests in this test file.",
+    "changelogFailure": {
+      "job": 128519241831,
+      "head": "2101a8deffc3a22ec5df750958607133445421d6",
+      "reason": "Missing required fragment; added legitimate user-facing entry and canonical guide recovery note."
+    },
+    "normalCi": "New exact-head CI and log review remain required; local pass is not release qualification."
+  }
 }

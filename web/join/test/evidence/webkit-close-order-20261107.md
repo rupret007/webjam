@@ -62,3 +62,32 @@ npm run test:e2e -- --project=webkit test/e2e/failure-recovery.spec.js --grep 'a
 Keep physical Safari/system-resource behavior and an ARM run pending until
 demonstrated. This source change does not qualify music hardware, Shared Track,
 Webex, a second network, or the public community.
+
+## Follow-up fixture and CI qualification
+
+The first normal PR CI run at `2101a8d` passed 47 browser cases but failed all
+four countdown cases before their checkbox appeared: the synthetic audio module
+omitted the new cleanup export. The fixture now re-exports the real helper
+through a loopback query import; its timer and lifecycle assertions stay intact.
+The missing required changelog fragment was also added, with canonical guide
+recovery wording. Neither fix changes the runtime code tested at `3652ef6`.
+
+A subsequent Intel run at `a70c04c` passed 20 of 21 cases but failed before the
+late-capture fixture reached its pending promise. Instrumentation observed a
+synthetic mailbox request rejected by the live service with CORS HTTP 403; no
+media connection was established. Explicit own-property replacement alone at
+`cd3d31c` did not resolve that fixture. A native descriptor probe did not support
+a non-writable-descriptor explanation. These original failures remain retained;
+a separately instrumented passing case does not replace them.
+
+The fixture now configures delayed capture in its original generated-media init
+script, before loading the application, and denies non-loopback requests for
+this test file. Source `e729afc` passed all 40 units and all 21 browser cases
+(19 recovery plus two countdown), with no retries or skips. Every original
+recovery assertion remains identical. Independent source/report/log readbacks
+matched; its runner and loopback server were gone, and the original eight-hour
+observer was still live. See the JSON follow-up section for revisions and hashes.
+
+This is focused Intel evidence. Updated normal CI, ARM execution, physical
+Safari and actual system-resource release remain separately qualified. No
+private deployment or native package was replaced.
