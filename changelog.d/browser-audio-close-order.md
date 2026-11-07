@@ -1,0 +1,1 @@
+- Web Join closes its audio context after quick failed joins on macOS WebKit while keeping Leave and retry controls responsive.

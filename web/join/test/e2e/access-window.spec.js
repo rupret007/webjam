@@ -20,6 +20,9 @@ async function invitation(page) {
     }
   });
   await page.route('**/audio.js', route => route.fulfill({contentType:'text/javascript',body:`
+    // Keep real teardown while replacing only capture. The query bypasses this
+    // exact mock route and the loopback server serves the original module.
+    export { closeAudioContext } from './audio.js?access-window-cleanup';
     export async function acquireMusicStream() {
       const track = Object.assign(new EventTarget(), {
         readyState:'live', enabled:true, kind:'audio',

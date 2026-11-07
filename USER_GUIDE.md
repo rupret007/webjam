@@ -944,6 +944,9 @@ an explicit retry. **Leave session** remains a deliberate exit; it does not
 automatically reconnect or later show a timeout warning. Joining again still
 requires a valid, unused host invitation. Ask the host for a fresh link if the
 old one has expired or may have been consumed.
+After leaving or a failed Join, the tab should release its microphone and
+audio processing. If your browser still shows that tab using audio, close the
+Web Join tab before trying again.
 As host, choose **Copy browser invite** in the Music room. Wait for **Link copied**,
 then paste it into a private message and keep the Music session open.
 Unreleased private-beta test packages can open the protected shared-community
