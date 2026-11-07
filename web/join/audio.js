@@ -6,6 +6,26 @@ export const MUSIC_CONSTRAINTS = Object.freeze({
   sampleRate: 48000,
 });
 
+export async function closeAudioContext(context) {
+  if (!context || context.state === "closed") return;
+  let deadline;
+  try {
+    // macOS WebKit can finish a pending rendering startup after close() has
+    // resolved. Await suspension acknowledgement before closing our context.
+    // A backgrounded or broken suspend must not hold teardown indefinitely.
+    if (typeof context.suspend === "function") {
+      await Promise.race([
+        Promise.resolve(context.suspend()).catch(() => {}),
+        new Promise((resolve) => { deadline = setTimeout(resolve, 250); }),
+      ]);
+    }
+  } catch { /* Closing remains mandatory if suspension throws. */ }
+  finally {
+    clearTimeout(deadline);
+    try { await context.close(); } catch { /* Preserve best-effort teardown. */ }
+  }
+}
+
 export function constraintWarnings(settings) {
   return Object.entries(MUSIC_CONSTRAINTS).filter(([key, expected]) => settings[key] !== expected).map(([key, expected]) => {
     const actual = settings[key] === undefined ? "not reported" : String(settings[key]);

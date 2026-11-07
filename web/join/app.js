@@ -1,5 +1,5 @@
 import { readInvite } from "./crypto.js";
-import { acquireMusicStream } from "./audio.js";
+import { acquireMusicStream, closeAudioContext } from "./audio.js";
 import { WebJoinSession } from "./session.js";
 import { RELAY_ORIGIN } from "./config.js";
 import {
@@ -240,7 +240,7 @@ function leave(message = "You left the session.", error) {
   $("host-audio").pause();
   $("host-audio").srcObject = null;
   stopMicMonitoring(false);
-  context?.close().catch(() => {});
+  void closeAudioContext(context);
   context = null;
   $("leave").hidden = true;
   $("connection-route").hidden = true;
