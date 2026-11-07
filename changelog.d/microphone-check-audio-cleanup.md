@@ -1,0 +1,1 @@
+- Web Join releases microphone-check audio after denied or missing inputs, disconnected microphones, and input-meter startup failures; Try again starts a fresh check.
