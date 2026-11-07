@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  // All enrollment responses in this file are local fixtures. A missed mock
+  // must not send even the synthetic invitation to a live provider.
+  await page.route('**/*', route => new URL(route.request().url()).origin === 'http://127.0.0.1:4174' ? route.continue() : route.abort());
+});
+
 async function openInvitation(page, width = 390, skipCheck = true) {
   await page.setViewportSize({ width, height: 844 });
   await page.clock.install();
@@ -396,10 +402,18 @@ test('capture arriving after Leave releases only its own tracks during the next 
   await page.evaluate(() => {
     window.pendingCaptures = [];
     const capture = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-    navigator.mediaDevices.getUserMedia = async () => {
+    const delayedCapture = async () => {
       const stream = await capture();
       return new Promise(resolve => pendingCaptures.push(() => resolve(stream)));
     };
+    // Assignment can silently leave WebKit's inherited non-writable fixture
+    // in place. Define the own property so this test really delays capture.
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      configurable: true, value: delayedCapture,
+    });
+    if (navigator.mediaDevices.getUserMedia !== delayedCapture) {
+      throw new Error('The delayed-capture fixture was not installed');
+    }
   });
   const join = page.getByRole('button', { name: 'Join with microphone', exact: true });
   const leave = page.getByRole('button', { name: 'Leave session', exact: true });
