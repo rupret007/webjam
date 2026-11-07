@@ -60,6 +60,7 @@ test('losing the checked microphone clears Join readiness until a deliberate rec
   await expect(page.locator('#mic-error')).toContainText('Microphone disconnected');
   await expect(page.locator('#mic-heard')).toBeHidden();
   await expect(page.locator('#join')).toBeDisabled();
+  await expect.poll(() => page.evaluate(() => audioContexts[0].state)).toBe('closed');
   expect(await page.evaluate(() => captureTracks.length)).toBe(1);
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
   await expect(page.locator('#join')).toBeEnabled();

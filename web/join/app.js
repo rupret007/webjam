@@ -149,6 +149,9 @@ const refresh = () => {
 };
 
 function showMicError(error) {
+  stopMicMonitoring(true);
+  void closeAudioContext(context);
+  context = null;
   const failure = micCheckFailure(error?.cause ?? error);
   $("mic-progress").textContent = "";
   $("mic-error").textContent = failure.message;
