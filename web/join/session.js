@@ -39,6 +39,7 @@ export class WebJoinSession {
     this.controller = new AbortController();
     this.mailbox = new Mailbox(origin, invite, { signal: this.controller.signal });
     this.authorized = false; this.quotaBytes = SESSION_BYTES; this.previousBytes = 0;
+    this.accessExpiresAt = null;
     this.route = null;
     this._jitterAdaptation = { targetMs: 20, lastChangeAt: 0 };
     this.stream.getAudioTracks().forEach((track) => { track.enabled = false; });
@@ -49,6 +50,7 @@ export class WebJoinSession {
     const offer = validateOffer(this.invite, await open(this.invite, await this.mailbox.receive("offer")));
     const remoteSDP = policySdp(offer.sdp, { remote: true });
     const credentials = await this.mailbox.credentials();
+    this.accessExpiresAt = credentials.expiresAt;
     this.quotaBytes = Math.min(this.quotaBytes, credentials.quotaBytes);
     const certificate = await RTCPeerConnection.generateCertificate({ name: "ECDSA", namedCurve: "P-256" });
     if (signal.aborted) throw new DOMException("Stopped", "AbortError");
@@ -153,6 +155,7 @@ export class WebJoinSession {
   fail(error) { if (this.controller.signal.aborted) return; this.close(); this.onError(error); }
   close() {
     if (this.controller.signal.aborted) return;
+    this.accessExpiresAt = null;
     this.controller.abort();
     clearInterval(this.statsTimer); clearTimeout(this.expiryTimer); clearTimeout(this.disconnectTimer);
     this.channel?.close(); this.pc?.close();

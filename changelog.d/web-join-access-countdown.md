@@ -1,0 +1,1 @@
+- Web Join shows the browser's remaining access time after joining and announces one warning in the final minute. Leave is the available connected-session action. Leaving or ending clears the display and timer. Host shutdown may happen sooner; credential lifetimes, relay limits, invitation authority and automatic microphone shutdown are unchanged.

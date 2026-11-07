@@ -30,6 +30,39 @@ let micHeard = false;
 let checkSkipped = false;
 let checkRunning = false;
 let prejoinAbort;
+let accessTimer = null;
+
+function clearAccessTime() {
+  clearInterval(accessTimer);
+  accessTimer = null;
+  $("access-window").hidden = true;
+  $("access-time").textContent = "";
+  $("access-warning").textContent = "";
+  $("access-warning").hidden = true;
+}
+
+function showAccessTime(expiresAt, isCurrent) {
+  clearAccessTime();
+  if (!Number.isFinite(expiresAt) || expiresAt <= 0) return;
+  const update = () => {
+    if (!isCurrent()) { clearAccessTime(); return false; }
+    const seconds = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+    const minutes = Math.floor(seconds / 60);
+    const remainder = String(seconds % 60).padStart(2, "0");
+    $("access-time").textContent = `Browser access ends in ${minutes}:${remainder}.`;
+    const warning = seconds === 0
+      ? "Browser access has ended. Ask your host for a fresh invite."
+      : seconds <= 60
+        ? "Less than a minute of browser access remains. Ask your host for a fresh invite to continue."
+        : "";
+    // Announce each warning once, rather than reading every countdown tick.
+    if ($("access-warning").textContent !== warning) $("access-warning").textContent = warning;
+    $("access-warning").hidden = !warning;
+    $("access-window").hidden = false;
+    return true;
+  };
+  if (update()) accessTimer = setInterval(update, 1000);
+}
 
 try {
   invite = readInvite(location.hash);
@@ -198,6 +231,7 @@ $("skip-check").addEventListener("click", () => {
 });
 
 function leave(message = "You left the session.", error) {
+  clearAccessTime();
   activeAttempt?.abort();
   activeAttempt = null;
   session?.close();
@@ -303,7 +337,10 @@ async function startJoin() {
     session = joinedSession;
     await joinedSession.join();
     if (!isCurrent()) return;
+    showAccessTime(joinedSession.accessExpiresAt, isCurrent);
     clearJoinFailure(failureElements(), $("status").textContent);
+    $("join").hidden = true;
+    $("leave").focus({ preventScroll: true });
     starting = false;
     refresh();
   } catch (error) {

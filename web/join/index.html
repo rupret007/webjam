@@ -39,6 +39,11 @@
       </section>
       <div class="actions"><button id="join" disabled>Join with microphone</button><button id="retry" hidden>Retry</button><button id="leave" hidden>Leave session</button></div>
       <p id="audio-quality" role="status"></p>
+      <div id="access-window" class="access-window" hidden>
+        <p id="access-time" role="timer" aria-live="off"></p>
+        <p class="access-note">The host may end the session sooner. To continue after access ends, ask for a fresh invite.</p>
+        <p id="access-warning" role="status" hidden></p>
+      </div>
       <p id="connection-route" hidden></p>
     </div>
     <details>

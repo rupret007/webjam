@@ -250,7 +250,9 @@ for (const scenario of ['left', 'rejoined', 'active']) {
       };
     });
     await openInvitation(page);
-    const join = page.getByRole('button', { name: 'Join with microphone', exact: true });
+    // A connected Join is hidden; retain its disabled-state and naming checks.
+    const join = page.locator('#join');
+    await expect(join).toHaveAccessibleName('Join with microphone');
     const leave = page.getByRole('button', { name: 'Leave session', exact: true });
     await join.click();
     await expect.poll(() => page.evaluate(() => rejectPlayback.length)).toBe(1);
@@ -265,12 +267,14 @@ for (const scenario of ['left', 'rejoined', 'active']) {
     await expect(page.locator('#status')).toHaveText(status);
     if (scenario === 'rejoined') {
       await expect(join).toBeDisabled();
+      await expect(join).toBeHidden();
       await expect(leave).toBeVisible();
       expect(await page.evaluate(() => testSessions[1].closed)).toBe(false);
       expect(await page.evaluate(() => testSessions[1].options.stream.getTracks().every(track => track.readyState === 'live'))).toBe(true);
       await leave.click();
     } else {
       await expect(join).toBeEnabled();
+      await expect(join).toBeVisible();
       await expect(leave).toBeHidden();
     }
     expect(await page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
@@ -295,7 +299,9 @@ for (const scenario of ['left', 'rejoined', 'active']) {
       }`
     }));
     await openInvitation(page);
-    const join = page.getByRole('button', { name: 'Join with microphone', exact: true });
+    // A connected Join is hidden; retain its disabled-state and naming checks.
+    const join = page.locator('#join');
+    await expect(join).toHaveAccessibleName('Join with microphone');
     const leave = page.getByRole('button', { name: 'Leave session', exact: true });
     await join.click();
     await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
@@ -317,12 +323,14 @@ for (const scenario of ['left', 'rejoined', 'active']) {
     await expect(page.locator('#status')).toHaveText(status, { timeout: 2000 });
     if (scenario === 'rejoined') {
       await expect(join).toBeDisabled();
+      await expect(join).toBeHidden();
       await expect(leave).toBeVisible();
       expect(await page.evaluate(() => testSessions[1].closed)).toBe(false);
       expect(await page.evaluate(() => testSessions[1].options.stream.getTracks().every(track => track.readyState === 'live'))).toBe(true);
       await leave.click();
     } else {
       await expect(join).toBeEnabled();
+      await expect(join).toBeVisible();
       await expect(leave).toBeHidden();
     }
     expect(await page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
