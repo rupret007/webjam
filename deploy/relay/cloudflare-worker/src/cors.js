@@ -54,6 +54,7 @@ export function withCors(response, origin) {
   if (!origin) return response;
   const headers = new Headers(response.headers);
   headers.set("Access-Control-Allow-Origin", origin);
+  if (headers.has("Retry-After")) headers.set("Access-Control-Expose-Headers", "Retry-After");
   const vary = String(headers.get("Vary") ?? "").split(",").map((value) => value.trim()).filter(Boolean);
   if (!vary.some((value) => value.toLowerCase() === "origin")) vary.push("Origin");
   headers.set("Vary", vary.join(", "));

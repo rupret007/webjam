@@ -601,10 +601,16 @@ function remainingWrites(used, limit) {
   return left > 0 ? left : 0;
 }
 
-function deniedResponse(status, code) {
+export function quotaResponse(status, code, nowMs) {
+  const headers = { "content-type": "application/json", "cache-control": "no-store" };
+  // These counters reset at UTC midnight. A hint never changes admission or
+  // promises that another independent budget will have room after the reset.
+  if (status === 429 && code === "cap" && Number.isFinite(nowMs) && nowMs >= 0) {
+    headers["Retry-After"] = String(86400 - Math.floor(nowMs / 1000) % 86400);
+  }
   return new Response(JSON.stringify({ error: code }), {
     status,
-    headers: { "content-type": "application/json", "cache-control": "no-store" },
+    headers,
   });
 }
 
@@ -621,7 +627,7 @@ export class MailboxQuota {
     try {
       const sql = quotaSql(this.ctx.storage);
       if (sql == null) {
-        return deniedResponse(503, "unavailable");
+        return quotaResponse(503, "unavailable");
       }
       const nowMs = Number(request.headers.get("X-WebJam-Now") ?? Date.now());
       const ip = String(request.headers.get("CF-Connecting-IP") ?? "").trim();
@@ -640,7 +646,7 @@ export class MailboxQuota {
       } else if (stored != null && typeof stored === "object") {
         state = { ...stored };
       } else {
-        return deniedResponse(503, "unreadable");
+        return quotaResponse(503, "unreadable");
       }
       delete state.knownPrefixes;
       delete state.netShares;
@@ -697,7 +703,7 @@ export class MailboxQuota {
         const persisted = compactQuotaState(state);
         const encoded = JSON.stringify(persisted);
         if (encoded.length > MAX_QUOTA_VALUE_BYTES) {
-          return deniedResponse(429, "cap");
+          return quotaResponse(429, "cap", nowMs);
         }
         for (const op of operations) {
           if (op.kind === "expirePrefix") {
@@ -718,9 +724,9 @@ export class MailboxQuota {
         }
         await this.ctx.storage.put(storageKey, persisted);
       }
-      return deniedResponse(decision.status, decision.code);
+      return quotaResponse(decision.status, decision.code, nowMs);
     } catch {
-      return deniedResponse(503, "unavailable");
+      return quotaResponse(503, "unavailable");
     }
   }
 }

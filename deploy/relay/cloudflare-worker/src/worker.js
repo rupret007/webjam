@@ -30,6 +30,7 @@ import {
   emptyQuotaState,
   quotaLimits,
   quotaScope,
+  quotaResponse,
 } from "./quota.js";
 
 const GENERATE_URL =
@@ -161,7 +162,7 @@ async function enforceScope(request, env, nowMs, rowWrites, charge, scope) {
   if (decision.allow) {
     return null;
   }
-  return errorResponse(decision.status, decision.code);
+  return quotaResponse(decision.status, decision.code, nowMs);
 }
 
 function isWebsocketUpgrade(request) {
