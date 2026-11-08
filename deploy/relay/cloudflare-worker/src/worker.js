@@ -68,15 +68,45 @@ function errorResponse(status, code) {
   return jsonResponse(status, { error: code });
 }
 
-function parseMailboxPath(path) {
-  const parts = String(path || "").split("/").filter(Boolean);
-  if (parts[0] !== "mailbox" || parts.length < 2 || parts.length > 3) {
+async function readCredentialBody(request) {
+  const length = request.headers.get("Content-Length");
+  if (length !== null && (!/^\d+$/.test(length) || Number(length) > MAX_BODY_BYTES)) {
+    if (request.body) void request.body.cancel().catch(() => {});
     return null;
   }
-  if (!validMailboxId(parts[1])) {
+  const reader = request.body?.getReader();
+  if (!reader) return null;
+  const bytes = new Uint8Array(MAX_BODY_BYTES);
+  let size = 0;
+  let complete = false;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) { complete = true; break; }
+      if (!(value instanceof Uint8Array) || size + value.byteLength > MAX_BODY_BYTES) return null;
+      bytes.set(value, size);
+      size += value.byteLength;
+    }
+  } finally {
+    if (!complete) void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  if (size === 0) return null;
+  return JSON.parse(new TextDecoder().decode(bytes.subarray(0, size)));
+}
+
+function parseMailboxPath(path) {
+  const parts = String(path || "").split("/");
+  const first = parts.findIndex(Boolean);
+  if (parts[first] !== "mailbox") {
+    return null;
+  }
+  // Match the canonical pathname used by the mailbox quota scope and backend.
+  if (first !== 1 || parts.length < 3 || parts.length > 4 ||
+      !validMailboxId(parts[2]) || (parts.length === 4 && !parts[3])) {
     return { invalid: true };
   }
-  return { id: parts[1], slot: parts[2] || "" };
+  return { id: parts[2], slot: parts[3] || "" };
 }
 
 function applyQuotaEnv(env) {
@@ -118,12 +148,12 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all
   if (web) {
     if ((typeof env.MAILBOX_QUOTA?.idFromName !== "function" ||
          typeof env.MAILBOX_QUOTA?.get !== "function") &&
-        !deps.fetch && !deps.mailboxFetch && env.ENVIRONMENT !== "development") {
+        env.ENVIRONMENT !== "development") {
       return errorResponse(503, "misconfigured");
     }
     // One persistent web counter spans both endpoints. Keep the original
     // mailbox/TURN caps too; a browser request never escapes those budgets.
-    const denied = await enforceScope(request, env, nowMs, 0, charge, "web");
+    const denied = await enforceScope(request, env, nowMs, rowWrites, charge, "web");
     if (denied) return denied;
   }
   return enforceScope(request, env, nowMs, rowWrites, charge,
@@ -235,18 +265,16 @@ async function handleMailbox(request, env, deps, mailbox, nowMs, web) {
 
 export async function handleRequest(request, env, deps = {}) {
   env ??= {};
+  const origin = allowedOrigin(request, env);
+  const blocked = requireHttps(request);
+  if (blocked) return withCors(blocked, origin);
   // Origin checks and preflight must finish before any quota/mailbox DO call.
   const cors = corsGate(request, env);
   if (cors) return cors;
-  const origin = allowedOrigin(request, env);
   return withCors(await handleAllowedRequest(request, env, deps), origin);
 }
 
 async function handleAllowedRequest(request, env, deps) {
-  const blocked = requireHttps(request);
-  if (blocked) {
-    return blocked;
-  }
   applyQuotaEnv(env ?? {});
   const fetchImpl = deps.fetch ?? globalThis.fetch;
   const nowMs = Number(deps.nowMs ?? Date.now());
@@ -264,13 +292,13 @@ async function handleAllowedRequest(request, env, deps) {
     return errorResponse(404, "not_found");
   }
 
+  const preliminaryWeb = web;
+  const rateDenied = await enforceAccess(request, env, deps, nowMs, 0, "rate", preliminaryWeb);
+  if (rateDenied) return rateDenied;
+
   let body;
   try {
-    const raw = await request.arrayBuffer();
-    if (raw.byteLength === 0 || raw.byteLength > MAX_BODY_BYTES) {
-      return errorResponse(403, "unauthorized");
-    }
-    body = JSON.parse(new TextDecoder().decode(raw));
+    body = await readCredentialBody(request);
   } catch {
     return errorResponse(403, "unauthorized");
   }
@@ -281,7 +309,11 @@ async function handleAllowedRequest(request, env, deps) {
     return errorResponse(403, "unauthorized");
   }
   web ||= body.client === "web";
-  const denied = await enforceAccess(request, env, deps, nowMs, 0, "all", web);
+  if (web && !preliminaryWeb) {
+    const webRateDenied = await enforceScope(request, env, nowMs, 0, "rate", "web");
+    if (webRateDenied) return webRateDenied;
+  }
+  const denied = await enforceAccess(request, env, deps, nowMs, 0, "daily", web);
   if (denied) return denied;
 
   const desktopKeyId = String(env.TURN_KEY_ID ?? "").trim();

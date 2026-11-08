@@ -87,6 +87,15 @@ Free-plan Worker at `deploy/relay/cloudflare-worker/`.
 (canonical UUID or 64-hex `session_id`, plus `invite_token` matching
 `^[A-Za-z0-9_-]{32,256}$`) and rate-limits per IP.
 
+HTTPS and rate admission happen before credential-body reads, so malformed
+requests still consume their rate allowance. Credential JSON is bounded to
+4 KiB, including chunked requests; an oversized stream is cancelled rather
+than drained. Mailbox paths must be canonical (no duplicate or trailing
+slashes). Browser mailbox writes consume both the shared web budget and the
+mailbox budget. Production browser traffic requires the persistent quota
+binding even when an upstream adapter is supplied; only explicit development
+mode permits in-memory quota fallback.
+
 The same Worker hosts one SQLite-backed Durable Object mailbox per
 session (`new_sqlite_classes`). Clients send only an HKDF mailbox id and
 AEAD ciphertext. Do not deploy from this PR; redeploy after review.
