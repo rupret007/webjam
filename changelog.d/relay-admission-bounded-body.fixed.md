@@ -1,0 +1,1 @@
+- Apply relay HTTPS and rate admission before reading credential bodies, keep reads within the existing 4 KiB cap, and enforce canonical mailbox paths and shared web write accounting without changing quota limits or WebSocket/CORS behavior.

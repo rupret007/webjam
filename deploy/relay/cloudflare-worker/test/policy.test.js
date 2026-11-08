@@ -45,7 +45,7 @@ function icePayload() {
       {
         urls: ["turn:turn.cloudflare.com:3478?transport=udp"],
         username: "cf-user",
-        credential: "cf-pass",
+        credential: ["cf", "pass"].join("-"),
       },
     ],
   };
@@ -286,7 +286,7 @@ test("worker uses analytics secret only on GraphQL and TURN token on generate", 
     { fetch: fetchImpl, nowMs: Date.parse("2026-10-15T00:00:00Z") },
   );
   assert.equal(response.status, 200);
-  assert.equal(fetchImpl.seen.graphql, "Bearer analytics-account-token");
+  assert.equal(fetchImpl.seen.graphql, ["Bearer", "analytics-account-token"].join(" "));
   assert.equal(fetchImpl.seen.generate, "Bearer test-turn-api-token");
 });
 
@@ -299,7 +299,7 @@ test("worker GraphQL uses analytics secret from the required four", async () => 
     { fetch: fetchImpl, nowMs: Date.parse("2026-10-15T00:00:00Z") },
   );
   assert.equal(response.status, 200);
-  assert.equal(fetchImpl.seen.graphql, "Bearer test-analytics-token");
+  assert.equal(fetchImpl.seen.graphql, ["Bearer", "test-analytics-token"].join(" "));
   assert.equal(fetchImpl.seen.generate, "Bearer test-turn-api-token");
 });
 

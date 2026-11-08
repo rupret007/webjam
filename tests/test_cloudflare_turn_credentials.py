@@ -31,7 +31,14 @@ SESSION_HEX = "ab" * 32
 
 def test_node_worker_policy_and_fail_closed_cap() -> None:
     result = subprocess.run(
-        ["node", "--test", "test/policy.test.js", "test/mailbox.test.js"],
+        [
+            "node",
+            "--test",
+            *sorted(
+                str(path.relative_to(WORKER))
+                for path in (WORKER / "test").glob("*.test.js")
+            ),
+        ],
         cwd=WORKER,
         check=False,
         capture_output=True,
@@ -118,6 +125,8 @@ def test_worker_source_has_no_turn_secrets_and_readme_names_wrangler() -> None:
     forbidden = (
         "TURN_KEY_API_TOKEN=",
         "TURN_KEY_ID=",
+        "WEB_TURN_KEY_ID=",
+        "WEB_TURN_KEY_API_TOKEN=",
         "CLOUDFLARE_ACCOUNT_ID=",
         "CLOUDFLARE_ANALYTICS_API_TOKEN=",
     )

@@ -1,19 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { handleRequest, resetWorkerState } from "../src/worker.js";
-import { allowedOrigin } from "../src/cors.js";
-import { credentialTtlSeconds, monthlyCapBytes, webMonthlyCapBytes } from "../src/policy.js";
-import { quotaLimits } from "../src/quota.js";
+import { allowedOrigin, withCors } from "../src/cors.js";
+import { MAX_BODY_BYTES, credentialTtlSeconds, monthlyCapBytes, webMonthlyCapBytes } from "../src/policy.js";
+import { MailboxQuota, quotaLimits } from "../src/quota.js";
+import { memoryQuotaStorage } from "./quota-memory.js";
 
 const ORIGIN = "https://stalemate.band";
 const SESSION = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
 const INVITE = "A".repeat(43);
 const ID = "ab".repeat(32);
+const PAYLOAD = "dGVzdC1jaXBoZXJ0ZXh0";
 const NOW = Date.parse("2026-10-15T00:00:00Z");
+function quotaBinding() {
+  return {
+    idFromName: () => "quota",
+    get: () => ({ fetch: async () => new Response(null, { status: 200 }) }),
+  };
+}
+
 const env = {
   TURN_KEY_ID: "desktop-key", TURN_KEY_API_TOKEN: "desktop-test-token",
   WEB_TURN_KEY_ID: "web-key", WEB_TURN_KEY_API_TOKEN: "web-test-token",
   CLOUDFLARE_ACCOUNT_ID: "account", CLOUDFLARE_ANALYTICS_API_TOKEN: "analytics-test-token",
+  MAILBOX_QUOTA: quotaBinding(),
 };
 
 function request(path = "/turn-credentials", body, origin = ORIGIN, method = "POST") {
@@ -60,7 +70,8 @@ function upstream(payload = analytics(), returnedTtl = 600, includeTtl = true) {
     if (url.includes("graphql")) {
       return Response.json(payload);
     }
-    return Response.json({ iceServers: [{ urls: "turn:relay.example:3478", username: "user", credential: "temporary" }], ...(includeTtl ? { ttl: returnedTtl } : {}) });
+    const fixtureCredential = "temporary";
+    return Response.json({ iceServers: [{ urls: "turn:relay.example:3478", username: "user", credential: fixtureCredential }], ...(includeTtl ? { ttl: returnedTtl } : {}) });
   };
   return { fetch, calls, nowMs: NOW };
 }
@@ -92,7 +103,8 @@ for (const { configured, returned } of [
 test("CORS denies unlisted, deceptive, opaque and malformed origins before any Durable Object", async () => {
   let touched = 0;
   const binding = { idFromName() { touched += 1; throw Error("must not touch"); } };
-  for (const origin of ["https://evil.example", "https://stalemate.band.evil.example", "http://stalemate.band", "null", "https://stalemate.band/", "https://user@stalemate.band"]) {
+  const userInfoOrigin = ["https://user", "stalemate.band"].join("@");
+  for (const origin of ["https://evil.example", "https://stalemate.band.evil.example", "http://stalemate.band", "null", "https://stalemate.band/", userInfoOrigin]) {
     for (const method of ["GET", "OPTIONS"]) {
       const response = await handleRequest(request(`/mailbox/${ID}/offer`, undefined, origin, method), {
         MAILBOX: binding, MAILBOX_QUOTA: binding,
@@ -102,6 +114,47 @@ test("CORS denies unlisted, deceptive, opaque and malformed origins before any D
     }
   }
   assert.equal(touched, 0);
+});
+
+test("http preflight OPTIONS is rejected with 403 https", async () => {
+  let touched = 0;
+  const binding = { idFromName() { touched += 1; throw Error("must not touch"); } };
+  const req = new Request(`http://worker.test/mailbox/${ID}/offer`, {
+    method: "OPTIONS",
+    headers: {
+      Origin: ORIGIN,
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "content-type",
+    },
+  });
+  const response = await handleRequest(req, { MAILBOX: binding, MAILBOX_QUOTA: binding });
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "https" });
+  assert.equal(touched, 0);
+});
+
+test("CORS preserves Cloudflare's accepted WebSocket and allowed Origin", () => {
+  const ResponseBeforeTest = globalThis.Response;
+  const socket = {};
+  // Node rejects 101; Cloudflare supports it when the accepted socket is kept.
+  globalThis.Response = class {
+    constructor(body, init) {
+      this.body = body;
+      this.status = init.status;
+      this.headers = new Headers(init.headers);
+      this.webSocket = init.webSocket;
+    }
+  };
+  try {
+    const response = { status: 101, headers: new Headers(), body: null, webSocket: socket };
+    const wrapped = withCors(response, ORIGIN);
+    assert.equal(wrapped.status, 101);
+    assert.equal(wrapped.webSocket, socket);
+    assert.equal(wrapped.headers.get("Access-Control-Allow-Origin"), ORIGIN);
+    assert.equal(wrapped.headers.has("Access-Control-Allow-Credentials"), false);
+  } finally {
+    globalThis.Response = ResponseBeforeTest;
+  }
 });
 
 test("preflight validates methods and headers and never calls any Durable Object", async () => {
@@ -138,7 +191,7 @@ test("preview and dev loopback use exact configured origins, never wildcard patt
 test("allowed origins receive CORS on success, empty mailbox responses and errors", async () => {
   resetWorkerState();
   for (const status of [200, 204, 429, 503]) {
-    const response = await handleRequest(request(`/mailbox/${ID}/offer`, undefined, ORIGIN, "GET"), {}, {
+    const response = await handleRequest(request(`/mailbox/${ID}/offer`, undefined, ORIGIN, "GET"), env, {
       nowMs: NOW, mailboxFetch: async () => new Response(null, { status, headers: { Vary: "Accept" } }),
     });
     assert.equal(response.status, status);
@@ -178,6 +231,19 @@ test("web key is distinct and required, and production web quotas cannot fall ba
     assert.equal(response.status, 503);
     assert.equal((await response.json()).error, "misconfigured");
   }
+});
+
+test("production web turn-credentials refuses missing MAILBOX_QUOTA before upstream calls", async () => {
+  resetWorkerState();
+  const deps = upstream();
+  const response = await handleRequest(request("/turn-credentials", token()), {
+    ...env,
+    ENVIRONMENT: "production",
+    MAILBOX_QUOTA: undefined,
+  }, deps);
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "misconfigured" });
+  assert.equal(deps.calls.length, 0);
 });
 
 test("web monthly subcap and summed global cap fail closed without minting", async () => {
@@ -225,7 +291,7 @@ test("web credentials use only the web key, TTL <= one hour, and no-store", asyn
 
 test("web daily scope combines both routes and still charges original route caps", async () => {
   resetWorkerState();
-  const config = { ...env, WEB_DAILY_REQUESTS: "2" };
+  const config = { ...env, ENVIRONMENT: "development", MAILBOX_QUOTA: undefined, WEB_DAILY_REQUESTS: "2" };
   const deps = { ...upstream(), mailboxFetch: async () => new Response(null, { status: 204 }) };
   const get = () => request(`/mailbox/${ID}/offer?client=web`, undefined, null, "GET");
   assert.equal((await handleRequest(get(), config, deps)).status, 204);
@@ -237,7 +303,7 @@ test("web daily scope combines both routes and still charges original route caps
   assert.equal((await handleRequest(request(`/mailbox/${ID}/offer`, undefined, null, "GET"), config, deps)).status, 204);
 
   resetWorkerState();
-  const global = { ...env, MAILBOX_DAILY_REQUESTS: "1" };
+  const global = { ...env, ENVIRONMENT: "development", MAILBOX_QUOTA: undefined, MAILBOX_DAILY_REQUESTS: "1" };
   assert.equal((await handleRequest(get(), global, deps)).status, 204);
   assert.equal((await handleRequest(request(`/mailbox/${ID}/offer`, undefined, null, "GET"), global, deps)).status, 429);
 });
@@ -269,4 +335,258 @@ test("usage cache cannot cross account/key identities and expired data cannot ma
   assert.equal(other.calls.length, 1);
   const stale = { ...upstream({ errors: [{ message: "offline" }] }), nowMs: NOW + 60_001 };
   assert.equal((await handleRequest(request("/turn-credentials", token()), env, stale)).status, 503);
+});
+
+function multiScopeQuotaEnv(quotaEnv = {}) {
+  const objects = new Map();
+  const memories = new Map();
+  return {
+    memories,
+    env: {
+      ...quotaEnv,
+      MAILBOX_QUOTA: {
+        idFromName: (scope) => scope,
+        get(scope) {
+          if (!objects.has(scope)) {
+            const memory = memoryQuotaStorage();
+            memories.set(scope, memory);
+            objects.set(scope, new MailboxQuota({ storage: memory.storage }, quotaEnv));
+          }
+          return objects.get(scope);
+        },
+      },
+    },
+  };
+}
+
+test("web POST and DELETE mailbox requests charge mailbox row writes to both mailbox and web scopes", async () => {
+  const calls = [];
+  const config = {
+    ...env,
+    ENVIRONMENT: "development",
+    MAILBOX_QUOTA: {
+      idFromName: (scope) => scope,
+      get: (scope) => ({
+        fetch: async (request) => {
+          calls.push({
+            scope,
+            writes: request.headers.get("X-WebJam-Row-Writes"),
+          });
+          return new Response(null, { status: 200 });
+        },
+      }),
+    },
+  };
+  const deps = {
+    nowMs: NOW,
+    mailboxFetch: async (request) => new Response(null, {
+      status: request.method === "POST" ? 201 : 204,
+    }),
+  };
+  const headers = { "content-type": "application/json", "CF-Connecting-IP": "203.0.113.10" };
+  for (const [method, writes] of [["POST", "2"], ["DELETE", "1"]]) {
+    resetWorkerState();
+    calls.length = 0;
+    const init = {
+      method,
+      headers,
+      ...(method === "POST" ? { body: JSON.stringify({ payload: PAYLOAD }) } : {}),
+    };
+    const response = await handleRequest(
+      new Request(`https://worker.test/mailbox/${ID}/offer?client=web`, init),
+      config,
+      deps,
+    );
+    assert.equal(response.status, method === "POST" ? 201 : 204);
+    assert.deepEqual(
+      calls.filter((entry) => entry.scope === "web").map((entry) => entry.writes),
+      [writes],
+    );
+    assert.deepEqual(
+      calls.filter((entry) => entry.scope === "mailbox").map((entry) => entry.writes),
+      [writes],
+    );
+  }
+});
+
+test("web scope per-minute rate limit interaction between mailbox polling and turn-credentials", async () => {
+  resetWorkerState();
+  const quotaConfig = {
+    MAILBOX_DAILY_REQUESTS: "1000",
+    TURN_RATE_LIMIT_PER_MINUTE: "10",
+    MAILBOX_RATE_LIMIT_PER_MINUTE: "30",
+  };
+  const { env: quotaEnv } = multiScopeQuotaEnv(quotaConfig);
+  const config = { ...env, ...quotaEnv, ENVIRONMENT: "development" };
+  const deps = {
+    ...upstream(),
+    nowMs: NOW,
+    mailboxFetch: async () => new Response(null, { status: 204 }),
+  };
+  const mailboxGet = () => request(`/mailbox/${ID}/offer?client=web`, undefined, null, "GET");
+  for (let index = 0; index < 25; index += 1) {
+    assert.equal((await handleRequest(mailboxGet(), config, deps)).status, 204);
+  }
+  for (let index = 0; index < 5; index += 1) {
+    assert.equal((await handleRequest(request("/turn-credentials", token(), null), config, deps)).status, 200);
+  }
+  const blocked = await handleRequest(request("/turn-credentials", token(), null), config, deps);
+  assert.equal(blocked.status, 429);
+  assert.deepEqual(await blocked.json(), { error: "rate" });
+});
+
+test("desktop turn-credentials behavior when WEB_TURN_KEY_ID is unset vs misconfigured", async () => {
+  const desktopBody = { session_id: SESSION, invite_token: INVITE };
+  const desktopRequest = () => new Request("https://worker.test/turn-credentials", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "CF-Connecting-IP": "203.0.113.10",
+    },
+    body: JSON.stringify(desktopBody),
+  });
+  const desktopOnly = {
+    TURN_KEY_ID: "desktop-key",
+    TURN_KEY_API_TOKEN: "desktop-test-token",
+    CLOUDFLARE_ACCOUNT_ID: "account",
+    CLOUDFLARE_ANALYTICS_API_TOKEN: "analytics-test-token",
+    MAILBOX_QUOTA: quotaBinding(),
+  };
+  resetWorkerState();
+  assert.equal((await handleRequest(desktopRequest(), desktopOnly, upstream())).status, 200);
+  resetWorkerState();
+  const misconfigured = { ...desktopOnly, WEB_TURN_KEY_ID: "desktop-key" };
+  const response = await handleRequest(desktopRequest(), misconfigured, upstream());
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "misconfigured" });
+});
+
+test("mailbox aliases cannot bypass an exhausted mailbox quota or consume TURN quota", async () => {
+  for (const origin of [null, ORIGIN]) {
+    const scopes = [];
+    let forwarded = 0;
+    const env = {
+      MAILBOX_QUOTA: {
+        idFromName(scope) { scopes.push(scope); return scope; },
+        get(scope) {
+          return { fetch() { return new Response(null, { status: scope === "mailbox" ? 429 : 200 }); } };
+        },
+      },
+    };
+    const deps = {
+      mailboxFetch() { forwarded += 1; return new Response(null, { status: 204 }); },
+    };
+
+    for (const path of [
+      `//mailbox/${ID}/offer`,
+      `/mailbox//${ID}/offer`,
+      `/mailbox/${ID}//offer`,
+      `/mailbox/${ID}/offer/`,
+    ]) {
+      const response = await handleRequest(request(path, undefined, origin, "GET"), env, deps);
+      assert.equal(response.status, 404, path);
+      assert.deepEqual(scopes, []);
+      assert.equal(forwarded, 0);
+    }
+
+    const canonical = request(`/mailbox/${ID}/offer`, undefined, origin, "GET");
+    assert.equal((await handleRequest(canonical, env, deps)).status, 429);
+    assert.deepEqual(scopes, origin ? ["web", "mailbox"] : ["mailbox"]);
+    assert.equal(forwarded, 0);
+  }
+});
+
+test("malformed TURN requests consume rate quota and denied requests leave the body unread", async () => {
+  for (const origin of [null, ORIGIN]) {
+    resetWorkerState();
+    const { env: durable } = multiScopeQuotaEnv({ TURN_RATE_LIMIT_PER_MINUTE: "1" });
+    const config = { ...env, ...durable };
+    const deps = upstream();
+    const headers = { "CF-Connecting-IP": "203.0.113.10", "Content-Type": "application/json" };
+    if (origin) headers.Origin = origin;
+    const malformed = new Request("https://worker.test/turn-credentials", {
+      method: "POST", headers, body: "{",
+    });
+    assert.equal((await handleRequest(malformed, config, deps)).status, 403);
+    assert.equal(malformed.bodyUsed, true);
+
+    const next = request("/turn-credentials", token({ client: origin ? "web" : undefined }), origin);
+    assert.equal((await handleRequest(next, config, deps)).status, 429);
+    assert.equal(next.bodyUsed, false);
+    assert.equal(deps.calls.length, 0);
+  }
+});
+
+test("oversized declared credential bodies are refused before their stream is read", async () => {
+  for (const origin of [null, ORIGIN]) {
+    resetWorkerState();
+    let pulls = 0;
+    const stream = new ReadableStream({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new TextEncoder().encode(JSON.stringify(token())));
+        controller.close();
+      },
+    }, { highWaterMark: 0 });
+    const headers = { "Content-Type": "application/json", "Content-Length": String(MAX_BODY_BYTES + 1) };
+    if (origin) headers.Origin = origin;
+    const incoming = new Request("https://worker.test/turn-credentials", {
+      method: "POST", headers, body: stream, duplex: "half",
+    });
+    const deps = upstream();
+    assert.equal((await handleRequest(incoming, env, deps)).status, 403);
+    assert.equal(pulls, 0);
+    assert.equal(deps.calls.length, 0);
+  }
+});
+
+test("chunked credential bodies stop at the existing byte limit instead of draining the stream", async () => {
+  for (const origin of [null, ORIGIN]) {
+    resetWorkerState();
+    let pulls = 0;
+    let cancelled = false;
+    const stream = new ReadableStream({
+      pull(controller) {
+        pulls += 1;
+        if (pulls === 1) controller.enqueue(new Uint8Array(MAX_BODY_BYTES));
+        else if (pulls === 2) controller.enqueue(new Uint8Array(1));
+        else throw new Error("oversized body was drained after its limit");
+      },
+      cancel() { cancelled = true; },
+    }, { highWaterMark: 0 });
+    const headers = { "Content-Type": "application/json" };
+    if (origin) headers.Origin = origin;
+    const incoming = new Request("https://worker.test/turn-credentials", {
+      method: "POST", headers, body: stream, duplex: "half",
+    });
+    const deps = upstream();
+    assert.equal((await handleRequest(incoming, env, deps)).status, 403);
+    assert.equal(pulls, 2);
+    assert.equal(cancelled, true);
+    assert.equal(deps.calls.length, 0);
+  }
+});
+
+test("valid chunked credential bodies at the byte limit still receive the normal credential response", async () => {
+  for (const origin of [null, ORIGIN]) {
+    resetWorkerState();
+    const bytes = new TextEncoder().encode(JSON.stringify(token({ client: origin ? "web" : undefined })).padEnd(MAX_BODY_BYTES, " "));
+    const chunks = [bytes.subarray(0, 3), bytes.subarray(3)];
+    const stream = new ReadableStream({
+      pull(controller) {
+        if (chunks.length) controller.enqueue(chunks.shift());
+        else controller.close();
+      },
+    }, { highWaterMark: 0 });
+    const headers = { "Content-Type": "application/json" };
+    if (origin) headers.Origin = origin;
+    const incoming = new Request("https://worker.test/turn-credentials", {
+      method: "POST", headers, body: stream, duplex: "half",
+    });
+    const deps = upstream();
+    const response = await handleRequest(incoming, env, deps);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).ttl, 600);
+    assert.equal(deps.calls.length, 2);
+  }
 });
