@@ -95,12 +95,20 @@ still play. WebJam's monitor mute changes only the local mix and does not stop
 the instrument from reaching the band. Current controls do not verify or
 automatically change the external meeting's audio state.
 
+Cisco documents audio connection and video as separate choices in the
+[desktop and browser prejoin window](https://help.webex.com/en-us/article/ela6i8).
+Choose **Don't connect to audio** for a video-only join; this is different from
+the microphone's Mute control. Verify the result on the actual client rather
+than assuming a saved preference took effect. Do not change global join defaults
+on the participant's behalf.
+
 Use this manual handoff at **both** endpoints:
 
 1. For conversation, leave/end the WebJam music session before connecting
    Webex meeting audio. Confirm speech through the intended headphones.
 2. Before music, use Webex's own **Disconnect audio** control (wording may
-   vary), or leave the meeting. Muting its microphone alone is insufficient.
+   vary). If unavailable, leave and rejoin with **Don't connect to audio**.
+   Muting its microphone alone is insufficient.
    Confirm meeting sound has stopped. Video may remain on only with meeting
    audio disconnected; if that cannot be confirmed, leave Webex for the music
    test. Keep music idle until both people are ready.
