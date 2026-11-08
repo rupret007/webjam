@@ -135,8 +135,8 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
   const now = Math.floor(Date.now() / 1000);
   await page.evaluate(hash => { location.hash = hash; }, `k=${capability}&s=${'23'.repeat(32)}&g=1&e=${now - 60}`);
   await expect(page.locator('#status')).toHaveText('This invite link is no longer valid.');
-  await expect(page.locator('#error-hint')).toHaveText('Ask your host for a new Web Join link and open it to join.');
-  await expect(page.locator('#retry')).toBeHidden();
+  await expect(page.locator('#error-hint')).toHaveText('Ask your host for a new browser invite and open the full link.');
+  for (const id of ['join', 'retry', 'leave', 'prejoin']) await expect(page.locator('#' + id)).toBeHidden();
   await page.evaluate(hash => { location.hash = hash; }, `k=${capability}&s=${'24'.repeat(32)}&g=1&e=${now + 300}`);
   await expect(page.getByRole('heading', { name: 'Check your audio' })).toBeVisible();
   await expect(page.locator('#join')).toBeDisabled();
