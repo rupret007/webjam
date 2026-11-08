@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' https://webjam-turn-credentials.jeffstory007.workers.dev; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <title>Sketch Jam · WebJam</title>
+    <link rel="stylesheet" href="style.css">
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <main>
+      <header><span class="brand">WebJam</span><span class="badge">Browser · up to 4 people</span></header>
+      <h1>Sketch Jam</h1>
+      <p class="intro">Great for ideas and loose jams. Expect about 60-120 ms delay. For tight rehearsals use the WebJam app.</p>
+      <section class="card" aria-labelledby="room-title">
+        <h2 id="room-title">Bring an idea. Invite your people.</h2>
+        <label for="invite">Private invite link</label>
+        <div class="row"><input id="invite" readonly aria-describedby="invite-help"><button id="copy" type="button">Copy link</button></div>
+        <p class="hint" id="invite-help">The invite key stays in the link fragment. Share this link only with your bandmates. New joins close after 10 minutes; connected audio can continue. A used seat cannot be reclaimed with this link.</p>
+        <label for="name">Your name</label>
+        <input id="name" maxlength="24" autocomplete="off" placeholder="Musician">
+        <label class="headphones" for="headphones"><input id="headphones" type="checkbox"><span>Wear headphones. Echo cancelling is off for music quality.</span></label>
+        <div class="row actions"><button id="join" class="primary" type="button" disabled>Join Sketch Jam</button><button id="leave" type="button" disabled>Leave</button><button id="new-room" type="button">New link</button></div>
+        <p id="status" role="status" aria-live="polite">Check your headphones, then tap Join to start audio.</p>
+        <button id="resume" type="button" hidden>Resume audio</button>
+        <p id="audio-warnings" class="notice" hidden></p>
+      </section>
+      <section aria-labelledby="players-title"><h2 id="players-title">In the room</h2><ul id="peers" aria-live="polite"></ul><p class="hint">One audio track per person, connected directly where possible. Latency estimates use network RTT/2, received audio buffering, and local audio base latency; device and playback delays may add more.</p></section>
+      <aside class="card limits"><h2>A sketchbook for sound</h2><p>Headphones are required. Music mode asks for stereo at 48 kHz with echo cancellation, noise suppression, and automatic gain control off. Your browser may choose different settings.</p><p><strong>iPhone and iPad: listen and play along, best effort.</strong> Safari/iOS plays mono and can add playback buffering. WebRTC with WebAudio has a history of stuttering (WebKit 225880). Keep this tab visible and tap Resume audio if playback pauses.</p><p><strong>Firefox:</strong> the browser may send a lower audio bitrate.</p><p>Free service limits apply. A busy relay pauses or refuses new connections. Joining several people from one network may take a few minutes. No account, analytics, or paid fallback.</p></aside>
+      <footer>Sketch Jam · a little room for your next idea</footer>
+    </main>
+  </body>
+</html>

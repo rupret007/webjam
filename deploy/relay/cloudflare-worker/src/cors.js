@@ -52,6 +52,7 @@ export function corsGate(request, env) {
 
 export function withCors(response, origin) {
   if (!origin) return response;
+  if (response.status === 101) return response;
   const headers = new Headers(response.headers);
   headers.set("Access-Control-Allow-Origin", origin);
   if (headers.has("Retry-After")) headers.set("Access-Control-Expose-Headers", "Retry-After");

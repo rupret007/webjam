@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import select
 import socket
 import time
 from pathlib import Path
@@ -17,6 +18,15 @@ PROFILE_ID = "direct-stun"
 REQUIRED_FIELDS = (
     "local_type", "remote_type", "music_nonce", "art_nonce", "music_echo", "art_echo",
 )
+# A live UDP path has no delivery guarantee for an individual frame. Exercise
+# a fixed five-second audio stream under netem's 1% loss in each direction.
+# Pace the probe so the bounded live queue is not the source of test loss
+# when QUIC congestion control encounters netem's 100 +/- 50 ms delay.
+# Every sequence is sent exactly once; neither frames nor cases are retried.
+MUSIC_FRAMES = 1000
+MUSIC_INTERVAL_S = 0.005
+MUSIC_MIN_ECHOES = 950
+MUSIC_TIMEOUT_S = 12.0
 
 
 class ProofError(HarnessError):
@@ -147,6 +157,65 @@ def _wait_help(inbox: list[str], nonce: str, timeout_s: float = 12.0) -> str:
     return ""
 
 
+def _music_frame(nonce: str, sequence: int) -> bytes:
+    return nonce.encode("ascii") + sequence.to_bytes(4, "big")
+
+
+def _music_sequence(payload: bytes, nonce: str) -> int:
+    prefix = nonce.encode("ascii")
+    if len(payload) != len(prefix) + 4 or not payload.startswith(prefix):
+        raise ProofError("music payload mismatch")
+    sequence = int.from_bytes(payload[-4:], "big")
+    if sequence >= MUSIC_FRAMES:
+        raise ProofError("music sequence out of range")
+    return sequence
+
+
+def _receive_music(sock: socket.socket, nonce: str, seen: set[int]) -> tuple[bytes, Any]:
+    payload, source = sock.recvfrom(2048)
+    sequence = _music_sequence(payload, nonce)
+    if sequence in seen:
+        raise ProofError("duplicate music sequence")
+    seen.add(sequence)
+    return payload, source
+
+
+def _guest_music(sock: socket.socket, port: int, nonce: str) -> int:
+    started = time.monotonic()
+    deadline = started + MUSIC_TIMEOUT_S
+    next_send = started
+    sent = 0
+    seen: set[int] = set()
+    while time.monotonic() < deadline:
+        now = time.monotonic()
+        if sent < MUSIC_FRAMES and now >= next_send:
+            sock.sendto(_music_frame(nonce, sent), ("127.0.0.1", port))
+            sent += 1
+            # A descheduled process must not catch up with a queue-filling burst.
+            next_send = time.monotonic() + MUSIC_INTERVAL_S
+        if sent == MUSIC_FRAMES and len(seen) >= MUSIC_MIN_ECHOES:
+            return len(seen)
+        wake_at = min(next_send, deadline) if sent < MUSIC_FRAMES else deadline
+        timeout = max(0, wake_at - time.monotonic())
+        if select.select([sock], [], [], timeout)[0]:
+            _receive_music(sock, nonce, seen)
+    raise ProofError(f"music stream incomplete: sent={sent} echoed={len(seen)}")
+
+
+def _host_music(sock: socket.socket, nonce: str, finished: Path) -> int:
+    deadline = time.monotonic() + MUSIC_TIMEOUT_S
+    seen: set[int] = set()
+    while time.monotonic() < deadline:
+        if select.select([sock], [], [], 0.02)[0]:
+            payload, source = _receive_music(sock, nonce, seen)
+            sock.sendto(payload, source)
+        elif finished.is_file():
+            if len(seen) < MUSIC_MIN_ECHOES:
+                raise ProofError(f"music stream incomplete: received={len(seen)}")
+            return len(seen)
+    raise ProofError("music stream did not finish")
+
+
 def run_peer(work_dir: Path, role: str) -> int:
     cfg = json.loads((work_dir / "peer-config.json").read_text(encoding="utf-8"))
     role = str(role or cfg.get("role") or "")
@@ -223,22 +292,18 @@ def run_peer(work_dir: Path, role: str) -> int:
             connected = process.open_guest(invitation, generation=1)
             guest_port = int(connected.loopback_port)
             session_path = str(getattr(connected, "session_path", "") or "")
-        payload = music_nonce.encode("ascii")
+        music_finished = work_dir / "guest.music-finished"
         if role == "guest":
             guest_audio = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             guest_audio.settimeout(12)
             try:
-                guest_audio.sendto(payload, ("127.0.0.1", guest_port))
-                received, _src = guest_audio.recvfrom(2048)
+                music_frames = _guest_music(guest_audio, guest_port, music_nonce)
             finally:
+                music_finished.touch(mode=0o600)
                 guest_audio.close()
-            if received == payload:
-                music_echo = music_nonce
         else:
-            received, proxy = audio.recvfrom(2048)
-            if received == payload:
-                audio.sendto(received, proxy)
-                music_echo = music_nonce
+            music_frames = _host_music(audio, music_nonce, music_finished)
+        music_echo = music_nonce
         if role == "host":
             process.send_help(art_nonce, generation=1)
             art_echo = _wait_help(inbox, art_nonce)
@@ -254,6 +319,7 @@ def run_peer(work_dir: Path, role: str) -> int:
             "music_nonce": music_nonce,
             "art_nonce": art_nonce,
             "music_echo": music_echo,
+            "music_frames": music_frames,
             "art_echo": art_echo,
             "profile_id": PROFILE_ID,
         }
