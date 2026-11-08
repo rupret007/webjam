@@ -69,7 +69,9 @@ try {
   clearJoinFailure(failureElements(), "Your host invited you to join.");
 } catch (error) {
   const view = mapJoinError(error);
+  view.hint = "Ask your host for a new browser invite and open the full link.";
   view.showRetry = false;
+  view.needsFreshInvite = true;
   applyJoinFailure(view, failureElements());
   $("status").dataset.failure = "true";
 }
