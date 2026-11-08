@@ -2,13 +2,31 @@
 
 Status: **NOT RUN**
 
-> **v0.22.4 published boundary:** this worksheet exercises behavior included in
-> the immutable published v0.22.4 private test candidate. Its external Webex
-> gate remains **NOT RUN** until exact package evidence is recorded.
+This is a worksheet, not a completed test record. Copy it for each actual
+packaged candidate and keep its results separate from unit tests, local
+workerd checks, generated audio, and earlier human listening tests.
 
 This worksheet validates WebJam's external Webex handoff without storing a
 Webex username, password, token, admin address, or private meeting path in the
 repository or evidence bundle.
+
+## Private preparation checkpoint (November 8, 2026)
+
+- The staged Intel and Apple Silicon desktop packages are from
+  `76b1fd74c0f8a77df2c9d6b42f7fde87dadfaf7c`. A newer source commit does not
+  change their contents. Confirm the actual running package before testing.
+- The private website source is
+  `71bff2cd6a5e352492eb7aaa304385182b378652`, Worker version
+  `2c5c81e5-1aa4-4ea7-be69-cacda13c20e8`. It does not embed Webex video or
+  control Webex audio; browser guests use the separate Webex app or browser.
+- The existing dedicated WebJam Personal Room was found through the signed
+  Webex client's normal UI. Its private link and host details are not part of
+  this record. Saving that room through normal WebJam Settings and testing
+  actual video/audio handoff remain pending. There is no need to create a new
+  room or ask the operator to send its private link in chat.
+- No two-endpoint Webex video or exclusive-audio result is claimed here.
+  Observe resource guards and use awake, consenting participants for live
+  camera/microphone checks; stop an unattended attempt before capture starts.
 
 ## Before testing
 
@@ -45,7 +63,8 @@ the derived `*.webex.com` site hostname.
 | Settings shows only the derived Webex hostname | NOT RUN | |
 | Malformed input is rejected | NOT RUN | |
 | An HTTP Webex link is rejected | NOT RUN | |
-| A non-Webex HTTPS link is rejected | NOT RUN | |
+| Supported non-Webex HTTPS meeting links retain their provider label and explicit external handoff | NOT RUN | |
+| Unsafe or unsupported meeting links are rejected before any external handoff | NOT RUN | |
 | Direct **Webex Controls** and **More → Webex Controls** show the same Conversation panel without a launch | NOT RUN | |
 | On macOS, **Show Webex App** dynamically re-verifies the exact running Cisco PID and requests activation without opening a browser or meeting | NOT RUN | |
 | A minimized-window check records what the musician sees without claiming WebJam can prove restoration | NOT RUN | |
@@ -56,8 +75,9 @@ the derived `*.webex.com` site hostname.
 
 ## Two-endpoint meeting
 
-Join from the WebJam computer and a second endpoint, preferably an iPhone
-running Webex.
+Join from the Mac host and Windows guest using the verified private candidate.
+Record additional device/browser combinations separately. Opening a link is
+not proof that either participant joined. Do not record the meeting.
 
 | Check | Result | Evidence/notes |
 | --- | --- | --- |
@@ -70,13 +90,46 @@ running Webex.
 
 ## Jamulus coexistence
 
-Keep Webex muted while playing music. Monitor the music only through Jamulus.
+Webex microphone mute is not an exclusive-audio switch: meeting speakers can
+still play. WebJam's monitor mute changes only the local mix and does not stop
+the instrument from reaching the band. Current controls do not verify or
+automatically change the external meeting's audio state.
+
+Cisco documents audio connection and video as separate choices in the
+[desktop and browser prejoin window](https://help.webex.com/en-us/article/ela6i8).
+Choose **Don't connect to audio** for a video-only join; this is different from
+the microphone's Mute control. Verify the result on the actual client rather
+than assuming a saved preference took effect. Do not change global join defaults
+on the participant's behalf.
+
+Use this manual handoff at **both** endpoints:
+
+1. For conversation, leave/end the WebJam music session before connecting
+   Webex meeting audio. Confirm speech through the intended headphones.
+2. Before music, use Webex's own **Disconnect audio** control (wording may
+   vary). If unavailable, leave and rejoin with **Don't connect to audio**.
+   Muting its microphone alone is insufficient.
+   Confirm meeting sound has stopped. Video may remain on only with meeting
+   audio disconnected; if that cannot be confirmed, leave Webex for the music
+   test. Keep music idle until both people are ready.
+3. Start a fresh private music session/invitation and join it. Listen through
+   Jamulus/Web Join only. Check speech both ways before playing a short passage
+   or a local WAV/MP3 backing track. Never infer hearing from a moving meter.
+4. To return to Webex conversation, first leave/end music, then reconnect
+   Webex audio. Before the next music session, disconnect Webex audio again
+   and use a fresh invitation. An expired invitation is not a microphone fault.
+
+This qualifies the existing manual workflow, not a one-click audio switch.
+The approved private music trial remains limited to one native host and one
+browser guest for at most ten minutes, with no recording. Do not extend the
+trial or bypass relay/resource holds to finish a checklist.
 
 | Check | Result | Evidence/notes |
 | --- | --- | --- |
 | Jamulus remains connected while Webex is open | NOT RUN | |
 | Jamulus audio is clean through wired headphones | NOT RUN | |
 | Webex creates no duplicated or feedback path | NOT RUN | |
+| Music-to-conversation-to-music handoff works at both endpoints with exclusive audio | NOT RUN | |
 | Webex does not replace the selected Jamulus devices | NOT RUN | |
 | Closing/failing Webex does not end Jamulus | NOT RUN | |
 | Quitting WebJam does not claim it closed externally owned Webex | NOT RUN | |
@@ -89,6 +142,11 @@ Keep Webex muted while playing music. Monitor the music only through Jamulus.
 | A saved support bundle contains no password, token, or private meeting path | NOT RUN | |
 | Support material may retain only the Webex site hostname | NOT RUN | |
 | All WebJam-owned processes and ports stop cleanly | NOT RUN | |
+| Both people explicitly leave Webex and confirm its camera/microphone are off | NOT RUN | |
+
+Ending music does not leave Webex; leaving Webex does not end music. Close
+each explicitly, and do not terminate unrelated applications or shared
+services during cleanup.
 
 ## Decision
 
