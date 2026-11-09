@@ -29,11 +29,42 @@ session or source test is not a Windows remote Music pass. Ask the organizer for
 a qualified build; keep the existing signature check enabled.
 
 Anyone admitted to the website can still host a website room. Native Music
-hosting is currently Mac-only. The website integration candidate keeps the
-optional, higher-delay browser music path disabled. It does not replace
-the required Windows native music qualification.
+hosting is currently Mac-only. The private beta has a separate, higher-delay
+browser guest path for Mac, Windows and Linux. Its availability depends on the
+qualified host build, private website configuration and unchanged admission and
+relay limits; do not enable it yourself when it is unavailable. This does not
+qualify the Windows native remote transport or prove physical audio on any OS.
 
-## Host, invite and join
+## Private browser guest: no desktop installation
+
+Use this route only when the organizer confirms the current private candidate
+and session are ready:
+
+1. Open the organizer's private community invitation and join the host's Jam
+   room. This admits you to the community, not yet to the Music session.
+2. The Mac host starts Music in WebJam, opens the browser-invite control, uses
+   **Copy browser invite**, and pastes it into that website room's invitation
+   field before choosing **Share**. Use this browser invitation, not the native
+   **Copy Invite** message described below.
+3. The intended guest chooses **Join in browser**, checks the microphone and
+   allows the correct input, then confirms headphones and joins. Keep the
+   native host running. Do not include either invitation in bug reports.
+4. Confirm actual sound in both directions. A microphone meter checks local
+   capture only; a connected badge does not establish audibility or playable
+   delay. Browser delay is higher than the native music path and varies with
+   the devices and network.
+5. If expired or ended, stop the old attempt and ask the host for a fresh
+   browser invitation. The guest leaves the browser session; the host ends the
+   Music session when everyone is finished. Confirm microphone use has stopped.
+
+For video, open the optional meeting through **Conversation**. Keep meeting
+**audio disconnected** while playing music; muting its microphone alone can
+leave meeting sound playing. To talk through meeting audio, leave/end Music
+first. Disconnect meeting audio before returning to Music with a fresh invite.
+See [meeting audio guidance](../WEBEX_AUDIO_MODES.md). No automatic Webex mute,
+audio switch or meeting join is promised.
+
+## Native app: host, invite and join
 
 Once the organizer confirms the candidate and test network:
 

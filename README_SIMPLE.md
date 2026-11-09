@@ -11,7 +11,29 @@ explains what is ready to test on each computer. Keep the host's window open.
 The [creator guide](USER_GUIDE.md) is the one complete how-to. This page is
 the short version.
 
-## Three steps
+## Joining the private community from a browser
+
+Use the private community invitation supplied by the organizer. Chat and website
+rooms need no WebJam installation. For a private Music test, the Mac host needs
+the qualified desktop build; an invited friend can use the approved browser
+route on Windows, Mac or Linux when the organizer confirms it is available.
+The community invitation and a live Music invitation do different jobs.
+
+1. Open the community invitation and join the host's Jam room.
+2. Wait for the host's **Join in browser** action in that room.
+3. Check the microphone, allow your intended input, and confirm headphones
+   before joining. A moving meter is only an input check; confirm that both
+   people actually hear each other after connecting.
+
+The host starts Music, uses the browser-invite control and **Copy browser
+invite**, then pastes it into the website Jam room's invitation field and
+chooses **Share**. Keep WebJam running. If an invitation expires, end the old
+attempt and share a fresh one. Send these private links only to intended guests.
+See the [community beta setup guide](docs/COMMUNITY_MUSIC_BETA.md) for current
+platform limits. Browser audio has more delay than the desktop music path;
+a connected browser is not proof that tight, live playing will work.
+
+## Three steps for the desktop app
 
 1. **Get the app** from [GitHub Latest](https://github.com/rupret007/webjam/releases/latest).
    Pick the file for your computer (Windows, Mac, or Ubuntu).
@@ -37,7 +59,10 @@ the short version.
   jam. Music uses Host/Join. When Jamulus opens, pick your interface,
   headphones, and buffer. Play a note. If you hear each other, you are in.
 - **Art (Preview):** open a room and make with your own tools, or follow a
-  silent lesson. Choose **Make together** or **Paint along**, then **Host**
+  painting lesson. **Paint along** offers Bob Ross choices starting with
+  **The Grandeur of Summer**, or your own YouTube link. Lesson sound requires
+  the playback choice and any browser play gesture; the optional local-file
+  reference remains silent. Choose **Make together** or **Paint along**, then **Host**
   or **Join**. Any computer can Host or Join. You do not need an art app.
   A shared canvas is optional and needs [Drawpile](https://drawpile.net/download/)
   only if you want that canvas.
