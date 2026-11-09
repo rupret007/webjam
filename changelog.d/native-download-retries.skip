@@ -1,0 +1,1 @@
+CI-only bounded retries for transient native dependency fetches; app runtime, dependency pins and trust policy are unchanged.

@@ -773,6 +773,7 @@ jobs:
       - name: Verify transport source and dependencies
         working-directory: transport
         run: |
+          python ../tools/fetch_native_go_modules.py
           make check
           go test -race -count=1 ./...
           go mod verify
@@ -1655,6 +1656,7 @@ jobs:
       - name: Build bundled secure transport
         shell: bash
         run: |
+          python tools/fetch_native_go_modules.py
           build_id="$(git rev-parse HEAD)"
           mkdir -p transport/build/package
           if [[ "${{ matrix.target }}" == "windows-x64" ]]; then
@@ -1712,7 +1714,8 @@ jobs:
       - name: Stage bundled Jamulus.app (macOS)
         if: startsWith(matrix.target, 'macos-')
         run: |
-          curl -fsSL -o jamulus.dmg \
+          curl -fsSL --retry 3 --retry-all-errors --retry-max-time 240 \
+            --connect-timeout 15 --max-time 120 -o jamulus.dmg \
             https://github.com/jamulussoftware/jamulus/releases/download/r3_12_2/jamulus_3.12.2_mac.dmg
           echo "adf185aaf78e27d9f603daa6895e7698b4bdffee18fe29ad789cd7c1021d6bd0  jamulus.dmg" | shasum -a 256 -c -
           # The dmg carries an embedded software-license-agreement prompt;
