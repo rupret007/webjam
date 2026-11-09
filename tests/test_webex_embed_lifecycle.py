@@ -469,7 +469,7 @@ def test_non_webex_card_names_provider_in_handoff_guidance_and_accessibility():
         embed.set_meeting_configured(True)
 
         assert embed._title_label.text() == "Zoom conversation"
-        assert "Keep Zoom muted" in embed._mode_label.text()
+        assert "disconnect Zoom audio at both ends" in embed._mode_label.text()
         assert embed._status_label.text() == (
             "Zoom has not been opened from WebJam yet."
         )
@@ -524,7 +524,7 @@ def test_generic_configured_card_has_active_neutral_guidance():
 
         assert embed._title_label.text() == "Conversation"
         assert embed._mode_label.text().startswith(
-            "Keep your meeting service muted while you play."
+            "For music, disconnect meeting audio at both ends;"
         )
         assert "After adding" not in embed._mode_label.text()
         assert embed.fallback_button().isEnabled()
@@ -535,6 +535,32 @@ def test_generic_configured_card_has_active_neutral_guidance():
         )
         assert "Webex" not in embed._title_label.text()
         assert "Webex" not in embed._mode_label.text()
+    finally:
+        embed.deleteLater()
+
+
+@pytest.mark.parametrize("service", ["Webex", "Zoom", ""])
+@pytest.mark.parametrize("configured", [True, False])
+def test_music_conversation_guides_exclusive_audio_in_both_directions(
+    service, configured,
+):
+    embed = WebexEmbed()
+    try:
+        embed.set_service_label(service)
+        embed.set_meeting_configured(configured)
+        embed.set_audio_mode("talkback")
+        guidance = embed._mode_label.text()
+
+        # A meeting mic mute can still play delayed music into the monitor.
+        # Ending Music before meeting audio also stops the musician's send.
+        assert "audio at both ends" in guidance
+        assert "microphone mute alone leaves playback on" in guidance
+        assert "leave or end Music before connecting meeting audio" in guidance
+        assert "disconnect meeting audio and share a fresh Music invitation" in guidance
+        assert "mute your audio interface" not in guidance
+        assert ("After adding a meeting link" in guidance) is (
+            not service and not configured
+        )
     finally:
         embed.deleteLater()
 

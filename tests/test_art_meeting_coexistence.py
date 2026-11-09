@@ -549,7 +549,7 @@ def test_art_conversation_invites_demonstration_without_opening_or_muting():
         assert "own tools" in text
         assert calls == []
         panel.set_creator_profile(get_creator_profile_by_key("music"))
-        assert "muted while" in panel._mode_label.text()
+        assert "disconnect Webex audio at both ends" in panel._mode_label.text()
         assert "Talk in Webex" in panel._mode_label.text()
         assert calls == []
     finally:
