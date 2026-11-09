@@ -65,6 +65,10 @@ Normal app development starts from Host/Join. Do not make a new startup path
 that asks WebJam to choose Jamulus devices, channels, sample rate, buffers, or
 jitter settings.
 
+For the narrow installed-Mac malformed-invitation and Back-navigation check,
+use [the native Join GUI procedure](docs/testing/native-join-gui-acceptance.md).
+Its actual Accessibility result stays separate from source tests and media acceptance.
+
 ## Art companion source spike
 
 The separate native iPhone/iPad Art guest uses the current desktop LAN room.
