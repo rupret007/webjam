@@ -454,6 +454,12 @@ meeting state. Because the external native app does not expose verifiable mute
 control to this integration, **Open Webex to Mute** shows the verified Webex app so
 the creator can use its own Mute control and explicitly does not claim it
 changed Webex or Jamulus.
+
+For music, disconnect meeting audio at both endpoints; a muted meeting
+microphone can leave its speakers active. Follow the
+[manual rehearsal handoff](WEBEX_AUDIO_MODES.md#safe-rehearsal-habit) when
+switching between music and conversation.
+
 WebJam detects the native Webex app and, when it is missing or invalid, offers
 the architecture-correct official Cisco installer in the browser after
 explicit confirmation. WebJam does not bundle, silently install, authenticate,

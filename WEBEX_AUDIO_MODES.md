@@ -91,10 +91,25 @@ logs, mappings, diagnostics, and Support Bundles.
 
 1. Get music working in Jamulus first.
 2. Add or open a meeting service only if the group uses it.
-3. Keep the meeting service muted while playing to avoid duplicate music and
-   feedback.
-4. If the meeting service fails, keep the Jamulus rehearsal running; it is not
+3. At both endpoints, disconnect the meeting's audio before playing. For a
+   video-only Webex join, choose **Don't connect to audio** in its prejoin
+   window. Muting the meeting microphone alone can leave meeting sound playing.
+   Keep video only if you can confirm meeting audio is disconnected; otherwise
+   leave the meeting for the music session.
+4. For meeting conversation, first leave/end the WebJam music session and
+   confirm music has stopped, then connect meeting audio. Before returning to
+   music, disconnect meeting audio again and start/share a fresh music invite.
+   WebJam's monitor mute changes only what you hear; it does not stop your
+   instrument from reaching the band. Neither mute is an audio-path switch.
+5. If the meeting service fails, keep the Jamulus rehearsal running; it is not
    a music prerequisite.
+
+Webex's [prejoin guide](https://help.webex.com/en-us/article/ela6i8) separates
+audio connection, microphone mute and video. Its
+[audio-switching guide](https://help.webex.com/article/871cgu) notes that choices
+depend on the meeting type. Check the actual client at both ends. These are
+manual steps, not automatic cross-app controls; a real two-endpoint handoff
+remains a separate acceptance check.
 
 Legacy audience-bridge preferences remain loadable for compatibility, but the
 creator flow does not route system audio automatically or configure meeting

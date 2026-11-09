@@ -1051,6 +1051,15 @@ not send a blind shortcut or touch Jamulus. Windows and Linux keep these
 native-focus actions unavailable because their current packages do not verify
 the installed app's publisher; use **Join / Open Meeting** there.
 
+For video beside live music, disconnect the meeting's audio at both ends or
+join with **Don't connect to audio**. Muting its microphone alone can leave
+meeting playback active. For conversation, leave/end WebJam music before
+connecting meeting audio; disconnect meeting audio again before restarting
+music with a fresh invite. WebJam monitor mute affects your local mix, not
+your instrument's send. Follow the
+[manual audio handoff](WEBEX_AUDIO_MODES.md#safe-rehearsal-habit); opening the
+meeting or seeing a muted microphone does not prove exclusive audio.
+
 ## Jamulus Updates
 
 WebJam includes Jamulus 3.12.2 so a known-good version remains available
