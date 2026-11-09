@@ -1134,13 +1134,22 @@ class WebexEmbed(QFrame):
         )
         watch_note = music_conversation_watch_note(meeting_service=service)
         watch_suffix = f" {watch_note}" if watch_note else ""
+        meeting_audio = f"{service} audio" if service else "meeting audio"
+        setup_prefix = (
+            "After adding a meeting link, "
+            if not service and not self._meeting_configured
+            else "For music, "
+        )
+        talkback_guidance = (
+            f"{setup_prefix}disconnect {meeting_audio} at both ends; "
+            "microphone mute alone leaves playback on. For conversation, "
+            "leave or end Music before connecting meeting audio. To play "
+            "again, disconnect meeting audio and share a fresh Music invitation."
+            f"{watch_suffix}"
+        )
         guidance = (
             {
-                "talkback": (
-                    f"Keep {service} muted while playing. To speak, mute your "
-                    "audio interface or end the WebJam session first."
-                    f"{watch_suffix}"
-                ),
+                "talkback": talkback_guidance,
                 "video_only": (
                     f"Join {service} without computer audio; music stays in Jamulus."
                 ),
@@ -1151,21 +1160,7 @@ class WebexEmbed(QFrame):
             }
             if service
             else {
-                "talkback": (
-                    (
-                        "Keep your meeting service muted while you play. To "
-                        "speak, mute your audio interface or end the WebJam "
-                        "session first."
-                        f"{watch_suffix}"
-                    )
-                    if self._meeting_configured
-                    else (
-                        "After adding a meeting link, keep that service muted "
-                        "while playing. To speak, mute your audio interface or "
-                        "end the WebJam session first."
-                        f"{watch_suffix}"
-                    )
-                ),
+                "talkback": talkback_guidance,
                 "video_only": (
                     "Join your meeting service without computer audio; music "
                     "stays in Jamulus."

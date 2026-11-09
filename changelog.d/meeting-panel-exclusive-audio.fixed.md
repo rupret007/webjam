@@ -1,0 +1,1 @@
+- Music's Conversation panel now guides musicians to disconnect meeting audio at both ends while playing, leave or end Music before conversation, and share a fresh Music invitation when returning. It no longer suggests microphone or interface mute is enough to prevent duplicate audio.
