@@ -28,6 +28,10 @@ same application state before deciding whether a changed test warrants another
 attempt. A failed check only tries Back when still on a recognized Join surface;
 it never quits or restarts an unexpected workspace.
 
+An existing/unwritable report returns a path-free STOPPED result on standard
+output and exits nonzero. Existing content is preserved. An invalid PID produces
+a complete STOPPED report before any native resource or Accessibility operation.
+
 Two details matter when extending this:
 
 - A DNS-shaped dummy is a valid legacy endpoint, so it may begin an actual
