@@ -159,9 +159,10 @@ def check_join_recovery(pid: int, expected_source: str) -> dict:
         "mediaRequested": False,
         "clipboardAccessed": False,
     }
-    controls = LaunchControls(pid)
+    controls = None
     entered_join = False
     try:
+        controls = LaunchControls(pid)
         result["guardBefore"] = resource_guard()
         result["build"] = verify_owned_build(pid, expected_source)
         require(controls._execute("get count of windows") == "1", "unexpected-window-count")
@@ -198,7 +199,7 @@ def check_join_recovery(pid: int, expected_source: str) -> dict:
     except Exception as exc:
         result["reason"] = "unexpected-" + type(exc).__name__
     finally:
-        if entered_join:
+        if entered_join and controls is not None:
             # Never quit/restart an application or act on an unexpected workspace.
             try:
                 if (
@@ -219,10 +220,20 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     # Exclusive, owner-only output; never overwrite an earlier attempt.
-    with open(args.output, "x", opener=lambda p, f: os.open(p, f, 0o600)) as output:
-        result = check_join_recovery(args.pid, args.expected_source)
-        json.dump(result, output, indent=2)
-        output.write("\n")
+    try:
+        with open(args.output, "x", opener=lambda p, f: os.open(p, f, 0o600)) as output:
+            result = check_join_recovery(args.pid, args.expected_source)
+            json.dump(result, output, indent=2)
+            output.write("\n")
+    except OSError as exc:
+        # Keep the existing/partial report intact. Neither its path nor the
+        # raw OS exception belongs in an acceptance transcript.
+        result = {
+            "state": "STOPPED",
+            "reason": "output-already-exists" if isinstance(exc, FileExistsError) else "output-unavailable",
+            "mediaRequested": False,
+            "clipboardAccessed": False,
+        }
     print(json.dumps(result))
     return 0 if result["state"] == "PASSED_NATIVE_JOIN_RECOVERY_ONLY" else 1
 
