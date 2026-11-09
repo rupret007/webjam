@@ -1,0 +1,1 @@
+- Correct rehearsal guidance to disconnect meeting audio, rather than only mute its microphone, and explain the manual music/conversation handoff and local monitor-mute boundary.
