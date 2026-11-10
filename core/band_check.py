@@ -1143,7 +1143,9 @@ def build_band_check_session(
                 "Conversation companion",
                 BandCheckStatus.WARNING,
                 (
-                    "Optional: your meeting service is for video and conversation. Keep its music monitoring off while playing."
+                    "Optional video and conversation. In conversation mode, "
+                    "disconnect meeting audio at both ends for Music. End Music "
+                    "before connecting it; microphone mute alone leaves playback on."
                     if bool(webex and webex.ok)
                     else "The optional meeting link needs attention. Jamulus still carries the music."
                 ),

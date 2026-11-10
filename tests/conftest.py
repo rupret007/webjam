@@ -6,10 +6,37 @@ import sys
 import tempfile
 from itertools import count
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+
+@pytest.fixture
+def mocked_sounddevice(monkeypatch):
+    """Opt-in boundary for tests that already replace device operations.
+
+    Attribute patching imports sounddevice before replacing the attribute, and
+    that initializes PortAudio. Supply only the explicitly mocked API here so
+    those unit tests need neither a native backend nor a running audio server.
+    Unexpected device operations fail; no integration test uses this fixture.
+    """
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError("Unit test attempted an unconfigured audio operation")
+
+    backend = SimpleNamespace(**{
+        name: Mock(side_effect=unexpected)
+        for name in (
+            "query_devices", "check_input_settings", "check_output_settings",
+            "InputStream", "play",
+        )
+    })
+    # Cleanup can stop fake playback; there is deliberately no native stream.
+    backend.stop = Mock()
+    monkeypatch.setitem(sys.modules, "sounddevice", backend)
+    return backend
 
 
 def _collected_sources_contain(request, *markers: str) -> bool:

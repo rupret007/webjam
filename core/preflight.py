@@ -315,13 +315,15 @@ def _webex_manual_checks(settings) -> list[CheckItem]:
                 "Select the wired audio interface used by your headphones.",
             ),
             _manual_item(
-                f"{service} muted for Play",
-                f"Confirm the microphone is muted in {service} before music starts.",
+                f"{service} audio disconnected for Music",
+                f"Confirm {service} cannot send or play meeting audio during Music. "
+                "Microphone mute alone leaves playback on.",
             ),
             _manual_item(
                 "Conversation safety control",
-                "Confirm you can mute the audio interface before unmuting the "
-                "meeting service. Otherwise end the WebJam session first.",
+                "Leave or end Music before connecting meeting audio. To play "
+                "again, disconnect meeting audio at both ends and share a fresh "
+                "Music invitation.",
             ),
         ]
     if mode == "video_only":
@@ -364,13 +366,15 @@ def _webex_manual_checks(settings) -> list[CheckItem]:
             "Select the wired audio interface used by your headphones.",
         ),
         _manual_item(
-            "Webex muted for Play",
-            "Confirm the Webex microphone is muted before music starts.",
+            "Webex audio disconnected for Music",
+            "Confirm Webex cannot send or play meeting audio during Music. "
+            "Microphone mute alone leaves playback on.",
         ),
         _manual_item(
             "Conversation safety control",
-            "Confirm you can mute the audio interface before unmuting Webex. "
-            "Otherwise end the WebJam session first.",
+            "Leave or end Music before connecting meeting audio. To play "
+            "again, disconnect meeting audio at both ends and share a fresh "
+            "Music invitation.",
         ),
         _manual_item(
             "Optimize for My Voice",

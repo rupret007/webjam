@@ -345,10 +345,10 @@ class TestNativeWebexControls(_ControllerTestBase):
         c.jamulus.set_mute.assert_not_called()
         c.jamulus.set_self_muted.assert_not_called()
         message = c.window.flash_message.call_args.args[0]
-        # Short and specific: WebJam still never touches Webex mute, but it
-        # says so by staying silent about it rather than disclaiming at length.
+        # The short handoff must distinguish microphone mute from disconnecting
+        # meeting audio. Existing assertions above prove no Jamulus control ran.
         self.assertIn("Webex is in front", message)
-        self.assertIn("Use its own Mute control", message)
+        self.assertIn("Microphone mute does not disconnect meeting audio", message)
         self.assertLessEqual(len(message.split()), 12)
         self.assertEqual(
             c._webex_events[-1],
@@ -392,7 +392,7 @@ class TestNativeWebexControls(_ControllerTestBase):
         c.jamulus.set_self_muted.assert_not_called()
         message = c.window.flash_message.call_args.args[0]
         self.assertIn("Webex is open", message)
-        self.assertIn("mute in Webex", message)
+        self.assertIn("join without computer audio", message)
         self.assertLessEqual(len(message.split()), 12)
         # The message no longer disclaims touching Jamulus audio; the calls
         # asserted above are the real proof that it does not.

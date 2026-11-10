@@ -231,6 +231,8 @@ def test_conversation_actions_are_distinct_and_truthful():
         embed.bring_forward_button().toolTip()
     )
     mute_description = embed.mute_button().accessibleDescription()
+    assert "disconnect meeting audio at both ends" in mute_description
+    assert "Microphone mute alone leaves playback on" in mute_description
     assert "cannot verify or change mute" in mute_description
     assert "Jamulus" not in embed.mute_button().text()
     # The label describes the real action (bringing Webex forward), not a

@@ -6,6 +6,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from core import preflight
 
 
@@ -127,6 +129,7 @@ class TestReadyCheck(unittest.TestCase):
         self.assertTrue(item.required)
         self.assertFalse(rep.all_ok)
 
+    @pytest.mark.usefixtures("mocked_sounddevice")
     def test_selected_input_must_support_requested_samplerate(self):
         with tempfile.NamedTemporaryFile() as jam:
             s = _settings(
@@ -149,6 +152,7 @@ class TestReadyCheck(unittest.TestCase):
         self.assertIn("Settings", item.detail)
         self.assertIn("bad rate", item.detail)
 
+    @pytest.mark.usefixtures("mocked_sounddevice")
     def test_selected_device_index_zero_is_not_changed_to_system_default(self):
         s = _settings(
             audio_input_device_index=0,
@@ -168,6 +172,7 @@ class TestReadyCheck(unittest.TestCase):
         self.assertIn("First Interface", item.detail)
         check.assert_called_once_with(device=0, channels=1, samplerate=48000)
 
+    @pytest.mark.usefixtures("mocked_sounddevice")
     def test_local_capture_requires_two_channels_48k_and_writable_takes(self):
         with tempfile.NamedTemporaryFile() as jam, tempfile.TemporaryDirectory() as takes:
             s = _settings(
@@ -223,8 +228,13 @@ class TestReadyCheck(unittest.TestCase):
                 self.assertNotIn("Spacebar", copy)
                 self.assertNotIn("push-to-talk", copy.lower())
                 if mode == "talkback":
-                    self.assertIn("mute the audio interface", copy)
-                    self.assertIn("end the WebJam session", copy)
+                    self.assertIn("audio disconnected for Music", copy)
+                    self.assertIn("cannot send or play meeting audio", copy)
+                    self.assertIn("Microphone mute alone leaves playback on", copy)
+                    self.assertIn("Leave or end Music", copy)
+                    self.assertIn("fresh Music invitation", copy)
+                    self.assertNotIn("muted for Play", copy)
+                    self.assertNotIn("mute the audio interface", copy)
 
     def test_non_macos_talkback_omits_macos_mic_mode(self):
         with (
@@ -270,6 +280,12 @@ class TestReadyCheck(unittest.TestCase):
                     self.assertNotIn("Webex", copy)
                     self.assertNotIn("Optimize for My Voice", copy)
                     self.assertNotIn("meet.jit.si", copy)
+                    self.assertIn("audio disconnected for Music", copy)
+                    self.assertIn("cannot send or play meeting audio", copy)
+                    self.assertIn("Microphone mute alone leaves playback on", copy)
+                    self.assertIn("Leave or end Music", copy)
+                    self.assertIn("fresh Music invitation", copy)
+                    self.assertTrue(all(not item.ok and not item.required for item in manual))
 
     def test_recorder_unreachable_detail_is_actionable(self):
         with tempfile.NamedTemporaryFile() as jam, \

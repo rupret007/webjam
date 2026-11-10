@@ -403,7 +403,7 @@ def test_end_cancel_cleanup_retry_then_repair_preserves_notes_and_restarts_only_
         engine.stop()
 
 
-def test_repair_requires_a_fresh_guest_device_check_before_clearing_failure(rig, monkeypatch, qapp):
+def test_repair_requires_a_fresh_guest_device_check_before_clearing_failure(rig, monkeypatch, qapp, mocked_sounddevice):
     app = rig
     query = Mock(return_value={"max_input_channels": 2})
     check = Mock()
