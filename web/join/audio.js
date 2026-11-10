@@ -105,15 +105,28 @@ const JITTER_TARGET_MIN_MS = 20;
 const JITTER_TARGET_MAX_MS = 120;
 const JITTER_TARGET_DEFAULT_MS = 20;
 
+function selectedRoundTripTime(stats) {
+  let transports = 0, selectedPairId;
+  for (const report of stats.values()) if (report.type === "transport") {
+    transports++;
+    selectedPairId = report.selectedCandidatePairId;
+  }
+  // Web Join bundles audio and enrollment on one transport. A nominated or
+  // previously successful pair is not proof that it still carries the audio.
+  if (transports !== 1 || typeof selectedPairId !== "string" || !selectedPairId) return undefined;
+  const pair = stats.get(selectedPairId);
+  if (pair?.type !== "candidate-pair" || pair.state !== "succeeded" ||
+      !Number.isFinite(pair.currentRoundTripTime) || pair.currentRoundTripTime < 0) return undefined;
+  return pair.currentRoundTripTime;
+}
+
 export function adaptJitterBufferTarget(stats, state = {}) {
-  let rttMs;
+  const rtt = selectedRoundTripTime(stats);
+  const rttMs = rtt === undefined ? undefined : rtt * 1000;
   let jitterMs = 0;
   let lossRate = 0;
   let bufferMs = JITTER_TARGET_DEFAULT_MS;
   for (const report of stats.values()) {
-    if (report.type === "candidate-pair" && (report.nominated || report.selected) && report.state === "succeeded" && Number.isFinite(report.currentRoundTripTime)) {
-      rttMs = report.currentRoundTripTime * 1000;
-    }
     if (report.type === "inbound-rtp" && (report.kind === "audio" || report.mediaType === "audio")) {
       if (report.packetsReceived > 0 && Number.isFinite(report.packetsLost)) {
         lossRate = report.packetsLost / (report.packetsReceived + report.packetsLost);
@@ -160,10 +173,9 @@ export function connectionRoute(stats, selectedPairId) {
 }
 
 export function latencyMs(stats, baseLatency = 0) {
-  let rtt;
+  const rtt = selectedRoundTripTime(stats);
   let buffer;
   for (const report of stats.values()) {
-    if (report.type === "candidate-pair" && (report.nominated || report.selected) && report.state === "succeeded" && Number.isFinite(report.currentRoundTripTime)) rtt = report.currentRoundTripTime;
     if (report.type === "inbound-rtp" && (report.kind === "audio" || report.mediaType === "audio") && report.jitterBufferEmittedCount > 0 && Number.isFinite(report.jitterBufferDelay)) buffer = report.jitterBufferDelay / report.jitterBufferEmittedCount;
   }
   if (rtt === undefined || buffer === undefined) return null;
