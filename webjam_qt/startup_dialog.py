@@ -14,12 +14,14 @@ def exec_startup_dialog(app: QApplication, dialog: QDialog) -> int:
     Cocoa disables the merged application Quit item for this modal startup
     dialog, even though its QAction is enabled. There is no workspace to block
     yet, so show only that standalone door nonmodally and wait for its result.
-    Parented dialogs, an existing visible workspace and other platforms retain
-    QDialog.exec(). The main application loop and shutdown ownership stay with
-    the bootstrap; the dialog's normal close/accept guards still decide exit.
+    Parented dialogs, an existing visible workspace and non-Cocoa backends
+    retain QDialog.exec(), including macOS offscreen checks. The main application
+    loop and shutdown ownership stay with the bootstrap; the dialog's normal
+    close/accept guards still decide exit.
     """
     if (
         sys.platform != "darwin"
+        or QApplication.platformName() != "cocoa"
         or dialog.parent() is not None
         or any(
             widget is not dialog and widget.isVisible()

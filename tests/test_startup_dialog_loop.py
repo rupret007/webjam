@@ -34,7 +34,7 @@ class StartupDialogLoopTests(unittest.TestCase):
         self.widgets.append(dialog)
         return dialog
 
-    def run_dialog(self, dialog, platform, action=None):
+    def run_dialog(self, dialog, platform, action=None, *, qt_platform="cocoa"):
         observed = {}
         timed_out = []
         watchdog = QTimer(dialog)
@@ -51,6 +51,7 @@ class StartupDialogLoopTests(unittest.TestCase):
         try:
             with (
                 patch("sys.platform", platform),
+                patch.object(QApplication, "platformName", return_value=qt_platform),
                 patch.object(QApplication, "quit") as quit_app,
             ):
                 result = exec_startup_dialog(self.app, dialog)
@@ -127,6 +128,13 @@ class StartupDialogLoopTests(unittest.TestCase):
                 self.assertEqual(observed["modality"], Qt.WindowModality.ApplicationModal)
                 self.assertIs(observed["active_modal"], dialog)
 
+    def test_mac_offscreen_keeps_modal_dialog_completion(self):
+        dialog = self.dialog()
+        result, observed = self.run_dialog(dialog, "darwin", qt_platform="offscreen")
+        self.assertEqual(result, QDialog.DialogCode.Rejected)
+        self.assertEqual(observed["modality"], Qt.WindowModality.ApplicationModal)
+        self.assertIs(observed["active_modal"], dialog)
+
     def test_mac_synchronous_finish_during_show_does_not_wait(self):
         class AlreadyFinishedDialog(QDialog):
             def showEvent(self, event):
@@ -141,6 +149,7 @@ class StartupDialogLoopTests(unittest.TestCase):
         dialog = self.dialog()
         with (
             patch("sys.platform", "darwin"),
+            patch.object(QApplication, "platformName", return_value="cocoa"),
             patch.object(dialog, "show", side_effect=RuntimeError("show failed")),
         ):
             with self.assertRaisesRegex(RuntimeError, "show failed"):
