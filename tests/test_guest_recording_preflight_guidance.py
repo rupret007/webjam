@@ -34,7 +34,7 @@ PRIVATE_DEVICE_DETAIL = "PRIVATE_INTERFACE_NAME /private/audio-device token=priv
 
 
 @pytest.fixture
-def guest_rig(controllers, monkeypatch, qapp):
+def guest_rig(controllers, monkeypatch, qapp, mocked_sounddevice):
     # Effective-setting tests must not inherit a developer's audio overrides.
     for name in (
         "WEBJAM_AUDIO_SAMPLERATE", "WEBJAM_AUDIO_BLOCKSIZE",

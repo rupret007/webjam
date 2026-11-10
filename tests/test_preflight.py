@@ -6,6 +6,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
+import pytest
+
 from core import preflight
 
 
@@ -127,6 +129,7 @@ class TestReadyCheck(unittest.TestCase):
         self.assertTrue(item.required)
         self.assertFalse(rep.all_ok)
 
+    @pytest.mark.usefixtures("mocked_sounddevice")
     def test_selected_input_must_support_requested_samplerate(self):
         with tempfile.NamedTemporaryFile() as jam:
             s = _settings(
@@ -149,6 +152,7 @@ class TestReadyCheck(unittest.TestCase):
         self.assertIn("Settings", item.detail)
         self.assertIn("bad rate", item.detail)
 
+    @pytest.mark.usefixtures("mocked_sounddevice")
     def test_selected_device_index_zero_is_not_changed_to_system_default(self):
         s = _settings(
             audio_input_device_index=0,
@@ -168,6 +172,7 @@ class TestReadyCheck(unittest.TestCase):
         self.assertIn("First Interface", item.detail)
         check.assert_called_once_with(device=0, channels=1, samplerate=48000)
 
+    @pytest.mark.usefixtures("mocked_sounddevice")
     def test_local_capture_requires_two_channels_48k_and_writable_takes(self):
         with tempfile.NamedTemporaryFile() as jam, tempfile.TemporaryDirectory() as takes:
             s = _settings(

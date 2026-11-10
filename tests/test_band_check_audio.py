@@ -14,6 +14,8 @@ from core.band_check_audio import (
     validate_studio_scratch,
 )
 
+pytestmark = pytest.mark.usefixtures("mocked_sounddevice")
+
 
 class _InputStream:
     def __init__(self, *, callback, blocks=(), **_kwargs):
