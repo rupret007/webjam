@@ -534,7 +534,13 @@ def test_signature_preserves_device_zero_and_channel_configuration() -> None:
             return {"name": "SSL 2+"}
         return {"name": "Studio Output", "max_output_channels": 2}
 
-    with mock.patch("sounddevice.query_devices", side_effect=query_device) as query:
+    # Inject the hardware boundary before importing sounddevice. Patching its
+    # attribute imports/initializes PortAudio first, which needs a live audio
+    # server on Linux even though this test only hashes supplied metadata.
+    query = mock.Mock(side_effect=query_device)
+    with mock.patch.dict(
+        "sys.modules", {"sounddevice": SimpleNamespace(query_devices=query)}
+    ):
         signature = build_verification_signature(
             settings,
             app_version="1.0.0",
@@ -571,7 +577,10 @@ def test_signature_invalidates_changed_recording_path_or_output_topology(
             return {"name": "SSL 2+"}
         return {"name": "SSL 2+", "max_output_channels": 2}
 
-    with mock.patch("sounddevice.query_devices", side_effect=connected):
+    with mock.patch.dict(
+        "sys.modules",
+        {"sounddevice": SimpleNamespace(query_devices=mock.Mock(side_effect=connected))},
+    ):
         original = build_verification_signature(
             settings,
             app_version="1.0.0",
@@ -594,7 +603,10 @@ def test_signature_invalidates_changed_recording_path_or_output_topology(
             return {"name": "SSL 2+"}
         raise ValueError("device not found")
 
-    with mock.patch("sounddevice.query_devices", side_effect=disconnected):
+    with mock.patch.dict(
+        "sys.modules",
+        {"sounddevice": SimpleNamespace(query_devices=mock.Mock(side_effect=disconnected))},
+    ):
         unplugged = build_verification_signature(
             settings,
             app_version="1.0.0",
@@ -627,8 +639,9 @@ def test_signature_hashes_the_macos_jamulus_route_separately_from_portaudio(
             "max_output_channels": 2 if kind == "output" else 0,
         }
 
-    with mock.patch("core.band_check.sys.platform", "darwin"), mock.patch(
-        "sounddevice.query_devices", side_effect=device
+    with mock.patch("core.band_check.sys.platform", "darwin"), mock.patch.dict(
+        "sys.modules",
+        {"sounddevice": SimpleNamespace(query_devices=mock.Mock(side_effect=device))},
     ), mock.patch(
         "core.coreaudio_devices.scan_coreaudio_devices",
         side_effect=RuntimeError("hardware not available to this test"),
