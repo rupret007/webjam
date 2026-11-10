@@ -101,17 +101,19 @@ test("music SDP sets stereo, bitrate, FEC, packet time and capture warnings reta
   assert.equal(capture.warnings.length, 1);
   assert.equal(requests[1].audio.echoCancellation, false);
   assert.equal(latencyMs(new Map()), null);
-  assert.equal(latencyMs(new Map([["a", { type: "candidate-pair", nominated: true, state: "succeeded", currentRoundTripTime: .04 }], ["b", { type: "inbound-rtp", kind: "audio", jitterBufferDelay: 2, jitterBufferEmittedCount: 100 }]]), .01), 50);
+  assert.equal(latencyMs(new Map([["transport", { type: "transport", selectedCandidatePairId: "a" }], ["a", { type: "candidate-pair", nominated: true, state: "succeeded", currentRoundTripTime: .04 }], ["b", { type: "inbound-rtp", kind: "audio", jitterBufferDelay: 2, jitterBufferEmittedCount: 100 }]]), .01), 50);
 });
 
 test("adaptJitterBufferTarget raises target under stress and respects bounds", () => {
   const stats = new Map([
+    ["transport", { type: "transport", selectedCandidatePairId: "cp" }],
     ["cp", { type: "candidate-pair", nominated: true, state: "succeeded", currentRoundTripTime: 0.12 }],
     ["in", { type: "inbound-rtp", kind: "audio", packetsReceived: 100, packetsLost: 8, jitter: 0.03, jitterBufferDelay: 4, jitterBufferEmittedCount: 100 }],
   ]);
   const first = adaptJitterBufferTarget(stats, { targetMs: 20, lastChangeAt: 0 });
   assert.ok(first.targetMs >= 20 && first.targetMs <= 120);
   const stable = adaptJitterBufferTarget(new Map([
+    ["transport", { type: "transport", selectedCandidatePairId: "cp" }],
     ["cp", { type: "candidate-pair", nominated: true, state: "succeeded", currentRoundTripTime: 0.01 }],
     ["in", { type: "inbound-rtp", kind: "audio", packetsReceived: 200, packetsLost: 0, jitter: 0.001, jitterBufferDelay: 1, jitterBufferEmittedCount: 100 }],
   ]), { targetMs: 40, lastChangeAt: Date.now() - 10000 });
