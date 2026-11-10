@@ -205,10 +205,14 @@ class WebexEmbed(QFrame):
         self._mute_btn.setAccessibleName("Open Webex to Mute")
         self._mute_btn.setAccessibleDescription(
             "Show the verified Webex app so you can use its Mute control. "
-            "WebJam cannot verify or change mute in the external Webex app."
+            "WebJam cannot verify or change mute in the external Webex app. "
+            "Microphone mute alone leaves playback on. For Music, disconnect "
+            "meeting audio at both ends."
         )
         self._mute_btn.setToolTip(
-            "Brings Webex forward so you can use its own Mute control."
+            "Brings Webex forward for its microphone Mute control. "
+            "For Music, disconnect meeting audio at both ends; microphone "
+            "mute alone leaves playback on."
         )
         self._mute_btn.clicked.connect(self.mute_in_webex_requested.emit)
         self._mute_btn.setEnabled(False)

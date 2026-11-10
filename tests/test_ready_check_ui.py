@@ -224,9 +224,9 @@ class TestReadyCheckShortcut(unittest.TestCase):
         report = ReadyCheckReport(items=[
             CheckItem("Jamulus", True, "found"),
             CheckItem(
-                "Webex muted for Play",
+                "Webex audio disconnected for Music",
                 False,
-                "Confirm mute",
+                "Confirm meeting audio cannot send or play during Music",
                 manual_verification=True,
             ),
         ])

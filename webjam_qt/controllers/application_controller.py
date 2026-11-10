@@ -3615,12 +3615,12 @@ class ApplicationController(QObject):
         if mute_guidance:
             if launched_app:
                 self.window.flash_message(
-                    "Webex is open. Join the meeting, then mute in Webex.",
+                    "Webex is open. For Music, join without computer audio.",
                     ms=7000,
                 )
                 return
             self.window.flash_message(
-                "Webex is in front. Use its own Mute control.",
+                "Webex is in front. Microphone mute does not disconnect meeting audio.",
                 ms=6000,
             )
             return
