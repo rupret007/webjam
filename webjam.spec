@@ -184,6 +184,8 @@ a = Analysis(
     pathex=[str(ROOT)],
     binaries=_extra_binaries,
     datas=[
+        # Keep WebJam's own MIT grant beside the notices that reference it.
+        (str(ROOT / "LICENSE"), "THIRD_PARTY_LICENSES"),
         # QSS stylesheet and theme assets
         (str(ROOT / "webjam_qt" / "theme" / "conductor.qss"), "webjam_qt/theme"),
         # Portable WebJam vector companion plus packaged OS icon containers.

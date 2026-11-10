@@ -315,6 +315,11 @@
   },
   "packaged_license_evidence": [
     {
+      "component": "WebJam MIT license",
+      "path_suffix": "THIRD_PARTY_LICENSES/LICENSE",
+      "sha256": "a4280fb054e6e7d066c5face14d72dc65cc8f56f0a46bf2eaf147c872c97e3a1"
+    },
+    {
       "component": "NumPy 2.4.6 and bundled sources",
       "path_suffix": "numpy-2.4.6.dist-info/licenses/LICENSE.txt",
       "sha256_by_target": {
