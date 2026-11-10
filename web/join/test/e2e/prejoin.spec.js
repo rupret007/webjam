@@ -47,11 +47,20 @@ test("fake mic level enables Join after headphones confirmation", async ({ page 
   const meter = page.locator("#mic-meter");
   await expect(join).toBeInViewport({ ratio: 1 });
   await expect(join).toBeDisabled();
+  const guidance = page.locator("#join-guidance");
+  await expect(guidance).toHaveText("Check your microphone first.");
   await page.getByRole("button", { name: "Check microphone" }).click();
   await expect(meter).toHaveAttribute("aria-valuenow", /[1-9]/);
-  await expect(page.getByText("Mic detected. Join when you’re ready.")).toBeVisible();
+  await expect(page.getByText("Microphone detected.", { exact: true })).toBeVisible();
   await expect(page.getByText("Speak or play a note to check your level.")).toBeHidden();
   await expect(join).toBeDisabled();
+  await expect(guidance).toHaveText("Confirm your headphones to enable Join.");
+  await page.getByRole("checkbox").check();
+  await expect(guidance).toHaveText("Ready. Join to share your audio with the session.");
+  await expect(join).toHaveAttribute("aria-describedby", "join-guidance");
+  await page.getByRole("checkbox").uncheck();
+  await expect(join).toBeDisabled();
+  await expect(guidance).toHaveText("Confirm your headphones to enable Join.");
   await page.getByRole("checkbox").check();
   await page.evaluate(() => scrollTo(0, 0));
   await expect(join).toBeEnabled();
@@ -119,7 +128,7 @@ test("a guest can replace a silent browser default with a detected headset", asy
   await expect(join).toBeDisabled();
   await mic.selectOption({ label: "USB headset" });
   await expect(page.getByText("Using USB headset", { exact: true })).toBeVisible();
-  await expect(page.getByText("Mic detected. Join when you’re ready.")).toBeVisible();
+  await expect(page.getByText("Microphone detected.", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => micChoices)).toEqual(["", "headset"]);
   expect(await page.evaluate(() => micTracks[0].readyState)).toBe("ended");
   await page.getByRole("checkbox").check();
@@ -127,3 +136,24 @@ test("a guest can replace a silent browser default with a detected headset", asy
   await page.evaluate(() => scrollTo(0, 0));
   await expect(join).toBeInViewport({ ratio: 1 });
 });
+
+for (const width of [375, 390]) {
+  test(`headphones-first readiness and explicit skip at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 667 });
+    await page.goto(`/${fragment(invite())}`);
+    const join = page.getByRole("button", { name: "Join with microphone", exact: true });
+    const guidance = page.locator("#join-guidance");
+    await page.getByRole("checkbox").check();
+    await expect(join).toBeDisabled();
+    await expect(guidance).toHaveText("Check your microphone first.");
+    await page.getByRole("button", { name: "Skip check", exact: true }).click();
+    await expect(join).toBeEnabled();
+    await expect(guidance).toHaveText("Ready. Join to share your audio with the session.");
+    await expect(page.locator("#mic-progress")).toHaveText(
+      "Mic check skipped. Your browser may ask for access when you join.",
+    );
+    await expect(join).toBeInViewport({ ratio: 1 });
+    await expect(guidance).toBeInViewport({ ratio: 1 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
