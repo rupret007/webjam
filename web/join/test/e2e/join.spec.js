@@ -42,7 +42,8 @@ test("headphones gate capture; encrypted offer pin rejection closes fake sine ca
   await page.getByRole("checkbox").check();
   await expect(page.getByRole("button", { name: "Join with microphone" })).toBeDisabled();
   await page.getByRole("button", { name: "Check microphone" }).click();
-  await expect(page.getByText("Mic detected. Join when you’re ready.")).toBeVisible();
+  await expect(page.getByText("Microphone detected.", { exact: true })).toBeVisible();
+  await expect(page.locator("#join-guidance")).toHaveText("Ready. Join to share your audio with the session.");
   await page.getByRole("button", { name: "Join with microphone" }).click();
   await expect(page.locator("#status")).toContainText("Host identity or invite binding did not match");
   expect(await page.evaluate(() => window.captureCalls)).toBe(1);

@@ -35,6 +35,7 @@ p { line-height: 1.5; }
 .mic-error, #audio-quality { color: #f3d7a5; }
 #mic-retry { margin-top: 8px; }
 .headphones { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0 0; line-height: 1.45; cursor: pointer; }
+.join-guidance { margin: 10px 0 0; color: #b4c2bd; font-size: .95rem; }
 input { width: 20px; height: 20px; flex: none; margin: 1px 0 0; accent-color: #bbe48b; }
 button { font: inherit; font-weight: 650; min-height: 44px; padding: 9px 14px; border: 1px solid transparent; border-radius: 8px; cursor: pointer; background: #bbe48b; color: #15210c; }
 button.secondary { border-color: #73877c; background: #23312e; color: #edf2eb; }

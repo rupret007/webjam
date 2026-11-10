@@ -1,0 +1,55 @@
+{
+  "observedAtUtc": "2026-11-10T21:40:18.372653+00:00",
+  "sourceBase": "3eb71e9892e72062ea6991ccd76a8805f85497a1",
+  "runtimeContentSha256": {
+    "web/join/app.js": "1cf79cd8c6c911a55ca4243aae7cc3c5e3031be7b0885c2ecb8c6fab29dc474a",
+    "web/join/index.html": "4bd455423b6b1235927b80057c670987cc642a6fb4f675153c41ed44484bee83",
+    "web/join/style.css": "51512c3d9478adc5440d99c0f3f7e78c5016859255c3ddd135853c2e565e779c"
+  },
+  "localResults": {
+    "webJoinUnitPassed": 44,
+    "fullBrowserPassed": 71,
+    "focusedPrejoinPassed": 5,
+    "visualScenarios": {
+      "initial3753901280": true,
+      "headphonesReminder375390": true,
+      "ready390": true
+    }
+  },
+  "baselineFailure": "New readiness explanation assertion failed because the old page had no join-guidance element; baseline screenshot retained.",
+  "broaderFailureThenCorrection": "Initial full run passed69 and failed2 exact text assertions for the replaced microphone sentence. The expected visible text was updated, keeping all security and cleanup assertions; final full run passed71. Original log retained privately.",
+  "securityAndPrivacy": {
+    "joinReadyFunctionUnchanged": true,
+    "cspUnchanged": true,
+    "capturePermissionAndHeadphoneRulesUnchanged": true,
+    "noDependenciesOrProviderConfigChanged": true,
+    "syntheticLocalFixturesOnly": true,
+    "physicalMicrophoneOrRealProviderNotUsed": true,
+    "noPrivateDeploymentOrPublicLaunch": true
+  },
+  "screenshots": {
+    "after-headphones-390.png": {
+      "sha256": "d7df65b9acc8a4eb51ac48ba0ef92bb8aa4c45f1d58adfd72b9d45c2de507669"
+    },
+    "after-ready-390.png": {
+      "sha256": "dc8a82917bca1f1775b377af6065a6ac7ca2cb76639229b0356ea7491db92710"
+    },
+    "after-initial-1280.png": {
+      "sha256": "cfec2e0061ea1378a16aaaae77bb2389cfa6af60a3b5cb8738b007c3c8922d9a"
+    },
+    "after-initial-375.png": {
+      "sha256": "1ccc71b835cbc35b7ee643d2cd9fd2bf99445de5b24ccedf444dc7fcacb3e6e6"
+    },
+    "after-initial-390.png": {
+      "sha256": "1de9e9cef586f41554bfd6859b33ee91c1eeece40387471d1081a6d0718e40d2"
+    },
+    "before-initial-375.png": {
+      "sha256": "b04c999b0391e0dc98fe24d68e0d7d39045a3fe5f2d3eabd5ac69da7bcaf5ce8"
+    },
+    "after-headphones-375.png": {
+      "sha256": "777f9539a71ea00bf2c901280b03542ff616aa993fa2ce11a43c51bd8e8b6fca"
+    }
+  },
+  "remaining": "Required GitHub CI and review, website source port/private delivery and actual user/physical media acceptance. These fixtures are not physical-device, VoiceOver/NVDA or full WCAG proof.",
+  "goalComplete": false
+}

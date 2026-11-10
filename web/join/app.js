@@ -144,6 +144,17 @@ function joinReady() {
 const refresh = () => {
   $("prejoin").hidden = !invite || starting || !!session;
   $("join").disabled = !joinReady();
+  const guidance = $("join-guidance");
+  if (guidance) {
+    const message = starting
+      ? "Connecting to your session…"
+      : !micHeard && !checkSkipped
+        ? "Check your microphone first."
+        : !$("headphones").checked
+          ? "Confirm your headphones to enable Join."
+          : "Ready. Join to share your audio with the session.";
+    if (guidance.textContent !== message) guidance.textContent = message;
+  }
   $("skip-check").disabled = !invite || starting || !!session || checkSkipped;
   $("mic-device").disabled = starting || !!session || checkRunning;
   $("check-mic").disabled =
