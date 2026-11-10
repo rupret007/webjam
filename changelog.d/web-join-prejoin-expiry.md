@@ -1,0 +1,1 @@
+- Web Join asks for a fresh browser invite when a link expires during the audio check, and releases any microphone it was checking.

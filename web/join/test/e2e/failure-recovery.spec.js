@@ -49,6 +49,62 @@ async function openInvitation(page, width = 390, skipCheck = true, delayCapture 
   if (skipCheck) await page.getByRole('button', { name: 'Skip check' }).click();
 }
 
+async function expectExpiredInvite(page) {
+  await expect(page.locator('#status')).toHaveText('This browser invite has expired.');
+  await expect(page.locator('#error-hint')).toContainText('Ask your host for a new');
+  for (const id of ['prejoin', 'join', 'retry', 'leave']) await expect(page.locator('#' + id)).toBeHidden();
+}
+
+test('expiry on the audio screen explains how to recover and focuses the message', async ({ page }) => {
+  await openInvitation(page);
+  const join = page.getByRole('button', { name: 'Join with microphone' });
+  await expect(join).toBeEnabled();
+  await join.focus();
+  await page.clock.fastForward(301000);
+  await expectExpiredInvite(page);
+  await expect(page.locator('#status')).toBeFocused();
+  expect(await page.evaluate(() => captureTracks.length)).toBe(0);
+
+  const capability = Buffer.alloc(32, 17).toString('base64url');
+  await page.evaluate(capability => {
+    const expires = Math.floor(Date.now() / 1000) + 300;
+    location.hash = `k=${capability}&s=${'24'.repeat(32)}&g=1&e=${expires}`;
+  }, capability);
+  await expect(page.getByRole('heading', { name: 'Check your audio' })).toBeVisible();
+  await expect(join).toBeDisabled();
+});
+
+test('expiry releases a microphone checked before joining', async ({ page }) => {
+  await openInvitation(page, 390, false);
+  await page.getByRole('button', { name: 'Check microphone', exact: true }).click();
+  await expect(page.locator('#join')).toBeEnabled();
+  await page.clock.fastForward(301000);
+  await expectExpiredInvite(page);
+  await expect.poll(() => page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);
+});
+
+test('Join rechecks expiry when the timer has not run', async ({ page }) => {
+  await openInvitation(page);
+  const now = await page.evaluate(() => Date.now());
+  await page.clock.setSystemTime(now + 301000);
+  await page.getByRole('button', { name: 'Join with microphone' }).click();
+  await expectExpiredInvite(page);
+  expect(await page.evaluate(() => captureTracks.length)).toBe(0);
+  expect(await page.evaluate(() => audioContexts.length)).toBe(0);
+});
+
+test('expiry stops capture that resolves after Join was pressed', async ({ page }) => {
+  await openInvitation(page, 390, true, true);
+  await page.getByRole('button', { name: 'Join with microphone' }).click();
+  await expect.poll(() => page.evaluate(() => pendingCaptures.length)).toBe(1);
+  await page.clock.fastForward(301000);
+  await expectExpiredInvite(page);
+  await page.evaluate(() => pendingCaptures.shift()());
+  await expect.poll(() => page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);
+});
+
 test('losing the checked microphone clears Join readiness until a deliberate recheck', async ({ page }) => {
   await openInvitation(page, 390, false);
   await page.getByRole('button', { name: 'Check microphone', exact: true }).click();

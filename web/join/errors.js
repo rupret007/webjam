@@ -151,9 +151,12 @@ export function mapJoinError(error) {
 /** @param {string} message @returns {JoinFailureView} */
 function mapExpired(message) {
   const turnOnly = message === JOIN_SIGNAL.RELAY_SESSION_EXPIRED;
+  const inviteHeadline = message === JOIN_SIGNAL.INVITE_EXPIRED
+    ? "This browser invite has expired."
+    : "This invite link is no longer valid.";
   return {
     kind: turnOnly ? "turn_expired" : "invite_expired",
-    headline: turnOnly ? "The free relay session timed out." : "This invite link is no longer valid.",
+    headline: turnOnly ? "The free relay session timed out." : inviteHeadline,
     hint: turnOnly
       ? "Ask your host for a new invite if Retry does not connect. Retry fetches fresh relay credentials when the link is still good."
       : "Ask your host for a new Web Join link and open it to join.",
