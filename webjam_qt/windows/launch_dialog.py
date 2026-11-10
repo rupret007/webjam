@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPoint, QRect, QSize, QTimer, Qt
-from PySide6.QtGui import QAccessible, QAccessibleEvent, QIcon, QKeyEvent, QKeySequence, QImage, QPixmap
+from PySide6.QtGui import QAction, QAccessible, QAccessibleEvent, QIcon, QKeyEvent, QKeySequence, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -1441,6 +1441,16 @@ class LaunchDialog(QDialog):
             new = self._workspace_actions["music"]
             new.setShortcut(QKeySequence.StandardKey.New)
             new.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            file_menu.addSeparator()
+            # Startup runs a dialog event loop before QApplication.exec().
+            # Close that dialog normally instead of relying on Qt's generated
+            # application Quit item. The in-session profile picker has no
+            # application exit action; its workspace keeps shutdown ownership.
+            self._quit_action = QAction("&Quit", self)
+            self._quit_action.setMenuRole(QAction.MenuRole.QuitRole)
+            self._quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+            self._quit_action.triggered.connect(self.close)
+            file_menu.addAction(self._quit_action)
         self._help_menu = self._menu_bar.addMenu("&Help")
         help_menu = self._help_menu
         self._join_help_action = help_menu.addAction("Joining a room…")
