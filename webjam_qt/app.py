@@ -28,6 +28,7 @@ from webjam_qt.invitation_ingress import (
     invitation_from_arguments,
     parse_invitation_at_ingress,
 )
+from webjam_qt.startup_dialog import exec_startup_dialog
 from webjam_qt.theme import load_stylesheet, make_brand_icon
 from webjam_qt.windows.conductor_window import ConductorWindow
 from webjam_qt.windows.launch_dialog import LaunchDialog, apply_host_defaults
@@ -498,10 +499,10 @@ def _run_app() -> int:
         if smoke_launch_only:
             # Native release runners need a clean, bounded way to prove the
             # frozen GUI reaches its real launch surface. Rejecting the
-            # modal launch dialog follows the ordinary no-session exit path
+            # launch dialog follows the ordinary no-session exit path
             # and never starts Jamulus or mutates saved settings.
             QTimer.singleShot(_bounded_smoke_exit_ms(default=5_000), launch.reject)
-        result = launch.exec()
+        result = exec_startup_dialog(app, launch)
         launch_ingress_active = False
         if isinstance(app, WebJamApplication) and launch_invite_handler is not None:
             try:
