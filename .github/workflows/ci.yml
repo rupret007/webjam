@@ -337,7 +337,12 @@ jobs:
           sudo apt-get update -q
           sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
             --no-install-recommends \
-            ./jamulus-headless.deb ./jamulus-client.deb jackd2 jack-tools
+            ./jamulus-headless.deb ./jamulus-client.deb jackd2 jack-tools jack-example-tools
+          # jack_lsp is provided by jack-example-tools, not jack-tools.
+          # Check prerequisites here, before a real-audio test can start.
+          for jack_tool in jackd jack_lsp; do
+            command -v "$jack_tool"
+          done
           # The package can auto-start a systemd service on the default
           # port — stop it so the tests own their ports.
           sudo systemctl stop jamulus-headless 2>/dev/null || true
@@ -1118,7 +1123,12 @@ jobs:
           sudo apt-get update -q
           sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -q \
             --no-install-recommends \
-            ./jamulus-headless.deb ./jamulus-client.deb jackd2 jack-tools
+            ./jamulus-headless.deb ./jamulus-client.deb jackd2 jack-tools jack-example-tools
+          # jack_lsp is provided by jack-example-tools, not jack-tools.
+          # Check prerequisites here, before a real-audio test can start.
+          for jack_tool in jackd jack_lsp; do
+            command -v "$jack_tool"
+          done
           sudo systemctl stop jamulus-headless 2>/dev/null || true
           sudo systemctl disable jamulus-headless 2>/dev/null || true
           echo "WEBJAM_JAMULUS_BINARY=$(command -v jamulus-headless)" >> "$GITHUB_ENV"
