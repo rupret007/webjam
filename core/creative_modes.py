@@ -424,7 +424,7 @@ _ART_STARTS = (
         summary="Paint with Bob Ross or bring your own YouTube lesson.",
         detail=(
             "Choose a Bob Ross episode, paste a YouTube link, or open a local video. "
-            "Watch a shared lesson brings lesson sound through Conversation. "
+            "For lesson sound, choose Watch a shared lesson. "
             "The in-app reference stays muted. Paint in your own app or on paper."
         ),
         reference_video=True,
