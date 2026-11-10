@@ -15,6 +15,7 @@ from unittest.mock import patch
 import pytest
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt
+from PySide6.QtGui import QAction
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMenu, QPushButton
 
@@ -84,7 +85,7 @@ def _assert_first_screen_has_no_banned_words(spoken: str) -> None:
 
 
 @pytest.mark.parametrize("profile", ["art", "music"])
-def test_live_door_file_menu_has_only_session_library(qapp, tmp_path, profile):
+def test_live_door_file_menu_has_only_session_library_and_quit(qapp, tmp_path, profile):
     dialog = _dialog(tmp_path, profile)
     try:
         dialog._menu_bar.setNativeMenuBar(False)
@@ -97,8 +98,11 @@ def test_live_door_file_menu_has_only_session_library(qapp, tmp_path, profile):
                 if join_page:
                     dialog.show_join()
                 visible = [action for action in file_menu.actions() if action.isVisible()]
-                assert [action.text() for action in visible] == ["Session library…"]
+                assert [action.text() for action in visible] == ["Session library…", "", "&Quit"]
                 assert visible[0].isEnabled()
+                assert visible[1].isSeparator()
+                assert visible[2].isEnabled()
+                assert visible[2].menuRole() == QAction.MenuRole.QuitRole
                 assert all(action not in file_menu.actions() for action in dialog._workspace_actions.values())
                 dialog.show_choices()
             # Qt must not dispatch New's shortcut after its menu is detached.
