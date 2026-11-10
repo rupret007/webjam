@@ -375,6 +375,42 @@ def test_reviewed_cryptography_openssl_license_and_provenance_are_exact() -> Non
         assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
 
 
+def test_bundle_keeps_webjam_license_and_rejects_omission_or_edits(
+    tmp_path: Path,
+) -> None:
+    inventory = validate_policy()
+    suffix = "THIRD_PARTY_LICENSES/LICENSE"
+    evidence = [
+        item for item in inventory.policy["packaged_license_evidence"]
+        if item["path_suffix"] == suffix
+    ]
+    assert len(evidence) == 1, "WebJam's own license needs a frozen-package gate"
+    original = (ROOT / "LICENSE").read_bytes()
+    assert hashlib.sha256(original).hexdigest() == evidence[0]["sha256"]
+    assert "LICENSE text eol=lf" in ATTRIBUTES
+    assert '(str(ROOT / "LICENSE"), "THIRD_PARTY_LICENSES")' in SPEC
+
+    policy = deepcopy(inventory.policy)
+    policy["packaged_license_evidence"] = evidence
+    test_inventory = RuntimeInventory(policy=policy, packages=inventory.packages)
+    licenses = tmp_path / "THIRD_PARTY_LICENSES"
+    licenses.mkdir()
+    (licenses / "THIRD_PARTY_NOTICES_RUNTIME.md").write_text(
+        render_notice(test_inventory), encoding="utf-8",
+    )
+    (licenses / "WebJam-runtime-sbom.cdx.json").write_text(
+        render_sbom(test_inventory), encoding="utf-8",
+    )
+    with pytest.raises(PolicyError, match="license evidence is missing"):
+        verify_bundle(tmp_path, test_inventory)
+    license_copy = licenses / "LICENSE"
+    license_copy.write_bytes(original)
+    verify_bundle(tmp_path, test_inventory)
+    license_copy.write_bytes(original + b"unreviewed edit\n")
+    with pytest.raises(PolicyError, match="checksum failed"):
+        verify_bundle(tmp_path, test_inventory)
+
+
 def test_bundle_verifier_checks_generated_files_and_license_hashes(
     tmp_path: Path,
 ) -> None:

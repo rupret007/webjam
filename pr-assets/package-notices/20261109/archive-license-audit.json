@@ -1,0 +1,36 @@
+{
+  "at": "2026-11-10T04:22:52.338935+00:00",
+  "source": "7153994c0a9db0ac5faccc11e51978583e56302b",
+  "buildRun": 42740471963,
+  "ownMitLicenseSha256": "a4280fb054e6e7d066c5face14d72dc65cc8f56f0a46bf2eaf147c872c97e3a1",
+  "packages": {
+    "macos-arm64": {
+      "artifactId": 13730018590,
+      "ownMitLicenseCopies": 0,
+      "selectedNoticesMatchSource": true
+    },
+    "macos-x64": {
+      "artifactId": 13732015599,
+      "ownMitLicenseCopies": 0,
+      "selectedNoticesMatchAfterNewlineNormalization": true,
+      "bytePinnedRuntimeNoticesSbomAndQtLicensesMatchSource": true
+    },
+    "windows-x64": {
+      "artifactId": 13731535307,
+      "ownMitLicenseCopies": 0,
+      "selectedNoticesMatchAfterNewlineNormalization": true,
+      "bytePinnedRuntimeNoticesSbomAndQtLicensesMatchSource": true
+    },
+    "linux-x64": {
+      "artifactId": 13731125160,
+      "ownMitLicenseCopies": 0,
+      "selectedNoticesMatchAfterNewlineNormalization": true,
+      "bytePinnedRuntimeNoticesSbomAndQtLicensesMatchSource": true
+    }
+  },
+  "windowsUnpinnedGeneralNoticeAndInterLicense": "CRLF checkout text matches source after LF normalization; not reported as damaged",
+  "newPolicyRejectsExistingArmBundle": "packaged license evidence is missing: WebJam MIT license",
+  "appOrInstallerExecuted": false,
+  "existingArtifactsModified": false,
+  "scope": "Selected archive license-entry/source-byte inventory. No complete redistribution or legal-compliance qualification is claimed."
+}
