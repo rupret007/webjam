@@ -106,10 +106,11 @@ def test_decoder_accepts_validated_formats_and_paths_with_spaces(
         np.testing.assert_allclose(output[:, 0], output[:, 1])
         assert str(tmp_path) not in repr(decoder)
 
+    if format_name == "MP3":
+        _assert_mp3_random_windows_match_sequential_decode(folder)
 
-def test_mp3_random_windows_match_sequential_decode(tmp_path: Path) -> None:
-    if not sf.check_format("MP3"):
-        pytest.skip("the locked libsndfile build has no MP3 capability")
+
+def _assert_mp3_random_windows_match_sequential_decode(tmp_path: Path) -> None:
     rate = 48_000
     time = np.arange(6 * rate, dtype=np.float32) / rate
     signal = np.column_stack(
