@@ -33,10 +33,11 @@ must use.
 The current Certifi floor and all four native locks use `2026.10.19` to address
 the `PYSEC-2026-4320` audit finding. The regenerated hashes match the
 [maintainer's PyPI release](https://pypi.org/project/certifi/2026.10.19/).
-The native CI and cross-network harness use Go `1.26.10`, the fixed compiler
-for [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809). These source updates do
-not qualify an older package: repeat the normal native matrix and bind any new
-package evidence to its exact source and hashes.
+Native, Web Join and cross-network CI use Go `1.26.11`. It includes the
+standard-library fix for [GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859)
+and the previous x509 security fixes. The transport module selects the same
+toolchain by default. Verify rebuilt packages against the exact source and
+hashes. [Go release history](https://go.dev/doc/devel/release#go1.26.11)
 
 Setuptools 84.1.0 fixes
 [GHSA-xmj3-9gf7-h52w](https://setuptools.pypa.io/en/latest/history.html#v84-1-0),

@@ -48,7 +48,6 @@ def build_sidecar(product_root: Path, output: Path | None = None) -> Path:
     target = resolve_sidecar_output(output)
     target.parent.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
-    env.setdefault("GOTOOLCHAIN", "go1.25.13")
     env.setdefault("CGO_ENABLED", "0")
     result = subprocess.run(
         ["go", "build", "-trimpath", f"-ldflags=-s -w -X main.buildID={digest}",
