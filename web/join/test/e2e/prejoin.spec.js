@@ -49,13 +49,15 @@ test("fake mic level enables Join after headphones confirmation", async ({ page 
   await expect(join).toBeDisabled();
   const guidance = page.locator("#join-guidance");
   await expect(guidance).toHaveText("Check your microphone first.");
-  await page.getByRole("button", { name: "Check microphone" }).click();
+  await page.getByRole("button", { name: "Check microphone" }).press("Enter");
   await expect(meter).toHaveAttribute("aria-valuenow", /[1-9]/);
   await expect(page.getByText("Microphone detected.", { exact: true })).toBeVisible();
   await expect(page.getByText("Speak or play a note to check your level.")).toBeHidden();
   await expect(join).toBeDisabled();
   await expect(guidance).toHaveText("Confirm your headphones to enable Join.");
-  await page.getByRole("checkbox").check();
+  const headphones = page.getByRole("checkbox");
+  await expect(headphones).toBeFocused();
+  await page.keyboard.press("Space");
   await expect(guidance).toHaveText("Ready. Join to share your audio with the session.");
   await expect(join).toHaveAttribute("aria-describedby", "join-guidance");
   await page.getByRole("checkbox").uncheck();
@@ -79,12 +81,13 @@ test("NotFoundError shows no-device guidance and Try again", async ({ page }) =>
     };
   });
   await page.goto(`/${fragment(invite())}`);
-  await page.getByRole("button", { name: "Check microphone" }).click();
+  await page.getByRole("button", { name: "Check microphone" }).press("Enter");
   await expect(page.getByText("No microphone found - plug one in and press Try again")).toBeVisible();
   const retry = page.getByRole("button", { name: "Try again", exact: true });
-  await expect(retry).toBeVisible();
-  await retry.click();
+  await expect(retry).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(page.getByText("No microphone found - plug one in and press Try again")).toBeVisible();
+  await expect(retry).toBeFocused();
 });
 
 test("a guest can replace a silent browser default with a detected headset", async ({ page }) => {

@@ -41,7 +41,7 @@ button { font: inherit; font-weight: 650; min-height: 44px; padding: 9px 14px; b
 button.secondary { border-color: #73877c; background: #23312e; color: #edf2eb; }
 button.skip-check { background: transparent; color: #b4c2bd; padding-inline: 4px; text-decoration: underline; }
 button:disabled { opacity: .55; cursor: default; }
-button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid white; outline-offset: 3px; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, #mic-progress:focus-visible { outline: 3px solid white; outline-offset: 3px; }
 #join { flex: 1 1 100%; }
 details, .privacy { color: #b4c2bd; font-size: .9rem; }
 details { margin-top: 12px; }

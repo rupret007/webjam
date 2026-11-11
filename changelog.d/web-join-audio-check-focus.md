@@ -1,0 +1,1 @@
+- Keep keyboard focus in the browser audio check when microphone detection finishes, needs a retry, or is skipped.

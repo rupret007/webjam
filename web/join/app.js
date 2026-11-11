@@ -160,6 +160,10 @@ function joinReady() {
   return micHeard && $("headphones").checked;
 }
 
+function focusNextAudioCheckControl() {
+  $(joinReady() ? "join" : "headphones").focus();
+}
+
 const refresh = () => {
   $("prejoin").hidden = !invite || starting || !!session;
   $("join").disabled = !joinReady();
@@ -181,6 +185,7 @@ const refresh = () => {
 };
 
 function showMicError(error) {
+  const restoreFocus = document.activeElement === $("mic-progress");
   stopMicMonitoring(true);
   void closeAudioContext(context);
   context = null;
@@ -191,12 +196,16 @@ function showMicError(error) {
   $("check-mic").disabled = false;
   checkRunning = false;
   refresh();
+  if (restoreFocus) $(failure.showRetry ? "mic-retry" : "check-mic").focus();
 }
 
-async function runMicCheck() {
+async function runMicCheck(control) {
   if (expireUnusedInvite() || !invite || checkRunning || starting || session) return;
+  const followCheck = document.activeElement === control;
   resetMicCheck();
   checkRunning = true;
+  $("mic-progress").textContent = "Allow microphone access in your browser.";
+  if (followCheck) $("mic-progress").focus();
   refresh();
   $("mic-error").textContent = "";
   prejoinAbort = new AbortController();
@@ -207,7 +216,6 @@ async function runMicCheck() {
     }
     await context.resume();
     if (signal.aborted || expireUnusedInvite()) return;
-    $("mic-progress").textContent = "Allow microphone access in your browser.";
     const capture = await beginMicCheck(navigator.mediaDevices, $("mic-device").value);
     if (signal.aborted || expireUnusedInvite()) {
       capture.stream.getTracks().forEach((track) => track.stop());
@@ -236,10 +244,12 @@ async function runMicCheck() {
       },
       onHeard: () => {
         if (signal.aborted) return;
+        const continueCheck = document.activeElement === $("mic-progress");
         micHeard = true;
         $("mic-progress").textContent = "";
         $("mic-heard").hidden = false;
         refresh();
+        if (continueCheck) focusNextAudioCheckControl();
       },
     });
     checkRunning = false;
@@ -251,18 +261,20 @@ async function runMicCheck() {
 }
 
 $("headphones").addEventListener("change", refresh);
-$("check-mic").addEventListener("click", () => runMicCheck());
-$("mic-retry").addEventListener("click", () => runMicCheck());
-$("mic-device").addEventListener("change", () => {
+$("check-mic").addEventListener("click", (event) => runMicCheck(event.currentTarget));
+$("mic-retry").addEventListener("click", (event) => runMicCheck(event.currentTarget));
+$("mic-device").addEventListener("change", (event) => {
   checkSkipped = false;
-  void runMicCheck();
+  void runMicCheck(event.currentTarget);
 });
-$("skip-check").addEventListener("click", () => {
+$("skip-check").addEventListener("click", (event) => {
   if (expireUnusedInvite() || !invite || session || checkSkipped) return;
+  const continueCheck = document.activeElement === event.currentTarget;
   resetMicCheck();
   checkSkipped = true;
   $("mic-progress").textContent = "Mic check skipped. Your browser may ask for access when you join.";
   refresh();
+  if (continueCheck) focusNextAudioCheckControl();
 });
 
 function leave(message = "You left the session.", error) {
