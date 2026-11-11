@@ -948,6 +948,9 @@ an explicit retry. **Leave session** remains a deliberate exit; it does not
 automatically reconnect or later show a timeout warning. Joining again still
 requires a valid, unused host invitation. Ask the host for a fresh link if the
 old one has expired or may have been consumed.
+With the keyboard, starting a connection moves focus to **Leave session** so
+you can cancel. When that control disappears, focus returns to **Join** or
+**Retry** if available, or to the message that explains what to do next.
 After leaving or a failed Join, the tab should release its microphone and
 audio processing. If your browser still shows that tab using audio, close the
 Web Join tab before trying again.

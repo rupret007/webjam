@@ -266,6 +266,8 @@ $("skip-check").addEventListener("click", () => {
 });
 
 function leave(message = "You left the session.", error) {
+  const elements = failureElements();
+  const restoreFocus = document.activeElement === elements.leave;
   clearAccessTime();
   activeAttempt?.abort();
   activeAttempt = null;
@@ -280,7 +282,6 @@ function leave(message = "You left the session.", error) {
   $("leave").hidden = true;
   $("connection-route").hidden = true;
   $("latency").textContent = "Listening delay is estimated after you connect.";
-  const elements = failureElements();
   if (error) {
     const view = mapJoinError(error);
     if (view.needsFreshInvite && !view.showRetry) {
@@ -293,16 +294,27 @@ function leave(message = "You left the session.", error) {
     clearJoinFailure(elements, message);
   }
   refresh();
+  if (restoreFocus) {
+    const nextAction = [elements.retry, elements.join].find(
+      (button) => !button.hidden && !button.disabled,
+    );
+    (nextAction || elements.status).focus();
+  }
   scheduleUnusedInviteExpiry();
 }
 
 async function startJoin() {
   if (expireUnusedInvite() || !joinReady()) return;
+  const elements = failureElements();
+  const activeControl = document.activeElement;
   starting = true;
   refresh();
-  delete $("status").dataset.failure;
-  clearJoinFailure(failureElements(), "Connecting…");
-  $("leave").hidden = false;
+  delete elements.status.dataset.failure;
+  clearJoinFailure(elements, "Connecting…");
+  elements.leave.hidden = false;
+  if (activeControl === elements.join || activeControl === elements.retry) {
+    elements.leave.focus();
+  }
   const attempt = (activeAttempt = new AbortController());
   const isCurrent = () => activeAttempt === attempt && !attempt.signal.aborted;
   let stream;
