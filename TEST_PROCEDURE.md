@@ -317,8 +317,8 @@ Review at minimum:
   and foreground state; request acceptance alone is not success. Webex chooses
   its own screen. Windows/Linux native activation remains disabled without
   publisher proof.
-- **Open Webex to Mute** shows the verified external app for its own control and
-  never sends a blind shortcut, reports mute success, or changes Jamulus.
+- **Open Webex for Audio** shows the verified external app and explains how to
+  disconnect meeting audio before Music. The button only opens or focuses Webex.
 - The Jamulus updater verifies the catalog signature, exact WebJam version,
   expiry, monotonic sequence, target/architecture/roles/capabilities, HTTPS
   origin/redirects, artifact size/hash, and platform publisher/inventory.

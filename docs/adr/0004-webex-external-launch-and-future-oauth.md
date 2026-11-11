@@ -51,9 +51,8 @@ WebJam reports only `Not opened`, `Opening…`, `Opened externally`, or
 membership.
 
 The external app does not expose verifiable mute control to this integration.
-**Open Webex to Mute** therefore shows the verified Webex app for its own Mute control and
-truthfully says that WebJam did not change or verify mute. It does not send a
-blind system-wide shortcut or alter Jamulus controls.
+**Open Webex for Audio** shows the verified Webex app. Participants use
+Webex’s own controls to manage meeting audio.
 
 No Webex username, password, admin-site setting, access token, refresh token,
 client secret, Guest Issuer material, browser profile, or WebEngine runtime is

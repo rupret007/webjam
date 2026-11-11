@@ -3615,12 +3615,12 @@ class ApplicationController(QObject):
         if mute_guidance:
             if launched_app:
                 self.window.flash_message(
-                    "Webex is open. For Music, join without computer audio.",
+                    "For video with Music, choose “Don’t connect to audio” in Webex.",
                     ms=7000,
                 )
                 return
             self.window.flash_message(
-                "Webex is in front. Microphone mute does not disconnect meeting audio.",
+                "Before Music, disconnect Webex audio. If unavailable, leave the meeting.",
                 ms=6000,
             )
             return
@@ -3641,7 +3641,7 @@ class ApplicationController(QObject):
         self._show_webex_app(mute_guidance=mute_guidance)
 
     def _focus_webex_mute(self) -> None:
-        """Guide the user to Webex-owned mute without a blind shortcut."""
+        """Show Webex so the participant can manage its meeting audio."""
 
         self._show_webex_app(mute_guidance=True)
 
