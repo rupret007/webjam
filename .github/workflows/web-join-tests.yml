@@ -48,13 +48,20 @@ jobs:
 
   web-join-playwright-e2e:
     name: Web Join Playwright e2e
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+
+      - name: Trust the checked-out workspace inside the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Set up Go for the browser lab fixture
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -71,9 +78,16 @@ jobs:
         working-directory: web/join
         run: npm ci --ignore-scripts
 
-      - name: Install Playwright browsers
+      - name: Verify the pinned Playwright browsers
         working-directory: web/join
-        run: npx playwright install --with-deps chromium webkit
+        run: |
+          node --input-type=module <<'JS'
+          import { accessSync, constants } from 'node:fs';
+          import { chromium, webkit } from 'playwright';
+          for (const browser of [chromium, webkit]) {
+            accessSync(browser.executablePath(), constants.X_OK);
+          }
+          JS
 
       - name: Run Web Join Playwright e2e
         working-directory: web/join

@@ -155,12 +155,12 @@ jobs:
 
   # ------------------------------------------------------------------
   # Job 1: Tests
-  # Runs on ubuntu-latest (faster/cheaper than windows-latest).
+  # Runs on the supported Ubuntu 24.04 LTS hosted image.
   # Uses pytest against the tests/ directory.
   # Sets QT_QPA_PLATFORM=offscreen for headless Qt tests.
   # ------------------------------------------------------------------
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       QT_QPA_PLATFORM: offscreen
@@ -174,15 +174,51 @@ jobs:
           python-version: "3.11"
 
       - name: Install Qt + audio system libraries (Linux)
+        timeout-minutes: 8
         run: |
-          sudo apt-get update
+          source_dir=$(mktemp -d "$RUNNER_TEMP/webjam-ubuntu.XXXXXX")
+          sources=$source_dir/ubuntu.sources
+          trap 'rm -f "$sources"; rmdir "$source_dir"' EXIT
+          apt_options=(
+            -o "Dir::Etc::sourcelist=$sources" -o Dir::Etc::sourceparts=-
+            -o APT::Update::Error-Mode=any -o Acquire::Retries=0
+            -o Acquire::https::Timeout=10 -o Acquire::Languages=none
+          )
           # libpulse0 is what QtMultimedia's audio output loads. Without it the
           # Studio Visit reference video player cannot be constructed at all,
           # so its seam test would silently skip instead of covering the one
           # module that talks to QtMultimedia.
-          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          packages=(
             libegl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0 libportaudio2 \
             libpulse0 python3-tk
+          )
+          fetch_packages() {
+            local archive=$1
+            cat > "$sources" <<EOF
+          Types: deb
+          URIs: $archive
+          Suites: noble noble-backports
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+          Types: deb
+          URIs: $archive
+          Suites: noble-updates noble-security
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          Valid-Until-Max: 604800
+          EOF
+            timeout 120s sudo apt-get "${apt_options[@]}" update &&
+              timeout 90s sudo apt-get "${apt_options[@]}" -y --download-only install "${packages[@]}"
+          }
+
+          # Both HTTPS archives carry Ubuntu-signed metadata. Fall back before
+          # installing anything so apt does not retry a partial installation.
+          if ! fetch_packages https://archive.ubuntu.com/ubuntu/; then
+            fetch_packages https://mirrors.edge.kernel.org/ubuntu/
+          fi
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get "${apt_options[@]}" \
+            -y --no-download install "${packages[@]}"
 
       - name: Install dependencies
         run: |

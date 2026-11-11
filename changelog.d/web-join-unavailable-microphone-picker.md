@@ -1,0 +1,1 @@
+- Offer another microphone during the browser audio check when the current input cannot be opened.
