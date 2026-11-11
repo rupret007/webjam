@@ -107,6 +107,35 @@ def test_decoder_accepts_validated_formats_and_paths_with_spaces(
         assert str(tmp_path) not in repr(decoder)
 
 
+def test_mp3_random_windows_match_sequential_decode(tmp_path: Path) -> None:
+    if not sf.check_format("MP3"):
+        pytest.skip("the locked libsndfile build has no MP3 capability")
+    rate = 48_000
+    time = np.arange(6 * rate, dtype=np.float32) / rate
+    signal = np.column_stack(
+        (0.18 * np.sin(2 * np.pi * 317 * time), 0.13 * np.sin(2 * np.pi * 503 * time))
+    ).astype(np.float32)
+    source = tmp_path / "seek.mp3"
+    sf.write(
+        source,
+        signal,
+        rate,
+        format="MP3",
+        subtype="MPEG_LAYER_III",
+    )
+    decoded, _ = sf.read(source, dtype="float32", always_2d=True)
+
+    output = np.empty((256, 2), dtype=np.float32)
+    with ProjectAudioDecoder(source) as decoder:
+        # Arbitrary seeks, adjacent playback blocks, a backward jump into
+        # decoder warm-up, a cache refill, and restart at the beginning.
+        for first in (96_000, 96_256, 90_000, 112_128, 210_011, 0, 256):
+            assert decoder.read_into(first, output) == len(output)
+            np.testing.assert_allclose(
+                output, decoded[first : first + len(output)], atol=1e-6, rtol=1e-5
+            )
+
+
 def test_mp3_support_is_capability_tested_not_inferred_from_extension(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

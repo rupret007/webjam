@@ -54,6 +54,12 @@ PROJECT_AUDIO_MAX_MP3_FILE_BYTES: Final = (
     + 128
 )
 
+# libsndfile can land at the requested MP3 frame while returning silence
+# until the decoder has rebuilt its history. Prime it before the requested
+# frame, then keep a bounded window so adjacent playback blocks reuse PCM.
+_MP3_SEEK_PREROLL_FRAMES: Final = 16_384
+_MP3_READ_AHEAD_FRAMES: Final = 16_384
+
 _FORMAT_BY_SUFFIX: Final[dict[str, frozenset[str]]] = {
     ".wav": frozenset({"WAV", "WAVEX", "RF64"}),
     ".wave": frozenset({"WAV", "WAVEX", "RF64"}),
@@ -461,6 +467,13 @@ class ProjectAudioDecoder:
             source_frames,
             math.ceil((PROJECT_AUDIO_MAX_DECODE_FRAMES - 1) * ratio) + 2,
         )
+        if container == "MP3":
+            maximum_source_window = min(
+                source_start_frame + source_frames,
+                max(maximum_source_window, _MP3_READ_AHEAD_FRAMES)
+                + _MP3_SEEK_PREROLL_FRAMES,
+            )
+        self._mp3_window: tuple[int, int, int] | None = None
         self._source_scratch = np.empty(
             (max(1, maximum_source_window), channels),
             dtype=np.float32,
@@ -595,6 +608,40 @@ class ProjectAudioDecoder:
             raise ValueError("output exceeds the bounded decoder size")
         return frames
 
+    def _read_source_window(
+        self, first: int, end: int, source_end: int
+    ) -> np.ndarray:
+        decode_start, decode_end = first, end
+        is_mp3 = self.probe.container == "MP3"
+        if is_mp3:
+            if self._mp3_window is not None:
+                start, usable_start, window_end = self._mp3_window
+                if usable_start <= first and end <= window_end:
+                    return self._source_scratch[first - start : end - start]
+            self._mp3_window = None
+            decode_start = max(0, first - _MP3_SEEK_PREROLL_FRAMES)
+            decode_end = min(source_end, max(end, first + _MP3_READ_AHEAD_FRAMES))
+
+        source = self._source_scratch[: decode_end - decode_start]
+        try:
+            landed = self._reader.seek(decode_start)
+            if int(landed) != decode_start:
+                raise OSError("decoder seek was not exact")
+            decoded = self._reader.read(out=source)
+        except Exception:
+            raise ProjectAudioError(
+                "WebJam lost access to the imported audio. Relink it and "
+                "try again."
+            ) from None
+        if len(decoded) != len(source):
+            raise ProjectAudioError(
+                "The imported audio ended before its validated duration."
+            )
+        if is_mp3:
+            # Warm-up samples are scratch space, never a valid cached result.
+            self._mp3_window = (decode_start, first, decode_end)
+        return source[first - decode_start : end - decode_start]
+
     def read_into(
         self,
         start_frame: int,
@@ -647,25 +694,11 @@ class ProjectAudioDecoder:
             np.copyto(lower, floors, casting="unsafe")
             first = int(lower[0])
             last = min(source_end - 1, int(lower[-1]) + 1)
-            read_count = max(1, last - first + 1)
-            source = self._source_scratch[:read_count]
+            read_count = last - first + 1
             if token is not None:
                 token.require_current()
             self._require_current()
-            try:
-                landed = self._reader.seek(first)
-                if int(landed) != first:
-                    raise OSError("decoder seek was not exact")
-                decoded = self._reader.read(out=source)
-            except Exception:
-                raise ProjectAudioError(
-                    "WebJam lost access to the imported audio. Relink it and "
-                    "try again."
-                ) from None
-            if len(decoded) != read_count:
-                raise ProjectAudioError(
-                    "The imported audio ended before its validated duration."
-                )
+            source = self._read_source_window(first, last + 1, source_end)
             self._require_current()
             if token is not None:
                 token.require_current()
