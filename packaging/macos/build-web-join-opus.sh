@@ -9,8 +9,15 @@ version=1.5.2
 sha=65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1
 build=$(mktemp -d "${TMPDIR:-/tmp}/webjoin-opus.XXXXXXXX")
 trap 'rm -rf "$build"' EXIT
-curl --fail --location --proto '=https' --tlsv1.2 \
-  "https://downloads.xiph.org/releases/opus/opus-${version}.tar.gz" -o "$build/opus.tar.gz"
+download_opus() {
+  curl --fail --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
+    --connect-timeout 10 --max-time 60 --retry 2 --retry-all-errors --retry-max-time 75 \
+    "$1" -o "$build/opus.tar.gz"
+}
+if ! download_opus "https://downloads.xiph.org/releases/opus/opus-${version}.tar.gz"; then
+  echo 'Xiph download unavailable. Trying its OSU Open Source Lab mirror.' >&2
+  download_opus "https://ftp.osuosl.org/pub/xiph/releases/opus/opus-${version}.tar.gz"
+fi
 actual=$(shasum -a 256 "$build/opus.tar.gz" | awk '{print $1}')
 [ "$actual" = "$sha" ] || { echo 'Opus source digest mismatch' >&2; exit 1; }
 tar -xzf "$build/opus.tar.gz" -C "$build"
