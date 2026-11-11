@@ -71,6 +71,38 @@ test("fake mic level enables Join after headphones confirmation", async ({ page 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
+test("microphone check succeeds when the optional device list is unavailable", async ({ page }) => {
+  await page.addInitScript(() => {
+    const media = Object.getPrototypeOf(navigator.mediaDevices);
+    media.enumerateDevices = async () => {
+      throw new DOMException("Device list unavailable", "NotAllowedError");
+    };
+    media.getUserMedia = async () => {
+      const context = new AudioContext();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const output = context.createMediaStreamDestination();
+      const track = output.stream.getAudioTracks()[0];
+      const stop = track.stop.bind(track);
+      track.stop = () => { stop(); context.close().catch(() => {}); };
+      gain.gain.value = 0.08;
+      oscillator.connect(gain).connect(output);
+      oscillator.start();
+      await context.resume();
+      return output.stream;
+    };
+  });
+  await page.goto(`/${fragment(invite())}`);
+  await page.getByRole("button", { name: "Check microphone" }).press("Enter");
+  await expect(page.getByText("Microphone detected.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toBeEmpty();
+  await expect(page.getByLabel("Microphone", { exact: true })).toBeHidden();
+  const headphones = page.getByRole("checkbox");
+  await expect(headphones).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("button", { name: "Join with microphone" })).toBeEnabled();
+});
+
 test("NotFoundError shows no-device guidance and Try again", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.addInitScript(() => {
