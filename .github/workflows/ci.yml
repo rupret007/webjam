@@ -162,11 +162,16 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Trust the checked-out workspace inside the container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Set up Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -174,13 +179,38 @@ jobs:
           python-version: "3.11"
 
       - name: Install Qt + audio system libraries (Linux)
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
+          python - <<'PY'
+          from pathlib import Path
+
+          sources = Path("/etc/apt/sources.list.d/ubuntu.sources")
+          if not sources.is_file() or sources.is_symlink():
+              raise SystemExit("Expected the regular Noble Ubuntu sources file")
+          text = sources.read_text()
+          lines = text.splitlines()
+          origins = [line for line in lines if line.startswith("URIs: ")]
+          suites = [line for line in lines if line.startswith("Suites: ")]
+          signing_keys = [line for line in lines if line.startswith("Signed-By: ")]
+          default = "URIs: http://azure.archive.ubuntu.com/ubuntu/"
+          official = "URIs: https://archive.ubuntu.com/ubuntu/"
+          security = "URIs: http://security.ubuntu.com/ubuntu/"
+          signing_key = "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg"
+          if (
+              origins not in ([default, security], [official, security])
+              or suites != ["Suites: noble noble-updates noble-backports", "Suites: noble-security"]
+              or signing_keys != [signing_key, signing_key]
+          ):
+              raise SystemExit("Unexpected Ubuntu archive origins, suites or signing key")
+          if origins[0] == default:
+              sources.write_text(text.replace(default, official))
+          PY
+          apt-get -o APT::Update::Error-Mode=any -o Acquire::Retries=1 update
           # libpulse0 is what QtMultimedia's audio output loads. Without it the
           # Studio Visit reference video player cannot be constructed at all,
           # so its seam test would silently skip instead of covering the one
           # module that talks to QtMultimedia.
-          sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=1 install -y \
             libegl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0 libportaudio2 \
             libpulse0 python3-tk
 
