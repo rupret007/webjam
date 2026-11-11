@@ -20,6 +20,12 @@ export function micCheckFailure(error) {
       showRetry: true,
     };
   }
+  if (error?.name === "NotReadableError") {
+    return {
+      message: "Couldn't open this microphone. Choose another input if available, or check your system sound settings and try again.",
+      showRetry: true,
+    };
+  }
   return {
     message: error?.message || "Could not use your microphone. Press Try again.",
     showRetry: true,

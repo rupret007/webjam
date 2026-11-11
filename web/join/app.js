@@ -104,10 +104,7 @@ function showAudioSettings(stream, warnings = []) {
   $("warnings").textContent = warnings.join("\n");
 }
 
-async function showMicDevices(track, signal) {
-  const source = $("mic-source");
-  source.textContent = track.label ? `Using ${track.label}` : "Microphone connected.";
-  source.hidden = false;
+async function showMicDevices(signal, recovering = false) {
   const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
   if (signal.aborted) return;
   const choices = devices.filter(device => device.kind === "audioinput" && device.label &&
@@ -116,7 +113,7 @@ async function showMicDevices(track, signal) {
   const selected = select.value;
   select.replaceChildren(new Option("Browser default", ""), ...choices.map(device => new Option(device.label, device.deviceId)));
   if (choices.some(device => device.deviceId === selected)) select.value = selected;
-  $("mic-picker").hidden = choices.length < 2;
+  $("mic-picker").hidden = choices.length < (recovering ? 1 : 2);
 }
 
 function stopMicMonitoring(clearHeard = false) {
@@ -184,12 +181,13 @@ const refresh = () => {
     !invite || starting || !!session || checkRunning || checkSkipped || micHeard || !!stopMeter;
 };
 
-function showMicError(error) {
+function showMicError(error, deviceDisconnected = false) {
   const restoreFocus = document.activeElement === $("mic-progress");
   stopMicMonitoring(true);
   void closeAudioContext(context);
   context = null;
-  const failure = micCheckFailure(error?.cause ?? error);
+  const cause = error?.cause ?? error;
+  const failure = micCheckFailure(cause);
   $("mic-progress").textContent = "";
   $("mic-error").textContent = failure.message;
   $("mic-retry").hidden = !failure.showRetry;
@@ -197,6 +195,11 @@ function showMicError(error) {
   checkRunning = false;
   refresh();
   if (restoreFocus) $(failure.showRetry ? "mic-retry" : "check-mic").focus();
+  if (deviceDisconnected || cause?.name === "NotReadableError" ||
+      (cause?.name === "OverconstrainedError" && cause.constraint === "deviceId")) {
+    prejoinAbort = new AbortController();
+    void showMicDevices(prejoinAbort.signal, true);
+  }
 }
 
 async function runMicCheck(control) {
@@ -227,10 +230,13 @@ async function runMicCheck(control) {
     if (!watchMicrophone(track, signal, () => {
       stopMicMonitoring(true);
       $("mic-device").value = "";
-      showMicError(new Error("Microphone disconnected. Reconnect it or choose another input, then try again."));
+      showMicError(new Error("Microphone disconnected. Reconnect it or choose another input, then try again."), true);
     })) return;
     showAudioSettings(prejoinStream, prejoinWarnings);
-    void showMicDevices(track, signal);
+    const source = $("mic-source");
+    source.textContent = track.label ? `Using ${track.label}` : "Microphone connected.";
+    source.hidden = false;
+    void showMicDevices(signal);
     $("mic-progress").textContent = "Speak or play a note to check your level.";
     stopMeter = startMicLevelMonitor({
       audioContext: context,

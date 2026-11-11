@@ -90,55 +90,69 @@ test("NotFoundError shows no-device guidance and Try again", async ({ page }) =>
   await expect(retry).toBeFocused();
 });
 
-test("a guest can replace a silent browser default with a detected headset", async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 667 });
-  await page.addInitScript(() => {
-    window.micTracks = [];
-    window.micChoices = [];
-    const media = Object.getPrototypeOf(navigator.mediaDevices);
-    media.enumerateDevices = async () => [
-      { kind: "audioinput", deviceId: "array", label: "Built-in mic" },
-      { kind: "audioinput", deviceId: "headset", label: "USB headset" },
-    ];
-    media.getUserMedia = async ({ audio }) => {
-      const headset = audio.deviceId?.exact === "headset";
-      window.micChoices.push(audio.deviceId?.exact ?? "");
-      const context = new AudioContext();
-      const output = context.createMediaStreamDestination();
-      const track = output.stream.getAudioTracks()[0];
-      Object.defineProperty(track, "label", { value: headset ? "USB headset" : "Built-in mic" });
-      const stop = track.stop.bind(track);
-      track.stop = () => { stop(); context.close().catch(() => {}); };
-      window.micTracks.push(track);
-      if (headset) {
-        await context.resume();
-        const tone = context.createOscillator();
-        const gain = context.createGain();
-        gain.gain.value = 0.08;
-        tone.connect(gain).connect(output);
-        tone.start();
-      }
-      return output.stream;
-    };
+for (const defaultMic of ["silent", "unavailable"]) {
+  test(`a guest can replace a ${defaultMic} browser default with a detected headset`, async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.addInitScript((defaultMic) => {
+      window.micTracks = [];
+      window.micChoices = [];
+      const media = Object.getPrototypeOf(navigator.mediaDevices);
+      media.enumerateDevices = async () => [
+        ...(defaultMic === "silent" ? [{ kind: "audioinput", deviceId: "array", label: "Built-in mic" }] : []),
+        { kind: "audioinput", deviceId: "headset", label: "USB headset" },
+      ];
+      media.getUserMedia = async ({ audio }) => {
+        const headset = audio.deviceId?.exact === "headset";
+        window.micChoices.push(audio.deviceId?.exact ?? "");
+        if (!headset && defaultMic === "unavailable") {
+          throw new DOMException("Could not start audio source", "NotReadableError");
+        }
+        const context = new AudioContext();
+        const output = context.createMediaStreamDestination();
+        const track = output.stream.getAudioTracks()[0];
+        Object.defineProperty(track, "label", { value: headset ? "USB headset" : "Built-in mic" });
+        const stop = track.stop.bind(track);
+        track.stop = () => { stop(); context.close().catch(() => {}); };
+        window.micTracks.push(track);
+        if (headset) {
+          await context.resume();
+          const tone = context.createOscillator();
+          const gain = context.createGain();
+          gain.gain.value = 0.08;
+          tone.connect(gain).connect(output);
+          tone.start();
+        }
+        return output.stream;
+      };
+    }, defaultMic);
+    await page.goto(`/${fragment(invite())}`);
+    const mic = page.getByLabel("Microphone", { exact: true });
+    const join = page.getByRole("button", { name: "Join with microphone", exact: true });
+    await expect(mic).toBeHidden();
+    expect(await page.evaluate(() => micChoices)).toEqual([]);
+    await page.getByRole("button", { name: "Check microphone" }).click();
+    if (defaultMic === "silent") {
+      await expect(page.getByText("Using Built-in mic", { exact: true })).toBeVisible();
+    } else {
+      await expect(page.getByRole("alert")).toContainText("Couldn't open this microphone");
+      await expect(page.getByRole("button", { name: "Try again" })).toBeFocused();
+    }
+    await expect(mic).toBeVisible();
+    expect(await page.evaluate(() => micChoices)).toEqual([""]);
+    await expect(join).toBeDisabled();
+    await mic.selectOption({ label: "USB headset" });
+    await expect(page.getByText("Using USB headset", { exact: true })).toBeVisible();
+    await expect(page.getByText("Microphone detected.", { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => micChoices)).toEqual(["", "headset"]);
+    if (defaultMic === "silent") {
+      expect(await page.evaluate(() => micTracks[0].readyState)).toBe("ended");
+    }
+    await page.getByRole("checkbox").check();
+    await expect(join).toBeEnabled();
+    await page.evaluate(() => scrollTo(0, 0));
+    await expect(join).toBeInViewport({ ratio: 1 });
   });
-  await page.goto(`/${fragment(invite())}`);
-  const mic = page.getByLabel("Microphone", { exact: true });
-  const join = page.getByRole("button", { name: "Join with microphone", exact: true });
-  await expect(mic).toBeHidden();
-  expect(await page.evaluate(() => micTracks.length)).toBe(0);
-  await page.getByRole("button", { name: "Check microphone" }).click();
-  await expect(page.getByText("Using Built-in mic", { exact: true })).toBeVisible();
-  await expect(join).toBeDisabled();
-  await mic.selectOption({ label: "USB headset" });
-  await expect(page.getByText("Using USB headset", { exact: true })).toBeVisible();
-  await expect(page.getByText("Microphone detected.", { exact: true })).toBeVisible();
-  expect(await page.evaluate(() => micChoices)).toEqual(["", "headset"]);
-  expect(await page.evaluate(() => micTracks[0].readyState)).toBe("ended");
-  await page.getByRole("checkbox").check();
-  await expect(join).toBeEnabled();
-  await page.evaluate(() => scrollTo(0, 0));
-  await expect(join).toBeInViewport({ ratio: 1 });
-});
+}
 
 for (const width of [375, 390]) {
   test(`headphones-first readiness and explicit skip at ${width}px`, async ({ page }) => {
