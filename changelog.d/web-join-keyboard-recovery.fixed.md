@@ -1,0 +1,1 @@
+Keep keyboard focus on the next available action or status when a Web Join connection is cancelled, ends, or needs a retry.
