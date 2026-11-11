@@ -179,8 +179,10 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
   await expect(routeIndicator).toBeVisible();
   await page.evaluate(() => window.reportConnectionRoute('relayed'));
   await expect(routeIndicator).toHaveText('Relayed connection');
+  await expect(page.locator('#leave')).toBeFocused();
   await page.evaluate(() => window.endEnrolledSession());
   await expect(page.locator('#status')).toHaveText('The Web Join connection ended.');
+  await expect(page.locator('#status')).toBeFocused();
   await page.evaluate(() => window.reportConnectionRoute('relayed'));
   await expect(routeIndicator).toBeHidden();
   await expect(page.locator('#error-hint')).toContainText('new browser invite');
@@ -200,7 +202,9 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
   await page.getByRole('button', { name: 'Skip check' }).click();
   await page.locator('#join').click();
   await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
-  await page.locator('#leave').click();
+  await expect(page.locator('#leave')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#join')).toBeFocused();
   await expect.poll(() => page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
 });
 
@@ -215,22 +219,25 @@ for (const width of [375, 390]) {
     await openInvitation(page, width);
     const join = page.getByRole('button', { name: 'Join with microphone', exact: true });
     const leave = page.getByRole('button', { name: 'Leave session', exact: true });
-    await join.click();
+    await join.press('Enter');
     await expect.poll(() => requests).toBe(1);
     await expect(leave).toBeInViewport();
+    await expect(leave).toBeFocused();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.clock.fastForward(13000);
     await expect(page.locator('#status')).toContainText('timed out');
     const retry = page.getByRole('button', { name: 'Retry', exact: true });
     await expect(retry).toBeEnabled();
+    await expect(retry).toBeFocused();
     await expect(join).toBeHidden();
     await expect(leave).toBeHidden();
     await expect.poll(() => page.evaluate(() => captureTracks.length > 0 && captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
     await expect.poll(() => page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);
-    await retry.click();
+    await page.keyboard.press('Enter');
     await expect.poll(() => requests).toBe(2);
     await expect(page.locator('#status')).toContainText('Web Join is unavailable');
     await expect(retry).toBeEnabled();
+    await expect(retry).toBeFocused();
     expect(await page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
   });
 }
