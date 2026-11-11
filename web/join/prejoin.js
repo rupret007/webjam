@@ -9,7 +9,7 @@ export function micCheckFailure(error) {
   }
   if (error?.name === "NotFoundError") {
     return {
-      message: "No microphone found - plug one in and press Try again.",
+      message: "No microphone found for the current selection. Choose another input if available, or connect one and press Try again.",
       showRetry: true,
     };
   }

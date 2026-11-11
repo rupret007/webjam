@@ -75,22 +75,23 @@ test("NotFoundError shows no-device guidance and Try again", async ({ page }) =>
   await page.setViewportSize({ width: 375, height: 812 });
   await page.addInitScript(() => {
     const prototype = Object.getPrototypeOf(navigator.mediaDevices);
-    prototype.enumerateDevices = async () => [{ kind: "audioinput", deviceId: "fake", label: "Fake" }];
+    prototype.enumerateDevices = async () => [];
     prototype.getUserMedia = async () => {
       throw new DOMException("Requested device not found", "NotFoundError");
     };
   });
   await page.goto(`/${fragment(invite())}`);
   await page.getByRole("button", { name: "Check microphone" }).press("Enter");
-  await expect(page.getByText("No microphone found - plug one in and press Try again")).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("connect one and press Try again");
+  await expect(page.getByLabel("Microphone", { exact: true })).toBeHidden();
   const retry = page.getByRole("button", { name: "Try again", exact: true });
   await expect(retry).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page.getByText("No microphone found - plug one in and press Try again")).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("connect one and press Try again");
   await expect(retry).toBeFocused();
 });
 
-for (const defaultMic of ["silent", "unavailable"]) {
+for (const defaultMic of ["silent", "unavailable", "missing"]) {
   test(`a guest can replace a ${defaultMic} browser default with a detected headset`, async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
     await page.addInitScript((defaultMic) => {
@@ -106,6 +107,9 @@ for (const defaultMic of ["silent", "unavailable"]) {
         window.micChoices.push(audio.deviceId?.exact ?? "");
         if (!headset && defaultMic === "unavailable") {
           throw new DOMException("Could not start audio source", "NotReadableError");
+        }
+        if (!headset && defaultMic === "missing") {
+          throw new DOMException("Requested device not found", "NotFoundError");
         }
         const context = new AudioContext();
         const output = context.createMediaStreamDestination();
@@ -134,7 +138,9 @@ for (const defaultMic of ["silent", "unavailable"]) {
     if (defaultMic === "silent") {
       await expect(page.getByText("Using Built-in mic", { exact: true })).toBeVisible();
     } else {
-      await expect(page.getByRole("alert")).toContainText("Couldn't open this microphone");
+      await expect(page.getByRole("alert")).toContainText(
+        defaultMic === "missing" ? "Choose another input if available" : "Couldn't open this microphone",
+      );
       await expect(page.getByRole("button", { name: "Try again" })).toBeFocused();
     }
     await expect(mic).toBeVisible();
