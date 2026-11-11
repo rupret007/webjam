@@ -90,13 +90,22 @@ def test_web_join_lockfile_matches_package_json_for_npm_ci() -> None:
 
 
 def test_workflow_runs_playwright_e2e_with_go_browser_lab() -> None:
-    assert "web-join-playwright-e2e:" in WORKFLOW
-    assert "name: Web Join Playwright e2e" in WORKFLOW
-    assert "actions/setup-go@" in WORKFLOW
-    assert "cache-dependency-path: transport/go.sum" in WORKFLOW
-    assert "npx playwright install --with-deps chromium webkit" in WORKFLOW
-    assert "npm run test:e2e" in WORKFLOW
-    go_index = WORKFLOW.index("actions/setup-go@")
-    playwright_index = WORKFLOW.index("npx playwright install")
-    e2e_index = WORKFLOW.index("npm run test:e2e")
-    assert go_index < playwright_index < e2e_index
+    _, heading, job = WORKFLOW.partition("\n  web-join-playwright-e2e:\n")
+    assert heading
+    job = re.split(r"^  [\w-]+:\n", job, maxsplit=1, flags=re.MULTILINE)[0]
+    lock = json.loads(WEB_JOIN_LOCK.read_text(encoding="utf-8"))
+    version = re.escape(lock["packages"]["node_modules/playwright"]["version"])
+    assert re.search(
+        rf"^      image: mcr\.microsoft\.com/playwright:v{version}-noble@sha256:[0-9a-f]{{64}}$",
+        job,
+        re.MULTILINE,
+    )
+    assert "name: Web Join Playwright e2e" in job
+    assert "PLAYWRIGHT_BROWSERS_PATH: /ms-playwright" in job
+    assert "cache-dependency-path: transport/go.sum" in job
+    assert "for (const browser of [chromium, webkit])" in job
+    go_index = job.index("actions/setup-go@")
+    install_index = job.index("npm ci --ignore-scripts")
+    playwright_index = job.index("accessSync(browser.executablePath(), constants.X_OK)")
+    e2e_index = job.index("npm run test:e2e")
+    assert go_index < install_index < playwright_index < e2e_index
