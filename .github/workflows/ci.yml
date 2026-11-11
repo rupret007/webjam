@@ -155,12 +155,12 @@ jobs:
 
   # ------------------------------------------------------------------
   # Job 1: Tests
-  # Runs on ubuntu-latest (faster/cheaper than windows-latest).
+  # Runs on the supported Ubuntu 24.04 LTS hosted image.
   # Uses pytest against the tests/ directory.
   # Sets QT_QPA_PLATFORM=offscreen for headless Qt tests.
   # ------------------------------------------------------------------
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       QT_QPA_PLATFORM: offscreen
