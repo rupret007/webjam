@@ -195,7 +195,7 @@ function showMicError(error, deviceDisconnected = false) {
   checkRunning = false;
   refresh();
   if (restoreFocus) $(failure.showRetry ? "mic-retry" : "check-mic").focus();
-  if (deviceDisconnected || cause?.name === "NotReadableError" ||
+  if (deviceDisconnected || ["NotReadableError", "NotFoundError"].includes(cause?.name) ||
       (cause?.name === "OverconstrainedError" && cause.constraint === "deviceId")) {
     prejoinAbort = new AbortController();
     void showMicDevices(prejoinAbort.signal, true);

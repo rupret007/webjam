@@ -1,0 +1,1 @@
+- Keep other microphones selectable when the browser cannot find its current input.
