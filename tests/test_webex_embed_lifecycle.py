@@ -58,6 +58,19 @@ def test_external_success_copy_never_claims_join_or_connection():
     assert embed.fallback_button().text() == "Open Again"
 
 
+def test_webex_video_mode_names_the_audio_preview_choice():
+    embed = WebexEmbed()
+    try:
+        embed.set_service_label("Webex")
+        embed.set_meeting_configured(True)
+        embed.set_audio_mode("video_only")
+
+        assert "Don’t connect to audio" in embed._mode_label.text()
+        assert "Music stays in Jamulus" in embed._mode_label.text()
+    finally:
+        embed.deleteLater()
+
+
 def test_install_action_stays_hidden_until_native_app_needs_attention():
     embed = WebexEmbed()
     requested = []
@@ -230,15 +243,15 @@ def test_conversation_actions_are_distinct_and_truthful():
     assert "No meeting link or browser is opened" in (
         embed.bring_forward_button().toolTip()
     )
-    mute_description = embed.mute_button().accessibleDescription()
-    assert "disconnect meeting audio at both ends" in mute_description
-    assert "Microphone mute alone leaves playback on" in mute_description
-    assert "cannot verify or change mute" in mute_description
+    audio_description = embed.mute_button().accessibleDescription()
+    assert "Disconnect meeting audio at both ends before Music" in audio_description
+    assert "Microphone mute alone leaves playback on" in audio_description
+    assert "Shows Webex" in audio_description
     assert "Jamulus" not in embed.mute_button().text()
     # The label describes the real action (bringing Webex forward), not a
     # mute WebJam can neither perform nor verify.
-    assert embed.mute_button().text() == "Open Webex to Mute"
-    assert embed.mute_button().accessibleName() == "Open Webex to Mute"
+    assert embed.mute_button().text() == "Open Webex for Audio"
+    assert embed.mute_button().accessibleName() == "Open Webex for Audio"
 
 
 def test_join_open_requires_a_configured_link_and_is_single_flight():
@@ -578,7 +591,7 @@ def test_non_webex_card_keeps_native_controls_explicitly_webex_only():
 
         assert embed.bring_forward_button().text() == "Show Webex App"
         assert embed.bring_forward_button().accessibleName() == "Show Webex App"
-        assert embed.mute_button().text() == "Open Webex to Mute"
+        assert embed.mute_button().text() == "Open Webex for Audio"
         assert "Webex" in embed._app_status_label.text()
     finally:
         embed.deleteLater()

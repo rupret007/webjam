@@ -185,9 +185,8 @@ WebJam then proves the exact path identity, PID, Cisco publisher, and foreground
 state; pathname replacement cannot redirect launch, and native request
 acceptance is not success. Webex decides which of its screens appears. This
 action passes no meeting URL and opens no browser; **Join / Open Meeting**
-performs the sole explicit URL handoff. **Open Webex to Mute** can
-only show the verified app for its own Mute control because this external-app
-integration cannot verify mute state.
+performs the sole explicit URL handoff. **Open Webex for Audio** shows the
+verified app. Participants manage meeting audio in Webex.
 Windows and Linux currently detect only an executable location, not a verified
 publisher identity, so native focus and focus-based mute guidance fail closed
 there. None of those actions alter Jamulus. The direct

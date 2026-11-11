@@ -160,9 +160,8 @@ change the package's NOT RUN status.
       never claims that it joined a meeting or changed mute.
 - [ ] Windows/Linux keep native focus unavailable without publisher proof and
       still provide the truthful **Join / Open Meeting** handoff.
-- [ ] **Open Webex to Mute** shows the verified app for its own Mute control and
-      truthfully says that WebJam neither changes nor verifies external mute or
-      Jamulus.
+- [ ] **Open Webex for Audio** shows the verified app. The prompt directs
+      participants to disconnect Webex audio before playing Music.
 - [ ] Any public HTTPS DNS-host meeting link that passes the hardened policy
       uses one optional, external, credential-free handoff and never auto-opens.
       Known Webex, Zoom, Microsoft Teams, Google Meet, and FaceTime links get

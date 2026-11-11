@@ -197,23 +197,16 @@ class WebexEmbed(QFrame):
         )
         self._bring_forward_btn.setEnabled(False)
 
-        # The label must describe what WebJam actually does — bring the
-        # external app forward — not claim a mute action WebJam can neither
-        # perform nor verify.
-        self._mute_btn = QPushButton("Open Webex to Mute")
+        audio_label = "Open Webex for Audio"
+        self._mute_btn = QPushButton(audio_label)
         self._mute_btn.setObjectName("GhostButton")
-        self._mute_btn.setAccessibleName("Open Webex to Mute")
-        self._mute_btn.setAccessibleDescription(
-            "Show the verified Webex app so you can use its Mute control. "
-            "WebJam cannot verify or change mute in the external Webex app. "
-            "Microphone mute alone leaves playback on. For Music, disconnect "
-            "meeting audio at both ends."
+        self._mute_btn.setAccessibleName(audio_label)
+        audio_help = (
+            "Shows Webex. Disconnect meeting audio at both ends before Music. "
+            "Microphone mute alone leaves playback on."
         )
-        self._mute_btn.setToolTip(
-            "Brings Webex forward for its microphone Mute control. "
-            "For Music, disconnect meeting audio at both ends; microphone "
-            "mute alone leaves playback on."
-        )
+        self._mute_btn.setAccessibleDescription(audio_help)
+        self._mute_btn.setToolTip(audio_help)
         self._mute_btn.clicked.connect(self.mute_in_webex_requested.emit)
         self._mute_btn.setEnabled(False)
 
@@ -621,7 +614,7 @@ class WebexEmbed(QFrame):
         return self._bring_forward_btn
 
     def mute_button(self) -> QPushButton:
-        """Return the truthful external mute-guidance action."""
+        """Return the external meeting-audio action."""
 
         return self._mute_btn
 
@@ -1155,7 +1148,10 @@ class WebexEmbed(QFrame):
             {
                 "talkback": talkback_guidance,
                 "video_only": (
-                    f"Join {service} without computer audio; music stays in Jamulus."
+                    "In Webex, choose “Don’t connect to audio” before joining. "
+                    "Music stays in Jamulus."
+                    if service == "Webex"
+                    else f"Join {service} without computer audio. Music stays in Jamulus."
                 ),
                 "audience_bridge": (
                     "Advanced audience feed: musicians must disconnect "

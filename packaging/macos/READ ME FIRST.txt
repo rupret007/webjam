@@ -107,9 +107,8 @@ meeting controls. This does not open or rejoin a meeting. Only Join / Open
 Meeting hands off the saved link. Show Webex App dynamically
 re-verifies the exact Cisco app and any running PID. It then activates or
 launches that verified app itself with no meeting link, document argument, or
-browser; Webex chooses its own screen. Open Webex to Mute shows the verified app so
-you can use Webex's own Mute control; WebJam cannot verify or change external
-Webex mute.
+browser. Open Webex for Audio shows the verified app. Disconnect meeting audio
+in Webex before playing Music.
 If the native Webex app is missing, Get Webex opens Cisco's official installer
 for this Mac after you confirm. Cisco owns that download, license, installation,
 sign-in, and its automatic updates. Jamulus remains the music path; keep the

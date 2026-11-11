@@ -450,10 +450,8 @@ an app location but do not establish a trusted publisher identity, so
 operating system or default browser.
 
 Webex owns sign-in, camera, microphone, speakers, participants, mute, and
-meeting state. Because the external native app does not expose verifiable mute
-control to this integration, **Open Webex to Mute** shows the verified Webex app so
-the creator can use its own Mute control and explicitly does not claim it
-changed Webex or Jamulus.
+meeting state. **Open Webex for Audio** shows the verified Webex app. For Music,
+each participant disconnects meeting audio in Webex.
 
 For music, disconnect meeting audio at both endpoints; a muted meeting
 microphone can leave its speakers active. Follow the
