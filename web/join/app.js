@@ -31,6 +31,25 @@ let checkSkipped = false;
 let checkRunning = false;
 let prejoinAbort;
 let accessTimer = null;
+let inviteExpiryTimer = null;
+
+function expireUnusedInvite() {
+  if (!invite || session || Date.now() < invite.expiresAt * 1000) return false;
+  const focused = document.activeElement;
+  leave(undefined, new Error(JOIN_SIGNAL.INVITE_EXPIRED));
+  if ($("prejoin").contains(focused) || [ $("join"), $("retry"), $("leave") ].includes(focused)) {
+    $("status").focus({ preventScroll: true });
+  }
+  return true;
+}
+
+function scheduleUnusedInviteExpiry() {
+  clearTimeout(inviteExpiryTimer);
+  if (!invite || session) return;
+  inviteExpiryTimer = setTimeout(() => {
+    if (!expireUnusedInvite()) scheduleUnusedInviteExpiry();
+  }, Math.max(0, invite.expiresAt * 1000 - Date.now()));
+}
 
 function clearAccessTime() {
   clearInterval(accessTimer);
@@ -175,7 +194,7 @@ function showMicError(error) {
 }
 
 async function runMicCheck() {
-  if (!invite || checkRunning || starting || session) return;
+  if (expireUnusedInvite() || !invite || checkRunning || starting || session) return;
   resetMicCheck();
   checkRunning = true;
   refresh();
@@ -187,10 +206,10 @@ async function runMicCheck() {
       context = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
     }
     await context.resume();
-    if (signal.aborted) return;
+    if (signal.aborted || expireUnusedInvite()) return;
     $("mic-progress").textContent = "Allow microphone access in your browser.";
     const capture = await beginMicCheck(navigator.mediaDevices, $("mic-device").value);
-    if (signal.aborted) {
+    if (signal.aborted || expireUnusedInvite()) {
       capture.stream.getTracks().forEach((track) => track.stop());
       return;
     }
@@ -239,7 +258,7 @@ $("mic-device").addEventListener("change", () => {
   void runMicCheck();
 });
 $("skip-check").addEventListener("click", () => {
-  if (!invite || session || checkSkipped) return;
+  if (expireUnusedInvite() || !invite || session || checkSkipped) return;
   resetMicCheck();
   checkSkipped = true;
   $("mic-progress").textContent = "Mic check skipped. Your browser may ask for access when you join.";
@@ -274,10 +293,11 @@ function leave(message = "You left the session.", error) {
     clearJoinFailure(elements, message);
   }
   refresh();
+  scheduleUnusedInviteExpiry();
 }
 
 async function startJoin() {
-  if (!joinReady() || starting || session) return;
+  if (expireUnusedInvite() || !joinReady()) return;
   starting = true;
   refresh();
   delete $("status").dataset.failure;
@@ -293,7 +313,7 @@ async function startJoin() {
       context = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
     }
     await context.resume();
-    if (!isCurrent()) return;
+    if (!isCurrent() || expireUnusedInvite()) return;
     if (prejoinStream?.getAudioTracks().some((track) => track.readyState === "live")) {
       stream = prejoinStream;
       prejoinStream = null;
@@ -306,7 +326,7 @@ async function startJoin() {
       $("status").textContent = "Allow microphone access to play with your host.";
       const capture = await acquireMusicStream(navigator.mediaDevices, $("mic-device").value);
       stream = capture.stream;
-      if (!isCurrent()) {
+      if (!isCurrent() || expireUnusedInvite()) {
         stream.getTracks().forEach((track) => track.stop());
         return;
       }
@@ -351,6 +371,7 @@ async function startJoin() {
       },
     });
     session = joinedSession;
+    clearTimeout(inviteExpiryTimer);
     await joinedSession.join();
     if (!isCurrent()) return;
     showAccessTime(joinedSession.accessExpiresAt, isCurrent);
@@ -391,7 +412,8 @@ $("leave").addEventListener("click", () => leave());
 window.addEventListener("hashchange", () => window.location.reload());
 window.addEventListener("pagehide", () => leave());
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && context?.state === "suspended") {
+  if (document.hidden || expireUnusedInvite()) return;
+  if (context?.state === "suspended") {
     const attempt = activeAttempt;
     context.resume().catch(() => {
       if (attempt && !attempt.signal.aborted && activeAttempt === attempt) {
@@ -401,3 +423,4 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 refresh();
+scheduleUnusedInviteExpiry();
