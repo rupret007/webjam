@@ -26,6 +26,11 @@ _PAGES = MappingProxyType({
     "public": "https://stalemate.band/join/",
     "private-beta": "https://stalemate-hangout-beta.jeffstory007.workers.dev/join/",
 })
+_GAME_NIGHT_PAGE = _PAGES["private-beta"].removesuffix("/join/") + "/beta/?game-night=1"
+_GAME_NIGHT_ROOM_LINK = re.compile(
+    re.escape(_GAME_NIGHT_PAGE)
+    + r"(?:&via=(?:stalemate|rad-dad))?#game=game-[a-f0-9]{6}x[a-f0-9]{6}&instance=[a-f0-9]{32}"
+)
 
 
 class WebJoinTargetUnavailable(ValueError):
@@ -96,3 +101,22 @@ def web_join_page() -> str:
     if not getattr(sys, "frozen", False):
         return _PAGES["public"]
     return read_target_document(_manifest_path(), build_id())
+
+
+def game_night_page() -> str | None:
+    """Offer Game Night only in the verified private community build."""
+    try:
+        return _GAME_NIGHT_PAGE if web_join_page() == _PAGES["private-beta"] else None
+    except WebJoinTargetUnavailable:
+        return None
+
+
+def game_night_destination(pasted_link: str) -> str | None:
+    """Accept a room locator produced by Hang Out, or its entrance if blank."""
+    entrance = game_night_page()
+    if entrance is None or not isinstance(pasted_link, str) or len(pasted_link) > 240:
+        return None
+    link = pasted_link.strip()
+    if not link or link == entrance:
+        return entrance
+    return link if _GAME_NIGHT_ROOM_LINK.fullmatch(link) else None

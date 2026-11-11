@@ -24,6 +24,41 @@ def test_card_constructs_without_webengine_or_token_state():
     assert not hasattr(embed, "_profile")
     assert not hasattr(embed, "_pending_token")
     assert not hasattr(embed, "load_meeting_with_guest_token")
+    assert embed._game_night_btn.isHidden()
+
+
+@pytest.mark.parametrize("value,accepted,opens,warns", [
+    ("", False, False, False),
+    ("https://external.invalid/beta/?game-night=1", True, False, True),
+    ("", True, True, False),
+    ("room", True, True, False),
+])
+def test_private_game_night_opens_only_on_explicit_valid_choice(monkeypatch, value, accepted, opens, warns):
+    from core import web_join_target as target
+    from webjam_qt.widgets import webex_embed as module
+
+    base = "https://stalemate-hangout-beta.jeffstory007.workers.dev"
+    entrance = base + "/beta/?game-night=1"
+    link = entrance + "&via=rad-dad#game=game-123456xabcdef&instance=" + "1" * 32
+    value = link if value == "room" else value
+    opened, warnings, meeting_events = [], [], []
+    def record_open(url):
+        opened.append(url.toString())
+        return True
+
+    monkeypatch.setattr(target, "web_join_page", lambda: base + "/join/")
+    monkeypatch.setattr(module.QInputDialog, "getText", lambda *args: (value, accepted))
+    monkeypatch.setattr(module.QDesktopServices, "openUrl", record_open)
+    monkeypatch.setattr(module.QMessageBox, "warning", lambda *args: warnings.append(args[-1]))
+    embed = WebexEmbed()
+    embed.open_meeting_requested.connect(lambda: meeting_events.append("meeting"))
+    embed.set_meeting_configured(True)
+    assert not embed._game_night_btn.isHidden()
+    assert opened == []
+    embed._game_night_btn.click()
+    assert opened == ([value or entrance] if opens else [])
+    assert bool(warnings) is warns
+    assert meeting_events == []
 
 
 def test_compatibility_load_refuses_to_embed_even_a_valid_webex_link():

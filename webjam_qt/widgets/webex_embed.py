@@ -12,15 +12,17 @@ import logging
 from collections.abc import Sequence
 from itertools import islice
 
-from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QAccessible, QAccessibleEvent
+from PySide6.QtCore import QEvent, Qt, QUrl, Signal
+from PySide6.QtGui import QAccessible, QAccessibleEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QBoxLayout,
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -35,6 +37,7 @@ from core.meeting_companion import (
 from core.meeting_link import is_allowed_meeting_link
 from core.lesson_request import LessonRequestIntent, LessonRequestNotice
 from core.follow_along import lesson_setup_steps, lesson_sound_guidance
+from core.web_join_target import game_night_destination, game_night_page
 from webjam_qt.widgets.lesson_handoff import LessonHandoffPanel
 from webjam_qt.widgets.scrollable_content import ScrollableContent
 from webjam_qt.theme.tokens import Space
@@ -270,6 +273,15 @@ class WebexEmbed(QFrame):
         self._recheck_btn.setVisible(False)
         self._recheck_btn.clicked.connect(self.recheck_webex_requested.emit)
 
+        self._game_night_btn = QPushButton("Open Game Night…")
+        self._game_night_btn.setObjectName("GhostButton")
+        self._game_night_btn.setAccessibleDescription(
+            "Open the private Hang Out arcade in your browser, with an optional room link."
+        )
+        self._game_night_btn.setAutoDefault(False)
+        self._game_night_btn.setVisible(game_night_page() is not None)
+        self._game_night_btn.clicked.connect(self._open_game_night)
+
         header = self._header_layout = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(Space.SM)
@@ -308,6 +320,7 @@ class WebexEmbed(QFrame):
             (self._copy_link_btn, 2, 0),
             (self._install_btn, 2, 1),
             (self._recheck_btn, 3, 0),
+            (self._game_night_btn, 3, 1),
         )
         self._actions_single_column = False
         for button, row, column in self._action_positions:
@@ -332,6 +345,21 @@ class WebexEmbed(QFrame):
         self._render_audio_guidance()
         self._render_launch_status()
         self._render_link_accessibility()
+
+    def _open_game_night(self) -> None:
+        if game_night_page() is None:
+            return
+        link, accepted = QInputDialog.getText(
+            self, "Open Game Night", "Paste a Game Night room link, or leave blank to open the entrance."
+        )
+        if not accepted:
+            return
+        destination = game_night_destination(link)
+        if not destination:
+            QMessageBox.warning(self, "Game Night", "Use a Game Night room link copied from Hang Out.")
+            return
+        if not QDesktopServices.openUrl(QUrl(destination)):
+            QMessageBox.warning(self, "Game Night", "The browser could not open Game Night. Try again.")
 
     def _build_lesson_request_panel(self, layout: QVBoxLayout) -> None:
         self._lesson_request_frame = QFrame()
