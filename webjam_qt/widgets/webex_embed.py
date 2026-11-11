@@ -291,6 +291,7 @@ class WebexEmbed(QFrame):
         text_column = QVBoxLayout()
         text_column.setSpacing(0)
         text_column.addLayout(header)
+        text_column.addWidget(self._game_night_btn, alignment=Qt.AlignmentFlag.AlignLeft)
         text_column.addWidget(self._mode_label)
         self._sound_tips_button = QPushButton("Sound and sharing tips")
         self._sound_tips_button.setObjectName("GhostButton")
@@ -320,7 +321,6 @@ class WebexEmbed(QFrame):
             (self._copy_link_btn, 2, 0),
             (self._install_btn, 2, 1),
             (self._recheck_btn, 3, 0),
-            (self._game_night_btn, 3, 1),
         )
         self._actions_single_column = False
         for button, row, column in self._action_positions:

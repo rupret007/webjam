@@ -7,7 +7,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QPoint, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -53,12 +53,20 @@ def test_private_game_night_opens_only_on_explicit_valid_choice(monkeypatch, val
     embed = WebexEmbed()
     embed.open_meeting_requested.connect(lambda: meeting_events.append("meeting"))
     embed.set_meeting_configured(True)
-    assert not embed._game_night_btn.isHidden()
+    embed.resize(800, 152)
+    embed.show()
+    _app.processEvents()
+    button, viewport = embed._game_night_btn, embed._scroll.viewport()
+    origin = button.mapTo(viewport, QPoint(0, 0))
+    assert button.isVisibleTo(embed)
+    assert viewport.rect().contains(origin)
+    assert origin.y() + button.height() <= viewport.height()
     assert opened == []
     embed._game_night_btn.click()
     assert opened == ([value or entrance] if opens else [])
     assert bool(warnings) is warns
     assert meeting_events == []
+    embed.close()
 
 
 def test_compatibility_load_refuses_to_embed_even_a_valid_webex_link():
