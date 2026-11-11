@@ -1,0 +1,1 @@
+- Build the WebJam transport with Go 1.26.11 to pick up the November standard-library security fix.
