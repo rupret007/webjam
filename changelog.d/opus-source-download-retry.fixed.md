@@ -1,0 +1,1 @@
+- Retry transient Opus source download failures during Mac builds and fall back to the upstream release mirror with the same checksum verification.
