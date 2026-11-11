@@ -3,7 +3,6 @@ import { acquireMusicStream, closeAudioContext } from "./audio.js";
 import { WebJoinSession } from "./session.js";
 import { RELAY_ORIGIN } from "./config.js";
 import {
-  beginMicCheck,
   micCheckFailure,
   startMicLevelMonitor,
 } from "./prejoin.js";
@@ -219,7 +218,7 @@ async function runMicCheck(control) {
     }
     await context.resume();
     if (signal.aborted || expireUnusedInvite()) return;
-    const capture = await beginMicCheck(navigator.mediaDevices, $("mic-device").value);
+    const capture = await acquireMusicStream(navigator.mediaDevices, $("mic-device").value);
     if (signal.aborted || expireUnusedInvite()) {
       capture.stream.getTracks().forEach((track) => track.stop());
       return;

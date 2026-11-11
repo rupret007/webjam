@@ -1,5 +1,3 @@
-import { acquireMusicStream } from "./audio.js";
-
 /** RMS above this counts as audible input for the pre-join check. */
 export const MIC_HEARD_THRESHOLD = 0.012;
 
@@ -30,10 +28,6 @@ export function micCheckFailure(error) {
     message: error?.message || "Could not use your microphone. Press Try again.",
     showRetry: true,
   };
-}
-
-export function hasAudioInputDevice(devices) {
-  return devices.some((device) => device.kind === "audioinput");
 }
 
 export function micLevelRms(analyser) {
@@ -74,17 +68,4 @@ export function startMicLevelMonitor({
     source.disconnect();
     analyser.disconnect();
   };
-}
-
-export async function beginMicCheck(mediaDevices, deviceId) {
-  const devices = await mediaDevices.enumerateDevices();
-  if (hasAudioInputDevice(devices)) {
-    return acquireMusicStream(mediaDevices, deviceId);
-  }
-  try {
-    return await acquireMusicStream(mediaDevices, deviceId);
-  } catch (error) {
-    if (error.name === "NotFoundError") throw error;
-    throw error;
-  }
 }

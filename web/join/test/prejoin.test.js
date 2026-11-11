@@ -3,9 +3,7 @@ import assert from "node:assert/strict";
 import {
   MIC_HEARD_THRESHOLD,
   micCheckFailure,
-  hasAudioInputDevice,
   micLevelRms,
-  beginMicCheck,
 } from "../prejoin.js";
 
 test("mic check errors map to plain recovery text", () => {
@@ -15,9 +13,7 @@ test("mic check errors map to plain recovery text", () => {
   assert.equal(micCheckFailure({ name: "NotAllowedError" }).showRetry, true);
 });
 
-test("audio input detection and RMS threshold", () => {
-  assert.equal(hasAudioInputDevice([{ kind: "videoinput" }]), false);
-  assert.equal(hasAudioInputDevice([{ kind: "audioinput", label: "Mic" }]), true);
+test("audio level exceeds the RMS detection threshold", () => {
   const analyser = {
     fftSize: 4,
     getFloatTimeDomainData(buffer) {
@@ -28,16 +24,4 @@ test("audio input detection and RMS threshold", () => {
     },
   };
   assert.ok(micLevelRms(analyser) >= MIC_HEARD_THRESHOLD);
-});
-
-test("beginMicCheck fails closed when no audio inputs are listed", async () => {
-  await assert.rejects(
-    beginMicCheck({
-      enumerateDevices: async () => [{ kind: "audiooutput" }],
-      getUserMedia: async () => {
-        throw new DOMException("Requested device not found", "NotFoundError");
-      },
-    }),
-    { name: "NotFoundError" },
-  );
 });

@@ -1,0 +1,1 @@
+- Web Join can check your default microphone when the browser cannot list alternate inputs.
