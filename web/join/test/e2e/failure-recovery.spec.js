@@ -21,6 +21,7 @@ async function openInvitation(page, width = 390, skipCheck = true, delayCapture 
       configurable: true,
       value: async () => {
         // Synthetic audio only; never request the tester's microphone.
+        const { closeAudioContext } = await import(new URL('/audio.js', location.href).href);
         const context = new AudioContext();
         const output = context.createMediaStreamDestination();
         const { stream } = output;
@@ -32,9 +33,15 @@ async function openInvitation(page, width = 390, skipCheck = true, delayCapture 
           oscillator.start();
           await context.resume();
         }
+        let sourceClosing;
         for (const track of stream.getTracks()) {
           const stop = track.stop.bind(track);
-          track.stop = () => { stop(); context.close().catch(() => {}); };
+          track.stop = () => {
+            stop();
+            // A pending WebKit rendering start can outlive a direct close.
+            // Close the fixture source once, using the same ordered teardown.
+            sourceClosing ??= closeAudioContext(context);
+          };
           window.captureTracks.push(track);
         }
         if (delayCapture) return new Promise(resolve => pendingCaptures.push(() => resolve(stream)));
