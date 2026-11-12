@@ -1,0 +1,1 @@
+- Give the same recovery instructions after a private Music invite times out, including when to ask for a new invite.

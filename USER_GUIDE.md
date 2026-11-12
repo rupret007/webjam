@@ -886,8 +886,9 @@ extra setup, sound-confirmation, or Enter Jam click. Play a note and make sure
 you can hear each other—WebJam never treats a meter or connection as proof of
 that. Use Music's **Band Check**, Podcast's **Sound Check**, or Review's
 **Session Check (Preview)** if you need help.
-Copy Invite sends the whole message to people on the same Wi-Fi. Keep this
-room open.
+Use **Copy Invite** to share the complete message and keep the room open.
+For an invitation that says “same network,” the guest uses the host’s local
+network over Ethernet or Wi-Fi.
 
 If setup is interrupted, WebJam keeps only a private, bounded recovery record.
 It reuses progress only when the role and dedicated Jamulus profile fingerprint
@@ -904,7 +905,9 @@ invite—or open it from Finder. WebJam parses it at ingress,
 does not leave the bearer visible in the interface, and starts only the guest
 services required for that invitation. If setup fails, the in-memory intent is
 preserved only while it is safe to retry; WebJam never pretends an uncertain
-invitation succeeded.
+invitation succeeded. If a private remote invite times out and you see
+**Paste New Invite**, check that both devices are online and ask the host for
+a new invitation.
 
 The Join door contains one masked invitation field, one **Join** button, and a
 privacy reminder. When the field is empty, “Paste an invite to continue” explains
