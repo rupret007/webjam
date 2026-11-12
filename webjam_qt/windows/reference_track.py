@@ -307,6 +307,7 @@ class ReferenceTrackDialog(QDialog):
         root.addLayout(time_row)
 
         self._transport_bar = QWidget(self)
+        self._transport_bar.setObjectName("ReferenceTrackTransport")
         transport = self._done_footer = QHBoxLayout(self._transport_bar)
         transport.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.MD)
         transport.setSpacing(Space.SM)

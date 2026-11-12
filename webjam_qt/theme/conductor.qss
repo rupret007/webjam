@@ -366,6 +366,11 @@ QToolButton#PaintAlongMore:focus {
     background-color: ${COLOR_BG_CARD_HOVER};
 }
 
+#ReferenceTrackTransport QPushButton {
+    padding-left: ${SPACE_SM}px;
+    padding-right: ${SPACE_SM}px;
+}
+
 QPushButton#SharedTrackTransportButton {
     min-width: 32px;
     max-width: 32px;

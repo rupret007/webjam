@@ -403,9 +403,15 @@ def test_ready_and_playing_snapshots_enable_only_valid_controls() -> None:
         dialog.close()
 
 
-def test_shared_track_mute_is_keyboard_reachable_while_playing_in_compact_dialog() -> None:
+@pytest.mark.parametrize("larger_controls", [False, True])
+def test_shared_track_mute_is_keyboard_reachable_while_playing_in_compact_dialog(
+    larger_controls: bool,
+) -> None:
     dialog = ReferenceTrackDialog()
-    dialog.setStyleSheet(load_stylesheet())
+    stylesheet = load_stylesheet()
+    if larger_controls:
+        stylesheet += "\nQDialog QPushButton { font-size: 19px; }"
+    dialog.setStyleSheet(stylesheet)
     dialog.resize(500, 500)
     intents: list[bool] = []
     dialog.mute_requested.connect(intents.append)
@@ -427,15 +433,22 @@ def test_shared_track_mute_is_keyboard_reachable_while_playing_in_compact_dialog
         assert dialog._mute.accessibleName() == "Unmute Shared Track"
         assert dialog._status.text() == "Playing · Shared Track muted"
         assert dialog.width() == 500
-        options = QStyleOptionButton()
-        options.initFrom(dialog._mute)
-        contents = dialog._mute.style().subElementRect(
-            QStyle.SubElement.SE_PushButtonContents, options, dialog._mute
-        )
-        assert contents.width() >= dialog._mute.fontMetrics().horizontalAdvance(dialog._mute.text())
-        for button in (dialog._mute, dialog._stop, dialog._done):
+        for button in (
+            dialog._play,
+            dialog._pause,
+            dialog._restart,
+            dialog._stop,
+            dialog._mute,
+            dialog._done,
+        ):
             assert button.isVisibleTo(dialog)
             assert dialog.rect().contains(QRect(button.mapTo(dialog, QPoint()), button.size()))
+            options = QStyleOptionButton()
+            options.initFrom(button)
+            contents = button.style().subElementRect(
+                QStyle.SubElement.SE_PushButtonContents, options, button
+            )
+            assert contents.width() >= button.fontMetrics().horizontalAdvance(button.text())
         QTest.keyClick(dialog._mute, Qt.Key.Key_Space)
         assert intents == [True, False]
 
