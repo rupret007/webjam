@@ -1,0 +1,1 @@
+- The browser audio check gives the microphone picker the same tall touch target as the other controls.

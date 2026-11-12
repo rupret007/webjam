@@ -24,7 +24,7 @@ p { line-height: 1.5; }
 #prejoin-heading { margin: 0 0 10px; font-size: 1.15rem; }
 .mic-actions, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .mic-picker { margin-top: 10px; }
-.mic-picker select { display: block; width: 100%; margin-top: 4px; padding: 8px; font: inherit; color: inherit; background: #23312e; border: 1px solid #73877c; border-radius: 8px; }
+.mic-picker select { display: block; width: 100%; height: max(44px, 2.75em); margin-top: 4px; padding: 8px; font: inherit; color: inherit; background: #23312e; border: 1px solid #73877c; border-radius: 8px; }
 #mic-source { margin: 6px 0 0; font-size: .9rem; color: #b4c2bd; }
 .actions { margin-top: 12px; }
 .mic-meter { height: 8px; margin-top: 12px; border-radius: 999px; background: #364341; overflow: hidden; }
