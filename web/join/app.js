@@ -181,7 +181,9 @@ const refresh = () => {
 };
 
 function showMicError(error, deviceDisconnected = false) {
-  const restoreFocus = document.activeElement === $("mic-progress");
+  const activeControl = document.activeElement;
+  const restoreFocus = activeControl === $("mic-progress") ||
+    (deviceDisconnected && activeControl === $("join"));
   stopMicMonitoring(true);
   void closeAudioContext(context);
   context = null;
@@ -227,7 +229,6 @@ async function runMicCheck(control) {
     prejoinWarnings = capture.warnings;
     const track = prejoinStream.getAudioTracks()[0];
     if (!watchMicrophone(track, signal, () => {
-      stopMicMonitoring(true);
       $("mic-device").value = "";
       showMicError(new Error("Microphone disconnected. Reconnect it or choose another input, then try again."), true);
     })) return;

@@ -105,25 +105,35 @@ test('expiry stops capture that resolves after Join was pressed', async ({ page 
   await expect.poll(() => page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);
 });
 
-test('losing the checked microphone clears Join readiness until a deliberate recheck', async ({ page }) => {
-  await openInvitation(page, 390, false);
-  await page.getByRole('button', { name: 'Check microphone', exact: true }).click();
-  await expect(page.locator('#join')).toBeEnabled();
-  await page.evaluate(() => {
-    captureTracks[0].stop();
-    captureTracks[0].dispatchEvent(new Event('ended'));
+for (const focusJoin of [true, false]) {
+  test(`losing the checked microphone clears Join readiness with focus on ${focusJoin ? 'Join' : 'headphones'}`, async ({ page }) => {
+    await openInvitation(page, 390, false);
+    await page.getByRole('button', { name: 'Check microphone', exact: true }).click();
+    const join = page.getByRole('button', { name: 'Join with microphone', exact: true });
+    const headphones = page.getByRole('checkbox');
+    const retry = page.getByRole('button', { name: 'Try again', exact: true });
+    await expect(join).toBeEnabled();
+    const focused = focusJoin ? join : headphones;
+    await focused.focus();
+    await expect(focused).toBeFocused();
+    await page.evaluate(() => {
+      captureTracks[0].stop();
+      captureTracks[0].dispatchEvent(new Event('ended'));
+    });
+    await expect(page.locator('#mic-error')).toContainText('Microphone disconnected');
+    await expect(page.locator('#mic-heard')).toBeHidden();
+    await expect(join).toBeDisabled();
+    await expect(focusJoin ? retry : headphones).toBeFocused();
+    await expect.poll(() => page.evaluate(() => audioContexts[0].state)).toBe('closed');
+    expect(await page.evaluate(() => captureTracks.length)).toBe(1);
+    await retry.press('Enter');
+    await expect(join).toBeEnabled();
+    await expect(join).toBeFocused();
+    expect(await page.evaluate(() => captureTracks.length)).toBe(2);
+    await page.evaluate(() => captureTracks[0].dispatchEvent(new Event('ended')));
+    await expect(join).toBeEnabled();
   });
-  await expect(page.locator('#mic-error')).toContainText('Microphone disconnected');
-  await expect(page.locator('#mic-heard')).toBeHidden();
-  await expect(page.locator('#join')).toBeDisabled();
-  await expect.poll(() => page.evaluate(() => audioContexts[0].state)).toBe('closed');
-  expect(await page.evaluate(() => captureTracks.length)).toBe(1);
-  await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.locator('#join')).toBeEnabled();
-  expect(await page.evaluate(() => captureTracks.length)).toBe(2);
-  await page.evaluate(() => captureTracks[0].dispatchEvent(new Event('ended')));
-  await expect(page.locator('#join')).toBeEnabled();
-});
+}
 
 for (const skipCheck of [false, true]) {
   test(`losing an enrolled microphone closes the audio session after ${skipCheck ? 'skipping' : 'passing'} the mic check`, async ({ page }) => {
