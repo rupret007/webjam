@@ -13,9 +13,11 @@ from PySide6.QtGui import (
     QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
+    QResizeEvent,
 )
 from PySide6.QtWidgets import (
     QApplication,
+    QBoxLayout,
     QCheckBox,
     QDialog,
     QDoubleSpinBox,
@@ -308,9 +310,17 @@ class ReferenceTrackDialog(QDialog):
 
         self._transport_bar = QWidget(self)
         self._transport_bar.setObjectName("ReferenceTrackTransport")
-        transport = self._done_footer = QHBoxLayout(self._transport_bar)
+        transport = self._transport_layout = QBoxLayout(
+            QBoxLayout.Direction.LeftToRight, self._transport_bar
+        )
         transport.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.MD)
         transport.setSpacing(Space.SM)
+        playback = self._playback_footer = QHBoxLayout()
+        playback.setSpacing(Space.SM)
+        actions = self._done_footer = QHBoxLayout()
+        actions.setSpacing(Space.SM)
+        transport.addLayout(playback)
+        transport.addLayout(actions)
         self._play = QPushButton("Play")
         self._play.setObjectName("PrimaryButton")
         self._play.setAccessibleName("Play the Shared Track to the band")
@@ -332,12 +342,13 @@ class ReferenceTrackDialog(QDialog):
         self._mute.setAccessibleName("Mute Shared Track")
         self._mute.setToolTip("Silence the backing track for everyone while playback continues.")
         self._mute.clicked.connect(self._emit_mute)
-        transport.addWidget(self._play)
-        transport.addWidget(self._pause)
-        transport.addWidget(self._restart)
-        transport.addWidget(self._stop)
-        transport.addWidget(self._mute)
-        transport.addStretch(1)
+        playback.addWidget(self._play)
+        playback.addWidget(self._pause)
+        playback.addWidget(self._restart)
+        playback.addWidget(self._stop)
+        playback.addStretch(1)
+        actions.addStretch(1)
+        actions.addWidget(self._mute)
         outer.addWidget(self._transport_bar)
 
         controls = QFormLayout()
@@ -408,7 +419,7 @@ class ReferenceTrackDialog(QDialog):
         self._done.setObjectName("GhostButton")
         self._done.setAccessibleName("Close Shared Track controls")
         self._done.clicked.connect(self.close)
-        transport.addWidget(self._done)
+        actions.addWidget(self._done)
         self._done_in_support = False
 
         # Enter commits spin-box edits; it must never activate an unrelated
@@ -418,6 +429,29 @@ class ReferenceTrackDialog(QDialog):
             button.setDefault(False)
 
         self._set_controls_enabled(False, state="unavailable")
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "_transport_layout"):
+            self._fit_transport_footer()
+
+    def _fit_transport_footer(self) -> None:
+        layout = self._transport_layout
+        margins = layout.contentsMargins()
+        inline_width = (
+            self._playback_footer.sizeHint().width()
+            + self._done_footer.sizeHint().width()
+            + margins.left() + margins.right() + layout.spacing()
+        )
+        # Give the compact dialog two rows even if the current labels fit.
+        # A wider dialog may also need two rows with larger system fonts.
+        direction = (
+            QBoxLayout.Direction.TopToBottom
+            if self.width() < max(560, inline_width)
+            else QBoxLayout.Direction.LeftToRight
+        )
+        if direction != layout.direction():
+            layout.setDirection(direction)
 
     @staticmethod
     def _dropped_audio_path(mime_data) -> str:
@@ -780,6 +814,7 @@ class ReferenceTrackDialog(QDialog):
                 "Restore the backing track for everyone at its previous level."
                 if muted else "Silence the backing track for everyone while playback continues."
             )
+            self._fit_transport_footer()
         try:
             underrun_frames = max(0, int(getattr(snapshot, "underrun_frames", 0)))
         except (TypeError, ValueError):

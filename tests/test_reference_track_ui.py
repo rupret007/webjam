@@ -433,6 +433,7 @@ def test_shared_track_mute_is_keyboard_reachable_while_playing_in_compact_dialog
         assert dialog._mute.accessibleName() == "Unmute Shared Track"
         assert dialog._status.text() == "Playing · Shared Track muted"
         assert dialog.width() == 500
+        assert dialog._mute.y() > dialog._stop.y()
         for button in (
             dialog._play,
             dialog._pause,
@@ -449,6 +450,14 @@ def test_shared_track_mute_is_keyboard_reachable_while_playing_in_compact_dialog
                 QStyle.SubElement.SE_PushButtonContents, options, button
             )
             assert contents.width() >= button.fontMetrics().horizontalAdvance(button.text())
+        dialog.resize(700, 540)
+        _app.processEvents()
+        assert dialog._stop.geometry().top() <= dialog._mute.geometry().center().y() <= dialog._stop.geometry().bottom()
+        assert dialog._mute.hasFocus()
+        dialog.resize(500, 500)
+        _app.processEvents()
+        assert dialog._mute.y() > dialog._stop.y()
+        assert dialog._mute.hasFocus()
         QTest.keyClick(dialog._mute, Qt.Key.Key_Space)
         assert intents == [True, False]
 
