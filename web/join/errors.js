@@ -57,7 +57,7 @@ export function mapJoinError(error) {
     return {
       kind: "session_ended",
       headline: message,
-      hint: "Ask your host to create a new browser invite and open that link.",
+      hint: "Ask your host to send a new browser invite. If you joined from Hang Out, return to your Jam room to accept it.",
       showRetry: false,
       needsFreshInvite: true,
     };

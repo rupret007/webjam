@@ -185,7 +185,9 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
   await expect(page.locator('#status')).toBeFocused();
   await page.evaluate(() => window.reportConnectionRoute('relayed'));
   await expect(routeIndicator).toBeHidden();
-  await expect(page.locator('#error-hint')).toContainText('new browser invite');
+  await expect(page.locator('#error-hint')).toHaveText(
+    'Ask your host to send a new browser invite. If you joined from Hang Out, return to your Jam room to accept it.'
+  );
   for (const id of ['join', 'retry', 'leave', 'prejoin']) await expect(page.locator('#' + id)).toBeHidden();
   await expect.poll(() => page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
   await expect.poll(() => page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);

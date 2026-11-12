@@ -946,8 +946,9 @@ For the separate opt-in [browser Web Join](docs/web-join.md), an interrupted
 or timed-out Join explains the problem, releases audio resources, and enables
 an explicit retry. **Leave session** remains a deliberate exit; it does not
 automatically reconnect or later show a timeout warning. Joining again still
-requires a valid, unused host invitation. Ask the host for a fresh link if the
-old one has expired or may have been consumed.
+requires a valid, unused host invitation. If the connection ends, ask the host
+to send a new browser invite. If you joined from Hang Out, return to your Jam
+room to accept the replacement. If the host sent you a link, open the new link.
 With the keyboard, starting a connection moves focus to **Leave session** so
 you can cancel. When that control disappears, focus returns to **Join** or
 **Retry** if available, or to the message that explains what to do next.
