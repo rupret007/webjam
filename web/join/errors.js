@@ -39,6 +39,15 @@ const HOST_OFFLINE_SIGNALS = new Set([
   JOIN_SIGNAL.HOST_AUTH_TIMEOUT,
 ]);
 
+const RELAY_CONFIGURATION_SIGNALS = new Set([
+  "Untrusted relay configuration",
+  "Untrusted relay address",
+  "Invalid relay configuration",
+  "Invalid relay credential",
+]);
+
+const FRESH_INVITE_HINT = "Ask your host to send a new browser invite. If you joined from Hang Out, return to your Jam room to accept it.";
+
 /** @typedef {{ kind: string, headline: string, hint: string, showRetry: boolean, needsFreshInvite: boolean }} JoinFailureView */
 
 /** @param {unknown} error @returns {JoinFailureView} */
@@ -57,7 +66,7 @@ export function mapJoinError(error) {
     return {
       kind: "session_ended",
       headline: message,
-      hint: "Ask your host to send a new browser invite. If you joined from Hang Out, return to your Jam room to accept it.",
+      hint: FRESH_INVITE_HINT,
       showRetry: false,
       needsFreshInvite: true,
     };
@@ -83,9 +92,18 @@ export function mapJoinError(error) {
   if (message === JOIN_SIGNAL.HOST_BINDING) {
     return {
       kind: "host_binding",
-      headline: message,
-      hint: "The invite or host certificate did not match. Ask your host for a new Web Join link, then tap Retry.",
-      showRetry: true,
+      headline: "WebJam couldn't verify the host for this invite.",
+      hint: FRESH_INVITE_HINT,
+      showRetry: false,
+      needsFreshInvite: true,
+    };
+  }
+  if (RELAY_CONFIGURATION_SIGNALS.has(message)) {
+    return {
+      kind: "relay_configuration",
+      headline: "WebJam couldn't verify its browser audio relay.",
+      hint: "Tell your host about this error. Ask for a new browser invite after the relay is working.",
+      showRetry: false,
       needsFreshInvite: true,
     };
   }
