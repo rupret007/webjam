@@ -210,6 +210,44 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
   await expect.poll(() => page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
 });
 
+for (const { failure, width, headline, guidance } of [
+  {
+    failure: 'Host identity or invite binding did not match',
+    width: 375,
+    headline: "WebJam couldn't verify the host for this invite.",
+    guidance: 'return to your Jam room to accept it',
+  },
+  {
+    failure: 'Untrusted relay configuration',
+    width: 390,
+    headline: "WebJam couldn't verify its browser audio relay.",
+    guidance: 'Tell your host about this error',
+  },
+]) {
+  test(`trust failure asks for a fresh invite without retrying at ${width}px`, async ({ page }) => {
+    await page.route('**/session.js', route => route.fulfill({
+      contentType: 'application/javascript',
+      body: `export class WebJoinSession {
+        async join() { throw new Error(${JSON.stringify(failure)}); }
+        close() {}
+      }`,
+    }));
+    await openInvitation(page, width);
+    await page.locator('#join').press('Enter');
+    const status = page.locator('#status');
+    await expect(status).toHaveText(headline);
+    await expect(status).toBeFocused();
+    await expect(page.locator('#error-hint')).toContainText(guidance);
+    for (const id of ['join', 'retry', 'leave', 'prejoin']) await expect(page.locator('#' + id)).toBeHidden();
+    await expect.poll(() => page.evaluate(() =>
+      captureTracks.length > 0 && captureTracks.every(track => track.readyState === 'ended'),
+    )).toBe(true);
+    await expect.poll(() => page.evaluate(() =>
+      audioContexts.length > 0 && audioContexts.every(context => context.state === 'closed'),
+    )).toBe(true);
+  });
+}
+
 for (const width of [375, 390]) {
   test(`a relay timeout releases audio and permits an explicit retry at ${width}px`, async ({ page }) => {
     let requests = 0;
