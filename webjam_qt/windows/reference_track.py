@@ -86,6 +86,7 @@ class ReferenceTrackDialog(QDialog):
     seek_requested = Signal(float)
     loop_requested = Signal(float, object)
     trim_requested = Signal(float)
+    mute_requested = Signal(bool)
     count_in_requested = Signal(int, float)
     recheck_route_requested = Signal()
 
@@ -325,10 +326,16 @@ class ReferenceTrackDialog(QDialog):
         self._stop.setProperty("destructive", "true")
         self._stop.setAccessibleName("Stop Shared Track playback")
         self._stop.clicked.connect(self._emit_stop)
+        self._mute = QPushButton("Mute track")
+        self._mute.setObjectName("GhostButton")
+        self._mute.setAccessibleName("Mute Shared Track")
+        self._mute.setToolTip("Silence the backing track for everyone while playback continues.")
+        self._mute.clicked.connect(self._emit_mute)
         transport.addWidget(self._play)
         transport.addWidget(self._pause)
         transport.addWidget(self._restart)
         transport.addWidget(self._stop)
+        transport.addWidget(self._mute)
         transport.addStretch(1)
         outer.addWidget(self._transport_bar)
 
@@ -521,6 +528,10 @@ class ReferenceTrackDialog(QDialog):
             in {"routing", "playing", "paused", "failed"}
         ):
             self.stop_requested.emit()
+
+    def _emit_mute(self) -> None:
+        if self._mute.isEnabled():
+            self.mute_requested.emit(not bool(getattr(self._snapshot, "muted", False)))
 
     def _emit_seek(self) -> None:
         if (
@@ -721,6 +732,7 @@ class ReferenceTrackDialog(QDialog):
             self._pause,
             self._restart,
             self._stop,
+            self._mute,
         }
         self._snapshot = snapshot
         state_value = getattr(getattr(snapshot, "state", None), "value", "")
@@ -758,6 +770,15 @@ class ReferenceTrackDialog(QDialog):
             0, int(getattr(snapshot, "source_channels", 0) or 0)
         )
         count_in_active = bool(getattr(snapshot, "count_in_active", False))
+        muted = bool(getattr(snapshot, "muted", False))
+        mute_action = "Unmute" if muted else "Mute"
+        if self._mute.text() != f"{mute_action} track":
+            self._mute.setText(f"{mute_action} track")
+            self._mute.setAccessibleName(f"{mute_action} Shared Track")
+            self._mute.setToolTip(
+                "Restore the backing track for everyone at its previous level."
+                if muted else "Silence the backing track for everyone while playback continues."
+            )
         try:
             underrun_frames = max(0, int(getattr(snapshot, "underrun_frames", 0)))
         except (TypeError, ValueError):
@@ -780,8 +801,11 @@ class ReferenceTrackDialog(QDialog):
             "closed": "Shared Track is closed",
         }
         status = state_labels.get(state, "Checking Shared Track state…")
-        if count_in_active and state == "playing":
-            status = "Count-in playing to the band"
+        if state == "playing":
+            if muted:
+                status = "Playing · Shared Track muted"
+            elif count_in_active:
+                status = "Count-in playing to the band"
         if loaded and state == "ready" and not capability_available:
             status = (
                 "Song loaded and ready to inspect; initial audio decoded; "
@@ -1454,6 +1478,7 @@ class ReferenceTrackDialog(QDialog):
             play_tooltip = "Load a supported song before playing."
         self._play.setToolTip(play_tooltip)
         self._set_dynamic_description(self._play, play_tooltip)
+        self._mute.setEnabled(loaded and primary_ready and state in {"ready", "playing", "paused"})
         self._pause.setEnabled(primary_ready and state == "playing")
         if state != "playing":
             pause_tooltip = (

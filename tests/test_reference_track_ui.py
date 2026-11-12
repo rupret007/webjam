@@ -403,6 +403,42 @@ def test_ready_and_playing_snapshots_enable_only_valid_controls() -> None:
         dialog.close()
 
 
+def test_shared_track_mute_is_keyboard_reachable_while_playing_in_compact_dialog() -> None:
+    dialog = ReferenceTrackDialog()
+    dialog.setStyleSheet(load_stylesheet())
+    dialog.resize(500, 500)
+    intents: list[bool] = []
+    dialog.mute_requested.connect(intents.append)
+    try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
+        playing = _snapshot(_State.PLAYING)
+        dialog.set_snapshot(playing)
+        dialog.show()
+        _app.processEvents()
+        assert dialog._mute.accessibleName() == "Mute Shared Track"
+        dialog._mute.setFocus()
+        QTest.keyClick(dialog._mute, Qt.Key.Key_Space)
+        assert intents == [True]
+
+        playing.muted = True
+        dialog.set_snapshot(playing)
+        assert dialog._mute.accessibleName() == "Unmute Shared Track"
+        assert dialog._status.text() == "Playing · Shared Track muted"
+        assert dialog.width() == 500
+        for button in (dialog._mute, dialog._stop, dialog._done):
+            assert button.isVisibleTo(dialog)
+            assert dialog.rect().contains(QRect(button.mapTo(dialog, QPoint()), button.size()))
+        QTest.keyClick(dialog._mute, Qt.Key.Key_Space)
+        assert intents == [True, False]
+
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.HOST_REQUIRED)
+        assert not dialog._mute.isEnabled()
+        dialog._mute.click()
+        assert intents == [True, False]
+    finally:
+        dialog.close()
+
+
 def test_loaded_song_waits_visibly_for_primary_jamulus_connection() -> None:
     dialog = ReferenceTrackDialog()
     plays: list[bool] = []

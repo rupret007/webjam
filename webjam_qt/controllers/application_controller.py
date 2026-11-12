@@ -15505,6 +15505,11 @@ class ApplicationController(QObject):
                     lambda: controller.set_trim_db(float(trim))
                 )
             )
+            dialog.mute_requested.connect(
+                lambda muted: self._run_reference_track_fast(
+                    lambda: controller.set_muted(muted)
+                )
+            )
             dialog.count_in_requested.connect(
                 lambda beats, bpm: self._run_reference_track_fast(
                     lambda: controller.set_count_in(int(beats), float(bpm))
