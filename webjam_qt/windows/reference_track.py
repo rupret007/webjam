@@ -305,7 +305,10 @@ class ReferenceTrackDialog(QDialog):
         time_row.addWidget(self._seek, 1)
         root.addLayout(time_row)
 
-        transport = QHBoxLayout()
+        self._transport_bar = QWidget(self)
+        transport = self._done_footer = QHBoxLayout(self._transport_bar)
+        transport.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.MD)
+        transport.setSpacing(Space.SM)
         self._play = QPushButton("Play")
         self._play.setObjectName("PrimaryButton")
         self._play.setAccessibleName("Play the Shared Track to the band")
@@ -327,7 +330,7 @@ class ReferenceTrackDialog(QDialog):
         transport.addWidget(self._restart)
         transport.addWidget(self._stop)
         transport.addStretch(1)
-        root.addLayout(transport)
+        outer.addWidget(self._transport_bar)
 
         controls = QFormLayout()
         controls.setHorizontalSpacing(Space.MD)
@@ -393,15 +396,12 @@ class ReferenceTrackDialog(QDialog):
         root.addWidget(self._safety)
         root.addStretch(1)
 
-        footer = self._done_footer = QHBoxLayout()
-        footer.addStretch(1)
         self._done = QPushButton("Done")
         self._done.setObjectName("GhostButton")
         self._done.setAccessibleName("Close Shared Track controls")
         self._done.clicked.connect(self.close)
-        footer.addWidget(self._done)
+        transport.addWidget(self._done)
         self._done_in_support = False
-        root.addLayout(footer)
 
         # Enter commits spin-box edits; it must never activate an unrelated
         # transport or file-picker button through QDialog's auto-default rule.
@@ -1181,6 +1181,7 @@ class ReferenceTrackDialog(QDialog):
         new_layout.addWidget(self._done)
         self._done_in_support = beside_support
         self._support_footer.setVisible(beside_support)
+        self._transport_bar.setVisible(not beside_support)
         self._done.show()
 
     def set_route_checking(self, checking: bool) -> None:
