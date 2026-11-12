@@ -1516,11 +1516,13 @@ class TestConductorWindow(unittest.TestCase):
         w.webex_embed.show()
         w.session_canvas.show()
         w.show()
-        w.center_splitter.setSizes([340, 380])
+        w.center_splitter.setSizes([300, 420])
         _qapp().processEvents()
         try:
             self.assertEqual((w.width(), w.height()), (720, 560))
             self.assertTrue(w.session_canvas.isVisible())
+            stage_width, notes_width = w.center_splitter.sizes()
+            self.assertGreater(notes_width, stage_width)
             for state in (
                 SessionUiState.idle(),
                 SessionUiState.permission_denied(),

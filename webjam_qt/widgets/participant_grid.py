@@ -219,7 +219,6 @@ class ParticipantGrid(QScrollArea):
         self.setWidgetResizable(True)
         self.setFrameShape(QScrollArea.Shape.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setMinimumWidth(320 + 2 * Space.SM)
 
         container = QWidget()
         container.setObjectName("Stage")
@@ -247,7 +246,6 @@ class ParticipantGrid(QScrollArea):
     def _build_empty_state(self, parent: QWidget) -> QFrame:
         state = QFrame(parent)
         state.setObjectName("StageEmptyState")
-        state.setMinimumWidth(320)
         state.setMaximumWidth(620)
         state.setAccessibleName("Live session status")
 
@@ -543,9 +541,9 @@ class ParticipantGrid(QScrollArea):
         # A comfortably readable hero on desktop that shrinks with the actual
         # viewport instead of imposing a fixed app-wide minimum width.
         responsive_target = max(360, int(viewport_width * 0.56))
-        width = max(
-            self._empty_state.minimumWidth(),
-            min(responsive_target, self._empty_state.maximumWidth(), viewport_width - 2 * gutter),
+        width = min(
+            responsive_target, self._empty_state.maximumWidth(),
+            max(1, viewport_width - 2 * gutter),
         )
         height = layout.heightForWidth(width) if layout is not None else -1
         height = max(height, self._empty_state.minimumSizeHint().height())

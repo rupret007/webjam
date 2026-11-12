@@ -231,9 +231,6 @@ class ConductorWindow(QMainWindow):
         self._room_stage.addWidget(self.participant_grid)
         self._room_stage.addWidget(self.art_room_overview)
         self._room_stage.setCurrentWidget(self.participant_grid)
-        # Reserve a usable stage viewport when Conversation needs to scroll.
-        # Give the meeting card its preferred height when both can fit.
-        self._room_stage.setMinimumHeight(120)
         stage_layout.addWidget(self._room_stage, stretch=1)
         stage_layout.addWidget(self.webex_embed)
 
@@ -1316,6 +1313,9 @@ class ConductorWindow(QMainWindow):
         if getattr(self, "song_overlay", None) is not None:
             self.song_overlay.set_available_width(self.width())
         if hasattr(self, "workspace_stack"):
+            # On short windows the stage needs room for its scrolled action.
+            # Taller windows can give Conversation its preferred height.
+            self._room_stage.setMinimumHeight(100 if self.height() <= 600 else 0)
             self.apply_art_notes_layout()
 
     # ------------------------------------------------------------------
