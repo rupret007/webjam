@@ -10,6 +10,7 @@ BUILD = "a" * 40
 PRIVATE_PAGE = "https://stalemate-hangout-beta.jeffstory007.workers.dev/join/"
 GAME_NIGHT = "https://stalemate-hangout-beta.jeffstory007.workers.dev/beta/?game-night=1"
 ROOM_LINK = GAME_NIGHT + "&via=rad-dad#game=game-123456xabcdef&instance=" + "1" * 32
+GAME_INVITE = PRIVATE_PAGE.removesuffix("/join/") + "/beta/game-night/guest#invite=" + "a" * 32 + "." + "b" * 43
 
 
 def _canonical(value):
@@ -28,6 +29,10 @@ def test_private_package_selects_the_protected_community_page(tmp_path, monkeypa
     assert target.game_night_page() == GAME_NIGHT
     assert target.game_night_destination("") == GAME_NIGHT
     assert target.game_night_destination(" " + ROOM_LINK + "\n") == ROOM_LINK
+    assert target.game_night_destination(GAME_INVITE) == GAME_INVITE
+    for game in target.GAME_NIGHT_GAMES:
+        assert target.game_night_game_page(game) == GAME_NIGHT + "&table=" + game
+    assert target.game_night_game_page("chess&via=other") is None
 
 
 def test_source_default_does_not_read_a_packaged_or_environment_override(monkeypatch):
@@ -41,6 +46,8 @@ def test_source_default_does_not_read_a_packaged_or_environment_override(monkeyp
     assert target.web_join_page() == "https://stalemate.band/join/"
     assert target.game_night_page() is None
     assert target.game_night_destination(ROOM_LINK) is None
+    assert target.game_night_destination(GAME_INVITE) is None
+    assert target.game_night_game_page("chess") is None
 
 
 @pytest.mark.parametrize("pasted", [
@@ -54,6 +61,11 @@ def test_source_default_does_not_read_a_packaged_or_environment_override(monkeyp
     ROOM_LINK + "&invite=secret",
     GAME_NIGHT + "#invite=secret",
     GAME_NIGHT + "&game-night=1",
+    GAME_INVITE.replace("/guest#", "/guest?#"),
+    GAME_INVITE.replace("/guest#", "/guest/#"),
+    GAME_INVITE.replace("https://", "https://other.invalid/"),
+    GAME_INVITE[:-1],
+    GAME_INVITE + "&invite=extra",
 ])
 def test_private_game_night_rejects_other_destinations_and_extra_parameters(monkeypatch, pasted):
     monkeypatch.setattr(target, "web_join_page", lambda: PRIVATE_PAGE)

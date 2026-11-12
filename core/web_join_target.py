@@ -26,11 +26,27 @@ _PAGES = MappingProxyType({
     "public": "https://stalemate.band/join/",
     "private-beta": "https://stalemate-hangout-beta.jeffstory007.workers.dev/join/",
 })
-_GAME_NIGHT_PAGE = _PAGES["private-beta"].removesuffix("/join/") + "/beta/?game-night=1"
+_GAME_NIGHT_ORIGIN = _PAGES["private-beta"].removesuffix("/join/")
+_GAME_NIGHT_PAGE = _GAME_NIGHT_ORIGIN + "/beta/?game-night=1"
 _GAME_NIGHT_ROOM_LINK = re.compile(
     re.escape(_GAME_NIGHT_PAGE)
     + r"(?:&via=(?:stalemate|rad-dad))?#game=game-[a-f0-9]{6}x[a-f0-9]{6}&instance=[a-f0-9]{32}"
 )
+_GAME_NIGHT_GUEST_LINK = re.compile(
+    re.escape(_GAME_NIGHT_ORIGIN + "/beta/game-night/guest#invite=")
+    + r"[A-Za-z0-9_-]{20,200}\.[A-Za-z0-9_-]{43}"
+)
+GAME_NIGHT_GAMES = MappingProxyType({
+    "chess": "Royal Flush Chess",
+    "crapeights": "Crappy Eights",
+    "turdrummy": "TurdRummy",
+    "turdspades": "TurdSpades",
+    "turdjack": "Crapjack 21",
+    "turdtris": "Turdtris Sprint",
+    "turdomania": "Turdomania Duel",
+    "turdrush": "Turd Rush Race",
+    "turdanoid": "Turdanoid Brick Race",
+})
 
 
 class WebJoinTargetUnavailable(ValueError):
@@ -111,12 +127,19 @@ def game_night_page() -> str | None:
         return None
 
 
-def game_night_destination(pasted_link: str) -> str | None:
-    """Accept a room locator produced by Hang Out, or its entrance if blank."""
+def game_night_game_page(game: str) -> str | None:
     entrance = game_night_page()
-    if entrance is None or not isinstance(pasted_link, str) or len(pasted_link) > 240:
+    if entrance is None or game not in GAME_NIGHT_GAMES:
+        return None
+    return entrance + "&table=" + game
+
+
+def game_night_destination(pasted_link: str) -> str | None:
+    """Accept an exact Hang Out game invitation, room address or entrance."""
+    entrance = game_night_page()
+    if entrance is None or not isinstance(pasted_link, str) or len(pasted_link) > 400:
         return None
     link = pasted_link.strip()
     if not link or link == entrance:
         return entrance
-    return link if _GAME_NIGHT_ROOM_LINK.fullmatch(link) else None
+    return link if _GAME_NIGHT_GUEST_LINK.fullmatch(link) or _GAME_NIGHT_ROOM_LINK.fullmatch(link) else None

@@ -32,6 +32,7 @@ def test_card_constructs_without_webengine_or_token_state():
     ("https://external.invalid/beta/?game-night=1", True, False, True),
     ("", True, True, False),
     ("room", True, True, False),
+    ("game", True, True, False),
 ])
 def test_private_game_night_opens_only_on_explicit_valid_choice(monkeypatch, value, accepted, opens, warns):
     from core import web_join_target as target
@@ -40,13 +41,15 @@ def test_private_game_night_opens_only_on_explicit_valid_choice(monkeypatch, val
     base = "https://stalemate-hangout-beta.jeffstory007.workers.dev"
     entrance = base + "/beta/?game-night=1"
     link = entrance + "&via=rad-dad#game=game-123456xabcdef&instance=" + "1" * 32
-    value = link if value == "room" else value
+    game_link = base + "/beta/game-night/guest#invite=" + "a" * 32 + "." + "b" * 43
+    value = {"room": link, "game": game_link}.get(value, value)
     opened, warnings, meeting_events = [], [], []
     def record_open(url):
         opened.append(url.toString())
         return True
 
     monkeypatch.setattr(target, "web_join_page", lambda: base + "/join/")
+    monkeypatch.setattr(module.QInputDialog, "getItem", lambda *args: (args[3][-1], True))
     monkeypatch.setattr(module.QInputDialog, "getText", lambda *args: (value, accepted))
     monkeypatch.setattr(module.QDesktopServices, "openUrl", record_open)
     monkeypatch.setattr(module.QMessageBox, "warning", lambda *args: warnings.append(args[-1]))
@@ -66,6 +69,31 @@ def test_private_game_night_opens_only_on_explicit_valid_choice(monkeypatch, val
     assert opened == ([value or entrance] if opens else [])
     assert bool(warnings) is warns
     assert meeting_events == []
+    embed.close()
+
+
+def test_private_game_night_selects_a_game_without_pasting(monkeypatch):
+    from core import web_join_target as target
+    from webjam_qt.widgets import webex_embed as module
+
+    monkeypatch.setattr(target, "web_join_page", lambda: target._PAGES["private-beta"])
+    opened = []
+
+    def choose(_parent, _title, _label, items, _index, editable):
+        assert tuple(items[:-1]) == tuple(target.GAME_NIGHT_GAMES.values())
+        assert not editable
+        return "Turd Rush Race", True
+
+    def record_open(url):
+        opened.append(url.toString())
+        return True
+
+    monkeypatch.setattr(module.QInputDialog, "getItem", choose)
+    monkeypatch.setattr(module.QInputDialog, "getText", lambda *_: pytest.fail("selecting a game must not ask for a link"))
+    monkeypatch.setattr(module.QDesktopServices, "openUrl", record_open)
+    embed = WebexEmbed()
+    embed._game_night_btn.click()
+    assert opened == [target.game_night_game_page("turdrush")]
     embed.close()
 
 

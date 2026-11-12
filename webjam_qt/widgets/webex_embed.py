@@ -37,7 +37,7 @@ from core.meeting_companion import (
 from core.meeting_link import is_allowed_meeting_link
 from core.lesson_request import LessonRequestIntent, LessonRequestNotice
 from core.follow_along import lesson_setup_steps, lesson_sound_guidance
-from core.web_join_target import game_night_destination, game_night_page
+from core.web_join_target import GAME_NIGHT_GAMES, game_night_destination, game_night_game_page, game_night_page
 from webjam_qt.widgets.lesson_handoff import LessonHandoffPanel
 from webjam_qt.widgets.scrollable_content import ScrollableContent
 from webjam_qt.theme.tokens import Space
@@ -276,7 +276,7 @@ class WebexEmbed(QFrame):
         self._game_night_btn = QPushButton("Open Game Night…")
         self._game_night_btn.setObjectName("GhostButton")
         self._game_night_btn.setAccessibleDescription(
-            "Open the private Hang Out arcade in your browser, with an optional room link."
+            "Choose a game to play with friends in the private Hang Out arcade."
         )
         self._game_night_btn.setAutoDefault(False)
         self._game_night_btn.setVisible(game_night_page() is not None)
@@ -349,14 +349,24 @@ class WebexEmbed(QFrame):
     def _open_game_night(self) -> None:
         if game_night_page() is None:
             return
-        link, accepted = QInputDialog.getText(
-            self, "Open Game Night", "Paste a Game Night room link, or leave blank to open the entrance."
+        game_by_label = {label: game for game, label in GAME_NIGHT_GAMES.items()}
+        open_link = "Open a Game Night link…"
+        choice, accepted = QInputDialog.getItem(
+            self, "Game Night", "Choose a game to play with friends.", [*game_by_label, open_link], 0, False
         )
         if not accepted:
             return
-        destination = game_night_destination(link)
+        if choice == open_link:
+            link, accepted = QInputDialog.getText(
+                self, "Open a Game Night link", "Enter the game invitation or room address."
+            )
+            if not accepted:
+                return
+            destination = game_night_destination(link)
+        else:
+            destination = game_night_game_page(game_by_label.get(choice, ""))
         if not destination:
-            QMessageBox.warning(self, "Game Night", "Use a Game Night room link copied from Hang Out.")
+            QMessageBox.warning(self, "Game Night", "Use a Game Night invitation or room address from Hang Out.")
             return
         if not QDesktopServices.openUrl(QUrl(destination)):
             QMessageBox.warning(self, "Game Night", "The browser could not open Game Night. Try again.")
