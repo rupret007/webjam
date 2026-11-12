@@ -1062,10 +1062,10 @@ the installed app's publisher; use **Join / Open Meeting** there.
 
 For video beside live music, disconnect the meeting's audio at both ends or
 join with **Don't connect to audio**. Muting its microphone alone can leave
-meeting playback active. For conversation, leave/end WebJam music before
-connecting meeting audio; disconnect meeting audio again before restarting
-music with a fresh invite. WebJam monitor mute affects your local mix, not
-your instrument's send. Follow the
+meeting playback active. For conversation, leave or end Music before
+connecting meeting audio. To play again, everyone disconnects meeting audio.
+The host sends a fresh Music invitation. WebJam monitor mute changes
+only your local mix. Follow the
 [manual audio handoff](WEBEX_AUDIO_MODES.md#safe-rehearsal-habit); opening the
 meeting or seeing a muted microphone does not prove exclusive audio.
 

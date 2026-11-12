@@ -571,7 +571,8 @@ def test_music_conversation_guides_exclusive_audio_in_both_directions(
         assert "audio at both ends" in guidance
         assert "microphone mute alone leaves playback on" in guidance
         assert "leave or end Music before connecting meeting audio" in guidance
-        assert "disconnect meeting audio and share a fresh Music invitation" in guidance
+        assert "everyone disconnects meeting audio" in guidance
+        assert "The host sends a fresh Music invitation." in guidance
         assert "mute your audio interface" not in guidance
         assert ("After adding a meeting link" in guidance) is (
             not service and not configured

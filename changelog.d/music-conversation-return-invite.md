@@ -1,0 +1,1 @@
+- Clarify that the Music host sends the fresh invitation after everyone disconnects meeting audio.
