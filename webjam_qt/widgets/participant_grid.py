@@ -219,6 +219,7 @@ class ParticipantGrid(QScrollArea):
         self.setWidgetResizable(True)
         self.setFrameShape(QScrollArea.Shape.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setMinimumWidth(320 + 2 * Space.SM)
 
         container = QWidget()
         container.setObjectName("Stage")
@@ -237,9 +238,9 @@ class ParticipantGrid(QScrollArea):
 
         self._cards: dict[int, ParticipantCard] = {}
         self._show_empty_state = True
-        # The hero lobby card floats centered over the (empty) stage rather
-        # than sitting in the flow layout, which packs children top-left.
-        self._empty_state = self._build_empty_state(self.viewport())
+        # Keep the centered lobby card in the scrollable stage. The flow
+        # layout still packs participant cards independently.
+        self._empty_state = self._build_empty_state(container)
         self._sync_creator_controls()
         self.set_session_state(SessionUiState.idle())
 
@@ -515,8 +516,14 @@ class ParticipantGrid(QScrollArea):
 
     def _center_empty_state(self) -> None:
         """Keep the hero card optically centered over the stage viewport."""
+        container = self.widget()
+        if self._cards or not self._show_empty_state:
+            container.setMinimumHeight(0)
+            return
+        viewport_width = self.viewport().width()
         viewport_height = self.viewport().height()
         compact_height = viewport_height < 300
+        gutter = Space.SM if compact_height else Space.LG
         layout = self._empty_state.layout()
         if layout is not None:
             margin = Space.MD if compact_height else Space.XXL
@@ -535,25 +542,23 @@ class ParticipantGrid(QScrollArea):
         )
         # A comfortably readable hero on desktop that shrinks with the actual
         # viewport instead of imposing a fixed app-wide minimum width.
-        responsive_target = max(360, int(self.viewport().width() * 0.56))
+        responsive_target = max(360, int(viewport_width * 0.56))
         width = max(
             self._empty_state.minimumWidth(),
-            min(responsive_target, self._empty_state.maximumWidth()),
+            min(responsive_target, self._empty_state.maximumWidth(), viewport_width - 2 * gutter),
         )
-        width = min(width, max(320, self.viewport().width() - 2 * Space.LG))
         height = layout.heightForWidth(width) if layout is not None else -1
         height = max(height, self._empty_state.minimumSizeHint().height())
         # Qt's production stylesheet adds button padding after the layout's
         # height-for-width calculation. Reserve one small vertical gutter so
         # the final action row remains inside the framed card.
         height += Space.SM
-        height = min(
-            height,
-            max(1, viewport_height - 2 * Space.LG),
-        )
-        x = max(Space.LG, (self.viewport().width() - width) // 2)
+        # Long recovery text needs the card's full height. Let the stage
+        # scroll when the card and its gutters exceed the visible area.
+        container.setMinimumHeight(height + 2 * gutter)
+        x = max(0, (viewport_width - width) // 2)
         # Slightly above true center reads better in a tall stage.
-        y = max(Space.LG, int((self.viewport().height() - height) * 0.42))
+        y = max(gutter, int((viewport_height - height) * 0.42))
         self._empty_state.setGeometry(x, y, width, height)
         self._empty_state.raise_()
 
