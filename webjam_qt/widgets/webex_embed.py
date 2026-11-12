@@ -300,10 +300,12 @@ class WebexEmbed(QFrame):
         actions = self._actions_layout = QGridLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(Space.SM)
+        # Keep joining and the audio handoff above the app-only action when
+        # the buttons stack beside Notes.
         self._action_positions = (
-            (self._bring_forward_btn, 0, 0),
+            (self._fallback_btn, 0, 0),
             (self._mute_btn, 0, 1),
-            (self._fallback_btn, 1, 0),
+            (self._bring_forward_btn, 1, 0),
             (self._change_link_btn, 1, 1),
             (self._copy_link_btn, 2, 0),
             (self._install_btn, 2, 1),
@@ -327,7 +329,7 @@ class WebexEmbed(QFrame):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(self._scroll)
-        self._scroll.viewport_resized.connect(self._sync_art_layout)
+        self._scroll.viewport_resized.connect(self._sync_card_layout)
         self._scroll.content_height_changed.connect(self._fit_card_height)
         self._render_audio_guidance()
         self._render_launch_status()
@@ -410,7 +412,7 @@ class WebexEmbed(QFrame):
         self._lesson_guest_status = " ".join(str(status).split())[:512]
         self._lesson_guest_permissions = (can_pause is True, can_ready is True, can_retry is True)
         self._sync_lesson_requests()
-        self._sync_art_layout()
+        self._sync_card_layout()
 
     def set_lesson_request_host(self, notices: Sequence[tuple[str, LessonRequestNotice]]) -> None:
         """Render bounded host-local notices. The caller owns time and authority."""
@@ -440,7 +442,7 @@ class WebexEmbed(QFrame):
             row.deleteLater()
         self._lesson_request_notices = current
         self._sync_lesson_requests()
-        self._sync_art_layout()
+        self._sync_card_layout()
 
     def _sync_lesson_requests(self) -> None:
         guest = self._creator_profile_key == "art" and self._shared_lesson_hosting is False
@@ -484,13 +486,13 @@ class WebexEmbed(QFrame):
 
     def event(self, event) -> bool:
         if event.type() == QEvent.Type.LayoutRequest:
-            self._sync_art_layout()
+            self._sync_card_layout()
         return super().event(event)
 
     def minimumSizeHint(self):
         hint = super().minimumSizeHint()
         layout = getattr(self, "_content_layout", None)
-        if layout is not None and (self._creator_profile_key == "art" or self._shared_lesson_hosting is not None):
+        if layout is not None and self._uses_responsive_card():
             # A wide layout must still permit its parent to reach the narrow
             # breakpoint. Otherwise its old horizontal minimum prevents the
             # resize event that would stack these same controls.
@@ -518,9 +520,19 @@ class WebexEmbed(QFrame):
         return hint
 
     def _fit_card_height(self, height):
-        expanded = self._creator_profile_key == "art" or self._shared_lesson_hosting is not None
+        expanded = (
+            self._creator_profile_key == "art"
+            or self._shared_lesson_hosting is not None
+            or (
+                self._creator_profile_key == "music"
+                and self._content_layout.direction() == QBoxLayout.Direction.TopToBottom
+            )
+        )
         self.setMaximumHeight(max(112, height + 2 * self.frameWidth()) if expanded else 152)
         self.updateGeometry()
+
+    def _uses_responsive_card(self) -> bool:
+        return self._creator_profile_key in {"art", "music"} or self._shared_lesson_hosting is not None
 
     def _action_column_widths(self) -> tuple[int, int]:
         """Measure the original grid independently of its current arrangement."""
@@ -547,25 +559,25 @@ class WebexEmbed(QFrame):
             )
 
     def resizeEvent(self, event) -> None:
-        self._sync_art_layout()
+        self._sync_card_layout()
         super().resizeEvent(event)
 
-    def _sync_art_layout(self) -> None:
-        """Fit Art's retained Conversation card without changing its controls."""
+    def _sync_card_layout(self) -> None:
+        """Fit Conversation alongside the workspace without replacing its controls."""
 
         layout = getattr(self, "_content_layout", None)
-        if layout is None or getattr(self, "_updating_art_layout", False):
+        if layout is None or getattr(self, "_updating_card_layout", False):
             return
-        self._updating_art_layout = True
+        self._updating_card_layout = True
         try:
-            art = self._creator_profile_key == "art" or self._shared_lesson_hosting is not None
+            responsive = self._uses_responsive_card()
             margins = layout.contentsMargins()
             available = self._scroll.viewport().width() - margins.left() - margins.right()
             column_widths = self._action_column_widths()
             two_column_width = sum(column_widths) + (
                 self._actions_layout.horizontalSpacing() if all(column_widths) else 0
             )
-            self._set_actions_single_column(art and available < two_column_width)
+            self._set_actions_single_column(responsive and available < two_column_width)
             header_width = self._title_label.sizeHint().width()
             if not self._app_status_label.isHidden():
                 # Measure unwrapped text so changing the header direction
@@ -576,7 +588,7 @@ class WebexEmbed(QFrame):
                     ) + 2 * self._app_status_label.margin() + Space.SM
                 )
             text_width = max(280, header_width)
-            narrow = art and available < text_width + two_column_width + Space.LG
+            narrow = responsive and available < text_width + two_column_width + Space.LG
             direction = (
                 QBoxLayout.Direction.TopToBottom if narrow
                 else QBoxLayout.Direction.LeftToRight
@@ -596,7 +608,7 @@ class WebexEmbed(QFrame):
             self._scroll.fit_content()
             self._fit_card_height(self._scroll._content_height)
         finally:
-            self._updating_art_layout = False
+            self._updating_card_layout = False
 
     def fallback_button(self) -> QPushButton:
         """Return the explicit external meeting-link handoff button."""
@@ -1074,7 +1086,7 @@ class WebexEmbed(QFrame):
         self._sync_lesson_requests()
         self._render_audio_guidance()
         self._sync_native_actions()
-        self._sync_art_layout()
+        self._sync_card_layout()
 
     def set_shared_lesson_context(self, hosting: bool | None) -> None:
         """Explain an explicitly selected meeting lesson; never open anything."""
@@ -1089,11 +1101,11 @@ class WebexEmbed(QFrame):
         self._sync_lesson_requests()
         self._sync_native_actions()
         self._render_audio_guidance()
-        self._sync_art_layout()
+        self._sync_card_layout()
 
     def _toggle_sound_tips(self, checked):
-        self._sound_tips.setVisible(checked and self._shared_lesson_hosting is not None)
-        self._sync_art_layout()
+        self._sound_tips.setVisible(checked and not self._sound_tips_button.isHidden())
+        self._sync_card_layout()
 
     def _render_audio_guidance(self) -> None:
         service = self._service_label
@@ -1130,7 +1142,11 @@ class WebexEmbed(QFrame):
             }
         )
         watch_note = music_conversation_watch_note(meeting_service=service)
-        watch_suffix = f" {watch_note}" if watch_note else ""
+        show_watch_note = self._creator_profile_key == "music" and self._audio_mode == "talkback" and bool(watch_note)
+        self._sound_tips_button.setVisible(show_watch_note)
+        self._sound_tips.setText(watch_note if show_watch_note else "")
+        self._sound_tips.setVisible(show_watch_note and self._sound_tips_button.isChecked())
+        watch_suffix = f" {watch_note}" if watch_note and not show_watch_note else ""
         meeting_audio = f"{service} audio" if service else "meeting audio"
         setup_prefix = (
             "After adding a meeting link, "
