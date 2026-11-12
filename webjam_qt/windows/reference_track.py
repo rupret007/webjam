@@ -13,9 +13,11 @@ from PySide6.QtGui import (
     QDragEnterEvent,
     QDragMoveEvent,
     QDropEvent,
+    QResizeEvent,
 )
 from PySide6.QtWidgets import (
     QApplication,
+    QBoxLayout,
     QCheckBox,
     QDialog,
     QDoubleSpinBox,
@@ -86,6 +88,7 @@ class ReferenceTrackDialog(QDialog):
     seek_requested = Signal(float)
     loop_requested = Signal(float, object)
     trim_requested = Signal(float)
+    mute_requested = Signal(bool)
     count_in_requested = Signal(int, float)
     recheck_route_requested = Signal()
 
@@ -306,9 +309,18 @@ class ReferenceTrackDialog(QDialog):
         root.addLayout(time_row)
 
         self._transport_bar = QWidget(self)
-        transport = self._done_footer = QHBoxLayout(self._transport_bar)
+        self._transport_bar.setObjectName("ReferenceTrackTransport")
+        transport = self._transport_layout = QBoxLayout(
+            QBoxLayout.Direction.LeftToRight, self._transport_bar
+        )
         transport.setContentsMargins(Space.LG, Space.SM, Space.LG, Space.MD)
         transport.setSpacing(Space.SM)
+        playback = self._playback_footer = QHBoxLayout()
+        playback.setSpacing(Space.SM)
+        actions = self._done_footer = QHBoxLayout()
+        actions.setSpacing(Space.SM)
+        transport.addLayout(playback)
+        transport.addLayout(actions)
         self._play = QPushButton("Play")
         self._play.setObjectName("PrimaryButton")
         self._play.setAccessibleName("Play the Shared Track to the band")
@@ -325,11 +337,18 @@ class ReferenceTrackDialog(QDialog):
         self._stop.setProperty("destructive", "true")
         self._stop.setAccessibleName("Stop Shared Track playback")
         self._stop.clicked.connect(self._emit_stop)
-        transport.addWidget(self._play)
-        transport.addWidget(self._pause)
-        transport.addWidget(self._restart)
-        transport.addWidget(self._stop)
-        transport.addStretch(1)
+        self._mute = QPushButton("Mute")
+        self._mute.setObjectName("GhostButton")
+        self._mute.setAccessibleName("Mute Shared Track")
+        self._mute.setToolTip("Silence the backing track for everyone while playback continues.")
+        self._mute.clicked.connect(self._emit_mute)
+        playback.addWidget(self._play)
+        playback.addWidget(self._pause)
+        playback.addWidget(self._restart)
+        playback.addWidget(self._stop)
+        playback.addStretch(1)
+        actions.addStretch(1)
+        actions.addWidget(self._mute)
         outer.addWidget(self._transport_bar)
 
         controls = QFormLayout()
@@ -400,7 +419,7 @@ class ReferenceTrackDialog(QDialog):
         self._done.setObjectName("GhostButton")
         self._done.setAccessibleName("Close Shared Track controls")
         self._done.clicked.connect(self.close)
-        transport.addWidget(self._done)
+        actions.addWidget(self._done)
         self._done_in_support = False
 
         # Enter commits spin-box edits; it must never activate an unrelated
@@ -410,6 +429,29 @@ class ReferenceTrackDialog(QDialog):
             button.setDefault(False)
 
         self._set_controls_enabled(False, state="unavailable")
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        if hasattr(self, "_transport_layout"):
+            self._fit_transport_footer()
+
+    def _fit_transport_footer(self) -> None:
+        layout = self._transport_layout
+        margins = layout.contentsMargins()
+        inline_width = (
+            self._playback_footer.sizeHint().width()
+            + self._done_footer.sizeHint().width()
+            + margins.left() + margins.right() + layout.spacing()
+        )
+        # Give the compact dialog two rows even if the current labels fit.
+        # A wider dialog may also need two rows with larger system fonts.
+        direction = (
+            QBoxLayout.Direction.TopToBottom
+            if self.width() < max(560, inline_width)
+            else QBoxLayout.Direction.LeftToRight
+        )
+        if direction != layout.direction():
+            layout.setDirection(direction)
 
     @staticmethod
     def _dropped_audio_path(mime_data) -> str:
@@ -521,6 +563,10 @@ class ReferenceTrackDialog(QDialog):
             in {"routing", "playing", "paused", "failed"}
         ):
             self.stop_requested.emit()
+
+    def _emit_mute(self) -> None:
+        if self._mute.isEnabled():
+            self.mute_requested.emit(not bool(getattr(self._snapshot, "muted", False)))
 
     def _emit_seek(self) -> None:
         if (
@@ -721,6 +767,7 @@ class ReferenceTrackDialog(QDialog):
             self._pause,
             self._restart,
             self._stop,
+            self._mute,
         }
         self._snapshot = snapshot
         state_value = getattr(getattr(snapshot, "state", None), "value", "")
@@ -758,6 +805,16 @@ class ReferenceTrackDialog(QDialog):
             0, int(getattr(snapshot, "source_channels", 0) or 0)
         )
         count_in_active = bool(getattr(snapshot, "count_in_active", False))
+        muted = bool(getattr(snapshot, "muted", False))
+        mute_action = "Unmute" if muted else "Mute"
+        if self._mute.text() != mute_action:
+            self._mute.setText(mute_action)
+            self._mute.setAccessibleName(f"{mute_action} Shared Track")
+            self._mute.setToolTip(
+                "Restore the backing track for everyone at its previous level."
+                if muted else "Silence the backing track for everyone while playback continues."
+            )
+            self._fit_transport_footer()
         try:
             underrun_frames = max(0, int(getattr(snapshot, "underrun_frames", 0)))
         except (TypeError, ValueError):
@@ -780,8 +837,11 @@ class ReferenceTrackDialog(QDialog):
             "closed": "Shared Track is closed",
         }
         status = state_labels.get(state, "Checking Shared Track state…")
-        if count_in_active and state == "playing":
-            status = "Count-in playing to the band"
+        if state == "playing":
+            if muted:
+                status = "Playing · Shared Track muted"
+            elif count_in_active:
+                status = "Count-in playing to the band"
         if loaded and state == "ready" and not capability_available:
             status = (
                 "Song loaded and ready to inspect; initial audio decoded; "
@@ -1454,6 +1514,7 @@ class ReferenceTrackDialog(QDialog):
             play_tooltip = "Load a supported song before playing."
         self._play.setToolTip(play_tooltip)
         self._set_dynamic_description(self._play, play_tooltip)
+        self._mute.setEnabled(loaded and primary_ready and state in {"ready", "playing", "paused"})
         self._pause.setEnabled(primary_ready and state == "playing")
         if state != "playing":
             pause_tooltip = (

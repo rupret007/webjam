@@ -310,6 +310,7 @@ class ReferenceTrackSnapshot:
     # play/restart generation it planned instead of accepting any later song
     # playback as equivalent evidence.
     playback_generation: int = 0
+    muted: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "state", ReferenceTrackState(self.state))
@@ -866,6 +867,7 @@ class ReferenceTrackStream:
         # Callback-visible latches. Reads and single-object assignments are
         # atomic under CPython's GIL; no callback path acquires _condition.
         self._realtime_generation = 0
+        self.muted = False
         self._producer_position = 0
         self._consumer_position = 0
         self._loop_start = 0
@@ -1107,6 +1109,10 @@ class ReferenceTrackStream:
             output.fill(0.0)
             return 0
         self._ring.commit_pull_metadata(generation)
+        if self.muted:
+            # Consume even a queued block while muted so the track clock keeps
+            # moving and unmute uses the current position and source trim.
+            output.fill(0.0)
         return delivered
 
     def close(self) -> None:
@@ -1990,6 +1996,22 @@ class ReferenceTrackController:
         self._notify(snapshot)
         return snapshot
 
+    def set_muted(self, muted: bool) -> ReferenceTrackSnapshot:
+        with self._lock:
+            self._require_open_locked()
+            if not self._is_host():
+                raise ReferenceTrackError("Only the host can mute or unmute the Shared Track.")
+            if self._stream is None or self._state not in {
+                ReferenceTrackState.READY,
+                ReferenceTrackState.PLAYING,
+                ReferenceTrackState.PAUSED,
+            }:
+                raise ReferenceTrackError("Load a Shared Track before muting or unmuting it.")
+            self._stream.muted = bool(muted)
+            snapshot = self._snapshot_locked()
+        self._notify(snapshot)
+        return snapshot
+
     def set_count_in(
         self, beats: int, bpm: float = 120.0
     ) -> ReferenceTrackSnapshot:
@@ -2268,6 +2290,7 @@ class ReferenceTrackController:
             waveform_peaks=waveform_peaks,
             waveform_progress=waveform_progress,
             playback_generation=self._playback_generation,
+            muted=self._stream is not None and self._stream.muted,
         )
 
     def _fail_locked(

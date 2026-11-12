@@ -548,6 +548,47 @@ def test_controller_playback_generation_identifies_play_and_restart_attempts(
     controller.close()
 
 
+def test_mute_silences_queued_track_audio_without_pausing_or_changing_trim(tmp_path: Path) -> None:
+    backend = _Backend()
+    controller = ReferenceTrackController(backend, is_host=lambda: True)
+    source = _audio_file(tmp_path / "backing.wav", samplerate=48_000, seconds=1.0)
+
+    def next_block(pull):
+        output = np.empty((256, 2), dtype=np.float32)
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            if pull(output) == len(output):
+                return output
+            time.sleep(0.005)
+        pytest.fail("Shared Track did not deliver a complete callback block")
+
+    try:
+        controller.load(source)
+        controller.set_trim_db(-6.0)
+        started = controller.play(_context())
+        pull = backend.sessions[-1].pull
+        assert pull is not None
+        peak = pytest.approx(0.25 * 10 ** (-6 / 20), abs=0.001)
+        assert np.max(np.abs(next_block(pull))) == peak
+
+        muted = controller.set_muted(True)
+        assert muted.muted and muted.state is ReferenceTrackState.PLAYING
+        assert muted.trim_db == -6.0 and muted.playback_generation == started.playback_generation
+        assert not np.any(next_block(pull))
+        assert controller.snapshot.position_s > muted.position_s
+
+        audible = controller.set_muted(False)
+        assert not audible.muted and audible.trim_db == muted.trim_db
+        assert np.max(np.abs(next_block(pull))) == peak
+
+        controller.set_muted(True)
+        controller.stop()
+        assert controller.snapshot.muted
+        assert not controller.load(source).muted
+    finally:
+        controller.close()
+
+
 def test_recording_source_fingerprint_is_private_loaded_source_identity(
     tmp_path: Path,
 ) -> None:

@@ -2224,6 +2224,7 @@ class SharedTrackSessionSnapshot:
     count_in_active: bool = False
     cleanup_pending: bool = False
     needs_attention: bool = False
+    muted: bool = False
 
     def __post_init__(self) -> None:
         generation = _shared_track_generation(self.generation, "generation")
@@ -2246,6 +2247,7 @@ class SharedTrackSessionSnapshot:
         count_in = _shared_track_bool(self.count_in_active, "count_in_active")
         cleanup = _shared_track_bool(self.cleanup_pending, "cleanup_pending")
         attention = _shared_track_bool(self.needs_attention, "needs_attention")
+        muted = _shared_track_bool(self.muted, "muted")
 
         if not loaded:
             if (
@@ -2255,6 +2257,7 @@ class SharedTrackSessionSnapshot:
                 or loop_start != 0.0
                 or loop_end is not None
                 or count_in
+                or muted
             ):
                 raise ValueError("An unloaded Shared Track cannot expose media facts.")
             if state not in {
@@ -2289,6 +2292,7 @@ class SharedTrackSessionSnapshot:
         object.__setattr__(self, "count_in_active", count_in)
         object.__setattr__(self, "cleanup_pending", cleanup)
         object.__setattr__(self, "needs_attention", attention)
+        object.__setattr__(self, "muted", muted)
 
     @classmethod
     def from_mapping(cls, value: object) -> SharedTrackSessionSnapshot:
@@ -2316,10 +2320,10 @@ class SharedTrackSessionSnapshot:
         }
         if not required.issubset(value):
             raise ValueError("shared_track is incomplete.")
-        return cls(**{key: value[key] for key in required})
+        return cls(**{key: value[key] for key in required}, muted=value.get("muted", False))
 
     def to_mapping(self) -> dict[str, object]:
-        return {
+        payload = {
             "schema": _SHARED_TRACK_SCHEMA,
             "generation": self.generation,
             "playback_generation": self.playback_generation,
@@ -2334,6 +2338,10 @@ class SharedTrackSessionSnapshot:
             "cleanup_pending": self.cleanup_pending,
             "needs_attention": self.needs_attention,
         }
+        # Keep the existing shape for unmuted and older hosts.
+        if self.muted:
+            payload["muted"] = True
+        return payload
 
 
 class ReferenceVideoPlaybackState(str, Enum):
@@ -3659,6 +3667,7 @@ class SessionControlState:
         cleanup_pending: bool = False,
         needs_attention: bool = False,
         playback_generation: int | None = None,
+        muted: bool = False,
     ) -> SharedTrackSessionSnapshot:
         """Publish one idempotent, memory-only guest rendering projection.
 
@@ -3698,6 +3707,7 @@ class SessionControlState:
                 count_in_active=count_in_active,
                 cleanup_pending=cleanup_pending,
                 needs_attention=needs_attention,
+                muted=muted,
             )
             if candidate == current:
                 return current

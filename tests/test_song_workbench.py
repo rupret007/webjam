@@ -735,6 +735,14 @@ def test_the_song_the_room_wrote_survives_losing_the_host():
 # ----------------------------------------------------------------------
 # The click stays the clock
 # ----------------------------------------------------------------------
+def test_a_muted_shared_track_still_drives_the_song_form():
+    track = SharedTrackView(
+        loaded=True, playing=True, muted=True, source_name="demo.wav", position_s=12
+    )
+    assert track.carries_the_form
+    assert track.status_line() == "demo.wav — playing 0:12 (muted)"
+
+
 def test_a_count_in_is_not_the_song():
     counting = SharedTrackView(
         loaded=True, playing=True, source_name="demo.wav", count_in=True
