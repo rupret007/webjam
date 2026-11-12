@@ -1,0 +1,1 @@
+- Keep Music’s Webex audio handoff instructions and meeting controls visible when Conversation sits beside Notes.

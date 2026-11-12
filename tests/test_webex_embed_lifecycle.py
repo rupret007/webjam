@@ -7,9 +7,9 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QPoint, QRect, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
@@ -327,6 +327,38 @@ def test_explicit_webex_actions_remain_legible_at_760_pixels(profile):
     ):
         assert button.width() >= button.sizeHint().width()
     embed.close()
+
+
+@pytest.mark.parametrize("width", [252, 358])
+def test_music_conversation_keeps_audio_handoff_visible_beside_notes(width):
+    from webjam_qt.theme import load_stylesheet
+
+    previous_style = _app.styleSheet()
+    owner = QWidget()
+    layout = QVBoxLayout(owner)
+    layout.setContentsMargins(0, 0, 0, 0)
+    embed = WebexEmbed()
+    layout.addWidget(embed)
+    layout.addStretch(1)
+    try:
+        _app.setStyleSheet(load_stylesheet())
+        embed.set_meeting_configured(True)
+        embed.set_service_label("Webex")
+        embed.set_app_status(WebexAppState.INSTALLED, version="46.7.0.35472", publisher_verified=True)
+        owner.resize(width, 560)
+        owner.show()
+        for _ in range(5):
+            _app.processEvents()
+
+        viewport = embed._scroll.viewport()
+        assert embed.width() == width
+        for widget in (embed._mode_label, embed.mute_button(), embed.fallback_button()):
+            bounds = QRect(widget.mapTo(viewport, QPoint()), widget.size())
+            assert viewport.rect().contains(bounds), widget.text()
+        assert embed._mode_label.height() >= embed._mode_label.heightForWidth(embed._mode_label.width())
+    finally:
+        owner.close()
+        _app.setStyleSheet(previous_style)
 
 
 def test_native_app_controls_fail_closed_until_detection_is_installed():

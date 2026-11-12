@@ -859,6 +859,11 @@ native app checks are exclusively for Webex. If Webex is missing, an explicit
 button opens Cisco's official installer in your browser; WebJam does not save
 a Webex password or install/update Webex silently.
 
+When Conversation shares a narrow pane with Notes in Music, the audio
+handoff instructions appear above the meeting buttons. Before playing,
+disconnect Webex audio at both ends. To talk in Webex, leave or end Music
+before connecting meeting audio.
+
 Choose conversation devices in your meeting app. For Music, Jamulus owns the
 audio interface used for instruments; Art rooms do not start that audio path. Song tools read and write files only; picking a
 file or running a Music AI job never re-binds, re-routes, or borrows an input
