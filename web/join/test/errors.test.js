@@ -49,6 +49,39 @@ test("the used-invite mailbox signal asks for a fresh link", () => {
   assert.equal(ui.retry.disabled, true);
 });
 
+test("host identity mismatch retires the old invitation and explains the next step", () => {
+  const view = mapJoinError(new Error(JOIN_SIGNAL.HOST_BINDING));
+  const ui = controls();
+  applyJoinFailure(view, ui.elements);
+  assert.equal(view.kind, "host_binding");
+  assert.equal(view.needsFreshInvite, true);
+  assert.equal(ui.status.textContent, "WebJam couldn't verify the host for this invite.");
+  assert.match(ui.hint.textContent, /new browser invite.*return to your Jam room/);
+  assert.equal(ui.retry.hidden, true);
+  assert.equal(ui.retry.disabled, true);
+  assert.equal(ui.join.hidden, true);
+  assert.equal(ui.leave.hidden, true);
+});
+
+test("relay setup errors request host help instead of offering Retry", () => {
+  for (const message of [
+    "Untrusted relay configuration",
+    "Untrusted relay address",
+    "Invalid relay configuration",
+    "Invalid relay credential",
+  ]) {
+    const view = mapJoinError(new Error(message));
+    const ui = controls();
+    applyJoinFailure(view, ui.elements);
+    assert.equal(view.kind, "relay_configuration");
+    assert.equal(view.needsFreshInvite, true);
+    assert.equal(ui.status.textContent, "WebJam couldn't verify its browser audio relay.");
+    assert.match(ui.hint.textContent, /Tell your host.*new browser invite/);
+    assert.equal(ui.retry.hidden, true);
+    assert.equal(ui.join.hidden, true);
+  }
+});
+
 test("host offline maps from no-answer and authentication timeout signals with Retry", () => {
   for (const message of [JOIN_SIGNAL.HOST_NO_ANSWER, JOIN_SIGNAL.HOST_AUTH_TIMEOUT]) {
     const view = mapJoinError(new Error(message));
