@@ -143,7 +143,7 @@ class TestLiveSendMuteCapability(unittest.TestCase):
         self.assertIn("disconnect meeting audio at both ends", guidance)
         self.assertIn("microphone mute alone leaves playback on", guidance)
         self.assertIn("leave or end Music before connecting meeting audio", guidance)
-        self.assertIn("share a fresh Music invitation", guidance)
+        self.assertIn("The host sends a fresh Music invitation.", guidance)
         self.assertNotIn("Talk Break", guidance)
 
 

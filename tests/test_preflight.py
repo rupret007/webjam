@@ -231,8 +231,8 @@ class TestReadyCheck(unittest.TestCase):
                     self.assertIn("audio disconnected for Music", copy)
                     self.assertIn("cannot send or play meeting audio", copy)
                     self.assertIn("Microphone mute alone leaves playback on", copy)
-                    self.assertIn("Leave or end Music", copy)
-                    self.assertIn("fresh Music invitation", copy)
+                    self.assertIn("leave or end Music before connecting meeting audio", copy)
+                    self.assertIn("The host sends a fresh Music invitation.", copy)
                     self.assertNotIn("muted for Play", copy)
                     self.assertNotIn("mute the audio interface", copy)
 
@@ -283,8 +283,8 @@ class TestReadyCheck(unittest.TestCase):
                     self.assertIn("audio disconnected for Music", copy)
                     self.assertIn("cannot send or play meeting audio", copy)
                     self.assertIn("Microphone mute alone leaves playback on", copy)
-                    self.assertIn("Leave or end Music", copy)
-                    self.assertIn("fresh Music invitation", copy)
+                    self.assertIn("leave or end Music before connecting meeting audio", copy)
+                    self.assertIn("The host sends a fresh Music invitation.", copy)
                     self.assertTrue(all(not item.ok and not item.required for item in manual))
 
     def test_recorder_unreachable_detail_is_actionable(self):

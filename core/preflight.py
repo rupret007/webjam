@@ -13,6 +13,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from core.meeting_companion import MUSIC_CONVERSATION_HANDOFF
+
 
 @dataclass
 class CheckItem:
@@ -321,9 +323,7 @@ def _webex_manual_checks(settings) -> list[CheckItem]:
             ),
             _manual_item(
                 "Conversation safety control",
-                "Leave or end Music before connecting meeting audio. To play "
-                "again, disconnect meeting audio at both ends and share a fresh "
-                "Music invitation.",
+                MUSIC_CONVERSATION_HANDOFF,
             ),
         ]
     if mode == "video_only":
@@ -372,9 +372,7 @@ def _webex_manual_checks(settings) -> list[CheckItem]:
         ),
         _manual_item(
             "Conversation safety control",
-            "Leave or end Music before connecting meeting audio. To play "
-            "again, disconnect meeting audio at both ends and share a fresh "
-            "Music invitation.",
+            MUSIC_CONVERSATION_HANDOFF,
         ),
         _manual_item(
             "Optimize for My Voice",

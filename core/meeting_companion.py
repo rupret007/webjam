@@ -43,6 +43,12 @@ from core.meeting_link import (
 # :mod:`core.meeting_link`, and a configured link names itself.
 DEFAULT_MEETING_SERVICE = "Webex"
 
+MUSIC_CONVERSATION_HANDOFF = (
+    "For conversation, leave or end Music before connecting meeting audio. "
+    "To play again, everyone disconnects meeting audio. "
+    "The host sends a fresh Music invitation."
+)
+
 # WebJam's own mute sets the local monitor mix. Jamulus owns the signal your
 # instrument sends to the band, and ``JamulusController.set_self_muted`` is
 # unsupported, so WebJam must never present its mute as "the band stops
@@ -625,6 +631,7 @@ __all__ = [
     "EndSessionPrompt",
     "InviteMessage",
     "MEETING_MUTE_SCOPE",
+    "MUSIC_CONVERSATION_HANDOFF",
     "MuteControl",
     "MuteSurface",
     "WEBJAM_MUTE_SCOPE",

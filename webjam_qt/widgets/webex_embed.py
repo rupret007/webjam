@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.meeting_companion import (
+    MUSIC_CONVERSATION_HANDOFF,
     art_conversation_guidance,
     music_conversation_watch_note,
 )
@@ -1139,9 +1140,8 @@ class WebexEmbed(QFrame):
         )
         talkback_guidance = (
             f"{setup_prefix}disconnect {meeting_audio} at both ends; "
-            "microphone mute alone leaves playback on. For conversation, "
-            "leave or end Music before connecting meeting audio. To play "
-            "again, disconnect meeting audio and share a fresh Music invitation."
+            "microphone mute alone leaves playback on. "
+            f"{MUSIC_CONVERSATION_HANDOFF}"
             f"{watch_suffix}"
         )
         guidance = (
