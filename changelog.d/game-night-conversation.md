@@ -1,0 +1,1 @@
+- Private community builds can open Hang Out Game Night and its room links from Conversation.

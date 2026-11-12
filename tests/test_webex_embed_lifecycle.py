@@ -7,7 +7,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QPoint, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -24,6 +24,77 @@ def test_card_constructs_without_webengine_or_token_state():
     assert not hasattr(embed, "_profile")
     assert not hasattr(embed, "_pending_token")
     assert not hasattr(embed, "load_meeting_with_guest_token")
+    assert embed._game_night_btn.isHidden()
+
+
+@pytest.mark.parametrize("value,accepted,opens,warns", [
+    ("", False, False, False),
+    ("https://external.invalid/beta/?game-night=1", True, False, True),
+    ("", True, True, False),
+    ("room", True, True, False),
+    ("game", True, True, False),
+])
+def test_private_game_night_opens_only_on_explicit_valid_choice(monkeypatch, value, accepted, opens, warns):
+    from core import web_join_target as target
+    from webjam_qt.widgets import webex_embed as module
+
+    base = "https://stalemate-hangout-beta.jeffstory007.workers.dev"
+    entrance = base + "/beta/?game-night=1"
+    link = entrance + "&via=rad-dad#game=game-123456xabcdef&instance=" + "1" * 32
+    game_link = base + "/beta/game-night/guest#invite=" + "a" * 32 + "." + "b" * 43
+    value = {"room": link, "game": game_link}.get(value, value)
+    opened, warnings, meeting_events = [], [], []
+    def record_open(url):
+        opened.append(url.toString())
+        return True
+
+    monkeypatch.setattr(target, "web_join_page", lambda: base + "/join/")
+    monkeypatch.setattr(module.QInputDialog, "getItem", lambda *args: (args[3][-1], True))
+    monkeypatch.setattr(module.QInputDialog, "getText", lambda *args: (value, accepted))
+    monkeypatch.setattr(module.QDesktopServices, "openUrl", record_open)
+    monkeypatch.setattr(module.QMessageBox, "warning", lambda *args: warnings.append(args[-1]))
+    embed = WebexEmbed()
+    embed.open_meeting_requested.connect(lambda: meeting_events.append("meeting"))
+    embed.set_meeting_configured(True)
+    embed.resize(800, 152)
+    embed.show()
+    _app.processEvents()
+    button, viewport = embed._game_night_btn, embed._scroll.viewport()
+    origin = button.mapTo(viewport, QPoint(0, 0))
+    assert button.isVisibleTo(embed)
+    assert viewport.rect().contains(origin)
+    assert origin.y() + button.height() <= viewport.height()
+    assert opened == []
+    embed._game_night_btn.click()
+    assert opened == ([value or entrance] if opens else [])
+    assert bool(warnings) is warns
+    assert meeting_events == []
+    embed.close()
+
+
+def test_private_game_night_selects_a_game_without_pasting(monkeypatch):
+    from core import web_join_target as target
+    from webjam_qt.widgets import webex_embed as module
+
+    monkeypatch.setattr(target, "web_join_page", lambda: target._PAGES["private-beta"])
+    opened = []
+
+    def choose(_parent, _title, _label, items, _index, editable):
+        assert tuple(items[:-1]) == tuple(target.GAME_NIGHT_GAMES.values())
+        assert not editable
+        return "Turd Rush Race", True
+
+    def record_open(url):
+        opened.append(url.toString())
+        return True
+
+    monkeypatch.setattr(module.QInputDialog, "getItem", choose)
+    monkeypatch.setattr(module.QInputDialog, "getText", lambda *_: pytest.fail("selecting a game must not ask for a link"))
+    monkeypatch.setattr(module.QDesktopServices, "openUrl", record_open)
+    embed = WebexEmbed()
+    embed._game_night_btn.click()
+    assert opened == [target.game_night_game_page("turdrush")]
+    embed.close()
 
 
 def test_compatibility_load_refuses_to_embed_even_a_valid_webex_link():
