@@ -87,6 +87,7 @@ class SharedTrackView:
     # A count-in is the click before bar one, not the song. Following it would
     # walk the form during the four beats everyone is waiting through.
     count_in: bool = False
+    muted: bool = False
 
     @property
     def carries_the_form(self) -> bool:
@@ -98,11 +99,12 @@ class SharedTrackView:
         if not self.loaded:
             return "No Shared Track loaded."
         name = self.source_name or "Shared Track"
+        suffix = " (muted)" if self.muted else ""
         if self.count_in:
-            return f"{name} — counting in"
+            return f"{name} — counting in{suffix}"
         if self.playing:
-            return f"{name} — playing {_clock(self.position_s)}"
-        return f"{name} — paused {_clock(self.position_s)}"
+            return f"{name} — playing {_clock(self.position_s)}{suffix}"
+        return f"{name} — paused {_clock(self.position_s)}{suffix}"
 
 
 @dataclass(frozen=True, slots=True)

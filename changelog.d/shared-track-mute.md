@@ -1,0 +1,1 @@
+- Hosts can mute and unmute the Shared Track for the band without pausing it or changing its source trim. Desktop guests can see when the host has muted it.

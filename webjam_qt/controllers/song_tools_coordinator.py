@@ -1256,6 +1256,7 @@ class SongToolsCoordinator:
             duration_s=float(getattr(snapshot, "duration_s", 0.0) or 0.0),
             host_controlled=True,
             count_in=bool(getattr(snapshot, "count_in_active", False)),
+            muted=bool(getattr(snapshot, "muted", False)),
         )
 
     def _sync_clock_to_shared_track(self) -> None:

@@ -10,7 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest  # noqa: E402
 from PySide6.QtCore import QPoint, QRect, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionButton  # noqa: E402
 
 from webjam_qt.theme import load_stylesheet  # noqa: E402
 from webjam_qt.windows.reference_track import (  # noqa: E402
@@ -399,6 +399,72 @@ def test_ready_and_playing_snapshots_enable_only_valid_controls() -> None:
         assert dialog._trim.isEnabled() is False
         dialog._pause.click()
         assert pauses == [True]
+    finally:
+        dialog.close()
+
+
+@pytest.mark.parametrize("larger_controls", [False, True])
+def test_shared_track_mute_is_keyboard_reachable_while_playing_in_compact_dialog(
+    larger_controls: bool,
+) -> None:
+    dialog = ReferenceTrackDialog()
+    stylesheet = load_stylesheet()
+    if larger_controls:
+        stylesheet += "\nQDialog QPushButton { font-size: 19px; }"
+    dialog.setStyleSheet(stylesheet)
+    dialog.resize(500, 500)
+    intents: list[bool] = []
+    dialog.mute_requested.connect(intents.append)
+    try:
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.READY)
+        playing = _snapshot(_State.PLAYING)
+        dialog.set_snapshot(playing)
+        dialog.show()
+        _app.processEvents()
+        assert dialog._mute.accessibleName() == "Mute Shared Track"
+        dialog._mute.setFocus()
+        QTest.keyClick(dialog._mute, Qt.Key.Key_Space)
+        assert intents == [True]
+
+        playing.muted = True
+        dialog.set_snapshot(playing)
+        _app.processEvents()
+        assert dialog._mute.text() == "Unmute"
+        assert dialog._mute.accessibleName() == "Unmute Shared Track"
+        assert dialog._status.text() == "Playing · Shared Track muted"
+        assert dialog.width() == 500
+        assert dialog._mute.y() > dialog._stop.y()
+        for button in (
+            dialog._play,
+            dialog._pause,
+            dialog._restart,
+            dialog._stop,
+            dialog._mute,
+            dialog._done,
+        ):
+            assert button.isVisibleTo(dialog)
+            assert dialog.rect().contains(QRect(button.mapTo(dialog, QPoint()), button.size()))
+            options = QStyleOptionButton()
+            options.initFrom(button)
+            contents = button.style().subElementRect(
+                QStyle.SubElement.SE_PushButtonContents, options, button
+            )
+            assert contents.width() >= button.fontMetrics().horizontalAdvance(button.text())
+        dialog.resize(700, 540)
+        _app.processEvents()
+        assert dialog._stop.geometry().top() <= dialog._mute.geometry().center().y() <= dialog._stop.geometry().bottom()
+        assert dialog._mute.hasFocus()
+        dialog.resize(500, 500)
+        _app.processEvents()
+        assert dialog._mute.y() > dialog._stop.y()
+        assert dialog._mute.hasFocus()
+        QTest.keyClick(dialog._mute, Qt.Key.Key_Space)
+        assert intents == [True, False]
+
+        dialog.set_primary_gate(ReferenceTrackPrimaryGate.HOST_REQUIRED)
+        assert not dialog._mute.isEnabled()
+        dialog._mute.click()
+        assert intents == [True, False]
     finally:
         dialog.close()
 
