@@ -8,7 +8,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
-from PySide6.QtCore import QPoint, Qt  # noqa: E402
+from PySide6.QtCore import QPoint, QRect, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -119,15 +119,11 @@ def test_styled_reference_track_controls_remain_reachable_at_compact_size() -> N
 
             vertical.setValue(vertical.maximum())
             _app.processEvents()
-            for control in (dialog._safety, dialog._done):
-                top_left = control.mapTo(
-                    dialog._scroll_area.viewport(),
-                    QPoint(0, 0),
-                )
-                assert top_left.y() >= 0
-                assert top_left.y() + control.height() <= (
-                    dialog._scroll_area.viewport().height()
-                )
+            viewport = dialog._scroll_area.viewport()
+            safety_bounds = QRect(dialog._safety.mapTo(viewport, QPoint()), dialog._safety.size())
+            assert viewport.rect().contains(safety_bounds)
+            done_bounds = QRect(dialog._done.mapTo(dialog, QPoint()), dialog._done.size())
+            assert dialog.rect().contains(done_bounds)
     finally:
         dialog.close()
 
@@ -263,7 +259,6 @@ def test_long_source_names_never_push_dialog_actions_offscreen(
             for control in (
                 dialog._recheck_route,
                 dialog._load,
-                dialog._done,
             ):
                 left = control.mapTo(viewport, control.rect().topLeft()).x()
                 right = control.mapTo(
@@ -272,6 +267,8 @@ def test_long_source_names_never_push_dialog_actions_offscreen(
                 ).x()
                 assert left >= 0
                 assert right < viewport.width()
+            done_bounds = QRect(dialog._done.mapTo(dialog, QPoint()), dialog._done.size())
+            assert dialog.rect().contains(done_bounds)
             assert dialog._source.toolTip() == source_name
             assert dialog._source.accessibleDescription() == source_name
     finally:
@@ -295,7 +292,6 @@ def test_unbroken_route_and_error_text_never_create_horizontal_scroll() -> None:
         for control in (
             dialog._recheck_route,
             dialog._load,
-            dialog._done,
         ):
             left = control.mapTo(viewport, control.rect().topLeft()).x()
             right = control.mapTo(
@@ -304,6 +300,8 @@ def test_unbroken_route_and_error_text_never_create_horizontal_scroll() -> None:
             ).x()
             assert left >= 0
             assert right < viewport.width()
+        done_bounds = QRect(dialog._done.mapTo(dialog, QPoint()), dialog._done.size())
+        assert dialog.rect().contains(done_bounds)
     finally:
         dialog.close()
 

@@ -1,8 +1,7 @@
 """Keep wrapped guidance readable and reveal keyboard-focused actions."""
 
-from PySide6.QtCore import QEvent, QSize, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QFrame, QScrollArea
-from PySide6.QtCore import Qt
 
 
 class ScrollableContent(QScrollArea):
@@ -14,9 +13,12 @@ class ScrollableContent(QScrollArea):
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.viewport().installEventFilter(self)
         self._fitting = False
         self._content_height = 0
+        self._focus_reveal = QTimer(self)
+        self._focus_reveal.setSingleShot(True)
+        self._focus_reveal.timeout.connect(self._reveal_current_focus)
+        self.viewport().installEventFilter(self)
         QApplication.instance().focusChanged.connect(self._reveal_focus)
 
     def setWidget(self, widget):
@@ -31,8 +33,10 @@ class ScrollableContent(QScrollArea):
         if watched is self.viewport() and event.type() == QEvent.Type.Resize:
             self.viewport_resized.emit()
             self.fit_content()
+            self._focus_reveal.start(0)
         elif watched is self.widget() and event.type() == QEvent.Type.LayoutRequest:
             self.fit_content()
+            self._focus_reveal.start(0)
         return super().eventFilter(watched, event)
 
     def fit_content(self):
@@ -53,7 +57,17 @@ class ScrollableContent(QScrollArea):
             self._fitting = False
 
     def _reveal_focus(self, _old, current):
+        if self._reveal(current):
+            # A queued reflow can move the action after the initial focus event.
+            self._focus_reveal.start(0)
+
+    def _reveal_current_focus(self):
+        self._reveal(QApplication.focusWidget())
+
+    def _reveal(self, current):
         content = self.widget()
-        if (current is not None and content is not None and self.isVisible()
-                and content.isAncestorOf(current)):
-            self.ensureWidgetVisible(current, 8, 8)
+        if (current is None or content is None or not self.isVisible()
+                or not content.isAncestorOf(current)):
+            return False
+        self.ensureWidgetVisible(current, 8, 8)
+        return True

@@ -96,8 +96,9 @@ logs, mappings, diagnostics, and Support Bundles.
    Keep video only if you can confirm meeting audio is disconnected; otherwise
    leave the meeting for the music session.
 4. For meeting conversation, first leave/end the WebJam music session and
-   confirm music has stopped, then connect meeting audio. Before returning to
-   music, disconnect meeting audio again and start/share a fresh music invite.
+   confirm Music has stopped, then connect meeting audio. To play again,
+   everyone disconnects meeting audio. The host sends a fresh Music
+   invitation.
    WebJam's monitor mute changes only what you hear; it does not stop your
    instrument from reaching the band. Neither mute is an audio-path switch.
 5. If the meeting service fails, keep the Jamulus rehearsal running; it is not

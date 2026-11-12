@@ -7,9 +7,9 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QPoint, QRect, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget  # noqa: E402
 
 _app = QApplication.instance() or QApplication([])
 
@@ -329,6 +329,46 @@ def test_explicit_webex_actions_remain_legible_at_760_pixels(profile):
     embed.close()
 
 
+@pytest.mark.parametrize(("width", "height"), [(252, 325), (252, 347), (358, 427)])
+def test_music_conversation_keeps_audio_handoff_visible_beside_notes(width, height):
+    from webjam_qt.theme import load_stylesheet
+
+    previous_style = _app.styleSheet()
+    owner = QWidget()
+    layout = QVBoxLayout(owner)
+    layout.setContentsMargins(0, 0, 0, 0)
+    embed = WebexEmbed()
+    layout.addWidget(embed)
+    layout.addStretch(1)
+    try:
+        _app.setStyleSheet(load_stylesheet())
+        embed.set_meeting_configured(True)
+        embed.set_service_label("Webex")
+        embed.set_app_status(WebexAppState.INSTALLED, version="46.7.0.35472", publisher_verified=True)
+        owner.resize(width, height)
+        owner.show()
+        for _ in range(5):
+            _app.processEvents()
+
+        viewport = embed._scroll.viewport()
+        assert embed.width() == width
+        join_position = embed.fallback_button().mapTo(viewport, QPoint())
+        show_position = embed.show_app_button().mapTo(viewport, QPoint())
+        assert join_position.y() < show_position.y()
+        for widget in (embed._mode_label, embed.mute_button(), embed.fallback_button()):
+            bounds = QRect(widget.mapTo(viewport, QPoint()), widget.size())
+            assert viewport.rect().contains(bounds), widget.text()
+        assert embed._mode_label.height() >= embed._mode_label.heightForWidth(embed._mode_label.width())
+        assert embed._sound_tips_button.isVisible()
+        assert not embed._sound_tips.isVisible()
+        embed._sound_tips_button.click()
+        assert embed._sound_tips.isVisible()
+        assert "To watch a movie or demo together" in embed._sound_tips.text()
+    finally:
+        owner.close()
+        _app.setStyleSheet(previous_style)
+
+
 def test_native_app_controls_fail_closed_until_detection_is_installed():
     embed = WebexEmbed()
     assert not embed.bring_forward_button().isEnabled()
@@ -571,7 +611,8 @@ def test_music_conversation_guides_exclusive_audio_in_both_directions(
         assert "audio at both ends" in guidance
         assert "microphone mute alone leaves playback on" in guidance
         assert "leave or end Music before connecting meeting audio" in guidance
-        assert "disconnect meeting audio and share a fresh Music invitation" in guidance
+        assert "everyone disconnects meeting audio" in guidance
+        assert "The host sends a fresh Music invitation." in guidance
         assert "mute your audio interface" not in guidance
         assert ("After adding a meeting link" in guidance) is (
             not service and not configured
@@ -608,3 +649,33 @@ def test_copy_link_requires_a_configured_meeting():
     assert events == ["copy"]
     embed.set_meeting_configured(False)
     assert not embed._copy_link_btn.isEnabled()
+
+
+def test_resize_keeps_focused_webex_install_action_visible():
+    from webjam_qt.theme import load_stylesheet
+
+    owner = QWidget()
+    owner.setStyleSheet(load_stylesheet())
+    embed = WebexEmbed()
+    QVBoxLayout(owner).addWidget(embed)
+    embed.set_meeting_configured(True)
+    embed.set_service_label("Webex")
+    embed.set_app_status(WebexAppState.INVALID)
+    action = embed.install_button()
+    try:
+        owner.resize(320, 170)
+        owner.show()
+        _app.processEvents()
+        action.setFocus(Qt.FocusReason.TabFocusReason)
+        _app.processEvents()
+        assert action.hasFocus()
+        assert action.visibleRegion().contains(action.rect())
+
+        owner.resize(240, 145)
+        QTest.qWait(1)
+
+        assert action.hasFocus()
+        assert action.visibleRegion().contains(action.rect())
+    finally:
+        owner.close()
+        owner.deleteLater()
