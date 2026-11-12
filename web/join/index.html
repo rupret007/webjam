@@ -38,7 +38,13 @@
         <label class="headphones"><input id="headphones" type="checkbox"> I’m wearing headphones to prevent echo.</label>
         <p id="join-guidance" class="join-guidance">Check your microphone first.</p>
       </section>
-      <div class="actions"><button id="join" aria-describedby="join-guidance" disabled>Join with microphone</button><button id="retry" hidden>Retry</button><button id="leave" hidden>Leave session</button></div>
+      <div class="actions">
+        <button id="join" aria-describedby="join-guidance" disabled>Join with microphone</button>
+        <button id="retry" hidden>Retry</button>
+        <button id="play-audio" aria-describedby="playback-help" hidden>Play session audio</button>
+        <button id="leave" hidden>Leave session</button>
+      </div>
+      <p id="playback-help" class="error-hint" role="status"></p>
       <p id="audio-quality" role="status"></p>
       <div id="access-window" class="access-window" hidden>
         <p id="access-time" role="timer" aria-live="off"></p>

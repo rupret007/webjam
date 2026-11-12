@@ -30,7 +30,7 @@ p { line-height: 1.5; }
 .mic-meter { height: 8px; margin-top: 12px; border-radius: 999px; background: #364341; overflow: hidden; }
 .mic-meter-fill { height: 100%; width: 0%; background: #bbe48b; transition: width 80ms linear; }
 #mic-progress, .mic-heard, .mic-error, #audio-quality { margin: 8px 0 0; font-size: .95rem; }
-#mic-progress:empty, .mic-error:empty, #audio-quality:empty, #warnings:empty { margin: 0; }
+#mic-progress:empty, .mic-error:empty, #audio-quality:empty, #warnings:empty, #playback-help:empty { margin: 0; }
 .mic-heard { color: #bbe48b; font-weight: 650; }
 .mic-error, #audio-quality { color: #f3d7a5; }
 #mic-retry { margin-top: 8px; }

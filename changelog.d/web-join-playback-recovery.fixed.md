@@ -1,0 +1,1 @@
+- Let joined browser guests start audio with one click when autoplay is blocked, and ask for a fresh invite after leaving.

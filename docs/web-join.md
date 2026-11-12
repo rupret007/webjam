@@ -10,8 +10,10 @@ higher delay (about 60–120 ms)**; that is an expectation, not a WAN measuremen
 Safari/iOS is labelled best effort. Desktop players continue using the WebJam app.
 
 **Check microphone** and **Join with microphone** both request microphone
-access. Leave retires the current attempt: delayed enrollment, audio-resume
-and latency callbacks cannot change a later attempt's status or controls.
+access. If the browser blocks sound after joining, choose **Play session
+audio** to hear the host on the current connection. After leaving an admitted
+session, ask the host for a fresh browser invite to rejoin. Delayed enrollment,
+playback, and latency callbacks cannot change a later attempt's controls.
 Stats returned after close cannot tune the retired audio receiver.
 
 One web guest is admitted at a time. **Kick web guest**, clearing permission,

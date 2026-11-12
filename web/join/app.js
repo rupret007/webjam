@@ -282,9 +282,40 @@ $("skip-check").addEventListener("click", (event) => {
   if (continueCheck) focusNextAudioCheckControl();
 });
 
+function setPlaybackRecovery(blocked) {
+  $("play-audio").hidden = !blocked;
+  $("leave").classList.toggle("secondary", blocked);
+  $("playback-help").textContent = blocked
+    ? "You’re still connected. Select Play session audio to hear your host."
+    : "";
+}
+
+async function playSessionAudio(attempt) {
+  const audio = $("host-audio");
+  const isCurrent = () => !!attempt && activeAttempt === attempt && !attempt.signal.aborted;
+  if (!isCurrent() || !audio.srcObject) return;
+  try {
+    await audio.play();
+  } catch (error) {
+    if (!isCurrent()) return;
+    if (error?.name !== "NotAllowedError") {
+      leave("Playback could not start.");
+      return;
+    }
+    setPlaybackRecovery(true);
+    if (document.activeElement === $("leave")) $("play-audio").focus();
+    return;
+  }
+  if (!isCurrent()) return;
+  const restoreFocus = document.activeElement === $("play-audio");
+  setPlaybackRecovery(false);
+  if (restoreFocus) $("leave").focus();
+}
+
 function leave(message = "You left the session.", error) {
   const elements = failureElements();
-  const restoreFocus = document.activeElement === elements.leave;
+  const restoreFocus = [elements.leave, $("play-audio")].includes(document.activeElement);
+  const joined = session?.authorized === true;
   clearAccessTime();
   activeAttempt?.abort();
   activeAttempt = null;
@@ -293,23 +324,31 @@ function leave(message = "You left the session.", error) {
   starting = false;
   $("host-audio").pause();
   $("host-audio").srcObject = null;
+  setPlaybackRecovery(false);
   stopMicMonitoring(false);
   void closeAudioContext(context);
   context = null;
   $("leave").hidden = true;
   $("connection-route").hidden = true;
   $("latency").textContent = "Listening delay is estimated after you connect.";
-  if (error) {
-    const view = mapJoinError(error);
-    if (view.needsFreshInvite && !view.showRetry) {
-      invite = undefined;
-    }
+  let view = error ? mapJoinError(error) : null;
+  if (joined && (!view || view.showRetry)) {
+    view = {
+      kind: view?.kind || "session_ended",
+      headline: view?.headline || message,
+      hint: "Ask your host for a new browser invite to rejoin.",
+      showRetry: false,
+      needsFreshInvite: true,
+    };
+  }
+  if (view) {
+    if (view.needsFreshInvite && !view.showRetry) invite = undefined;
     applyJoinFailure(view, elements);
-    elements.status.dataset.failure = "true";
   } else {
-    delete elements.status.dataset.failure;
     clearJoinFailure(elements, message);
   }
+  if (error) elements.status.dataset.failure = "true";
+  else delete elements.status.dataset.failure;
   refresh();
   if (restoreFocus) {
     const nextAction = [elements.retry, elements.join].find(
@@ -389,11 +428,7 @@ async function startJoin() {
       onTrack: (remote) => {
         if (!isCurrent()) return;
         $("host-audio").srcObject = remote;
-        $("host-audio").play().catch(() => {
-          if (isCurrent()) {
-            leave("Playback could not start. Tap Join again.");
-          }
-        });
+        void playSessionAudio(attempt);
       },
       onError: (error) => {
         if (isCurrent()) leave(undefined, error);
@@ -406,7 +441,8 @@ async function startJoin() {
     showAccessTime(joinedSession.accessExpiresAt, isCurrent);
     clearJoinFailure(failureElements(), $("status").textContent);
     $("join").hidden = true;
-    $("leave").focus({ preventScroll: true });
+    const resumeAudio = $("play-audio");
+    (resumeAudio.hidden ? $("leave") : resumeAudio).focus({ preventScroll: resumeAudio.hidden });
     starting = false;
     refresh();
   } catch (error) {
@@ -437,6 +473,7 @@ $("join").addEventListener("click", () => {
 $("retry").addEventListener("click", () => {
   void startJoin();
 });
+$("play-audio").addEventListener("click", () => { void playSessionAudio(activeAttempt); });
 $("leave").addEventListener("click", () => leave());
 window.addEventListener("hashchange", () => window.location.reload());
 window.addEventListener("pagehide", () => leave());
@@ -446,7 +483,7 @@ document.addEventListener("visibilitychange", () => {
     const attempt = activeAttempt;
     context.resume().catch(() => {
       if (attempt && !attempt.signal.aborted && activeAttempt === attempt) {
-        leave("Tap Join again to resume audio.");
+        leave(session?.authorized ? "Browser audio was interrupted." : "Tap Join again to resume audio.");
       }
     });
   }

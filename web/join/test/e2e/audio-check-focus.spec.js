@@ -8,13 +8,13 @@ function privateTestFragment() {
   return `#k=${capability}&s=${session}&g=1&e=${expiresAt}`;
 }
 
-test("keyboard skip continues to headphones, then Join", async ({ page }) => {
+test("keyboard skip continues to headphones, then Join", async ({ page, browserName }) => {
   await page.setViewportSize({ width: 390, height: 667 });
   await page.goto(`/${privateTestFragment()}`);
   await page.getByRole("button", { name: "Skip check", exact: true }).press("Enter");
   await expect(page.getByRole("checkbox")).toBeFocused();
   await page.keyboard.press("Space");
-  await page.keyboard.press("Tab");
+  await page.keyboard.press(process.platform === "darwin" && browserName === "webkit" ? "Alt+Tab" : "Tab");
   await expect(page.getByRole("button", { name: "Join with microphone" })).toBeFocused();
 });
 
