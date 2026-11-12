@@ -220,6 +220,7 @@ class ConductorWindow(QMainWindow):
         # Stage combines participant grid + webex embed vertically
         stage_container = QWidget()
         stage_layout = QVBoxLayout(stage_container)
+        self._stage_layout = stage_layout
         stage_layout.setContentsMargins(0, 0, 0, 0)
         stage_layout.setSpacing(0)
         # Invitations belong to the Music stage. Keeping them outside the
@@ -1150,6 +1151,7 @@ class ConductorWindow(QMainWindow):
         self.recording_studio.set_creator_profile(profile)
         self.session_canvas.set_creator_profile(profile)
         self.webex_embed.set_creator_profile(profile)
+        self._sync_stage_vertical_layout()
         if profile.key != "art":
             self.session_canvas.setAccessibleDescription(
                 "Local notes and separate live chat. Notes are not shared or "
@@ -1302,6 +1304,15 @@ class ConductorWindow(QMainWindow):
             self._status_bar.setStyleSheet("")
             self._sync_status_bar_visibility()
 
+    def _sync_stage_vertical_layout(self) -> None:
+        short_window = self.height() <= 600
+        self._room_stage.setMinimumHeight(100 if short_window else 0)
+        # When Conversation needs to scroll, give the Music stage most of the
+        # available height. A shorter meeting card still fits at its own height.
+        share_height = short_window and self._creator_profile.key == "music"
+        self._stage_layout.setStretchFactor(self._room_stage, 2 if share_height else 1)
+        self._stage_layout.setStretchFactor(self.webex_embed, 1 if share_height else 0)
+
     def resizeEvent(self, event) -> None:
         """Keep every bottom-bar action readable on compact live windows."""
 
@@ -1313,9 +1324,7 @@ class ConductorWindow(QMainWindow):
         if getattr(self, "song_overlay", None) is not None:
             self.song_overlay.set_available_width(self.width())
         if hasattr(self, "workspace_stack"):
-            # On short windows the stage needs room for its scrolled action.
-            # Taller windows can give Conversation its preferred height.
-            self._room_stage.setMinimumHeight(100 if self.height() <= 600 else 0)
+            self._sync_stage_vertical_layout()
             self.apply_art_notes_layout()
 
     # ------------------------------------------------------------------

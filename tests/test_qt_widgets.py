@@ -1523,6 +1523,7 @@ class TestConductorWindow(unittest.TestCase):
             self.assertTrue(w.session_canvas.isVisible())
             stage_width, notes_width = w.center_splitter.sizes()
             self.assertGreater(notes_width, stage_width)
+            self.assertGreater(grid.viewport().height(), w.webex_embed.height())
             for state in (
                 SessionUiState.idle(),
                 SessionUiState.permission_denied(),
