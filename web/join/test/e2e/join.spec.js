@@ -45,7 +45,8 @@ test("headphones gate capture; encrypted offer pin rejection closes fake sine ca
   await expect(page.getByText("Microphone detected.", { exact: true })).toBeVisible();
   await expect(page.locator("#join-guidance")).toHaveText("Ready. Join to share your audio with the session.");
   await page.getByRole("button", { name: "Join with microphone" }).click();
-  await expect(page.locator("#status")).toContainText("Host identity or invite binding did not match");
+  await expect(page.locator("#status")).toHaveText("WebJam couldn't verify the host for this invite.");
+  await expect(page.locator("#retry")).toBeHidden();
   expect(await page.evaluate(() => window.captureCalls)).toBe(1);
   expect(await page.evaluate(() => window.captureTracks.every((track) => track.readyState === "ended"))).toBe(true);
   expect(requests.length).toBe(1);
