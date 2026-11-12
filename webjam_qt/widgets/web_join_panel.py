@@ -62,15 +62,18 @@ class WebJoinPanel(QFrame):
     def render(self, state, message, context=None):
         self._state, self._context = state, context
         self._sync_visibility()
-        text = {"preparing": "Preparing link…", "connected": "Browser guest connected",
+        text = {"preparing": "Preparing link…", "connecting": "Connecting browser guest…",
+                "connected": "Browser guest connected", "expiring": "Closing expired invite…",
+                "expired": "Copy fresh browser invite",
                 "error": "Retry copying invite"}.get(state, "Copy browser invite")
         self.primary.setText(text)
         self.primary.setAccessibleName(text)
-        self.primary.setEnabled(state in {"available", "ready", "error"})
-        self.stop_button.setVisible(state in {"preparing", "ready", "connected", "cleanup"})
-        self.stop_button.setEnabled(state in {"preparing", "ready", "connected", "cleanup"})
+        self.primary.setEnabled(state in {"available", "ready", "expired", "error"})
+        can_stop = state in {"preparing", "connecting", "connected", "ready", "expiring", "cleanup"}
+        self.stop_button.setVisible(can_stop)
+        self.stop_button.setEnabled(can_stop)
         self.stop_button.setText(
-            {"preparing": "Cancel", "cleanup": "Retry ending browser guest"}.get(
+            {"preparing": "Cancel", "connecting": "Cancel", "cleanup": "Retry ending browser guest"}.get(
                 state, "End browser invite"
             )
         )

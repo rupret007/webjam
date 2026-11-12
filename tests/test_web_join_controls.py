@@ -187,6 +187,34 @@ def test_visible_browser_button_copy_and_end_use_the_existing_owner(controls):
     QApplication.clipboard().clear()
 
 
+def test_expired_browser_invite_keeps_music_open_and_offers_a_fresh_copy(controls):
+    controls, controller, app = controls
+    panel = controller.window.web_guest_panel
+    clipboard = app.clipboard()
+    clipboard.setText("clipboard already in use")
+    host = SimpleNamespace(state="waiting", invite="", stop=lambda: True)
+    controls._host, controls._server = host, controller.bridge.hosted_server_process
+    controls.copy_action.setEnabled(True)
+    try:
+        controls._copy()
+        assert clipboard.text() == "clipboard already in use"
+        assert not panel.primary.isEnabled()
+        assert "expired" in panel.status.text()
+
+        host.state = "expired"
+        controls._refresh()
+        assert controls._host is None
+        assert panel.primary.isEnabled()
+        assert panel.primary.text() == "Copy fresh browser invite"
+        assert "same Music session" in panel.status.text()
+
+        controller.bridge.hosted_server_process = object()
+        controls._refresh()
+        assert panel.primary.text() == "Copy browser invite"
+    finally:
+        clipboard.clear()
+
+
 @pytest.mark.parametrize("cancel", [False, True])
 def test_copy_button_prepares_and_copies_only_for_the_current_invitation(controls, monkeypatch, cancel):
     controls, controller, app = controls

@@ -229,6 +229,8 @@ class WebJoinHost:
         self._worker = None
         self._generation = 0
         self._invite = ""
+        self._offer_expiry = 0
+        self._expired = False
         self._state = "disabled"
         self._failure_stage = ""
 
@@ -243,6 +245,8 @@ class WebJoinHost:
     @property
     def invite(self):
         with self._lock:
+            if self._offer_expiry and time.time() >= self._offer_expiry:
+                return ""
             return self._invite
 
     @property
@@ -327,6 +331,7 @@ class WebJoinHost:
                 if offer_expiry <= time.time():
                     raise WebJoinUnavailable("This web invitation has ended.")
                 self._invite = f"{join_page}#k={_b64(capability)}&s={session.hex()}&g={generation}&e={offer_expiry}"
+                self._offer_expiry = offer_expiry
                 self._state = "waiting"
                 self._worker = threading.Thread(
                     target=self._wait_guest,
@@ -347,12 +352,14 @@ class WebJoinHost:
     def _wait_guest(self, mailbox, process, bridge, generation, offer_expiry):
         try:
             answer = mailbox.poll_answer(timeout=offer_expiry - time.time())
-            if self._stop.is_set():
-                return
-            process.apply_web_join_answer(answer, generation=generation)
             with self._lock:
-                if not self._stop.is_set() and self._state != "connected":
+                if self._stop.is_set() or time.time() >= offer_expiry:
+                    return
+                self._offer_expiry = 0
+                self._invite = ""
+                if self._state != "connected":
                     self._state = "connecting"
+            process.apply_web_join_answer(answer, generation=generation)
             while not self._stop.wait(0.1):
                 if bridge.closed.is_set() or not process.running:
                     break
@@ -365,6 +372,14 @@ class WebJoinHost:
                 # Retain the failed owner for the UI's explicit cleanup retry.
                 pass
 
+    def _clear_invite(self):
+        # Called with the lock held. An early stop or an accepted answer
+        # must never turn into an expiry on a later cleanup attempt.
+        if self._offer_expiry and time.time() >= self._offer_expiry:
+            self._expired = True
+        self._offer_expiry = 0
+        self._invite = ""
+
     def _on_event(self, event):
         if event.event_type == "web_join_connected":
             with self._lock:
@@ -374,9 +389,9 @@ class WebJoinHost:
             # Observers run on the IPC reader; teardown must not join it there.
             self._stop.set()
             with self._lock:
-                self._invite = ""
+                self._clear_invite()
                 if self._state != "cleanup_pending":
-                    self._state = "closed"
+                    self._state = "expired" if self._expired else "closed"
 
     def set_generation(self, generation: int):
         if generation != self._generation:
@@ -386,7 +401,7 @@ class WebJoinHost:
         # Revoke immediately, including while another close attempt is blocked.
         self._stop.set()
         with self._lock:
-            self._invite = ""
+            self._clear_invite()
             self._state = "closing"
         with self._cleanup_lock:
             with self._lock:
@@ -412,7 +427,10 @@ class WebJoinHost:
                             self._bridge = None
             with self._lock:
                 pending = self._process is not None or self._bridge is not None
-                self._state = "cleanup_pending" if pending else "closed"
+                if pending:
+                    self._state = "cleanup_pending"
+                else:
+                    self._state = "expired" if self._expired else "closed"
             if pending:
                 raise WebJoinUnavailable(
                     "Web Join could not stop completely. Retry stopping the web guest."
