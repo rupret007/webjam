@@ -956,6 +956,8 @@ audio processing. If your browser still shows that tab using audio, close the
 Web Join tab before trying again.
 As host, choose **Copy browser invite** in the Music room. Wait for **Link copied**,
 then paste it into a private message and keep the Music session open.
+If the unused invite expires, choose **Copy fresh browser invite** in the same
+Music session and share the replacement.
 Unreleased private-beta test packages can open the protected shared-community
 page for browser invitations. Join that private community in the same browser
 before using the complete host invitation. An unavailable build destination

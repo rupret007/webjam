@@ -25,6 +25,7 @@ class WebJoinControls(QObject):
         self._invite_copied = False
         self._error = ""
         self._error_server = None
+        self._expired_server = None
         self._panel = getattr(controller.window, "web_guest_panel", None)
         self._panel_context = None
         self._panel_server = None
@@ -72,17 +73,23 @@ class WebJoinControls(QObject):
         if server is not self._error_server:
             self._error = ""
             self._error_server = None
+        if server is not self._expired_server:
+            self._expired_server = None
         if self._cleanup_pending or self._retired_hosts or (self._host is not None and self._host.state == "cleanup_pending"):
             self._show_cleanup_pending()
             return
-        if self._host is not None and (
-            server is not self._server or self._host.state == "closed"
-        ):
+        state = self._host.state if self._host is not None else None
+        if state is not None and (server is not self._server or state in {"closed", "expired"}):
+            expired = state == "expired" and server is self._server
             if not self.stop():
                 return
+            if expired:
+                self._expired_server = server
         self.allow_action.setEnabled(server is not None)
-        if self._host is not None and self._host.state == "connected":
+        if state == "connected" and self._host is not None:
             self.allow_action.setText("Web guest connected (higher delay)")
+            self.copy_action.setEnabled(False)
+        elif self._host is not None and not self._host.invite:
             self.copy_action.setEnabled(False)
         self._render_panel()
 
@@ -121,7 +128,9 @@ class WebJoinControls(QObject):
             render("unavailable", "Start a hosted Music session to invite a browser guest.")
         elif self._host is not None:
             state = self._host.state
-            if state == "waiting" and self.copy_action.isEnabled():
+            if state == "waiting" and not self._host.invite:
+                render("expiring", "Browser invite expired. Closing the old link…")
+            elif state == "waiting" and self.copy_action.isEnabled():
                 if self._invite_copied:
                     render(
                         "ready",
@@ -131,10 +140,14 @@ class WebJoinControls(QObject):
                     render("ready", "The link is ready to copy. Headphones required.")
             elif state == "connected":
                 render("connected", "One browser guest is connected. End the invite to disconnect them.")
+            elif state == "connecting":
+                render("connecting", "Your browser guest is connecting…")
             else:
                 render("preparing", "Preparing a private link for one browser guest…")
         elif self._error:
             render("error", self._error)
+        elif server is self._expired_server:
+            render("expired", "Browser invite expired. Copy a fresh link from this same Music session.")
         else:
             render("available", "Send a private link to one browser guest. Headphones required.")
 
@@ -149,6 +162,7 @@ class WebJoinControls(QObject):
         self._generation += 1
         self._error = ""
         self._error_server = None
+        self._expired_server = None
         host = WebJoinHost()
         self._host, self._server = host, server
         self.kick_action.setEnabled(True)
@@ -194,6 +208,12 @@ class WebJoinControls(QObject):
         if self._cleanup_pending or host.state == "cleanup_pending":
             self._show_cleanup_pending()
             return
+        if success and self._owned_server() is self._server and (
+            host.state in {"connecting", "connected", "expired"}
+            or (host.state == "waiting" and not host.invite)
+        ):
+            self._refresh()
+            return
         if not success or not host.invite or self._owned_server() is not self._server:
             reason = getattr(host, "failure_reason", PREPARE_UNAVAILABLE)
             if reason not in PREPARATION_FAILURE_MESSAGES.values():
@@ -224,6 +244,7 @@ class WebJoinControls(QObject):
         ):
             invite = self._host.invite
             if not invite:
+                self._refresh()
                 return
             QApplication.clipboard().setText(invite)
             self._invite_copied = True
@@ -243,6 +264,7 @@ class WebJoinControls(QObject):
     def stop(self) -> bool:
         self._error = ""
         self._error_server = None
+        self._expired_server = None
         self._copy_when_ready = False
         self._invite_copied = False
         owners = ([self._host] if self._host is not None else []) + self._retired_hosts

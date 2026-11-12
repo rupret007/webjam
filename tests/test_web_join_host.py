@@ -421,6 +421,58 @@ def test_host_rejects_invalid_offer_expiry_before_publication(monkeypatch, expir
         host.stop()
 
 
+@pytest.mark.parametrize("answer_arrives_before_expiry", [False, True])
+def test_host_withholds_expired_or_consumed_invite(monkeypatch, answer_arrives_before_expiry):
+    now = 1700000000
+    monkeypatch.setattr("services.web_join_host.time.time", lambda: now)
+    process, bridge = FakeProcess(None), FakeBridge(22124)
+    waiting, finish, applied = threading.Event(), threading.Event(), threading.Event()
+    answers = []
+
+    def apply_answer(*args, **kwargs):
+        answers.append(args)
+        applied.set()
+
+    process.apply_web_join_answer = apply_answer
+
+    class DelayedMailbox(FakeMailbox):
+        def poll_answer(self, *, timeout):
+            waiting.set()
+            assert finish.wait(2)
+            return ENVELOPE
+
+    host = WebJoinHost(
+        process_factory=lambda _: process,
+        bridge_factory=lambda _: bridge,
+        mailbox_factory=DelayedMailbox,
+    )
+    try:
+        assert host.allow(22124) == host.invite
+        assert waiting.wait(1)
+        deadline = process.open_args["expires_at_unix"]
+        if not answer_arrives_before_expiry:
+            now = deadline
+            assert not host.invite
+        finish.set()
+        expected_state = "expired"
+        if answer_arrives_before_expiry:
+            assert applied.wait(1) and not host.invite
+            assert host.state == "connecting"
+            now = deadline
+            host.stop()
+            expected_state = "closed"
+        host._worker.join(timeout=1)
+        assert not host._worker.is_alive()
+        assert host.state == expected_state
+        assert answers == ([(ENVELOPE,)] if answer_arrives_before_expiry else [])
+        assert bridge.closed.is_set() and not process.running
+        host.stop()
+        assert host.state == expected_state
+    finally:
+        finish.set()
+        host.stop()
+
+
 def test_transport_open_serializes_no_network_authority(monkeypatch):
     monkeypatch.setattr("services.transport_runtime.time.time", lambda: 1700000000)
     process = TransportProcess("/unused", expected_build="dev")
