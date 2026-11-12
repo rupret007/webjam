@@ -233,7 +233,7 @@ def test_copy_button_prepares_and_copies_only_for_the_current_invitation(control
             assert clipboard.text() == "clipboard already in use"
         else:
             assert clipboard.text() == host.invite
-            assert "Paste it into a private message" in panel.status.text()
+            assert "Share it in your Jam room or a private message" in panel.status.text()
     finally:
         finish.set()
         clipboard.clear()

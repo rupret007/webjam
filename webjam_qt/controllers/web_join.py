@@ -123,7 +123,10 @@ class WebJoinControls(QObject):
             state = self._host.state
             if state == "waiting" and self.copy_action.isEnabled():
                 if self._invite_copied:
-                    render("ready", "Link copied. Paste it into a private message and keep this Music session open.")
+                    render(
+                        "ready",
+                        "Link copied. Share it in your Jam room or a private message. Keep this Music session open.",
+                    )
                 else:
                     render("ready", "The link is ready to copy. Headphones required.")
             elif state == "connected":
@@ -226,7 +229,7 @@ class WebJoinControls(QObject):
             self._invite_copied = True
             self._render_panel()
             self._controller.window.flash_message(
-                "Browser invite copied. Paste it into a private message.", ms=5000
+                "Browser invite copied. Share it in your Jam room or a private message.", ms=5000
             )
 
     def _show_cleanup_pending(self):
