@@ -1,4 +1,5 @@
 import json
+import plistlib
 import subprocess
 import sys
 import pytest
@@ -38,9 +39,10 @@ def test_source_default_does_not_read_a_packaged_or_environment_override(monkeyp
 
 def test_music_handoff_requires_an_exact_request_and_private_return(monkeypatch):
     request = "a" * 32
-    launch = f"webjam://hangout-music/{request}"
+    launch = f"webjam-beta://hangout-music/{request}"
     fragment = f"k={'A' * 43}&s={'0' * 64}&g=1&e=1800000000"
     assert target.hangout_music_request(launch) == request
+    assert target.hangout_music_request(f"webjam://hangout-music/{request}") is None
     assert target.hangout_music_request(f"{launch}?redirect=https://untrusted.invalid") is None
     monkeypatch.setattr(target, "web_join_page", lambda: "https://stalemate.band/join/")
     with pytest.raises(target.WebJoinTargetUnavailable):
@@ -141,6 +143,30 @@ def test_package_gate_rejects_a_different_target_or_source(tmp_path):
     for build, identifier in ((BUILD, "public"), ("b" * 40, "private-beta")):
         with pytest.raises(target.WebJoinTargetUnavailable):
             verify(manifest, build, identifier)
+
+
+def test_mac_package_gate_requires_a_separate_private_scheme_and_bundle_identifier(tmp_path):
+    from tests.support.verify_packaged_web_join_target import verify
+
+    contents = tmp_path / "WebJam.app" / "Contents"
+    resources = contents / "Resources"
+    resources.mkdir(parents=True)
+    manifest = resources / target.MANIFEST_NAME
+    manifest.write_bytes(target.build_target_document("private-beta", BUILD))
+    plist = contents / "Info.plist"
+    public = {"CFBundleIdentifier": "com.webjam.app", "CFBundleURLTypes": [{"CFBundleURLSchemes": ["webjam"]}]}
+    plist.write_bytes(plistlib.dumps(public))
+    with pytest.raises(target.WebJoinTargetUnavailable):
+        verify(manifest, BUILD, "private-beta")
+
+    bundle_id, schemes = target.macos_web_join_identity("private-beta")
+    assert bundle_id == "com.webjam.app.beta"
+    assert schemes == ("webjam", "webjam-beta")
+    plist.write_bytes(plistlib.dumps({
+        "CFBundleIdentifier": bundle_id,
+        "CFBundleURLTypes": [{"CFBundleURLSchemes": list(schemes)}],
+    }))
+    verify(manifest, BUILD, "private-beta")
 
 
 @pytest.mark.parametrize("identifier,corrupt,expected_exit", [
