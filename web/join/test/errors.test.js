@@ -31,7 +31,7 @@ test("an ended connection requires a fresh invite without blaming the host", () 
   assert.equal(view.kind, "session_ended");
   assert.equal(view.needsFreshInvite, true);
   assert.equal(ui.status.textContent, "The Web Join connection ended.");
-  assert.match(ui.hint.textContent, /new browser invite/i);
+  assert.equal(ui.hint.textContent, "Ask your host to send a new browser invite. If you joined from Hang Out, return to your Jam room to accept it.");
   assert.equal(ui.retry.hidden, true);
   assert.equal(ui.join.hidden, true);
   assert.equal(ui.leave.hidden, true);
