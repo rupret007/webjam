@@ -13,6 +13,7 @@ from core.network_invite import (
     parse_invite_link,
 )
 from core.remote_invitation import RemoteInvitation
+from core.web_join_target import is_browser_invite_url
 
 
 class InvitationSource(str, Enum):
@@ -28,6 +29,7 @@ class InvitationIngressErrorCode(str, Enum):
     INCOMPATIBLE = "incompatible"
     EXPIRED = "expired"
     UNSUPPORTED = "unsupported"
+    BROWSER_INVITE = "browser_invite"
     SOURCE_NOT_ALLOWED = "source_not_allowed"
 
 
@@ -188,6 +190,19 @@ def parse_invitation_at_ingress(
             InvitationIngressErrorCode.EMPTY,
             "Paste the complete invitation your host sent you.",
         )
+    has_desktop_link = "webjam://" in value.lower()
+    if (
+        ingress_source is InvitationSource.PASTE
+        and not has_desktop_link
+        and len(value) <= _MAX_PASTE_CHARS
+        and any(
+            is_browser_invite_url(word.strip("<>\"'`,;.!?()[]{}")) for word in value.split()
+        )
+    ):
+        raise InvitationIngressError(
+            InvitationIngressErrorCode.BROWSER_INVITE,
+            "This is a browser invite. To join, open it in your web browser.",
+        )
     # Extract the link from a longer paste before any policy check, so the
     # version guards below see the same string the parser will. A paste that
     # is already one valid bare invitation keeps its meaning, including a
@@ -195,7 +210,7 @@ def parse_invitation_at_ingress(
     # is unwrapped only when that intact token is not already valid. argv
     # and OS file-open keep the original text so credential-bearing command
     # lines stay rejected.
-    if source == InvitationSource.PASTE and "webjam://" in value.lower():
+    if ingress_source is InvitationSource.PASTE and has_desktop_link:
         tokens = value.split()
         if len(tokens) != 1 or not tokens[0].lower().startswith("webjam://"):
             value = _link_from_pasted_text(value)

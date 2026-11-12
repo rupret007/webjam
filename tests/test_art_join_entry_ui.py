@@ -169,6 +169,17 @@ def test_pristine_join_page_hides_empty_join_error(join_door, profile):
     assert not dialog._join_error.isVisibleTo(dialog)
 
 
+def test_browser_invite_error_clears_the_secure_field_and_explains_where_to_join(join_door):
+    dialog = join_door("music")
+    dialog._invite_input.setText("https://stalemate.band/join/#k=fixture-only")
+    QTest.keyClick(dialog._invite_input, Qt.Key.Key_Return)
+    assert dialog._join_error.isVisibleTo(dialog)
+    assert "open it in your web browser" in dialog._join_error.text()
+    assert dialog._invite_input.text() == ""
+    assert dialog._invite_input.hasFocus()
+    assert dialog.selected_role == ""
+
+
 @pytest.mark.parametrize("profile", ["music", "art"])
 def test_whole_art_invitation_message_joins_without_another_profile_choice(
     join_door, profile

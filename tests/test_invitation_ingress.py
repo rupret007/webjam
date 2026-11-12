@@ -443,3 +443,28 @@ def test_invalid_paste_tells_the_guest_to_ask_for_the_whole_invite() -> None:
         "That's not a WebJam invite. Ask your host to press Copy Invite "
         "and send you the whole message."
     )
+
+
+@pytest.mark.parametrize("page", [
+    "https://stalemate.band/join/",
+    "https://stalemate-hangout-beta.jeffstory007.workers.dev/join/",
+])
+def test_browser_invite_paste_points_to_the_browser_without_echoing_link(page: str) -> None:
+    fixture = f"{page}#k=fixture-only"
+    with pytest.raises(InvitationIngressError) as caught:
+        parse_invitation_at_ingress(
+            f"Here’s the browser invite:\n<{fixture}>",
+            source=InvitationSource.PASTE,
+        )
+    assert caught.value.code is InvitationIngressErrorCode.BROWSER_INVITE
+    assert "open it in your web browser" in str(caught.value)
+    assert fixture not in str(caught.value)
+
+
+def test_unrecognized_lookalike_keeps_the_existing_invalid_invite_error() -> None:
+    with pytest.raises(InvitationIngressError) as caught:
+        parse_invitation_at_ingress(
+            "https://stalemate.band.example.com/join/#k=fixture-only",
+            source=InvitationSource.PASTE,
+        )
+    assert caught.value.code is InvitationIngressErrorCode.INVALID

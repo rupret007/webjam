@@ -1,0 +1,1 @@
+- WebJam tells guests to open browser invites in their browser and shows hosts where to share the copied link.

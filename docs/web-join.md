@@ -2,8 +2,9 @@
 
 Web Join supports one browser guest in a desktop-hosted music session.
 While hosting, choose **Copy browser invite** in the Music room. WebJam prepares
-the link and copies it. Paste it into a private message and keep the session open.
-The guest opens the link, confirms headphones, and starts audio with a tap.
+the link and copies it. Share it in your private Jam room or a private message
+and keep the Music session open. The guest opens the link in a browser,
+confirms headphones, and starts audio with a tap.
 The connection is **Web Join,
 higher delay (about 60–120 ms)**; that is an expectation, not a WAN measurement.
 Safari/iOS is labelled best effort. Desktop players continue using the WebJam app.

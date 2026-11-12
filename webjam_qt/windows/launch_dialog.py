@@ -61,6 +61,7 @@ from services.native_remote_transport import reference_local_host_requested
 from webjam_qt.invitation_ingress import (
     Invitation,
     InvitationIngressError,
+    InvitationIngressErrorCode,
     InvitationSource,
     conversation_url_from_pasted_invitation,
     invitation_from_arguments,
@@ -1768,7 +1769,10 @@ class LaunchDialog(QDialog):
                     for part in query_parts
                 )
             )
-            if not contains_private_material:
+            if (
+                exc.code is not InvitationIngressErrorCode.BROWSER_INVITE
+                and not contains_private_material
+            ):
                 self._invite_input.setText(raw)
             # Restore controls before showing the error; refreshing invite status
             # would clear the message we are about to present.

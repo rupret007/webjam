@@ -33,6 +33,12 @@ class WebJoinTargetUnavailable(ValueError):
         super().__init__(UNAVAILABLE)
 
 
+def is_browser_invite_url(value: str) -> bool:
+    """Recognize an app-issued browser link for guidance, without opening it."""
+    page, separator, fragment = value.partition("#")
+    return bool(separator and page in _PAGES.values() and fragment.startswith("k="))
+
+
 def build_target_document(target: str, build: str, *, git_ref: str = "") -> bytes:
     """Encode known build inputs; private-beta is never a tagged release."""
     if (
