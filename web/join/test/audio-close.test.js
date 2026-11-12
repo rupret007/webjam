@@ -42,6 +42,29 @@ test('a suspension that never acknowledges does not prevent close', { timeout: 2
   assert.equal(closed, 1);
 });
 
+test('a late suspension acknowledgement cannot reopen a context after the close deadline', { timeout: 2000 }, async () => {
+  let acknowledge;
+  const suspended = new Promise(resolve => { acknowledge = resolve; });
+  let closes = 0;
+  const context = {
+    state: 'running',
+    suspend() { return suspended; },
+    async close() {
+      this.state = 'closed';
+      closes++;
+    },
+  };
+  await closeAudioContext(context);
+  assert.equal(context.state, 'closed');
+  assert.equal(closes, 1);
+
+  context.state = 'suspended';
+  acknowledge();
+  await new Promise(setImmediate);
+  assert.equal(closes, 2);
+  assert.equal(context.state, 'closed');
+});
+
 test('an already closed context needs no new audio operation', async () => {
   await closeAudioContext(null);
   await closeAudioContext({
