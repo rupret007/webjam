@@ -267,6 +267,25 @@ def test_copy_button_prepares_and_copies_only_for_the_current_invitation(control
         clipboard.clear()
 
 
+@pytest.mark.parametrize("music_context", [True, False])
+def test_hangout_invite_explains_that_a_hosted_music_session_is_required(controls, monkeypatch, music_context):
+    from webjam_qt.controllers import web_join
+
+    controls, controller, _ = controls
+    controller.settings.host_server_enabled = not music_context
+    controls._panel.set_music_visible(music_context)
+    messages = []
+    controller.window.flash_message = lambda message, **kwargs: messages.append(message)
+    monkeypatch.setattr(web_join.QMessageBox, "question", lambda *args: pytest.fail("Unexpected confirmation"))
+    monkeypatch.setattr(web_join, "WebJoinHost", lambda: pytest.fail("Unexpected browser guest preparation"))
+
+    controls._prepare_for_hangout("d" * 32)
+
+    assert len(messages) == 1
+    assert "Start a hosted Music session" in messages[0] and "Hang Out" in messages[0]
+    assert not controls.allow_action.isChecked()
+
+
 def test_hangout_invite_waits_for_native_confirmation_and_leaves_clipboard_alone(controls, monkeypatch):
     from core import web_join_target
     from webjam_qt.controllers import web_join
