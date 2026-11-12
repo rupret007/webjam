@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core import build_info
 from core.host_startup_checklist import WIN32_MUSIC_HOST_REASON
 from core.creative_modes import (
     CREATOR_PROFILES,
@@ -698,7 +699,8 @@ class LaunchDialog(QDialog):
         self.remote_invitation: RemoteInvitation | None = None
         self.invitation_meeting_url = ""
         self.setObjectName("LaunchDialog")
-        self.setWindowTitle("WebJam")
+        commit = build_info.packaged_build_id()
+        self.setWindowTitle(f"WebJam — Build {commit[:12]}" if commit else "WebJam")
         self.setModal(True)
         self.setMinimumSize(460, 480)
         # A 520 px client area plus a conservative 40 px native-title-bar

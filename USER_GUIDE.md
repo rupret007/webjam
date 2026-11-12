@@ -225,7 +225,10 @@ test build when delivered. Physical sound, real-editor import and feel remain NO
 
 This section and the searchable Help below describe the workflow continuity
 PR/test build after v0.29.0. The source still reports v0.29.0; use the build ID
-to distinguish it from the published release. No new release is requested.
+to distinguish it from the published release. Compare the **Build** shown in
+the startup window title with the ID in your rehearsal instructions before
+choosing **Host** or **Join**. **About WebJam** in a workspace also shows the
+full ID and platform. No new release is requested.
 
 From the live workspace or a local Studio project, choose **File → Return to
 launch**. In a live room, first choose **End Session** or **Leave Session**.
