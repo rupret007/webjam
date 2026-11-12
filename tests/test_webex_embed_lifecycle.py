@@ -329,8 +329,8 @@ def test_explicit_webex_actions_remain_legible_at_760_pixels(profile):
     embed.close()
 
 
-@pytest.mark.parametrize("width", [252, 358])
-def test_music_conversation_keeps_audio_handoff_visible_beside_notes(width):
+@pytest.mark.parametrize(("width", "height"), [(252, 347), (358, 427)])
+def test_music_conversation_keeps_audio_handoff_visible_beside_notes(width, height):
     from webjam_qt.theme import load_stylesheet
 
     previous_style = _app.styleSheet()
@@ -345,7 +345,7 @@ def test_music_conversation_keeps_audio_handoff_visible_beside_notes(width):
         embed.set_meeting_configured(True)
         embed.set_service_label("Webex")
         embed.set_app_status(WebexAppState.INSTALLED, version="46.7.0.35472", publisher_verified=True)
-        owner.resize(width, 560)
+        owner.resize(width, height)
         owner.show()
         for _ in range(5):
             _app.processEvents()
@@ -356,6 +356,11 @@ def test_music_conversation_keeps_audio_handoff_visible_beside_notes(width):
             bounds = QRect(widget.mapTo(viewport, QPoint()), widget.size())
             assert viewport.rect().contains(bounds), widget.text()
         assert embed._mode_label.height() >= embed._mode_label.heightForWidth(embed._mode_label.width())
+        assert embed._sound_tips_button.isVisible()
+        assert not embed._sound_tips.isVisible()
+        embed._sound_tips_button.click()
+        assert embed._sound_tips.isVisible()
+        assert "To watch a movie or demo together" in embed._sound_tips.text()
     finally:
         owner.close()
         _app.setStyleSheet(previous_style)

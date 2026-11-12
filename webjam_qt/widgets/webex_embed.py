@@ -1102,7 +1102,7 @@ class WebexEmbed(QFrame):
         self._sync_card_layout()
 
     def _toggle_sound_tips(self, checked):
-        self._sound_tips.setVisible(checked and self._shared_lesson_hosting is not None)
+        self._sound_tips.setVisible(checked and not self._sound_tips_button.isHidden())
         self._sync_card_layout()
 
     def _render_audio_guidance(self) -> None:
@@ -1140,7 +1140,11 @@ class WebexEmbed(QFrame):
             }
         )
         watch_note = music_conversation_watch_note(meeting_service=service)
-        watch_suffix = f" {watch_note}" if watch_note else ""
+        show_watch_note = self._creator_profile_key == "music" and self._audio_mode == "talkback" and bool(watch_note)
+        self._sound_tips_button.setVisible(show_watch_note)
+        self._sound_tips.setText(watch_note if show_watch_note else "")
+        self._sound_tips.setVisible(show_watch_note and self._sound_tips_button.isChecked())
+        watch_suffix = f" {watch_note}" if watch_note and not show_watch_note else ""
         meeting_audio = f"{service} audio" if service else "meeting audio"
         setup_prefix = (
             "After adding a meeting link, "

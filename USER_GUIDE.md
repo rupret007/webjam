@@ -862,7 +862,8 @@ a Webex password or install/update Webex silently.
 When Conversation shares a narrow pane with Notes in Music, the audio
 handoff instructions appear above the meeting buttons. Before playing,
 disconnect Webex audio at both ends. To talk in Webex, leave or end Music
-before connecting meeting audio.
+before connecting meeting audio. Open **Sound and sharing tips** for the
+steps to share a video or demonstration.
 
 Choose conversation devices in your meeting app. For Music, Jamulus owns the
 audio interface used for instruments; Art rooms do not start that audio path. Song tools read and write files only; picking a
