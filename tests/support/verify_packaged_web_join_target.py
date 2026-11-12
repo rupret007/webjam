@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import plistlib
 import sys
 
 from core.web_join_target import (
     WebJoinTargetUnavailable,
     build_target_document,
+    macos_web_join_identity,
     parse_target_document,
     read_target_document,
 )
@@ -18,6 +20,16 @@ def verify(manifest: Path, build: str, target: str) -> None:
     expected = parse_target_document(build_target_document(target, build), build)
     if read_target_document(manifest, build) != expected:
         raise WebJoinTargetUnavailable()
+    if manifest.parent.name == "Resources" and manifest.parent.parent.name == "Contents":
+        try:
+            with (manifest.parent.parent / "Info.plist").open("rb") as plist_file:
+                plist = plistlib.load(plist_file)
+            bundle_id, schemes = macos_web_join_identity(target)
+            registered = tuple(scheme for entry in plist["CFBundleURLTypes"] for scheme in entry["CFBundleURLSchemes"])
+        except (OSError, TypeError, ValueError, KeyError, plistlib.InvalidFileException):
+            raise WebJoinTargetUnavailable() from None
+        if plist.get("CFBundleIdentifier") != bundle_id or registered != schemes:
+            raise WebJoinTargetUnavailable()
 
 
 def main() -> int:

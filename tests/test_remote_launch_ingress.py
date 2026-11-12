@@ -12,7 +12,8 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, QUrl
+from PySide6.QtGui import QFileOpenEvent
 from PySide6.QtWidgets import QApplication
 
 from core.network_invite import create_invite_link
@@ -259,6 +260,18 @@ def test_invalid_file_open_retains_only_fixed_error_copy() -> None:
     assert "PRIVATE-SENTINEL" not in fake_application._pending_invitation_error
     assert raw not in repr(vars(fake_application))
     fake_application.invitation_error.emit.assert_called_once()
+
+
+def test_private_music_url_routes_only_through_the_beta_file_open_event() -> None:
+    request = "a" * 32
+    url = f"webjam-beta://hangout-music/{request}"
+    app = SimpleNamespace(hangout_music_requested=MagicMock())
+
+    assert WebJamApplication.event(app, QFileOpenEvent(QUrl(url))) is True
+    app.hangout_music_requested.emit.assert_called_once_with(request)
+    assert WebJamApplication.event(app, QFileOpenEvent(QUrl(f"{url}?redirect=bad"))) is True
+    app.hangout_music_requested.emit.assert_called_once()
+    assert qt_arguments_without_test_night(["WebJam", url]) == ["WebJam"]
 
 
 def test_live_invitation_error_uses_keyword_only_flash_duration() -> None:

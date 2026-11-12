@@ -80,11 +80,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 
+_web_join_target = os.environ.get("WEBJAM_WEB_JOIN_TARGET", "public")
+
+
 def _web_join_target_document():
     from core.web_join_target import build_target_document
 
     return build_target_document(
-        os.environ.get("WEBJAM_WEB_JOIN_TARGET", "public"),
+        _web_join_target,
         _build_id.lower(),
         git_ref=os.environ.get("GITHUB_REF", ""),
     )
@@ -489,11 +492,14 @@ if sys.platform == "darwin":
     # companion's provenance/checksum. Ordinary branch builds refresh the
     # ad-hoc outer seal; the protected release path re-signs every final code
     # object inside-out with Developer ID and seals WebJam.app last.
+    from core.web_join_target import macos_web_join_identity
+
+    _bundle_identifier, _web_join_schemes = macos_web_join_identity(_web_join_target)
     app = BUNDLE(
         coll,
         name="WebJam.app",
         icon=str(ROOT / "webjam_qt" / "theme" / "assets" / "webjam.icns"),
-        bundle_identifier="com.webjam.app",
+        bundle_identifier=_bundle_identifier,
         info_plist={
             "NSMicrophoneUsageDescription":
                 "WebJam uses your microphone or audio interface so your "
@@ -508,13 +514,14 @@ if sys.platform == "darwin":
             # background music engine cannot complete.
             "LSMinimumSystemVersion": "13.0",
             "CFBundleShortVersionString": VERSION,
+            "CFBundleDisplayName": "WebJam Private Beta" if _web_join_target == "private-beta" else "WebJam",
             "CFBundleVersion": VERSION,
             "LSMultipleInstancesProhibited": True,
             "CFBundleURLTypes": [
                 {
                     "CFBundleURLName": "com.webjam.invite",
                     "CFBundleTypeRole": "Viewer",
-                    "CFBundleURLSchemes": ["webjam"],
+                    "CFBundleURLSchemes": list(_web_join_schemes),
                 }
             ],
         },
