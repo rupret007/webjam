@@ -1,0 +1,1 @@
+- Let browser guests select a named microphone even when the browser lists only one input besides its default.
