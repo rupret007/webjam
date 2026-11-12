@@ -123,15 +123,17 @@ test("NotFoundError shows no-device guidance and Try again", async ({ page }) =>
   await expect(retry).toBeFocused();
 });
 
-for (const defaultMic of ["silent", "unavailable", "missing"]) {
-  test(`a guest can replace a ${defaultMic} browser default with a detected headset`, async ({ page }) => {
+for (const [defaultMic, namedInputs] of [["silent", 2], ["silent", 1], ["unavailable", 1], ["missing", 1]]) {
+  test(`a guest can choose a headset when the browser default is ${defaultMic} (${namedInputs} named inputs)`, async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 });
-    await page.addInitScript((defaultMic) => {
+    await page.addInitScript(({ defaultMic, namedInputs }) => {
       window.micTracks = [];
       window.micChoices = [];
       const media = Object.getPrototypeOf(navigator.mediaDevices);
       media.enumerateDevices = async () => [
-        ...(defaultMic === "silent" ? [{ kind: "audioinput", deviceId: "array", label: "Built-in mic" }] : []),
+        { kind: "audioinput", deviceId: "default", label: "Default input" },
+        { kind: "audioinput", deviceId: "communications", label: "Communications input" },
+        ...(namedInputs === 2 ? [{ kind: "audioinput", deviceId: "array", label: "Built-in mic" }] : []),
         { kind: "audioinput", deviceId: "headset", label: "USB headset" },
       ];
       media.getUserMedia = async ({ audio }) => {
@@ -160,13 +162,13 @@ for (const defaultMic of ["silent", "unavailable", "missing"]) {
         }
         return output.stream;
       };
-    }, defaultMic);
+    }, { defaultMic, namedInputs });
     await page.goto(`/${fragment(invite())}`);
     const mic = page.getByLabel("Microphone", { exact: true });
     const join = page.getByRole("button", { name: "Join with microphone", exact: true });
     await expect(mic).toBeHidden();
     expect(await page.evaluate(() => micChoices)).toEqual([]);
-    await page.getByRole("button", { name: "Check microphone" }).click();
+    await page.getByRole("button", { name: "Check microphone" }).press("Enter");
     if (defaultMic === "silent") {
       await expect(page.getByText("Using Built-in mic", { exact: true })).toBeVisible();
     } else {
@@ -176,6 +178,7 @@ for (const defaultMic of ["silent", "unavailable", "missing"]) {
       await expect(page.getByRole("button", { name: "Try again" })).toBeFocused();
     }
     await expect(mic).toBeVisible();
+    await expect(mic.locator("option")).toHaveCount(namedInputs + 1);
     expect(await page.evaluate(() => micChoices)).toEqual([""]);
     await expect(join).toBeDisabled();
     await mic.selectOption({ label: "USB headset" });

@@ -103,7 +103,7 @@ function showAudioSettings(stream, warnings = []) {
   $("warnings").textContent = warnings.join("\n");
 }
 
-async function showMicDevices(signal, recovering = false) {
+async function showMicDevices(signal) {
   const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
   if (signal.aborted) return;
   const choices = devices.filter(device => device.kind === "audioinput" && device.label &&
@@ -112,7 +112,7 @@ async function showMicDevices(signal, recovering = false) {
   const selected = select.value;
   select.replaceChildren(new Option("Browser default", ""), ...choices.map(device => new Option(device.label, device.deviceId)));
   if (choices.some(device => device.deviceId === selected)) select.value = selected;
-  $("mic-picker").hidden = choices.length < (recovering ? 1 : 2);
+  $("mic-picker").hidden = choices.length === 0;
 }
 
 function stopMicMonitoring(clearHeard = false) {
@@ -197,7 +197,7 @@ function showMicError(error, deviceDisconnected = false) {
   if (deviceDisconnected || ["NotReadableError", "NotFoundError"].includes(cause?.name) ||
       (cause?.name === "OverconstrainedError" && cause.constraint === "deviceId")) {
     prejoinAbort = new AbortController();
-    void showMicDevices(prejoinAbort.signal, true);
+    void showMicDevices(prejoinAbort.signal);
   }
 }
 
