@@ -560,6 +560,7 @@ def test_host_projects_bounded_shared_track_truth_to_private_peers() -> None:
         loop_start_s=2.0,
         loop_end_s=20.0,
         count_in_active=True,
+        muted=True,
     )
 
     controller._publish_shared_track_peer_state(snapshot)
@@ -575,6 +576,7 @@ def test_host_projects_bounded_shared_track_truth_to_private_peers() -> None:
         count_in_active=True,
         cleanup_pending=False,
         needs_attention=False,
+        muted=True,
     )
 
 
@@ -607,6 +609,7 @@ def test_guest_renders_authoritative_shared_track_and_recording_count_in() -> No
             loop_start_s=2.0,
             loop_end_s=30.0,
             count_in_active=True,
+            muted=True,
         ),
     )
     controller.guest_peer = SimpleNamespace(last_state=peer_state)
@@ -620,6 +623,7 @@ def test_guest_renders_authoritative_shared_track_and_recording_count_in() -> No
     assert projection.state is SharedTrackPlaybackState.PLAYING
     assert projection.position_s == pytest.approx(3.5)
     assert projection.count_in_active is True
+    assert projection.muted is True
     assert not hasattr(projection, "can_control")
 
 

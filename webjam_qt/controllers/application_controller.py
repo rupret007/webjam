@@ -2145,6 +2145,7 @@ class ApplicationController(QObject):
             loop_end_s=getattr(shared, "loop_end_s", None),
             count_in_active=bool(getattr(shared, "count_in_active", False)),
             cleanup_pending=bool(getattr(shared, "cleanup_pending", False)),
+            muted=bool(getattr(shared, "muted", False)),
             error=(
                 "Shared Track needs host attention."
                 if bool(getattr(shared, "needs_attention", False))
@@ -15655,6 +15656,7 @@ class ApplicationController(QObject):
                 needs_attention=bool(
                     peer_state == "failed" or getattr(snapshot, "error", "")
                 ),
+                muted=loaded and bool(getattr(snapshot, "muted", False)),
             )
         except Exception:  # noqa: BLE001 - peer boundary remains UI-optional
             if not getattr(self, "_shared_track_peer_publish_failed", False):

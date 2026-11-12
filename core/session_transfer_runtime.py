@@ -1740,6 +1740,7 @@ class HostPeerSession:
         cleanup_pending: bool = False,
         needs_attention: bool = False,
         playback_generation: int | None = None,
+        muted: bool = False,
     ) -> SharedTrackSessionSnapshot | None:
         """Publish bounded Shared Track truth for authenticated guests.
 
@@ -1761,6 +1762,7 @@ class HostPeerSession:
             cleanup_pending=cleanup_pending,
             needs_attention=needs_attention,
             playback_generation=playback_generation,
+            muted=muted,
         )
 
     def publish_reference_video_state(

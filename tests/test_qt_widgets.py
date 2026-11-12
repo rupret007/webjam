@@ -581,25 +581,32 @@ class TestSessionStrip(unittest.TestCase):
 
         s = self._strip()
         s.set_reference_track_available(False)
-        s.set_shared_track_snapshot(
-            SimpleNamespace(
-                state="playing",
-                source_name="Band Song.wav",
-                duration_s=90.0,
-                position_s=12.0,
-                loop_start_s=0.0,
-                loop_end_s=None,
-                count_in_active=False,
-                cleanup_pending=False,
-                waveform_peaks=(),
-                waveform_progress=0.0,
-            )
+        snapshot = SimpleNamespace(
+            state="playing",
+            source_name="Band Song.wav",
+            duration_s=90.0,
+            position_s=12.0,
+            loop_start_s=0.0,
+            loop_end_s=None,
+            count_in_active=False,
+            cleanup_pending=False,
+            waveform_peaks=(),
+            waveform_progress=0.0,
         )
+        s.set_shared_track_snapshot(snapshot)
         s.set_shared_track_channel_present(True)
 
         self.assertEqual(s._shared_track_state.text(), "Playing")
         self.assertIn("Band Song.wav", s._shared_track_surface.toolTip())
         self.assertTrue(s._reference_track_button.isHidden())
+        snapshot.muted = True
+        s.set_shared_track_snapshot(snapshot)
+        self.assertEqual(s._shared_track_state.text(), "Muted")
+        self.assertIn("Muted", s._shared_track_surface.accessibleDescription())
+        self.assertTrue(s._shared_track_transport.isHidden())
+        snapshot.muted = False
+        s.set_shared_track_snapshot(snapshot)
+        self.assertEqual(s._shared_track_state.text(), "Playing")
 
     def test_guest_projection_survives_hud_refresh_and_clears_at_session_end(self):
         from types import SimpleNamespace

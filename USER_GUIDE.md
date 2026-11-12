@@ -1233,7 +1233,8 @@ loop in/out, source trim, and an audible count-in remain transport controls.
 Use **Mute** in Shared Track to silence the backing track for everyone while
 its playhead continues. **Unmute** restores its previous level. This control leaves
 microphones and each participant’s monitoring alone. Mute stays with the
-loaded track until you unmute it or load a new track.
+loaded track until you unmute it or load a new track. In desktop WebJam, the
+session strip shows the host’s mute state to the band.
 **Replace…** and **Remove** require a safe stopped state; an attempted change
 during playback is refused. Guests do not get the transport.
 
