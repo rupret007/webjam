@@ -19,6 +19,7 @@ from core.creative_modes import (
 from core.logging_config import configure_logging
 from core.network_invite import BandInvite
 from core.settings import load_settings
+from core.web_join_target import hangout_music_request
 from core.workspace_launch import validate_workspace_launch
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.invitation_ingress import (
@@ -82,6 +83,7 @@ class WebJamApplication(QApplication):
 
     invitation_received = Signal(object)
     invitation_error = Signal(str)
+    hangout_music_requested = Signal(str)
 
     def __init__(self, arguments: list[str]) -> None:
         # A QFileOpen event may arrive during QApplication construction,
@@ -97,6 +99,11 @@ class WebJamApplication(QApplication):
                 url = event.url().toString()
             except AttributeError:
                 url = ""
+            if url.startswith("webjam://hangout-music/"):
+                request = hangout_music_request(url)
+                if request:
+                    self.hangout_music_requested.emit(request)
+                return True
             if str(url).lower().startswith("webjam://"):
                 try:
                     invitation = parse_invitation_at_ingress(

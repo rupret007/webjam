@@ -36,6 +36,21 @@ def test_source_default_does_not_read_a_packaged_or_environment_override(monkeyp
     assert target.web_join_page() == "https://stalemate.band/join/"
 
 
+def test_music_handoff_requires_an_exact_request_and_private_return(monkeypatch):
+    request = "a" * 32
+    launch = f"webjam://hangout-music/{request}"
+    fragment = f"k={'A' * 43}&s={'0' * 64}&g=1&e=1800000000"
+    assert target.hangout_music_request(launch) == request
+    assert target.hangout_music_request(f"{launch}?redirect=https://untrusted.invalid") is None
+    monkeypatch.setattr(target, "web_join_page", lambda: "https://stalemate.band/join/")
+    with pytest.raises(target.WebJoinTargetUnavailable):
+        target.hangout_music_return(request, f"{PRIVATE_PAGE}#{fragment}")
+    monkeypatch.setattr(target, "web_join_page", lambda: PRIVATE_PAGE)
+    assert target.hangout_music_return(request, f"{PRIVATE_PAGE}#{fragment}") == f"{PRIVATE_PAGE}handoff.html#{request}&{fragment}"
+    with pytest.raises(target.WebJoinTargetUnavailable):
+        target.hangout_music_return(request, f"https://untrusted.invalid/join/#{fragment}")
+
+
 def test_macos_uses_canonical_resources_instead_of_the_frameworks_data_alias(tmp_path, monkeypatch):
     contents = tmp_path / "WebJam.app" / "Contents"
     resources, frameworks = contents / "Resources", contents / "Frameworks"

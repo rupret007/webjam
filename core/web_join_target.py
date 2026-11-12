@@ -102,3 +102,26 @@ def web_join_page() -> str:
     if not getattr(sys, "frozen", False):
         return _PAGES["public"]
     return read_target_document(_manifest_path(), build_id())
+
+
+def hangout_music_request(url: str) -> str | None:
+    """Extract an opaque Hang Out tab request from the macOS URL event."""
+    match = re.fullmatch(r"webjam://hangout-music/([a-f0-9]{32})", url)
+    return match.group(1) if match else None
+
+
+def is_private_web_join_page(page: str) -> bool:
+    return page == _PAGES["private-beta"]
+
+
+def hangout_music_return(request: str, invite: str) -> str:
+    """Return only to the private package's built-in, same-origin page."""
+    page = web_join_page()
+    if not is_private_web_join_page(page) or not re.fullmatch(r"[a-f0-9]{32}", request):
+        raise WebJoinTargetUnavailable()
+    prefix, marker, fragment = invite.partition("#")
+    if prefix != page or not marker or not re.fullmatch(
+        r"k=[A-Za-z0-9_-]{43}&s=[a-f0-9]{64}&g=[1-9][0-9]{0,9}&e=[1-9][0-9]{0,12}", fragment
+    ):
+        raise WebJoinTargetUnavailable()
+    return f"{page}handoff.html#{request}&{fragment}"
