@@ -83,7 +83,13 @@ class WebJoinControls(QObject):
 
     def _prepare_for_hangout(self, request):
         server = self._owned_server()
-        if server is None or not self._panel or not self._panel.music_context or self._hangout_confirming:
+        if not self._panel or self._hangout_confirming:
+            return
+        if server is None or not self._panel.music_context:
+            self._controller.window.flash_message(
+                "Start a hosted Music session, then invite your bandmate again from Hang Out.",
+                ms=8000,
+            )
             return
         try:
             if not is_private_web_join_page(web_join_page()):
