@@ -1,1 +1,2 @@
 - Keep Music’s Webex audio handoff instructions and meeting controls visible when Conversation sits beside Notes.
+- Keep the focused Conversation button in view when the window resizes.

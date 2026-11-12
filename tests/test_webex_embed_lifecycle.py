@@ -645,3 +645,33 @@ def test_copy_link_requires_a_configured_meeting():
     assert events == ["copy"]
     embed.set_meeting_configured(False)
     assert not embed._copy_link_btn.isEnabled()
+
+
+def test_resize_keeps_focused_webex_install_action_visible():
+    from webjam_qt.theme import load_stylesheet
+
+    owner = QWidget()
+    owner.setStyleSheet(load_stylesheet())
+    embed = WebexEmbed()
+    QVBoxLayout(owner).addWidget(embed)
+    embed.set_meeting_configured(True)
+    embed.set_service_label("Webex")
+    embed.set_app_status(WebexAppState.INVALID)
+    action = embed.install_button()
+    try:
+        owner.resize(320, 170)
+        owner.show()
+        _app.processEvents()
+        action.setFocus(Qt.FocusReason.TabFocusReason)
+        _app.processEvents()
+        assert action.hasFocus()
+        assert action.visibleRegion().contains(action.rect())
+
+        owner.resize(240, 145)
+        QTest.qWait(1)
+
+        assert action.hasFocus()
+        assert action.visibleRegion().contains(action.rect())
+    finally:
+        owner.close()
+        owner.deleteLater()
