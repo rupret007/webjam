@@ -162,6 +162,7 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
       export class WebJoinSession {
         constructor(options) { this.options = options; }
         async join() {
+          this.authorized = true;
           this.options.onStatus('Synthetic session connected.');
           window.reportConnectionRoute = this.options.onRoute;
           window.endEnrolledSession = () => this.options.onError(new Error(JOIN_SIGNAL.SESSION_ENDED));
@@ -204,8 +205,56 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
   await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
   await expect(page.locator('#leave')).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(page.locator('#join')).toBeFocused();
+  await expect(page.locator('#status')).toHaveText('You left the session.');
+  await expect(page.locator('#status')).toBeFocused();
+  await expect(page.locator('#error-hint')).toContainText('new browser invite');
+  for (const id of ['join', 'retry', 'leave', 'prejoin']) await expect(page.locator('#' + id)).toBeHidden();
   await expect.poll(() => page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
+});
+
+test('blocked automatic playback can start from a guest action in the same session', async ({ page }) => {
+  await page.route('**/session.js', route => route.fulfill({ contentType: 'text/javascript', body: `
+    export class WebJoinSession {
+      constructor(options) { this.options = options; }
+      async join() {
+        this.authorized = true;
+        this.options.onStatus('Synthetic session connected.');
+        window.deliverHostAudio = () => this.options.onTrack(new MediaStream());
+      }
+      close() {
+        window.fixtureSessionClosed = true;
+        this.options.stream.getTracks().forEach(track => track.stop());
+      }
+    }`
+  }));
+  await page.addInitScript(() => {
+    window.playRequests = 0;
+    HTMLMediaElement.prototype.play = function () {
+      return ++window.playRequests === 1
+        ? Promise.reject(new DOMException('Test needs a user gesture', 'NotAllowedError'))
+        : Promise.resolve();
+    };
+  });
+  await openInvitation(page, 375);
+  await page.getByRole('button', { name: 'Join with microphone' }).press('Enter');
+  await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
+  await page.evaluate(() => window.deliverHostAudio());
+  const play = page.getByRole('button', { name: 'Play session audio' });
+  const leave = page.getByRole('button', { name: 'Leave session' });
+  await expect(play).toBeInViewport();
+  await expect(play).toBeFocused();
+  await expect(page.locator('#playback-help')).toContainText('You’re still connected');
+  await expect(leave).toBeVisible();
+  await expect(page.locator('#retry')).toBeHidden();
+  await play.press('Enter');
+  await expect(play).toBeHidden();
+  await expect(leave).toBeFocused();
+  expect(await page.evaluate(() => [window.playRequests, captureTracks.length, !!window.fixtureSessionClosed])).toEqual([2, 1, false]);
+  await leave.press('Enter');
+  await expect(page.locator('#status')).toHaveText('You left the session.');
+  await expect(page.locator('#error-hint')).toContainText('new browser invite');
+  for (const id of ['join', 'retry', 'leave', 'play-audio', 'prejoin']) await expect(page.locator('#' + id)).toBeHidden();
+  await expect.poll(() => page.evaluate(() => window.fixtureSessionClosed && captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
 });
 
 for (const width of [375, 390]) {
@@ -303,6 +352,7 @@ for (const scenario of ['left', 'rejoined', 'active']) {
       body: `export class WebJoinSession {
         constructor(options) {
           this.options = options; this.closed = false;
+          this.authorized = ${scenario === 'active'};
           (window.testSessions ??= []).push(this);
         }
         async join() {
@@ -335,7 +385,7 @@ for (const scenario of ['left', 'rejoined', 'active']) {
       await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
     }
     await page.evaluate(() => rejectPlayback[0](new DOMException('Test-only interrupted playback', 'AbortError')));
-    const status = { left: 'You left the session.', rejoined: 'Synthetic session connected.', active: 'Playback could not start. Tap Join again.' }[scenario];
+    const status = { left: 'You left the session.', rejoined: 'Synthetic session connected.', active: 'Playback could not start.' }[scenario];
     await expect(page.locator('#status')).toHaveText(status);
     if (scenario === 'rejoined') {
       await expect(join).toBeDisabled();
@@ -344,6 +394,11 @@ for (const scenario of ['left', 'rejoined', 'active']) {
       expect(await page.evaluate(() => testSessions[1].closed)).toBe(false);
       expect(await page.evaluate(() => testSessions[1].options.stream.getTracks().every(track => track.readyState === 'live'))).toBe(true);
       await leave.click();
+    } else if (scenario === 'active') {
+      await expect(join).toBeHidden();
+      await expect(page.locator('#retry')).toBeHidden();
+      await expect(page.locator('#error-hint')).toContainText('new browser invite');
+      await expect(leave).toBeHidden();
     } else {
       await expect(join).toBeEnabled();
       await expect(join).toBeVisible();
