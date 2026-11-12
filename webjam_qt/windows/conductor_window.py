@@ -576,9 +576,9 @@ class ConductorWindow(QMainWindow):
             order.extend([card._fader, card._mute_button, card._solo_button])
         order.extend(
             [
-                self.webex_embed.bring_forward_button(),
-                self.webex_embed.mute_button(),
                 self.webex_embed.fallback_button(),
+                self.webex_embed.mute_button(),
+                self.webex_embed.bring_forward_button(),
                 self.webex_embed.change_link_button(),
                 self.webex_embed.install_button(),
                 self.webex_embed.recheck_button(),

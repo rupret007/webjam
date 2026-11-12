@@ -329,7 +329,7 @@ def test_explicit_webex_actions_remain_legible_at_760_pixels(profile):
     embed.close()
 
 
-@pytest.mark.parametrize(("width", "height"), [(252, 347), (358, 427)])
+@pytest.mark.parametrize(("width", "height"), [(252, 325), (252, 347), (358, 427)])
 def test_music_conversation_keeps_audio_handoff_visible_beside_notes(width, height):
     from webjam_qt.theme import load_stylesheet
 
@@ -352,6 +352,9 @@ def test_music_conversation_keeps_audio_handoff_visible_beside_notes(width, heig
 
         viewport = embed._scroll.viewport()
         assert embed.width() == width
+        join_position = embed.fallback_button().mapTo(viewport, QPoint())
+        show_position = embed.show_app_button().mapTo(viewport, QPoint())
+        assert join_position.y() < show_position.y()
         for widget in (embed._mode_label, embed.mute_button(), embed.fallback_button()):
             bounds = QRect(widget.mapTo(viewport, QPoint()), widget.size())
             assert viewport.rect().contains(bounds), widget.text()

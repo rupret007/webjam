@@ -1579,9 +1579,9 @@ class TestConductorWindow(unittest.TestCase):
         _qapp().processEvents()
         try:
             expected = [
-                w.webex_embed.bring_forward_button(),
-                w.webex_embed.mute_button(),
                 w.webex_embed.fallback_button(),
+                w.webex_embed.mute_button(),
+                w.webex_embed.bring_forward_button(),
                 w.webex_embed.change_link_button(),
                 w.session_strip._invite_button,
                 w.session_strip._record_button,

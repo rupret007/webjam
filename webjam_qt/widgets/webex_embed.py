@@ -300,10 +300,12 @@ class WebexEmbed(QFrame):
         actions = self._actions_layout = QGridLayout()
         actions.setContentsMargins(0, 0, 0, 0)
         actions.setSpacing(Space.SM)
+        # Keep joining and the audio handoff above the app-only action when
+        # the buttons stack beside Notes.
         self._action_positions = (
-            (self._bring_forward_btn, 0, 0),
+            (self._fallback_btn, 0, 0),
             (self._mute_btn, 0, 1),
-            (self._fallback_btn, 1, 0),
+            (self._bring_forward_btn, 1, 0),
             (self._change_link_btn, 1, 1),
             (self._copy_link_btn, 2, 0),
             (self._install_btn, 2, 1),
