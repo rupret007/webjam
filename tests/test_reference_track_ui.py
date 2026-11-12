@@ -10,7 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest  # noqa: E402
 from PySide6.QtCore import QPoint, QRect, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionButton  # noqa: E402
 
 from webjam_qt.theme import load_stylesheet  # noqa: E402
 from webjam_qt.windows.reference_track import (  # noqa: E402
@@ -422,9 +422,17 @@ def test_shared_track_mute_is_keyboard_reachable_while_playing_in_compact_dialog
 
         playing.muted = True
         dialog.set_snapshot(playing)
+        _app.processEvents()
+        assert dialog._mute.text() == "Unmute"
         assert dialog._mute.accessibleName() == "Unmute Shared Track"
         assert dialog._status.text() == "Playing · Shared Track muted"
         assert dialog.width() == 500
+        options = QStyleOptionButton()
+        options.initFrom(dialog._mute)
+        contents = dialog._mute.style().subElementRect(
+            QStyle.SubElement.SE_PushButtonContents, options, dialog._mute
+        )
+        assert contents.width() >= dialog._mute.fontMetrics().horizontalAdvance(dialog._mute.text())
         for button in (dialog._mute, dialog._stop, dialog._done):
             assert button.isVisibleTo(dialog)
             assert dialog.rect().contains(QRect(button.mapTo(dialog, QPoint()), button.size()))

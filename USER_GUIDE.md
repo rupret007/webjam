@@ -1230,8 +1230,8 @@ count-in, and separate route/cleanup state. Where the sender backend exists,
 **Recheck Route** refreshes route evidence without starting playback. Play,
 pause, stop, restart, paused seeking,
 loop in/out, source trim, and an audible count-in remain transport controls.
-Use **Mute track** to silence the backing track for everyone while its playhead
-continues. **Unmute track** restores its previous level. This control leaves
+Use **Mute** in Shared Track to silence the backing track for everyone while
+its playhead continues. **Unmute** restores its previous level. This control leaves
 microphones and each participant’s monitoring alone. Mute stays with the
 loaded track until you unmute it or load a new track.
 **Replace…** and **Remove** require a safe stopped state; an attempted change

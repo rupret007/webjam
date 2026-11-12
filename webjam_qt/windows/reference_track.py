@@ -326,7 +326,7 @@ class ReferenceTrackDialog(QDialog):
         self._stop.setProperty("destructive", "true")
         self._stop.setAccessibleName("Stop Shared Track playback")
         self._stop.clicked.connect(self._emit_stop)
-        self._mute = QPushButton("Mute track")
+        self._mute = QPushButton("Mute")
         self._mute.setObjectName("GhostButton")
         self._mute.setAccessibleName("Mute Shared Track")
         self._mute.setToolTip("Silence the backing track for everyone while playback continues.")
@@ -772,8 +772,8 @@ class ReferenceTrackDialog(QDialog):
         count_in_active = bool(getattr(snapshot, "count_in_active", False))
         muted = bool(getattr(snapshot, "muted", False))
         mute_action = "Unmute" if muted else "Mute"
-        if self._mute.text() != f"{mute_action} track":
-            self._mute.setText(f"{mute_action} track")
+        if self._mute.text() != mute_action:
+            self._mute.setText(mute_action)
             self._mute.setAccessibleName(f"{mute_action} Shared Track")
             self._mute.setToolTip(
                 "Restore the backing track for everyone at its previous level."
