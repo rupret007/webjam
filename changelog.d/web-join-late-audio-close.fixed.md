@@ -1,0 +1,1 @@
+- Web Join closes an audio context again if a late browser suspension changes its state after cleanup.

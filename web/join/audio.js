@@ -8,21 +8,35 @@ export const MUSIC_CONSTRAINTS = Object.freeze({
 
 export async function closeAudioContext(context) {
   if (!context || context.state === "closed") return;
-  let deadline;
+  let deadline, lateSuspension;
   try {
     // macOS WebKit can finish a pending rendering startup after close() has
     // resolved. Await suspension acknowledgement before closing our context.
     // A backgrounded or broken suspend must not hold teardown indefinitely.
     if (typeof context.suspend === "function") {
+      const suspended = Promise.resolve(context.suspend()).then(() => true, () => false);
       await Promise.race([
-        Promise.resolve(context.suspend()).catch(() => {}),
-        new Promise((resolve) => { deadline = setTimeout(resolve, 250); }),
+        suspended,
+        new Promise((resolve) => {
+          deadline = setTimeout(() => {
+            lateSuspension = suspended;
+            resolve();
+          }, 250);
+        }),
       ]);
     }
   } catch { /* Closing remains mandatory if suspension throws. */ }
-  finally {
-    clearTimeout(deadline);
+  clearTimeout(deadline);
+  const close = async () => {
     try { await context.close(); } catch { /* Preserve best-effort teardown. */ }
+  };
+  await close();
+  if (lateSuspension) {
+    // WebKit can update the state again when a suspension queued before
+    // close completes. Close that same retired context once more if needed.
+    void lateSuspension.then((acknowledged) => {
+      if (acknowledged && context.state !== "closed") return close();
+    });
   }
 }
 
