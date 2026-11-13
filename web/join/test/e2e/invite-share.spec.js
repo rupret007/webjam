@@ -104,6 +104,44 @@ test("a guest retries listening and leaves without requesting a microphone", asy
   expect(await page.evaluate(() => window.micRequests)).toBe(0);
 });
 
+test("choosing listening immediately releases a microphone check already in progress", async ({ page }) => {
+  await page.addInitScript(() => {
+    let resumes = 0;
+    const track = Object.assign(new EventTarget(), {
+      readyState: "live", getSettings: () => ({}), stop: () => { window.micStopped = true; },
+    });
+    navigator.mediaDevices.getUserMedia = () => new Promise(resolve => {
+      window.completeMicRequest = () => resolve({ getAudioTracks: () => [track], getTracks: () => [track] });
+    });
+    window.AudioContext = class {
+      resume() {
+        if (++resumes === 1) return Promise.resolve();
+        return new Promise(resolve => { window.completeListeningResume = resolve; });
+      }
+      close() { return Promise.resolve(); }
+    };
+  });
+  await page.route("**/session.js", route => route.fulfill({
+    contentType: "text/javascript",
+    body: `export class WebJoinSession {
+      constructor({stream}) { if (stream) throw new Error("Unexpected microphone stream"); }
+      async join() { this.authorized = true; }
+      close() {}
+    }`,
+  }));
+  await page.goto(guest());
+  await page.getByRole("button", { name: "Check microphone" }).click();
+  await page.waitForFunction(() => typeof window.completeMicRequest === "function");
+  await page.getByRole("button", { name: "Join to listen" }).press("Enter");
+  await page.waitForFunction(() => typeof window.completeListeningResume === "function");
+  await page.evaluate(() => window.completeMicRequest());
+  await page.waitForFunction(() => window.micStopped === true);
+  await page.evaluate(() => window.completeListeningResume());
+  await expect(page.locator("#status")).toContainText("listening with your microphone off");
+  await page.getByRole("button", { name: "Leave session" }).press("Enter");
+  await expect(page.locator("#status")).toBeFocused();
+});
+
 test("cached join markup keeps the microphone path usable", async ({ page }) => {
   await page.addInitScript(() => {
     const observer = new MutationObserver(() => {
