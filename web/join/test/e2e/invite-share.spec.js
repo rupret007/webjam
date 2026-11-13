@@ -100,7 +100,7 @@ test("a guest retries listening and leaves without requesting a microphone", asy
   const leave = page.getByRole("button", { name: "Leave session" });
   await expect(leave).toBeFocused();
   await leave.press("Enter");
-  await expect(page.getByText("Ask your host for a new browser invite to rejoin.")).toBeVisible();
+  await expect(page.locator("#status")).toHaveAccessibleDescription(/return to your Jam room to accept it/i);
   expect(await page.evaluate(() => window.micRequests)).toBe(0);
 });
 

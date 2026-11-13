@@ -343,13 +343,8 @@ function leave(message = "You left the session.", error) {
   $("latency").textContent = "Listening delay is estimated after you connect.";
   let view = error ? mapJoinError(error, { listenOnly: retryListening }) : null;
   if (joined && (!view || view.showRetry)) {
-    view = {
-      kind: view?.kind || "session_ended",
-      headline: view?.headline || message,
-      hint: "Ask your host for a new browser invite to rejoin.",
-      showRetry: false,
-      needsFreshInvite: true,
-    };
+    const ended = mapJoinError(JOIN_SIGNAL.SESSION_ENDED);
+    view = { ...ended, kind: view?.kind || ended.kind, headline: view?.headline || message };
   }
   if (view) {
     if (view.needsFreshInvite && !view.showRetry) invite = undefined;
