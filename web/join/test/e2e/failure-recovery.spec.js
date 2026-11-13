@@ -122,6 +122,7 @@ test('losing an optional microphone after Join closes that attempt', async ({ pa
       export class WebJoinSession {
         constructor(options) { this.options = options; }
         async join() { this.options.onStatus('Synthetic session connected.'); }
+        async attachMicrophone() { return true; }
         close() {
           window.micLossSessionClosed = true;
           (this.options.stream?.getTracks() ?? []).forEach(track => track.stop());
@@ -132,7 +133,7 @@ test('losing an optional microphone after Join closes that attempt', async ({ pa
     await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
     expect(await page.evaluate(() => captureTracks.length)).toBe(0);
     await page.getByRole('button', { name: 'Use microphone', exact: true }).click();
-    await expect(page.getByText('Microphone detected.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Microphone on.', { exact: true })).toBeVisible();
     await page.evaluate(() => {
       captureTracks[0].stop();
       captureTracks[0].dispatchEvent(new Event('ended'));

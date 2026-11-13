@@ -4,7 +4,44 @@ import { candidateAllowed, offerHasReviewedAllocation, policySdp, SESSION_BYTES 
 import { musicSdp, tuneReceiver, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget, connectionRoute } from "./audio.js";
 import { JOIN_SIGNAL } from "./errors.js";
 
-export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReviewedAllocations = false } = {}) {
+const SEND_DIRECTIONS = new Set(["sendrecv", "sendonly"]);
+
+function waitForAbort(ms, signal) {
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    signal?.addEventListener("abort", finish);
+    if (signal?.aborted) finish();
+  });
+}
+
+async function outboundAudioFlowing(pc, sender, signal) {
+  const deadline = Date.now() + 5000;
+  let seen = null;
+  while (Date.now() < deadline) {
+    if (signal.aborted) return false;
+    let packets = 0;
+    let bytes = 0;
+    let stats;
+    try { stats = await sender.getStats(); } catch { return false; }
+    for (const report of stats.values()) {
+      if (report.type !== "outbound-rtp" || (report.kind !== "audio" && report.mediaType !== "audio")) continue;
+      packets += Number(report.packetsSent) || 0;
+      bytes += Number(report.bytesSent) || 0;
+    }
+    const transceiver = pc.getTransceivers().find((item) => item.sender === sender);
+    if (seen && SEND_DIRECTIONS.has(transceiver?.currentDirection) && packets > seen.packets && bytes > seen.bytes) return true;
+    seen = { packets, bytes };
+    await waitForAbort(100, signal);
+  }
+  return false;
+}
+
+export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReviewedAllocations = false, allowHostCandidates = false } = {}) {
   await new Promise((resolve, reject) => {
     let graceElapsed = false;
     const cleanup = () => {
@@ -18,7 +55,7 @@ export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReview
     const changed = () => {
       if (pc.iceGatheringState === "complete" || (graceElapsed &&
           pc.localDescription?.sdp.split(/\r?\n/).some(line => line.startsWith("a=candidate:") &&
-            candidateAllowed(line, undefined, allowReviewedAllocations)))) finish();
+            candidateAllowed(line, undefined, allowReviewedAllocations, allowHostCandidates)))) finish();
     };
     const abort = () => { cleanup(); reject(new DOMException("Stopped", "AbortError")); };
     // Give alternate services time to gather, then signal vetted candidates
@@ -31,11 +68,13 @@ export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReview
     if (signal.aborted) abort(); else changed();
   });
   if (signal.aborted) throw new DOMException("Stopped", "AbortError");
-  return policySdp(pc.localDescription?.sdp ?? "", { allowReviewedAllocations });
+  return policySdp(pc.localDescription?.sdp ?? "", { allowReviewedAllocations, allowHostCandidates });
 }
 export class WebJoinSession {
-  constructor({ origin, invite, stream, audioContext, onStatus = () => {}, onTrack = () => {}, onLatency = () => {}, onRoute = () => {}, onError = () => {} }) {
+  constructor({ origin, invite, stream, audioContext, onStatus = () => {}, onTrack = () => {}, onLatency = () => {}, onRoute = () => {}, onError = () => {}, loopbackLab = false }) {
     Object.assign(this, { invite, stream: stream || null, audioContext, onStatus, onTrack, onLatency, onRoute, onError });
+    // Tests only. Production join leaves this false and still strips host candidates.
+    this.loopbackLab = loopbackLab === true;
     this.listenOnly = !this.stream;
     this.controller = new AbortController();
     this.mailbox = new Mailbox(origin, invite, { signal: this.controller.signal });
@@ -47,22 +86,41 @@ export class WebJoinSession {
   }
   async attachMicrophone(stream) {
     const track = stream?.getAudioTracks?.()[0];
-    const sender = this.pc?.getSenders?.().find((item) => item.track === null || item.track?.kind === "audio");
-    if (!track || !sender || this.controller.signal.aborted) return false;
-    await sender.replaceTrack(track);
-    const transceiver = this.pc.getTransceivers?.().find((item) => item.sender === sender);
-    if (transceiver && transceiver.direction === "recvonly") transceiver.direction = "sendrecv";
+    const pc = this.pc;
+    const signal = this.controller.signal;
+    if (!track || track.readyState !== "live" || !pc || signal.aborted) return false;
+    const transceiver = pc.getTransceivers?.().find((item) => item.receiver?.track?.kind === "audio" && item.mid != null)
+      ?? pc.getTransceivers?.().find((item) => item.receiver?.track?.kind === "audio");
+    const sender = transceiver?.sender;
+    if (!sender) return false;
+    const previousDirection = transceiver.direction;
+    const previousTrack = sender.track ?? null;
+    // Direction changes after the sealed answer do not send. currentDirection
+    // stays recvonly until a renegotiation this host does not accept.
+    if (previousDirection === "recvonly" || previousDirection === "inactive") transceiver.direction = "sendrecv";
+    let flowing = false;
+    try {
+      await sender.replaceTrack(track);
+      track.enabled = true;
+      flowing = !signal.aborted && await outboundAudioFlowing(pc, sender, signal);
+    } catch { flowing = false; }
+    if (!flowing) {
+      try { transceiver.direction = previousDirection; } catch { /* The peer may already be closed. */ }
+      await sender.replaceTrack(previousTrack).catch(() => {});
+      return false;
+    }
     this.stream = stream;
     this.listenOnly = false;
-    track.enabled = true;
     return true;
   }
   async join() {
     const signal = this.controller.signal;
     this.onStatus("Checking the host invitation…");
     const offer = validateOffer(this.invite, await open(this.invite, await this.mailbox.receive("offer")));
-    const remoteSDP = policySdp(offer.sdp, { remote: true });
-    const credentials = await this.mailbox.credentials();
+    const remoteSDP = policySdp(offer.sdp, { remote: true, allowHostCandidates: this.loopbackLab });
+    const credentials = this.loopbackLab
+      ? { iceServers: [], expiresAt: this.invite.expiresAt * 1000, quotaBytes: this.quotaBytes }
+      : await this.mailbox.credentials();
     this.accessExpiresAt = credentials.expiresAt;
     this.quotaBytes = Math.min(this.quotaBytes, credentials.quotaBytes);
     const certificate = await RTCPeerConnection.generateCertificate({ name: "ECDSA", namedCurve: "P-256" });
@@ -113,12 +171,20 @@ export class WebJoinSession {
     enrolled.catch(() => {});
     await pc.setRemoteDescription({ type: "offer", sdp: remoteSDP });
     if (this.stream?.getAudioTracks().length) pc.addTrack(this.stream.getAudioTracks()[0], this.stream);
-    else pc.addTransceiver("audio", { direction: "recvonly" });
+    else {
+      const audio = pc.getTransceivers().find((item) => item.receiver?.track?.kind === "audio");
+      if (!audio) throw new Error("The host offer did not include audio.");
+      // The host keeps a single sealed answer and will not renegotiate. A
+      // recvonly answer leaves currentDirection recvonly, so replaceTrack
+      // never sends. Negotiate sendrecv with no track; RTP starts only when
+      // a microphone is attached.
+      audio.direction = "sendrecv";
+    }
     const description = await pc.createAnswer();
     await pc.setLocalDescription({ type: "answer", sdp: musicSdp(description.sdp) });
     // An older host rejects these addresses in an answer. Its authenticated
     // offer advertises only the legacy candidates, so keep that answer policy.
-    const sdp = await gatherAnswerSDP(pc, signal, { allowReviewedAllocations: offerHasReviewedAllocation(remoteSDP) });
+    const sdp = await gatherAnswerSDP(pc, signal, { allowReviewedAllocations: offerHasReviewedAllocation(remoteSDP), allowHostCandidates: this.loopbackLab });
     answer = { ...offer, kind: "answer", guest_pin: sdpFingerprint(sdp), sdp };
     await this.mailbox.send("answer", await seal(this.invite, answer));
     let timer;

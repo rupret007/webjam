@@ -157,6 +157,12 @@ function joinReady() {
   return Boolean(invite) && !starting && !session;
 }
 
+function listeningGuidance(headphonesOn, microphoneOn) {
+  if (microphoneOn) return "Microphone on. Headphones prevent echo and feedback.";
+  if (headphonesOn) return "Headphones are on. Your microphone stays off until you turn it on.";
+  return "Listening only. Headphones prevent echo and feedback if you turn the microphone on.";
+}
+
 const refresh = () => {
   const listening = Boolean(session) && !starting;
   $("prejoin").hidden = !listening;
@@ -166,9 +172,7 @@ const refresh = () => {
     const message = starting
       ? "Connecting to your session…"
       : listening
-        ? ($("headphones").checked
-          ? "Headphones are on. Your microphone stays off until you turn it on."
-          : "Listening only. Headphones prevent echo and feedback if you turn the microphone on.")
+        ? listeningGuidance($("headphones").checked, micHeard)
         : "Join to listen. You do not need a microphone or headphones yet.";
     if (guidance.textContent !== message) guidance.textContent = message;
   }
@@ -192,14 +196,26 @@ function showMicError(error) {
   refresh();
 }
 
-async function attachOptionalMicrophone(signal) {
+async function publishMicrophone(signal) {
   const track = prejoinStream?.getAudioTracks()[0];
   if (!track || signal.aborted || !session) return;
+  $("mic-progress").textContent = "Turning the microphone on…";
+  let on = false;
   try {
-    if (typeof session.attachMicrophone === "function") await session.attachMicrophone(prejoinStream);
+    if (typeof session.attachMicrophone === "function") on = await session.attachMicrophone(prejoinStream) === true;
   } catch {
-    // Listening continues when the room cannot add a microphone yet.
+    on = false;
   }
+  if (signal.aborted) return;
+  if (!on) {
+    showMicError(new Error("The room cannot hear this microphone yet. You are still listening."));
+    return;
+  }
+  micHeard = true;
+  $("mic-progress").textContent = "";
+  $("mic-error").textContent = "";
+  $("mic-heard").hidden = false;
+  refresh();
 }
 
 async function runMicCheck() {
@@ -249,11 +265,7 @@ async function runMicCheck() {
       },
       onHeard: () => {
         if (signal.aborted) return;
-        micHeard = true;
-        $("mic-progress").textContent = "";
-        $("mic-heard").hidden = false;
-        refresh();
-        void attachOptionalMicrophone(signal);
+        void publishMicrophone(signal);
       },
     });
     checkRunning = false;

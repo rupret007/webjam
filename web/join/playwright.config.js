@@ -4,10 +4,10 @@ export default defineConfig({
   testDir: "./test/e2e", timeout: 30000, expect: { timeout: 10000 }, workers: 1, retries: 0,
   use: { baseURL: "http://127.0.0.1:4174" },
   projects: [
-    { name: "chromium", testIgnore: /prejoin\.spec\.js/, use: { browserName: "chromium", launchOptions: { args: ["--disable-features=WebRtcHideLocalIpsWithMdns"] } } },
+    { name: "chromium", testIgnore: /prejoin\.spec\.js|listen-mic\.spec\.js/, use: { browserName: "chromium", launchOptions: { args: ["--disable-features=WebRtcHideLocalIpsWithMdns"] } } },
     {
       name: "chromium-fake-mic",
-      testMatch: /prejoin\.spec\.js/,
+      testMatch: /prejoin\.spec\.js|listen-mic\.spec\.js/,
       use: {
         browserName: "chromium",
         launchOptions: {
