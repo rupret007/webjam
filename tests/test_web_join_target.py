@@ -31,7 +31,7 @@ def test_private_package_selects_the_protected_community_page(tmp_path, monkeypa
     assert target.game_night_destination(" " + ROOM_LINK + "\n") == ROOM_LINK
     assert target.game_night_destination(GAME_INVITE) == GAME_INVITE
     for game in target.GAME_NIGHT_GAMES:
-        assert target.game_night_game_page(game) == GAME_NIGHT + "&table=" + game
+        assert target.game_night_game_page(game) == GAME_NIGHT + "&table=" + game + "&deliver=share"
     assert target.game_night_game_page("chess&via=other") is None
 
 

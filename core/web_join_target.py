@@ -131,7 +131,7 @@ def game_night_game_page(game: str) -> str | None:
     entrance = game_night_page()
     if entrance is None or game not in GAME_NIGHT_GAMES:
         return None
-    return entrance + "&table=" + game
+    return entrance + "&table=" + game + "&deliver=share"
 
 
 def game_night_destination(pasted_link: str) -> str | None:
