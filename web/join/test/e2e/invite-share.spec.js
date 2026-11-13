@@ -133,6 +133,7 @@ test("choosing listening immediately releases a microphone check already in prog
   await page.getByRole("button", { name: "Check microphone" }).click();
   await page.waitForFunction(() => typeof window.completeMicRequest === "function");
   await page.getByRole("button", { name: "Join to listen" }).press("Enter");
+  await page.waitForFunction(() => typeof window.completeListeningResume === "function");
   await page.evaluate(() => window.completeMicRequest());
   await page.waitForFunction(() => window.micStopped === true);
   await page.evaluate(() => window.completeListeningResume());
