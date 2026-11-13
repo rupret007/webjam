@@ -73,7 +73,7 @@ func TestGameOfferSourceDoesNotPersistOrLogTheValue(t *testing.T) {
 	}
 }
 
-func TestGameOfferValueNeverLoggedAndOnlyHashIsRetained(t *testing.T) {
+func TestGameOfferValueAndDigestNeverLoggedOrRetained(t *testing.T) {
 	peer, channels := offerLab(t)
 	authorizeLab(t, peer, channels["webjoin-enrollment"])
 	waitHostOfferOpen(t, peer.host)
@@ -105,12 +105,9 @@ func TestGameOfferValueNeverLoggedAndOnlyHashIsRetained(t *testing.T) {
 	retained := reflect.ValueOf(peer.host.gameOffer).Elem()
 	for i := 0; i < retained.NumField(); i++ {
 		field := retained.Field(i)
-		if field.Kind() == reflect.String && strings.Contains(field.String(), body.Value) {
-			t.Fatal("value retained on the endpoint")
+		if field.Kind() == reflect.String && (strings.Contains(field.String(), body.Value) || strings.Contains(field.String(), hash)) {
+			t.Fatal("offer material retained on the endpoint")
 		}
-	}
-	if peer.host.gameOffer.hash != hash {
-		t.Fatal("host page hash missing")
 	}
 	clear(raw)
 	if _, err = peer.host.SendGameOffer("Ada"); !errors.Is(err, ErrGameOffer) {
@@ -126,6 +123,33 @@ func TestGameOfferValueNeverLoggedAndOnlyHashIsRetained(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), body.Value) {
 		t.Fatal("one-time value was logged")
+	}
+}
+
+func TestExpiredGameOfferCanBeReplacedOnSameConnection(t *testing.T) {
+	peer, channels := offerLab(t)
+	authorizeLab(t, peer, channels["webjoin-enrollment"])
+	waitHostOfferOpen(t, peer.host)
+	incoming := watchText(channels[gameOfferChannelLabel])
+
+	firstDigest, err := peer.host.SendGameOffer("Ada")
+	if err != nil {
+		t.Fatal("first offer failed", err)
+	}
+	first := takeOffer(t, incoming)
+	peer.host.gameOffer.mu.Lock()
+	peer.host.gameOffer.offeredUntil = time.Now().Add(-time.Second)
+	peer.host.gameOffer.mu.Unlock()
+	secondDigest, err := peer.host.SendGameOffer("Ada")
+	if err != nil {
+		t.Fatal("replacement offer failed", err)
+	}
+	second := takeOffer(t, incoming)
+	if firstDigest == secondDigest || first.Value == second.Value {
+		t.Fatal("the replacement reused the prior offer")
+	}
+	if !peer.host.Authorized() {
+		t.Fatal("the enrolled audio connection was lost")
 	}
 }
 

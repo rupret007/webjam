@@ -1,0 +1,1 @@
+- Private WebJam hosts can send another Chess offer after the previous offer expires without reconnecting the browser guest.
