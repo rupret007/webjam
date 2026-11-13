@@ -102,7 +102,7 @@ func TestGameOfferValueNeverLoggedAndOnlyHashIsRetained(t *testing.T) {
 	if !strings.Contains(logs.String(), "webjoin game offer sent") {
 		t.Fatal("expected offer log")
 	}
-	retained := reflect.ValueOf(*peer.host.gameOffer)
+	retained := reflect.ValueOf(peer.host.gameOffer).Elem()
 	for i := 0; i < retained.NumField(); i++ {
 		field := retained.Field(i)
 		if field.Kind() == reflect.String && strings.Contains(field.String(), body.Value) {
