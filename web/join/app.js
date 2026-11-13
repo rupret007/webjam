@@ -164,7 +164,7 @@ function focusNextAudioCheckControl() {
 }
 
 const refresh = () => {
-  $("prejoin").hidden = !invite || starting || !!session;
+  $("prejoin").hidden = !invite || starting || !!session || (retryListening && !$("retry").hidden);
   if (listen && listenActions) {
     listenActions.hidden = $("join").hidden || !invite || starting || !!session;
     listen.disabled = listenActions.hidden;
