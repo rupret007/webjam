@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/pion/webrtc/v4"
 )
@@ -17,17 +18,18 @@ const (
 	gameOfferChannelLabel = "webjoin-game-offer"
 	gameOfferBytes        = 32
 	maxGameOfferBytes     = 128
+	gameOfferLifetime     = 2 * time.Minute
 )
 
 // ErrGameOffer rejects a game offer. The error text never includes the one-time value.
 var ErrGameOffer = errors.New("web join game offer rejected")
 
 // gameOfferChannel is the host-created sibling of webjoin-enrollment.
-// It keeps the grant hash for the host page and never the one-time value.
+// The expiry prevents overlapping offers on the same guest connection.
 type gameOfferChannel struct {
-	dc   *webrtc.DataChannel
-	mu   sync.Mutex
-	hash string
+	dc           *webrtc.DataChannel
+	mu           sync.Mutex
+	offeredUntil time.Time
 }
 
 type gameOfferMessage struct {
@@ -155,7 +157,7 @@ func (e *Endpoint) sendGameOfferText(payload []byte) error {
 	return nil
 }
 
-// SendGameOffer delivers one Chess offer to this enrolled guest.
+// SendGameOffer delivers one live Chess offer at a time to this enrolled guest.
 // It returns hash(value) for the host page fragment. The value is not retained.
 func (e *Endpoint) SendGameOffer(hostName string) (string, error) {
 	if e == nil || e.gameOffer == nil || !e.authorized.Load() {
@@ -163,7 +165,7 @@ func (e *Endpoint) SendGameOffer(hostName string) (string, error) {
 	}
 	e.gameOffer.mu.Lock()
 	defer e.gameOffer.mu.Unlock()
-	if e.gameOffer.hash != "" || !e.authorized.Load() {
+	if time.Now().Before(e.gameOffer.offeredUntil) || !e.authorized.Load() {
 		return "", ErrGameOffer
 	}
 	payload, hash, secret, err := buildGameOffer("chess", hostName)
@@ -175,7 +177,7 @@ func (e *Endpoint) SendGameOffer(hostName string) (string, error) {
 	if err = e.sendGameOfferText(payload); err != nil {
 		return "", ErrGameOffer
 	}
-	e.gameOffer.hash = hash
+	e.gameOffer.offeredUntil = time.Now().Add(gameOfferLifetime)
 	// The log line is the event only. The value and the hash stay out of it.
 	log.Printf("webjoin game offer sent")
 	return hash, nil
