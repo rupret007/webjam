@@ -61,7 +61,10 @@ test('access time is visible, warns once near expiry, and stops updating on Leav
   await invitation(page);
   await expect(page.locator('#access-window')).toBeHidden();
   await expect(page.locator('#join')).toBeHidden();
-  await expect(page.getByRole('button',{name:'Leave session',exact:true})).toBeFocused();
+  const leave = page.getByRole('button',{name:'Leave session',exact:true});
+  await expect(leave).toBeVisible();
+  await expect(leave).toHaveClass(/quiet/);
+  await expect(leave).not.toBeFocused();
   await openAudioDetails(page);
   await expect(page.getByRole('timer')).toHaveText('Browser access ends in 1:35.');
   await expect(page.getByRole('timer')).toHaveAttribute('aria-live','off');

@@ -114,6 +114,25 @@ export class WebJoinSession {
     this.listenOnly = false;
     return true;
   }
+  async releaseMicrophone() {
+    if (this.controller?.signal?.aborted) return false;
+    const pc = this.pc;
+    const transceiver = pc?.getTransceivers?.().find((item) => item.receiver?.track?.kind === "audio" && item.mid != null)
+      ?? pc?.getTransceivers?.().find((item) => item.receiver?.track?.kind === "audio");
+    const sender = transceiver?.sender;
+    if (typeof sender?.replaceTrack === "function") {
+      try {
+        await sender.replaceTrack(null);
+      } catch {
+        return false;
+      }
+    }
+    // The page stops the capture after this returns. Stopping it here would
+    // look like a dropped microphone and leave the room.
+    this.stream = null;
+    this.listenOnly = true;
+    return true;
+  }
   async join() {
     const signal = this.controller.signal;
     this.onStatus("Checking the host invitation…");

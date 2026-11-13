@@ -59,10 +59,13 @@ test("opening an invite starts listen-only join, and the host dialog leads with 
     await page.setViewportSize({ width, height });
     await page.goto(guest());
     await expect(page.locator("#status")).toHaveText("Checking the host invitation…");
+    await expect(page.locator("#heading")).toHaveText("Joining the room…");
     await expect(page.locator("#join")).toBeHidden();
     const leave = page.getByRole("button", { name: "Leave session", exact: true });
     await expect(leave).toBeVisible();
     await expect(leave).toHaveClass(/secondary/);
+    await expect(leave).toHaveClass(/quiet/);
+    await expect(leave).not.toBeFocused();
     await expect(page.locator("#prejoin")).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath(`guest-join-${width}x${height}.png`) });
   }

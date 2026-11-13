@@ -37,10 +37,13 @@ test("opening the invite starts listen-only join without a microphone or headpho
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/${fragment(invite())}`);
   await expect(page.locator("#status")).toHaveText("Checking the host invitation…");
+  await expect(page.locator("#heading")).toHaveText("Joining the room…");
   await expect(page.locator("#join")).toBeHidden();
   const leave = page.getByRole("button", { name: "Leave session", exact: true });
   await expect(leave).toBeVisible();
   await expect(leave).toHaveClass(/secondary/);
+  await expect(leave).toHaveClass(/quiet/);
+  await expect(leave).not.toBeFocused();
   await expect(leave).toBeInViewport({ ratio: 1 });
   await expect(page.locator("#prejoin")).toBeHidden();
   await expect(page.getByRole("checkbox")).toBeHidden();
@@ -71,14 +74,20 @@ test("optional microphone stays after Join and a missing device can be retried",
   await expect(page.getByText("No microphone found - plug one in and press Try again")).toBeVisible();
 });
 
-test("optional headphones guidance is visible after Join and does not gate listening", async ({ page }) => {
+test("headphones note and Use microphone share one optional line and do not gate listening", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await connected(page);
   await page.goto(`/${fragment(invite())}`);
   await expect(page.locator("#status")).toHaveText("Synthetic session connected.");
-  await expect(page.getByRole("checkbox", { name: /headphones/i })).toBeVisible();
-  await expect(page.locator("#join-guidance")).toContainText("Headphones prevent echo");
-  await page.getByRole("checkbox", { name: /headphones/i }).check();
+  await expect(page.locator("#heading")).toHaveText("You're listening.");
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  const note = page.locator("#listen-note");
+  const mic = page.getByRole("button", { name: "Use microphone", exact: true });
+  await expect(note).toHaveText("Headphones keep echo down if you talk.");
+  await expect(mic).toBeVisible();
+  expect(await page.evaluate(() => document.getElementById("listen-note").parentElement === document.getElementById("check-mic").parentElement)).toBe(true);
+  await expect(page.locator("#join-guidance")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Leave session", exact: true })).not.toBeFocused();
   await expect(page.locator("#status")).toHaveText("Synthetic session connected.");
   await expect(page.locator("#join")).toBeHidden();
 });

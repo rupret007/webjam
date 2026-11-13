@@ -94,7 +94,7 @@ test('a later join rechecks expiry when the timer has not run', async ({ page })
   await expectExpiredInvite(page);
   expect(await page.evaluate(() => captureTracks.length)).toBe(0);
   expect(await page.evaluate(() => audioContexts.length)).toBe(contexts);
-  expect(await page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);
 });
 
 test('listen-only join does not request a microphone while an invite can still expire', async ({ page }) => {

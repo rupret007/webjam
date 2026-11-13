@@ -12,20 +12,19 @@
 </head>
 <body>
   <main>
-    <p class="eyebrow">WebJam</p>
-    <h1 id="heading">Join a WebJam session</h1>
+    <p class="eyebrow"><span id="live-dot" class="live-dot" hidden></span>WebJam</p>
+    <h1 id="heading">Joining the room…</h1>
     <div class="join-card">
       <p id="status" role="status" tabindex="-1" aria-describedby="error-hint">Opening your invite.</p>
       <p id="error-hint" class="error-hint" hidden></p>
       <p id="join-guidance" class="join-guidance">Connecting to your session…</p>
-      <div class="actions"><button id="join" aria-describedby="join-guidance" hidden disabled>Join</button><button id="retry" hidden>Retry</button><button id="leave" class="secondary" hidden>Leave session</button></div>
-      <section id="prejoin" hidden aria-labelledby="prejoin-heading">
-        <h2 id="prejoin-heading">Optional microphone</h2>
-        <p id="listen-note">You are listening. Headphones prevent echo and feedback if you turn the microphone on.</p>
-        <label class="headphones"><input id="headphones" type="checkbox"> I’m wearing headphones to prevent echo.</label>
-        <div class="mic-actions">
+      <div class="actions"><button id="join" aria-describedby="join-guidance" hidden disabled>Join</button><button id="retry" hidden>Retry</button></div>
+      <section id="prejoin" hidden aria-label="Optional microphone">
+        <p class="optional-line">
+          <span id="listen-note">Headphones keep echo down if you talk.</span>
           <button type="button" id="check-mic" class="secondary">Use microphone</button>
-        </div>
+          <button type="button" id="listen-only" class="secondary" hidden>Back to listening</button>
+        </p>
         <p id="mic-error" class="mic-error" role="alert"></p>
         <button type="button" id="mic-retry" class="secondary" hidden>Try again</button>
         <div id="mic-picker" class="mic-picker" hidden>
@@ -33,12 +32,13 @@
           <select id="mic-device"><option value="">Browser default</option></select>
         </div>
         <p id="mic-source" role="status" hidden></p>
-        <div id="mic-meter" class="mic-meter" role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div id="mic-meter" class="mic-meter" hidden role="meter" aria-label="Microphone level" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <div id="mic-meter-fill" class="mic-meter-fill"></div>
         </div>
         <p id="mic-progress" role="status"></p>
         <p id="mic-heard" class="mic-heard" role="status" hidden>Microphone on.</p>
       </section>
+      <p class="leave-row"><button id="leave" class="secondary quiet" hidden>Leave session</button></p>
       <p id="audio-quality" role="status"></p>
       <p id="connection-route" hidden></p>
     </div>

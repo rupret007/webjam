@@ -44,7 +44,7 @@ pools fail closed and require a reviewed update to browser and Go policy. See th
 [provider's address maintenance guidance](https://developers.cloudflare.com/realtime/turn/faq/).
 IPv6-only paths are not yet supported by the browser policy.
 
-Microphone capture requires the headphones checkbox and a tap. Music mode
+Microphone capture is optional. A headphones note sits with Use microphone on one line, and listening does not wait for either. Music mode
 requests stereo 48 kHz with processing disabled and reports ignored settings.
 Both audio directions remain quarantined until the host acknowledges the
 certificate-bound proof over DTLS. Displayed delay is an estimate from network
@@ -53,8 +53,9 @@ the host bridge. iOS/Safari and Firefox limitations are shown in the page.
 
 Once connected, the page shows when this browser's access expires and gives one
 warning in the final minute. The host may end the session sooner. The clock is
-quiet for screen readers; the warning is announced once. Leave is the available
-session action, and leaving or an error clears the countdown. The display does
+quiet for screen readers; the warning is announced once. Leave stays a quiet
+exit and is not focused on arrival. Back to listening returns to listen-only
+without leaving the room. Leaving or an error clears the countdown. The display does
 not renew credentials, extend a session, change a quota, or reuse an expired
 invitation. Continuing after expiry requires a fresh invitation from the host.
 

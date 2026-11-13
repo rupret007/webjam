@@ -121,6 +121,60 @@ test('attachMicrophone stays off until a live peer is sending', async () => {
   session.close();
 });
 
+test('releaseMicrophone stops sending and leaves the capture for the page to stop', async () => {
+  const track = { readyState: 'live', enabled: true, stop() { this.readyState = 'ended'; } };
+  let replaced = 'live';
+  const session = new WebJoinSession({
+    origin: 'https://relay.example',
+    invite: {},
+    stream: null,
+    audioContext: {},
+  });
+  session.pc = {
+    getTransceivers: () => [{
+      mid: '0',
+      receiver: { track: { kind: 'audio' } },
+      sender: { replaceTrack: async (next) => { replaced = next; } },
+      direction: 'sendrecv',
+    }],
+  };
+  session.stream = { getAudioTracks: () => [track], getTracks: () => [track] };
+  session.listenOnly = false;
+  assert.equal(await session.releaseMicrophone(), true);
+  assert.equal(replaced, null);
+  assert.equal(session.listenOnly, true);
+  assert.equal(session.stream, null);
+  assert.equal(track.readyState, 'live');
+  session.pc = null;
+  session.close();
+});
+
+test('releaseMicrophone stays on the mic when the peer rejects the change', async () => {
+  const track = { readyState: 'live', enabled: true, stop() { this.readyState = 'ended'; } };
+  const session = new WebJoinSession({
+    origin: 'https://relay.example',
+    invite: {},
+    stream: null,
+    audioContext: {},
+  });
+  session.pc = {
+    getTransceivers: () => [{
+      mid: '0',
+      receiver: { track: { kind: 'audio' } },
+      sender: { replaceTrack: async () => { throw new Error('still sending'); } },
+    }],
+  };
+  session.stream = { getTracks: () => [track] };
+  session.listenOnly = false;
+  assert.equal(await session.releaseMicrophone(), false);
+  assert.equal(session.listenOnly, false);
+  assert.equal(session.stream.getTracks()[0], track);
+  assert.equal(track.readyState, 'live');
+  session.stream = null;
+  session.pc = null;
+  session.close();
+});
+
 test('a listen-only session closes without a microphone stream', () => {
   const session = new WebJoinSession({
     origin: 'https://relay.example',

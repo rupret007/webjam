@@ -49,11 +49,14 @@ test("the first in-room line is You're listening and the delay and countdown sit
   await openRoom(page);
   await expect(page.locator("#heading")).toHaveText("You're listening.");
   await expect(page.locator("#status")).toHaveText("You're listening.");
+  await expect(page.locator("#status")).toHaveClass(/echo/);
   await expect(page.locator("#status")).not.toContainText("60–120");
   const delayNote = page.getByText("roughly 60–120 ms", { exact: false });
   await expect(delayNote).toBeHidden();
   await expect(page.locator("#access-window")).toBeHidden();
-  await expect(page.locator("#listen-note")).toContainText("You are listening.");
+  await expect(page.locator("#listen-note")).toHaveText("Headphones keep echo down if you talk.");
+  await expect(page.getByRole("button", { name: "Leave session", exact: true })).not.toBeFocused();
+  expect(await visibleListeningLines(page)).toEqual(["You're listening."]);
   await page.getByText("Audio details", { exact: true }).click();
   await expect(delayNote).toBeVisible();
   await expect(page.locator("#access-time")).toContainText("Browser access ends in");
@@ -64,16 +67,42 @@ test("a known session name is part of the first in-room line", async ({ page }) 
   await openRoom(page, "Friday set");
   await expect(page.locator("#heading")).toHaveText("You're listening. Friday set");
   await expect(page.locator("#status")).toHaveText("You're listening. Friday set");
+  expect(await visibleListeningLines(page)).toEqual(["You're listening. Friday set"]);
 });
 
 test("Use microphone turns a silent mic on without waiting for a level", async ({ page }) => {
   await openRoom(page);
-  await expect(page.locator("#listen-note")).toContainText("You are listening.");
+  await expect(page.locator("#listen-note")).toHaveText("Headphones keep echo down if you talk.");
   await page.getByRole("button", { name: "Use microphone", exact: true }).click();
   await expect(page.locator("#mic-heard")).toHaveText("Microphone on.");
   await expect(page.locator("#listen-note")).toBeHidden();
   await expect(page.getByText("You are listening.", { exact: true })).toHaveCount(0);
   await expect(page.locator("#mic-progress")).not.toHaveText(/Speak or play a note/);
+  await expect(page.locator("#heading")).toHaveText("You're in, mic on");
+  await expect(page.locator("#status")).toHaveText("You're in, mic on");
+  await expect(page.getByRole("button", { name: "Back to listening", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Leave session", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Back to listening", exact: true }).click();
   await expect(page.locator("#heading")).toHaveText("You're listening.");
-  await expect(page.locator("#join-guidance")).toHaveText("Microphone on. Headphones prevent echo and feedback.");
+  await expect(page.getByRole("button", { name: "Use microphone", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Back to listening", exact: true })).toBeHidden();
+  await expect(page.locator("#join")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Leave session", exact: true })).toBeVisible();
+  expect(await visibleListeningLines(page)).toEqual(["You're listening."]);
 });
+
+async function visibleListeningLines(page) {
+  return page.evaluate(() => {
+    const lines = [];
+    for (const el of document.querySelectorAll("h1, p, span, button, label")) {
+      if (el.closest("[hidden]") || el.classList.contains("echo")) continue;
+      const style = getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") continue;
+      const box = el.getBoundingClientRect();
+      if (box.width < 2 || box.height < 2) continue;
+      const own = [...el.childNodes].filter((node) => node.nodeType === 3).map((node) => node.textContent).join("").replace(/\s+/g, " ").trim();
+      if (/^You're listening\b|^You are listening\b|^Listening only\b/.test(own)) lines.push(own);
+    }
+    return lines;
+  });
+}

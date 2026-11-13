@@ -105,7 +105,9 @@ test("the mic stays off in the room until outbound audio is accepted", async ({ 
   await page.goto(invitePath());
   await expect(page.locator("#status")).toHaveText("Synthetic session connected.");
   await expect(page.locator("#mic-heard")).toBeHidden();
-  await expect(page.locator("#join-guidance")).toHaveText("Listening only. Headphones prevent echo and feedback if you turn the microphone on.");
+  await expect(page.locator("#listen-note")).toHaveText("Headphones keep echo down if you talk.");
+  await expect(page.locator("#join-guidance")).toBeHidden();
+  await expect(page.locator("#heading")).toHaveText("You're listening.");
   await page.getByRole("button", { name: "Use microphone", exact: true }).click();
   await expect(page.locator("#mic-error")).toHaveText("The room cannot hear this microphone yet. You are still listening.");
   await expect(page.locator("#mic-heard")).toBeHidden();
@@ -115,7 +117,8 @@ test("the mic stays off in the room until outbound audio is accepted", async ({ 
   await page.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.locator("#mic-heard")).toBeVisible();
   await expect(page.locator("#mic-heard")).toHaveText("Microphone on.");
-  await expect(page.locator("#join-guidance")).toHaveText("Microphone on. Headphones prevent echo and feedback.");
+  await expect(page.locator("#heading")).toHaveText("You're in, mic on");
+  await expect(page.getByRole("button", { name: "Back to listening", exact: true })).toBeVisible();
   await expect(page.locator("#listen-note")).toBeHidden();
   await expect(page.getByText("You are listening.", { exact: true })).toHaveCount(0);
   await expect(page.locator("#mic-progress")).not.toHaveText(/Speak or play a note/);

@@ -1,7 +1,7 @@
 import { readInvite } from "./crypto.js";
 import { closeAudioContext } from "./audio.js";
 import { WebJoinSession } from "./session.js";
-import { listeningLine } from "./listening.js";
+import { HEADPHONES_NOTE, isRoomTitle, joiningLine, listeningLine, micOnLine } from "./listening.js";
 import { RELAY_ORIGIN } from "./config.js";
 import {
   beginMicCheck,
@@ -11,7 +11,6 @@ import {
 import { JOIN_SIGNAL, applyJoinFailure, clearJoinFailure, mapJoinError } from "./errors.js";
 
 const $ = (id) => document.getElementById(id);
-const LISTEN_NOTE = "You are listening. Headphones prevent echo and feedback if you turn the microphone on.";
 const PAGE_HEADING = "Join a WebJam session";
 const failureElements = () => ({
   status: $("status"),
@@ -157,37 +156,56 @@ function joinReady() {
   return Boolean(invite) && !starting && !session;
 }
 
-function listeningGuidance(headphonesOn, microphoneOn) {
-  if (microphoneOn) return "Microphone on. Headphones prevent echo and feedback.";
-  if (headphonesOn) return "Headphones are on. Your microphone stays off until you turn it on.";
-  return "Listening only. Headphones prevent echo and feedback if you turn the microphone on.";
+function roomTitle(listening) {
+  if (listening && micHeard) return micOnLine(session?.sessionName);
+  if (listening) return listeningLine(session?.sessionName);
+  if (starting) return joiningLine(session?.sessionName);
+  return PAGE_HEADING;
 }
 
 const refresh = () => {
   const listening = Boolean(session) && !starting;
+  const title = roomTitle(listening);
+  const room = document.querySelector("main");
+  if (room) room.classList.toggle("in-room", listening || starting);
+  const dot = $("live-dot");
+  if (dot) dot.hidden = !(listening || starting);
   $("prejoin").hidden = !listening;
   $("join").disabled = !joinReady();
-  $("leave").classList.toggle("secondary", starting);
   const heading = $("heading");
-  if (heading) heading.textContent = listening ? listeningLine(session?.sessionName) : PAGE_HEADING;
+  if (heading) heading.textContent = title;
+  const status = $("status");
+  if (status && listening && isRoomTitle(status.textContent) && status.textContent !== title) {
+    status.textContent = title;
+  }
+  if (status) status.classList.toggle("echo", listening && status.textContent === title);
   const note = $("listen-note");
   if (note) {
     note.hidden = !listening || micHeard;
-    note.textContent = micHeard ? "" : LISTEN_NOTE;
+    note.textContent = HEADPHONES_NOTE;
   }
+  const back = $("listen-only");
+  if (back) back.hidden = !listening || !micHeard;
   const guidance = $("join-guidance");
   if (guidance) {
     const message = starting
       ? "Connecting to your session…"
       : listening
-        ? listeningGuidance($("headphones").checked, micHeard)
+        ? ""
         : invite
           ? "Join to listen. You do not need a microphone or headphones yet."
           : "";
+    guidance.hidden = !message;
     if (guidance.textContent !== message) guidance.textContent = message;
   }
+  const meter = $("mic-meter");
+  if (meter) meter.hidden = !listening || (!checkRunning && !micHeard && !stopMeter);
   $("mic-device").disabled = !listening || checkRunning;
-  $("check-mic").disabled = !listening || checkRunning || micHeard || !!stopMeter;
+  const useMic = $("check-mic");
+  useMic.hidden = Boolean(micHeard);
+  useMic.disabled = !listening || checkRunning || micHeard || !!stopMeter;
+  const actions = document.querySelector("main .actions");
+  if (actions) actions.hidden = $("join").hidden && $("retry").hidden;
 };
 
 function showMicError(error) {
@@ -284,14 +302,37 @@ async function runMicCheck() {
   }
 }
 
-$("headphones").addEventListener("change", refresh);
 $("check-mic").addEventListener("click", () => runMicCheck());
+$("listen-only").addEventListener("click", () => {
+  void returnToListening();
+});
 $("mic-retry").addEventListener("click", () => runMicCheck());
 $("mic-device").addEventListener("change", () => {
   void runMicCheck();
 });
 
+async function returnToListening() {
+  if (!micHeard || !session || checkRunning || starting) return;
+  let released = true;
+  if (typeof session.releaseMicrophone === "function") {
+    try {
+      released = await session.releaseMicrophone() === true;
+    } catch {
+      released = false;
+    }
+  }
+  if (!released || !session) {
+    $("mic-error").textContent = "The microphone is still on. You are still in the room.";
+    refresh();
+    return;
+  }
+  stopMicMonitoring(true);
+  refresh();
+}
+
 function leave(message = "You left the session.", error) {
+  prejoinAbort?.abort();
+  prejoinAbort = null;
   clearAccessTime();
   activeAttempt?.abort();
   activeAttempt = null;
@@ -386,7 +427,6 @@ async function startJoin() {
     showAccessTime(joinedSession.accessExpiresAt, isCurrent);
     clearJoinFailure(failureElements(), $("status").textContent);
     $("join").hidden = true;
-    $("leave").focus({ preventScroll: true });
     starting = false;
     refresh();
   } catch (error) {
@@ -427,6 +467,6 @@ document.addEventListener("visibilitychange", () => {
     });
   }
 });
-refresh();
 scheduleUnusedInviteExpiry();
 if (invite) void startJoin();
+else refresh();
