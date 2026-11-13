@@ -14,8 +14,10 @@ export function publicIPv4(value) {
   if ([a, b, c, d].some((part) => part > 255)) return false;
   return !(a === 0 || a === 10 || a === 127 || a >= 224 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && (b === 168 || (b === 0 && (c === 0 || c === 2)) || (b === 88 && c === 99))) || (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) || (a === 203 && b === 0 && c === 113));
 }
-export function candidateAllowed(line, relays = RELAY_IPS, allowReviewedAllocations = true) {
+export function candidateAllowed(line, relays = RELAY_IPS, allowReviewedAllocations = true, allowHostCandidates = false) {
   const fields = line.replace(/^a=/, "").split(/ +/);
+  // Loopback lab only. Production answers still require a public srflx or reviewed relay.
+  if (allowHostCandidates && fields.length >= 8 && fields[0].startsWith("candidate:") && fields[1] === "1" && fields[2].toLowerCase() === "udp" && /^\d+$/.test(fields[3]) && /^\d+$/.test(fields[5]) && Number(fields[5]) >= 1 && Number(fields[5]) <= 65535 && fields[6] === "typ" && fields[7] === "host") return true;
   if (fields.length < 8 || !fields[0].startsWith("candidate:") || fields[1] !== "1" || fields[2].toLowerCase() !== "udp" || !/^\d+$/.test(fields[3]) || !publicIPv4(fields[4]) || !/^\d+$/.test(fields[5]) || Number(fields[5]) < 1 || Number(fields[5]) > 65535 || fields[6] !== "typ") return false;
   return fields[7] === "srflx" || (fields[7] === "relay" &&
     (relays.includes(fields[4]) || (allowReviewedAllocations && RELAY_IPS.some(ip => relays.includes(ip)) && reviewedAllocation(fields[4]))));
@@ -24,12 +26,12 @@ export function offerHasReviewedAllocation(sdp) {
   return sdp.split(/\r?\n/).some(line => line.startsWith("a=candidate:") &&
     candidateAllowed(line) && !candidateAllowed(line, RELAY_IPS, false));
 }
-export function policySdp(sdp, { remote = false, allowReviewedAllocations = true } = {}) {
+export function policySdp(sdp, { remote = false, allowReviewedAllocations = true, allowHostCandidates = false } = {}) {
   const lines = sdp.split(/\r?\n/).filter(Boolean);
   let count = 0;
   const result = lines.filter((line) => {
     if (!line.startsWith("a=candidate:")) return true;
-    const allowed = candidateAllowed(line, RELAY_IPS, allowReviewedAllocations);
+    const allowed = candidateAllowed(line, RELAY_IPS, allowReviewedAllocations, allowHostCandidates);
     if (!allowed && remote) throw new Error("Host supplied a disallowed ICE candidate");
     if (allowed && ++count > 32) throw new Error("Too many ICE candidates");
     return allowed;

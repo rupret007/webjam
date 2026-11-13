@@ -95,6 +95,32 @@ test('connection diagnostics use the selected pair and clear when the path is un
   session.close();
 });
 
+test('host candidates stay out of an answer unless the loopback lab asks for them', async () => {
+  const loopback = 'a=candidate:9 1 udp 2122260223 127.0.0.1 50000 typ host';
+  const peer = gatheringPeer(direct, loopback);
+  const closed = await gatherAnswerSDP(peer, new AbortController().signal, { timeout: 0 });
+  assert.match(closed, /1\.1\.1\.1/);
+  assert.doesNotMatch(closed, /127\.0\.0\.1/);
+  const opened = await gatherAnswerSDP(peer, new AbortController().signal, { timeout: 0, allowHostCandidates: true });
+  assert.match(opened, /127\.0\.0\.1 50000 typ host/);
+});
+
+test('attachMicrophone stays off until a live peer is sending', async () => {
+  const session = new WebJoinSession({
+    origin: 'https://relay.example',
+    invite: {},
+    stream: null,
+    audioContext: {},
+  });
+  assert.equal(session.loopbackLab, false);
+  assert.equal(session.listenOnly, true);
+  assert.equal(await session.attachMicrophone(null), false);
+  assert.equal(await session.attachMicrophone({ getAudioTracks: () => [{ readyState: 'live', enabled: false }] }), false);
+  assert.equal(session.listenOnly, true);
+  assert.equal(session.stream, null);
+  session.close();
+});
+
 test('a listen-only session closes without a microphone stream', () => {
   const session = new WebJoinSession({
     origin: 'https://relay.example',

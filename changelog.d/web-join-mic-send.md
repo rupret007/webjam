@@ -1,0 +1,1 @@
+- Web Join turns a guest microphone on only after the room is actually receiving their audio. Listening still starts with the microphone off.

@@ -1,8 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
 import { toBase64Url, fromHex } from "../../crypto.js";
-
-const shots = "/Users/jeffstory/work/grok-webjam-invite-share-build-20261112/shots";
 const guest = () => {
   const value = {
     capability: fromHex("11".repeat(32)),
@@ -43,16 +40,15 @@ function shareSummary(calls) {
   }));
 }
 
-test("guest Join and the host invite dialog at phone and desktop sizes", async ({ page, browserName }) => {
+test("guest Join and the host invite dialog at phone and desktop sizes", async ({ page, browserName }, testInfo) => {
   test.skip(browserName !== "chromium", "screenshots are Chromium only");
-  await mkdir(shots, { recursive: true });
   for (const [width, height] of [[390, 844], [1440, 900]]) {
     await page.setViewportSize({ width, height });
     await page.goto(guest());
     const join = page.getByRole("button", { name: "Join", exact: true });
     await expect(join).toBeEnabled();
     await expect(page.locator("#prejoin")).toBeHidden();
-    await page.screenshot({ path: `${shots}/guest-join-${width}x${height}.png` });
+    await page.screenshot({ path: testInfo.outputPath(`guest-join-${width}x${height}.png`) });
   }
   await installShareSpy(page);
   for (const [width, height] of [[390, 844], [1440, 900]]) {
@@ -62,7 +58,7 @@ test("guest Join and the host invite dialog at phone and desktop sizes", async (
     await expect(page.getByRole("button", { name: "Copy invite" })).toBeEnabled();
     await expect(page.getByRole("link", { name: "Email invite" })).toBeHidden();
     expect(await page.evaluate(() => window.shareCalls.length)).toBe(0);
-    await page.screenshot({ path: `${shots}/host-invite-${width}x${height}.png` });
+    await page.screenshot({ path: testInfo.outputPath(`host-invite-${width}x${height}.png`) });
   }
 });
 
