@@ -1,0 +1,1 @@
+- Private Hang Out Music links explain how to start hosting when WebJam is still at launch or in another workspace.

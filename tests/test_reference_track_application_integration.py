@@ -390,6 +390,7 @@ def test_enabled_restart_button_invokes_controller_once() -> None:
 def test_open_panel_reports_host_authority_loss_separately() -> None:
     controller = _controller(host=True)
     fake = _FakeReferenceTrack()
+    fake.set_muted = MagicMock()
     controller._reference_track = fake
     controller._jamulus_connected = True
     primary_process = MagicMock()
@@ -403,12 +404,16 @@ def test_open_panel_reports_host_authority_loss_separately() -> None:
         assert dialog is not None
         assert dialog._primary_gate is ReferenceTrackPrimaryGate.READY
         assert dialog._play.isEnabled() is True
+        assert dialog._mute.isEnabled()
+        dialog._mute.click()
+        fake.set_muted.assert_called_once_with(True)
 
         controller.settings.host_server_enabled = False
         controller._render_reference_track_snapshot(fake.snapshot)
 
         assert dialog._primary_gate is ReferenceTrackPrimaryGate.HOST_REQUIRED
         assert dialog._play.isEnabled() is False
+        assert not dialog._mute.isEnabled()
         assert "only to the host" in dialog._status.text()
         assert "primary Jamulus connection" not in dialog._status.text()
     finally:
@@ -555,6 +560,7 @@ def test_host_projects_bounded_shared_track_truth_to_private_peers() -> None:
         loop_start_s=2.0,
         loop_end_s=20.0,
         count_in_active=True,
+        muted=True,
     )
 
     controller._publish_shared_track_peer_state(snapshot)
@@ -570,6 +576,7 @@ def test_host_projects_bounded_shared_track_truth_to_private_peers() -> None:
         count_in_active=True,
         cleanup_pending=False,
         needs_attention=False,
+        muted=True,
     )
 
 
@@ -602,6 +609,7 @@ def test_guest_renders_authoritative_shared_track_and_recording_count_in() -> No
             loop_start_s=2.0,
             loop_end_s=30.0,
             count_in_active=True,
+            muted=True,
         ),
     )
     controller.guest_peer = SimpleNamespace(last_state=peer_state)
@@ -615,6 +623,7 @@ def test_guest_renders_authoritative_shared_track_and_recording_count_in() -> No
     assert projection.state is SharedTrackPlaybackState.PLAYING
     assert projection.position_s == pytest.approx(3.5)
     assert projection.count_in_active is True
+    assert projection.muted is True
     assert not hasattr(projection, "can_control")
 
 

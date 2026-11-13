@@ -373,3 +373,43 @@ def test_support_return_reuses_one_button_and_restores_the_normal_cleanup_footer
     assert dialog._done_footer.indexOf(button) >= 0
     assert dialog._play.isEnabled()
     assert events == []
+
+
+@pytest.mark.parametrize("width,height", [(500, 500), (620, 540)])
+def test_compact_shared_track_transport_stays_visible_while_controls_scroll(panel, qapp, width, height):
+    dialog, events = panel
+    dialog.setStyleSheet(load_stylesheet())
+    dialog.resize(width, height)
+    loaded = _snapshot(_mac_capability())
+    dialog.set_snapshot(loaded)
+    dialog.show()
+    dialog.activateWindow()
+    qapp.processEvents()
+
+    scroller = dialog._scroll_area
+    scrollbar = scroller.verticalScrollBar()
+    assert scrollbar.maximum() > 0
+    assert scroller.horizontalScrollBar().maximum() == 0
+
+    def button_bounds(button):
+        return QRect(button.mapTo(dialog, QPoint()), button.size())
+
+    def assert_transport_visible():
+        for button in (dialog._play, dialog._pause, dialog._restart, dialog._stop, dialog._done):
+            assert button.isVisibleTo(dialog)
+            assert dialog.rect().contains(button_bounds(button)), button.text()
+            center = button_bounds(button).center()
+            assert dialog.childAt(center) is button, button.text()
+
+    assert_transport_visible()
+    QTest.mouseClick(dialog._play, Qt.MouseButton.LeftButton)
+    dialog.set_snapshot(replace(loaded, state=ReferenceTrackState.PLAYING))
+    qapp.processEvents()
+    assert_transport_visible()
+    stop_bounds = button_bounds(dialog._stop)
+    scrollbar.setValue(scrollbar.maximum())
+    qapp.processEvents()
+    assert button_bounds(dialog._stop) == stop_bounds
+    assert_transport_visible()
+    QTest.mouseClick(dialog._stop, Qt.MouseButton.LeftButton)
+    assert events == ["play_requested", "stop_requested"]

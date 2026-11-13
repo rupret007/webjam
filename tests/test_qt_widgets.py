@@ -581,25 +581,32 @@ class TestSessionStrip(unittest.TestCase):
 
         s = self._strip()
         s.set_reference_track_available(False)
-        s.set_shared_track_snapshot(
-            SimpleNamespace(
-                state="playing",
-                source_name="Band Song.wav",
-                duration_s=90.0,
-                position_s=12.0,
-                loop_start_s=0.0,
-                loop_end_s=None,
-                count_in_active=False,
-                cleanup_pending=False,
-                waveform_peaks=(),
-                waveform_progress=0.0,
-            )
+        snapshot = SimpleNamespace(
+            state="playing",
+            source_name="Band Song.wav",
+            duration_s=90.0,
+            position_s=12.0,
+            loop_start_s=0.0,
+            loop_end_s=None,
+            count_in_active=False,
+            cleanup_pending=False,
+            waveform_peaks=(),
+            waveform_progress=0.0,
         )
+        s.set_shared_track_snapshot(snapshot)
         s.set_shared_track_channel_present(True)
 
         self.assertEqual(s._shared_track_state.text(), "Playing")
         self.assertIn("Band Song.wav", s._shared_track_surface.toolTip())
         self.assertTrue(s._reference_track_button.isHidden())
+        snapshot.muted = True
+        s.set_shared_track_snapshot(snapshot)
+        self.assertEqual(s._shared_track_state.text(), "Muted")
+        self.assertIn("Muted", s._shared_track_surface.accessibleDescription())
+        self.assertTrue(s._shared_track_transport.isHidden())
+        snapshot.muted = False
+        s.set_shared_track_snapshot(snapshot)
+        self.assertEqual(s._shared_track_state.text(), "Playing")
 
     def test_guest_projection_survives_hud_refresh_and_clears_at_session_end(self):
         from types import SimpleNamespace
@@ -1483,25 +1490,81 @@ class TestConductorWindow(unittest.TestCase):
                                 )
 
                         for lobby_state in lobby_states:
-                            w.participant_grid.set_session_state(lobby_state)
+                            grid = w.participant_grid
+                            grid.set_session_state(lobby_state)
                             _qapp().processEvents()
-                            frame = w.participant_grid._empty_state
+                            frame = grid._empty_state
+                            self.assertTrue(grid.widget().rect().contains(frame.geometry()))
                             self.assertLess(
                                 frame.geometry().bottom(),
-                                w.participant_grid.viewport().height(),
+                                grid.viewport().height() + grid.verticalScrollBar().maximum(),
                             )
-                            for action in (
-                                w.participant_grid._empty_primary,
-                                w.participant_grid._empty_practice,
-                                w.participant_grid._empty_ready,
-                            ):
+                            for action in (grid._empty_primary, grid._empty_practice, grid._empty_ready):
                                 if action.isVisibleTo(w):
-                                    self.assertLess(
-                                        action.geometry().bottom(),
-                                        frame.height(),
-                                    )
+                                    bounds = QRect(action.mapTo(frame, QPoint()), action.size())
+                                    self.assertTrue(frame.rect().contains(bounds))
                     finally:
                         w.close()
+
+    def test_compact_music_with_notes_keeps_stage_and_meeting_actions_reachable(self):
+        from PySide6.QtCore import QPoint, QRect, Qt
+        from PySide6.QtTest import QTest
+
+        from services.webex_app import WebexAppState
+        from webjam_qt.session_state import SessionUiState
+        from webjam_qt.theme import load_stylesheet
+
+        w = self._window()
+        grid = w.participant_grid
+        w.setStyleSheet(load_stylesheet())
+        w.resize(720, 560)
+        w.webex_embed.set_meeting_configured(True)
+        w.webex_embed.set_app_status(WebexAppState.INVALID)
+        w.webex_embed.show()
+        w.session_canvas.show()
+        w.show()
+        w.center_splitter.setSizes([300, 420])
+        _qapp().processEvents()
+        try:
+            self.assertEqual((w.width(), w.height()), (720, 560))
+            self.assertTrue(w.session_canvas.isVisible())
+            stage_width, notes_width = w.center_splitter.sizes()
+            self.assertGreater(notes_width, stage_width)
+            self.assertGreater(grid.viewport().height(), w.webex_embed.height())
+            for state in (
+                SessionUiState.idle(),
+                SessionUiState.permission_denied(),
+                SessionUiState.stop_failed(),
+            ):
+                grid.set_session_state(state)
+                _qapp().processEvents()
+                frame = grid._empty_state
+                action = grid._empty_primary
+                action_in_frame = QRect(action.mapTo(frame, QPoint()), action.size())
+                self.assertTrue(frame.rect().contains(action_in_frame), state.title)
+                self.assertTrue(grid.widget().rect().contains(frame.geometry()), state.title)
+                grid.verticalScrollBar().setValue(0)
+                if action.isEnabled():
+                    grid.setFocus()
+                    QTest.keyClick(grid, Qt.Key.Key_Tab)
+                    _qapp().processEvents()
+                    self.assertTrue(action.hasFocus(), state.title)
+                else:
+                    grid.verticalScrollBar().setValue(grid.verticalScrollBar().maximum())
+                action_in_viewport = QRect(action.mapTo(grid.viewport(), QPoint()), action.size())
+                self.assertTrue(grid.viewport().rect().contains(action_in_viewport), state.title)
+                self.assertGreaterEqual(
+                    grid._empty_message.height(),
+                    grid._empty_message.heightForWidth(grid._empty_message.width()),
+                )
+
+            for action in (w.webex_embed.install_button(), w.webex_embed.recheck_button()):
+                action.setFocus(Qt.FocusReason.TabFocusReason)
+                _qapp().processEvents()
+                self.assertTrue(action.hasFocus(), action.text())
+                self.assertTrue(action.visibleRegion().contains(action.rect()), action.text())
+        finally:
+            w.close()
 
     def test_conversation_focus_chain_matches_visual_action_order(self):
         from PySide6.QtCore import Qt
@@ -1523,9 +1586,9 @@ class TestConductorWindow(unittest.TestCase):
         _qapp().processEvents()
         try:
             expected = [
-                w.webex_embed.bring_forward_button(),
-                w.webex_embed.mute_button(),
                 w.webex_embed.fallback_button(),
+                w.webex_embed.mute_button(),
+                w.webex_embed.bring_forward_button(),
                 w.webex_embed.change_link_button(),
                 w.session_strip._invite_button,
                 w.session_strip._record_button,

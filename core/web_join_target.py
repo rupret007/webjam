@@ -20,6 +20,7 @@ from core.build_info import build_id
 
 MANIFEST_NAME = "webjam-web-join-target.json"
 UNAVAILABLE = "Web Join destination is unavailable for this build."
+HANGOUT_MUSIC_SCHEME = "webjam-beta"
 _BUILD = re.compile(r"[a-f0-9]{7,64}")
 _MAX_BYTES = 512
 _PAGES = MappingProxyType({
@@ -149,3 +150,35 @@ def game_night_destination(pasted_link: str) -> str | None:
     if not link or link == entrance:
         return entrance
     return link if _GAME_NIGHT_GUEST_LINK.fullmatch(link) or _GAME_NIGHT_ROOM_LINK.fullmatch(link) else None
+
+
+def hangout_music_request(url: str) -> str | None:
+    """Extract an opaque Hang Out tab request from the macOS URL event."""
+    match = re.fullmatch(rf"{HANGOUT_MUSIC_SCHEME}://hangout-music/([a-f0-9]{{32}})", url)
+    return match.group(1) if match else None
+
+
+def macos_web_join_identity(target: str) -> tuple[str, tuple[str, ...]]:
+    """Keep private Music invitations on their own Launch Services identity."""
+    if target == "public":
+        return "com.webjam.app", ("webjam",)
+    if target == "private-beta":
+        return "com.webjam.app.beta", ("webjam", HANGOUT_MUSIC_SCHEME)
+    raise WebJoinTargetUnavailable()
+
+
+def is_private_web_join_page(page: str) -> bool:
+    return page == _PAGES["private-beta"]
+
+
+def hangout_music_return(request: str, invite: str) -> str:
+    """Return only to the private package's built-in, same-origin page."""
+    page = web_join_page()
+    if not is_private_web_join_page(page) or not re.fullmatch(r"[a-f0-9]{32}", request):
+        raise WebJoinTargetUnavailable()
+    prefix, marker, fragment = invite.partition("#")
+    if prefix != page or not marker or not re.fullmatch(
+        r"k=[A-Za-z0-9_-]{43}&s=[a-f0-9]{64}&g=[1-9][0-9]{0,9}&e=[1-9][0-9]{0,12}", fragment
+    ):
+        raise WebJoinTargetUnavailable()
+    return f"{page}handoff.html#{request}&{fragment}"

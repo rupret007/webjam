@@ -60,7 +60,13 @@ def test_shared_track_projection_round_trips_bounded_path_free_truth() -> None:
     )
 
     assert snapshot.source_display_name == "Midnight Practice.wav"
+    assert "muted" not in snapshot.to_mapping()
     assert SharedTrackSessionSnapshot.from_mapping(snapshot.to_mapping()) == snapshot
+    assert not SharedTrackSessionSnapshot.from_mapping(snapshot.to_mapping()).muted
+    with pytest.raises(ValueError, match="muted must be a boolean"):
+        SharedTrackSessionSnapshot.from_mapping({**snapshot.to_mapping(), "muted": 1})
+    with pytest.raises(ValueError, match="unloaded Shared Track"):
+        SharedTrackSessionSnapshot(muted=True)
     assert not hasattr(snapshot, "can_control")
     assert not hasattr(snapshot, "audible")
 
@@ -224,16 +230,17 @@ def test_authenticated_guest_receives_host_shared_track_projection(
         "Guest",
         invite_token=credentials.invite_token,
     )
-    expected = control.publish_shared_track(
-        **_ready_projection(
-            state=SharedTrackPlaybackState.PLAYING,
-            position_s=44.25,
-            loop_start_s=30.0,
-            loop_end_s=60.0,
-            count_in_active=True,
-        ),
-        playback_generation=11,
+    playing = _ready_projection(
+        state=SharedTrackPlaybackState.PLAYING,
+        position_s=44.25,
+        loop_start_s=30.0,
+        loop_end_s=60.0,
+        count_in_active=True,
     )
+    host = HostPeerSession()
+    host.control = control
+    expected = host.publish_shared_track_state(**playing, playback_generation=11, muted=True)
+    assert expected is not None and expected.to_mapping()["muted"] is True
     server = SessionPeerServer(
         "127.0.0.1",
         0,
@@ -249,6 +256,9 @@ def test_authenticated_guest_receives_host_shared_track_projection(
             credentials=credentials,
         )
         observed = client.state(enrollment)
+        restored = host.publish_shared_track_state(**playing, playback_generation=11)
+        assert restored is not None and "muted" not in restored.to_mapping()
+        observed_restored = client.state(enrollment)
     finally:
         server.stop()
 
@@ -256,6 +266,10 @@ def test_authenticated_guest_receives_host_shared_track_projection(
     assert observed.shared_track.source_display_name == "Midnight Practice.wav"
     assert observed.shared_track.state is SharedTrackPlaybackState.PLAYING
     assert observed.shared_track.count_in_active is True
+    assert observed.shared_track.muted is True
+    assert observed_restored.shared_track == restored and not restored.muted
+    assert restored.generation == expected.generation + 1
+    assert restored.playback_generation == expected.playback_generation
 
 
 def test_finalizing_signal_is_idempotent_durable_and_available_on_host_runtime(

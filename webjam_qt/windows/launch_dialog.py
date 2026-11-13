@@ -20,6 +20,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QPoint, QRect, QSize, QTimer, Qt
 from PySide6.QtGui import QAction, QAccessible, QAccessibleEvent, QIcon, QKeyEvent, QKeySequence, QImage, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
     QButtonGroup,
     QComboBox,
     QCommandLinkButton,
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from core import build_info
 from core.host_startup_checklist import WIN32_MUSIC_HOST_REASON
 from core.creative_modes import (
     CREATOR_PROFILES,
@@ -698,7 +700,8 @@ class LaunchDialog(QDialog):
         self.remote_invitation: RemoteInvitation | None = None
         self.invitation_meeting_url = ""
         self.setObjectName("LaunchDialog")
-        self.setWindowTitle("WebJam")
+        commit = build_info.packaged_build_id()
+        self.setWindowTitle(f"WebJam — Build {commit[:12]}" if commit else "WebJam")
         self.setModal(True)
         self.setMinimumSize(460, 480)
         # A 520 px client area plus a conservative 40 px native-title-bar
@@ -763,6 +766,14 @@ class LaunchDialog(QDialog):
         self._name_error.setVisible(False)
         root.addWidget(self._name_error)
         self._name_input.textChanged.connect(self._clear_name_error)
+
+        self._music_host_guidance = QLabel(
+            "Choose Music, then Host. Once the session starts, invite your bandmate again from Hang Out."
+        )
+        self._music_host_guidance.setObjectName("LaunchSubtitle")
+        self._music_host_guidance.setWordWrap(True)
+        self._music_host_guidance.hide()
+        root.addWidget(self._music_host_guidance)
 
         self._pages = _LaunchPages()
         self._choice_page = self._build_choice_page()
@@ -1416,10 +1427,20 @@ class LaunchDialog(QDialog):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
+        take_music_guidance = getattr(QApplication.instance(), "take_startup_music_host_guidance", None)
+        if self._allow_workspace_choices and take_music_guidance is not None and take_music_guidance():
+            self.show_music_host_guidance()
         self._keep_door_cards_tabbable()
         self._sync_choice_helper_height()
         QTimer.singleShot(0, self, self._keep_door_cards_tabbable)
         QTimer.singleShot(0, self, self._sync_choice_helper_height)
+
+    def show_music_host_guidance(self) -> bool:
+        if not self._allow_workspace_choices:
+            return False
+        self._music_host_guidance.show()
+        self._announce_error(self._music_host_guidance)
+        return True
 
     def _build_menu(self, root: QVBoxLayout) -> None:
         self._menu_bar = QMenuBar(self)

@@ -19,6 +19,7 @@ from core.creative_modes import (
 from core.logging_config import configure_logging
 from core.network_invite import BandInvite
 from core.settings import load_settings
+from core.web_join_target import HANGOUT_MUSIC_SCHEME, hangout_music_request
 from core.workspace_launch import validate_workspace_launch
 from webjam_qt.controllers.application_controller import ApplicationController
 from webjam_qt.invitation_ingress import (
@@ -64,6 +65,7 @@ def qt_arguments_without_test_night(arguments: Sequence[object]) -> list[str]:
         or (
             str(argument) != TEST_NIGHT_ARGUMENT
             and "webjam://" not in str(argument).lower()
+            and f"{HANGOUT_MUSIC_SCHEME}://" not in str(argument).lower()
         )
     ]
 
@@ -82,6 +84,7 @@ class WebJamApplication(QApplication):
 
     invitation_received = Signal(object)
     invitation_error = Signal(str)
+    hangout_music_requested = Signal(str)
 
     def __init__(self, arguments: list[str]) -> None:
         # A QFileOpen event may arrive during QApplication construction,
@@ -89,6 +92,7 @@ class WebJamApplication(QApplication):
         # Retain one pending invite so a cold deep link can never disappear.
         self._pending_invitation: Invitation | None = None
         self._pending_invitation_error = ""
+        self._startup_music_host_guidance: bool | None = False
         super().__init__(arguments)
 
     def event(self, event) -> bool:
@@ -97,6 +101,18 @@ class WebJamApplication(QApplication):
                 url = event.url().toString()
             except AttributeError:
                 url = ""
+            if url.startswith(f"{HANGOUT_MUSIC_SCHEME}://"):
+                request = hangout_music_request(url)
+                if request:
+                    if self._startup_music_host_guidance is not None:
+                        # The request requires an active host. Keep only a
+                        # prompt for the launcher, never a deferred request.
+                        self._startup_music_host_guidance = True
+                    else:
+                        launch = self.activeModalWidget()
+                        if not isinstance(launch, LaunchDialog) or not launch.show_music_host_guidance():
+                            self.hangout_music_requested.emit(request)
+                return True
             if str(url).lower().startswith("webjam://"):
                 try:
                     invitation = parse_invitation_at_ingress(
@@ -118,6 +134,13 @@ class WebJamApplication(QApplication):
                 self.invitation_received.emit(invitation)
                 return True
         return super().event(event)
+
+    def take_startup_music_host_guidance(self) -> bool:
+        """Retire the early-startup state and return its one-time guidance flag."""
+
+        pending = bool(self._startup_music_host_guidance)
+        self._startup_music_host_guidance = None
+        return pending
 
     def take_pending_invitation(self) -> Invitation | None:
         """Return and clear a typed invite received before a consumer was ready."""
@@ -272,6 +295,8 @@ def _create_workspace(app, settings, launch, *, operator_mode=False, smoke_autos
         launch is not None and launch.selected_role == "studio"
     )
     library_launch = bool(launch is not None and launch.selected_role == "library")
+    if isinstance(app, WebJamApplication):
+        app.take_startup_music_host_guidance()
     if library_launch and isinstance(app, WebJamApplication):
         # Choosing saved work retires any earlier launch invitation. Only a
         # subsequent explicit Open Invitation may authorize a live join.

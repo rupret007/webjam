@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import threading
+from time import monotonic
 
-from PySide6.QtCore import QObject, QTimer, Signal
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QObject, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from core.network_invite import invite_message_title
+from core.web_join_target import (
+    WebJoinTargetUnavailable,
+    hangout_music_return,
+    is_private_web_join_page,
+    web_join_page,
+)
 from services.web_join_host import PREPARE_UNAVAILABLE, PREPARATION_FAILURE_MESSAGES, WebJoinHost
 
 
@@ -23,6 +31,8 @@ class WebJoinControls(QObject):
         self._server = None
         self._generation = 0
         self._copy_when_ready = False
+        self._hangout_request = None
+        self._hangout_confirming = False
         self._invite_copied = False
         self._person_invite_offered = False
         self._person_invite_card_shown = False
@@ -50,6 +60,9 @@ class WebJoinControls(QObject):
         self.copy_action.triggered.connect(self._copy)
         self.kick_action.triggered.connect(self.stop)
         self.prepared.connect(self._prepared)
+        hangout_requested = getattr(QApplication.instance(), "hangout_music_requested", None)
+        if hangout_requested is not None:
+            hangout_requested.connect(self._prepare_for_hangout)
         self._timer = QTimer(self)
         self._timer.setInterval(500)
         self._timer.timeout.connect(self._refresh)
@@ -70,6 +83,43 @@ class WebJoinControls(QObject):
         ):
             return None
         return bridge.hosted_server_process
+
+    def _prepare_for_hangout(self, request):
+        server = self._owned_server()
+        if not self._panel or self._hangout_confirming:
+            return
+        if server is None or not self._panel.music_context:
+            self._controller.window.flash_message(
+                "Start a hosted Music session, then invite your bandmate again from Hang Out.",
+                ms=8000,
+            )
+            return
+        try:
+            if not is_private_web_join_page(web_join_page()):
+                return
+        except WebJoinTargetUnavailable:
+            return
+        if self._host is not None or self._cleanup_pending or self._retired_hosts:
+            self._controller.window.flash_message("End the current browser invite before sending another.", ms=5000)
+            return
+        started = monotonic()
+        self._hangout_confirming = True
+        try:
+            answer = QMessageBox.question(
+                self._controller.window,
+                "Send Music invite",
+                "Send an invite from this Music session to your selected bandmate in Hang Out?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+        finally:
+            self._hangout_confirming = False
+        if (answer != QMessageBox.StandardButton.Yes or self._owned_server() is not server or not self._panel.music_context
+                or self._host is not None or self._cleanup_pending or self._retired_hosts
+                or monotonic() >= started + 90):
+            return
+        self._hangout_request = (request, started + 90)
+        self.allow_action.setChecked(True)
 
     def _refresh(self):
         server = self._owned_server()
@@ -234,6 +284,19 @@ class WebJoinControls(QObject):
             return
         self.allow_action.setText("Allow a web guest")
         self.copy_action.setEnabled(True)
+        if self._hangout_request:
+            request, expires = self._hangout_request
+            self._hangout_request = None
+            try:
+                returned = (self._panel.music_context and monotonic() < expires
+                            and QDesktopServices.openUrl(QUrl(hangout_music_return(request, host.invite))))
+            except WebJoinTargetUnavailable:
+                returned = False
+            if returned:
+                self._render_panel()
+            elif self.stop():
+                self._controller.window.flash_message("Return to Hang Out and try the Music invitation again.", ms=6000)
+            return
         offered = self._offer_prepared_person_invite()
         if self._copy_when_ready:
             self._copy_when_ready = False
@@ -241,6 +304,11 @@ class WebJoinControls(QObject):
                 self._copy()
         else:
             self._render_panel()
+
+    @property
+    def person_invite_offered(self) -> bool:
+        """Whether this controller owns the shared invitation card."""
+        return self._person_invite_offered
 
     def _offer_prepared_person_invite(self) -> bool:
         """Same moment Copy becomes available: Share or Email, Copy secondary."""
@@ -298,6 +366,7 @@ class WebJoinControls(QObject):
             )
 
     def _show_cleanup_pending(self):
+        self._clear_offered_person_invite()
         self._cleanup_pending = True
         self.allow_action.setEnabled(False)
         self.allow_action.setText("Web guest cleanup pending")
@@ -310,6 +379,7 @@ class WebJoinControls(QObject):
         self._error_server = None
         self._expired_server = None
         self._copy_when_ready = False
+        self._hangout_request = None
         self._invite_copied = False
         self._clear_offered_person_invite()
         owners = ([self._host] if self._host is not None else []) + self._retired_hosts

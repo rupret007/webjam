@@ -88,7 +88,7 @@ class FollowAlongController:
         self._suspended = None
         if hosting and url:
             self._sources[key] = url
-        self._c.window.webex_embed._sync_art_layout()
+        self._c.window.webex_embed._sync_card_layout()
         self._refresh_music_setup_guidance()
 
     def retire(self):

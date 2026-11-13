@@ -549,8 +549,14 @@ def test_art_conversation_invites_demonstration_without_opening_or_muting():
         assert "own tools" in text
         assert calls == []
         panel.set_creator_profile(get_creator_profile_by_key("music"))
-        assert "disconnect Webex audio at both ends" in panel._mode_label.text()
-        assert "Talk in Webex" in panel._mode_label.text()
+        guidance = panel._mode_label.text()
+        assert "disconnect Webex audio at both ends" in guidance
+        assert "leave or end Music before connecting meeting audio" in guidance
+        assert not panel._sound_tips_button.isHidden()
+        assert panel._sound_tips.isHidden()
+        panel._sound_tips_button.click()
+        assert not panel._sound_tips.isHidden()
+        assert "Talk in Webex" in panel._sound_tips.text()
         assert calls == []
     finally:
         panel.deleteLater()

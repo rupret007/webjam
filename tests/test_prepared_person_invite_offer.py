@@ -117,6 +117,7 @@ def test_web_join_prepare_offers_person_invite(qapp):
         audio=SimpleNamespace(stopping=False, cleanup_retry_required=False),
     )
     controls = WebJoinControls(controller)
+    controller._web_join_controls = controls
     calls: list[tuple[str, str]] = []
     real_offer = embed.offer_person_invite
 
@@ -135,6 +136,13 @@ def test_web_join_prepare_offers_person_invite(qapp):
         assert embed._copy_invite_btn.objectName() == "GhostButton"
         assert controls.copy_action.isEnabled()
         assert not embed._invite_delivery.isHidden()
+        # The desktop HUD and browser controls share one card. A HUD tick
+        # during a pending browser invite must not replace or hide its link.
+        controller._hud_copy_invite_enabled = MagicMock(return_value=False)
+        controller._retire_prepared_person_invite = MagicMock()
+        ApplicationController._sync_prepared_person_invite(controller)
+        controller._retire_prepared_person_invite.assert_not_called()
+        assert embed._invite_link == LINK
         controls.stop()
         assert embed._invite_delivery.isHidden()
         assert embed._invite_link == ""
