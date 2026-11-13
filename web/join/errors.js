@@ -179,7 +179,7 @@ function mapExpired(message) {
     headline: turnOnly ? "The free relay session timed out." : inviteHeadline,
     hint: turnOnly
       ? "Ask your host for a new invite if Retry does not connect. Retry fetches fresh relay credentials when the link is still good."
-      : "Ask your host for a new Web Join link and open it to join.",
+      : FRESH_INVITE_HINT,
     showRetry: turnOnly,
     needsFreshInvite: !turnOnly,
   };

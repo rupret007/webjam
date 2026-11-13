@@ -56,7 +56,7 @@ async function openInvitation(page, width = 390, skipCheck = true, delayCapture 
 
 async function expectExpiredInvite(page) {
   await expect(page.locator('#status')).toHaveText('This browser invite has expired.');
-  await expect(page.locator('#error-hint')).toContainText('Ask your host for a new');
+  await expect(page.locator('#error-hint')).toContainText('return to your Jam room to accept it.');
   for (const id of ['prejoin', 'join', 'retry', 'leave']) await expect(page.locator('#' + id)).toBeHidden();
 }
 
