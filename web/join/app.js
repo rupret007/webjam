@@ -373,6 +373,7 @@ async function startJoin(listenOnly = false) {
   const activeControl = document.activeElement;
   retryListening = listenOnly;
   starting = true;
+  if (listenOnly) stopMicMonitoring(true);
   refresh();
   delete elements.status.dataset.failure;
   clearJoinFailure(elements, "Connecting…");
@@ -391,10 +392,7 @@ async function startJoin(listenOnly = false) {
     }
     await context.resume();
     if (!isCurrent() || expireUnusedInvite()) return;
-    if (listenOnly) {
-      stopMicMonitoring(true);
-      showAudioSettings();
-    } else if (prejoinStream?.getAudioTracks().some((track) => track.readyState === "live")) {
+    if (!listenOnly && prejoinStream?.getAudioTracks().some((track) => track.readyState === "live")) {
       stream = prejoinStream;
       prejoinStream = null;
       prejoinAbort?.abort();
@@ -402,7 +400,7 @@ async function startJoin(listenOnly = false) {
       stopMeter?.();
       stopMeter = null;
       showAudioSettings(stream, prejoinWarnings);
-    } else {
+    } else if (!listenOnly) {
       $("status").textContent = "Allow microphone access to play with your host.";
       const capture = await acquireMusicStream(navigator.mediaDevices, $("mic-device").value);
       stream = capture.stream;
