@@ -94,6 +94,26 @@ test("a guest joins to listen and leaves without requesting a microphone", async
   expect(await page.evaluate(() => window.micRequests)).toBe(0);
 });
 
+test("cached join markup keeps the microphone path usable", async ({ page }) => {
+  await page.addInitScript(() => {
+    const observer = new MutationObserver(() => {
+      const controls = document.getElementById("listen-actions");
+      if (!controls) return;
+      controls.remove();
+      observer.disconnect();
+    });
+    observer.observe(document, { childList: true, subtree: true });
+  });
+  await page.goto(guest());
+  await expect(page.locator("#status")).toHaveText("Your host invited you to join.");
+  await expect(page.locator("#listen")).toHaveCount(0);
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Skip check" }).press("Enter");
+  const join = page.getByRole("button", { name: "Join with microphone" });
+  await expect(join).toBeEnabled();
+  await expect(join).toBeFocused();
+});
+
 test("Share invite runs only from a trusted click", async ({ page }) => {
   await installShareSpy(page);
   await page.goto("/host.html");

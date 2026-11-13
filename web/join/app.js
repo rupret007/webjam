@@ -9,6 +9,8 @@ import {
 import { JOIN_SIGNAL, applyJoinFailure, clearJoinFailure, mapJoinError } from "./errors.js";
 
 const $ = (id) => document.getElementById(id);
+const listen = $("listen");
+const listenActions = $("listen-actions");
 const failureElements = () => ({
   status: $("status"),
   hint: $("error-hint"),
@@ -163,8 +165,10 @@ function focusNextAudioCheckControl() {
 
 const refresh = () => {
   $("prejoin").hidden = !invite || starting || !!session;
-  $("listen-actions").hidden = $("join").hidden || !invite || starting || !!session;
-  $("listen").disabled = $("listen-actions").hidden;
+  if (listen && listenActions) {
+    listenActions.hidden = $("join").hidden || !invite || starting || !!session;
+    listen.disabled = listenActions.hidden;
+  }
   $("join").disabled = !joinReady();
   const guidance = $("join-guidance");
   if (guidance) {
@@ -479,7 +483,7 @@ async function startJoin(listenOnly = false) {
 $("join").addEventListener("click", () => {
   void startJoin();
 });
-$("listen").addEventListener("click", () => {
+listen?.addEventListener("click", () => {
   void startJoin(true);
 });
 $("retry").addEventListener("click", () => {
