@@ -72,7 +72,7 @@ test("actual browser ephemeral certificates and WebCrypto produce the shared Go 
 
 test("real browser sine reaches Pion after enrollment and returns through the host lab bridge", async ({ page, request, browserName }) => {
   await fakeAudio(page, browserName === "webkit");
-  const response = await request.get("http://127.0.0.1:4175/offer");
+  const response = await request.get("http://127.0.0.1:4175/offer?chess=1");
   expect(response.ok()).toBe(true);
   const host = await response.json();
   await page.goto("/");
@@ -84,6 +84,7 @@ test("real browser sine reaches Pion after enrollment and returns through the ho
       window.labAnswer = (async () => {
         const crypt = await import("/crypto.js");
         const audio = await import("/audio.js");
+        const { bindGameOfferChannel, GAME_OFFER_LABEL } = await import("/game-offer.js");
         const invite = { capability: crypt.fromHex(host.capability_hex), session: host.session, generation: host.generation, expiresAt: host.expires_at };
         const offer = crypt.validateOffer(invite, await crypt.open(invite, crypt.fromBase64Url(host.offer_b64url)));
         const certificate = await RTCPeerConnection.generateCertificate({ name: "ECDSA", namedCurve: "P-256" });
@@ -92,10 +93,18 @@ test("real browser sine reaches Pion after enrollment and returns through the ho
         window.labCapture = stream;
         stream.getAudioTracks()[0].enabled = false;
         const audioContext = window.labContext = new AudioContext({ sampleRate: 48000 }); await audioContext.resume();
-        let answer;
+        let answer, authorized = false;
         window.labAuthorized = new Promise((resolve, reject) => {
           pc.ondatachannel = (event) => {
             const channel = event.channel;
+            if (channel.label === GAME_OFFER_LABEL) {
+              bindGameOfferChannel(channel, {
+                authorized: () => authorized,
+                openWindow: href => { window.labGameDestination = href; },
+              });
+              window.labChessChannel = channel;
+              return;
+            }
             if (channel.label !== "webjoin-enrollment" || !channel.ordered || channel.maxRetransmits !== null || channel.maxPacketLifeTime !== null) { reject(new Error("Unexpected channel")); return; }
             let sent = false;
             const prove = async () => { if (sent) return; sent = true; channel.send(await crypt.enrollmentProof(invite, answer)); };
@@ -103,6 +112,7 @@ test("real browser sine reaches Pion after enrollment and returns through the ho
             if (channel.readyState === "open") prove();
             channel.onmessage = (event) => {
               if (event.data !== "authorized") { reject(new Error("Enrollment rejected")); return; }
+              authorized = true;
               stream.getAudioTracks()[0].enabled = true;
               resolve();
             };
@@ -146,6 +156,22 @@ test("real browser sine reaches Pion after enrollment and returns through the ho
     return status.authorized;
   }).toBe(true);
   await page.evaluate(() => window.labAuthorized);
+  await expect.poll(() => page.evaluate(() => window.labChessChannel?.readyState)).toBe("open");
+  const dispatched = await request.post("http://127.0.0.1:4175/chess");
+  expect(dispatched.ok()).toBe(true);
+  const { digest } = await dispatched.json();
+  await page.getByRole("button", { name: "Join game", exact: true }).click();
+  const accepted = await page.evaluate(async expected => {
+    const url = new URL(window.labGameDestination);
+    delete window.labGameDestination;
+    const fields = new URLSearchParams(url.hash.slice(1));
+    const value = fields.get("grant");
+    if (url.pathname !== "/beta/game-night/webjam-guest" || url.search || fields.get("wait") !== "1" || !value) return false;
+    const { toHex } = await import("/crypto.js");
+    const bytes = new TextEncoder().encode(value);
+    return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))) === expected;
+  }, digest);
+  expect(accepted).toBe(true);
   try {
     await expect.poll(() => page.evaluate(() => {
       if (!window.labAnalyser) return 0;
