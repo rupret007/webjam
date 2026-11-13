@@ -180,6 +180,51 @@ def test_grant_source_runs_only_after_the_host_confirms(monkeypatch):
     assert digest not in opened[0].split("#", 1)[0]
 
 
+
+def test_failed_browser_launch_reopens_the_same_offer(monkeypatch):
+    _enable_private(monkeypatch)
+    _token, digest = _grant(b"\x09" * 32)
+    source = MagicMock(return_value=digest)
+    opened = []
+    warn = MagicMock()
+    def launch(url):
+        opened.append(url.toString())
+        return len(opened) == 2
+
+    monkeypatch.setattr(module.QInputDialog, "getItem", lambda *_args: ("Chess", True))
+    monkeypatch.setattr(module.QMessageBox, "question", lambda *_args: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(module.QMessageBox, "warning", warn)
+    monkeypatch.setattr(module.QDesktopServices, "openUrl", launch)
+    embed = WebexEmbed()
+    embed.set_enrolled_browser_guest_count(1)
+    embed.set_play_grant_source(source)
+    embed._play_btn.click()
+    assert "reopen the same offer" in warn.call_args.args[2]
+    embed._play_btn.click()
+    assert len(opened) == 2 and opened[0] == opened[1]
+    source.assert_called_once_with(0)
+    assert embed._pending_chess_browser is None
+
+
+def test_chess_confirmation_cannot_use_a_retired_sender(monkeypatch):
+    _enable_private(monkeypatch)
+    source = MagicMock()
+    warn = MagicMock()
+    embed = WebexEmbed()
+    embed.set_enrolled_browser_guest_count(1)
+    embed.set_play_grant_source(source)
+    def disconnect(*_args):
+        embed.set_play_grant_source(None)
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(module.QInputDialog, "getItem", lambda *_args: ("Chess", True))
+    monkeypatch.setattr(module.QMessageBox, "question", disconnect)
+    monkeypatch.setattr(module.QMessageBox, "warning", warn)
+    embed._play_btn.click()
+    source.assert_not_called()
+    assert "browser guest changed" in warn.call_args.args[2]
+
+
 def test_host_page_refuses_query_grants_and_extra_seats(monkeypatch):
     _enable_private(monkeypatch)
     _token, digest = _grant(b"\x06" * 32)

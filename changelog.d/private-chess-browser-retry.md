@@ -1,0 +1,1 @@
+- If the system browser fails to open Chess, a private WebJam host can reopen the same offer from Play.
