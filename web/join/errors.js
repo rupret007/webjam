@@ -84,7 +84,7 @@ export function mapJoinError(error, { listenOnly = false } = {}) {
     return {
       kind: "host_offline",
       headline: "Your host is not ready for Web Join yet.",
-      hint: "Make sure the WebJam app is hosting, Web Join is allowed, and your host copied a fresh invite. Then tap Retry.",
+      hint: "Ask your host to keep the Music session open in WebJam and allow browser guests. Then select Retry.",
       showRetry: true,
       needsFreshInvite: false,
     };
