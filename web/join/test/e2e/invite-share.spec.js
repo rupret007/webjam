@@ -11,6 +11,18 @@ const guest = () => {
   return `/#k=${toBase64Url(value.capability)}&s=${value.session}&g=${value.generation}&e=${value.expiresAt}`;
 };
 
+test("a browser without Web Audio offers a way back to Hang Out", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => { window.AudioContext = undefined; });
+  await page.goto(guest());
+  const status = page.getByRole("status").and(page.locator("#status"));
+  await expect(status).toHaveText("This browser can’t play WebJam audio.");
+  await expect(status).toHaveAccessibleDescription(/return to Hang Out to keep chatting/i);
+  for (const id of ["listen", "join", "prejoin", "retry"]) {
+    await expect(page.locator(`#${id}`)).toBeHidden();
+  }
+});
+
 async function installShareSpy(page) {
   await page.addInitScript(() => {
     window.shareCalls = [];
