@@ -91,6 +91,7 @@ test("a guest retries listening and leaves without requesting a microphone", asy
   await listen.focus();
   await listen.press("Enter");
   await expect(page.getByText("Check your connection, then select Retry to listen again.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check microphone" })).toBeHidden();
   const retry = page.getByRole("button", { name: "Retry", exact: true });
   await expect(retry).toBeFocused();
   await retry.press("Enter");
