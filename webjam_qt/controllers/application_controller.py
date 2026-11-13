@@ -8082,6 +8082,9 @@ class ApplicationController(QObject):
         embed = getattr(getattr(self, "window", None), "webex_embed", None)
         if not isinstance(embed, WebexEmbed):
             return
+        browser_controls = getattr(self, "_web_join_controls", None)
+        if browser_controls is not None and browser_controls.person_invite_offered:
+            return
         if not self._hud_copy_invite_enabled():
             self._retire_prepared_person_invite(embed)
             return

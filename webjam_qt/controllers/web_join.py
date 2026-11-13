@@ -305,6 +305,11 @@ class WebJoinControls(QObject):
         else:
             self._render_panel()
 
+    @property
+    def person_invite_offered(self) -> bool:
+        """Whether this controller owns the shared invitation card."""
+        return self._person_invite_offered
+
     def _offer_prepared_person_invite(self) -> bool:
         """Same moment Copy becomes available: Share or Email, Copy secondary."""
 
@@ -361,6 +366,7 @@ class WebJoinControls(QObject):
             )
 
     def _show_cleanup_pending(self):
+        self._clear_offered_person_invite()
         self._cleanup_pending = True
         self.allow_action.setEnabled(False)
         self.allow_action.setText("Web guest cleanup pending")
