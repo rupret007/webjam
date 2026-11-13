@@ -87,7 +87,20 @@ function showAccessTime(expiresAt, isCurrent) {
 
 try {
   invite = readInvite(location.hash);
-  clearJoinFailure(failureElements(), "Your host invited you to join.");
+  if (typeof globalThis.AudioContext !== "function") {
+    invite = undefined;
+    applyJoinFailure({
+      kind: "audio_unsupported",
+      headline: "This browser can’t play WebJam audio.",
+      hint: "Open your invite in a browser that supports audio, or return to Hang Out to keep chatting.",
+      showRetry: false,
+      needsFreshInvite: false,
+    }, failureElements());
+    $("join").hidden = true;
+    $("status").dataset.failure = "true";
+  } else {
+    clearJoinFailure(failureElements(), "Your host invited you to join.");
+  }
 } catch (error) {
   const view = mapJoinError(error);
   if (view.kind !== "invite_expired") {
