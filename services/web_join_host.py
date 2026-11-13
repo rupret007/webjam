@@ -18,7 +18,7 @@ from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_ope
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from core.web_join_target import web_join_page
+from core.web_join_target import game_night_page, web_join_page
 from services.transport_runtime import (
     TransportProcess,
     TransportWebJoinRateLimitedError,
@@ -313,6 +313,7 @@ class WebJoinHost:
                 bridge_token=bridge.token,
                 generation=generation,
                 expires_at_unix=expiry,
+                **({"chess_offers": True} if game_night_page() else {}),
             )
             # ICE credentials can shorten the sealed offer's lifetime. Publish
             # that exact binding in the fragment, never the requested deadline.
@@ -377,6 +378,19 @@ class WebJoinHost:
                 self._invite = ""
                 if self._state != "cleanup_pending":
                     self._state = "closed"
+
+    def offer_chess(self) -> str:
+        if game_night_page() is None:
+            return ""
+        with self._lock:
+            if self._stop.is_set() or self._state != "connected" or self._process is None:
+                return ""
+            process, generation = self._process, self._generation
+        digest = process.send_web_join_chess(generation=generation)
+        with self._lock:
+            if self._stop.is_set() or self._process is not process or self._state != "connected":
+                return ""
+        return digest
 
     def set_generation(self, generation: int):
         if generation != self._generation:

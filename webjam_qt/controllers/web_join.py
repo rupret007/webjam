@@ -7,6 +7,7 @@ import threading
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
+from services.transport_runtime import TransportProcessError
 from services.web_join_host import PREPARE_UNAVAILABLE, PREPARATION_FAILURE_MESSAGES, WebJoinHost
 
 
@@ -25,6 +26,8 @@ class WebJoinControls(QObject):
         self._invite_copied = False
         self._error = ""
         self._error_server = None
+        self._game_panel = getattr(controller.window, "webex_embed", None)
+        self._game_offer_owner = None
         self._panel = getattr(controller.window, "web_guest_panel", None)
         self._panel_context = None
         self._panel_server = None
@@ -73,6 +76,7 @@ class WebJoinControls(QObject):
             self._error = ""
             self._error_server = None
         if self._cleanup_pending or self._retired_hosts or (self._host is not None and self._host.state == "cleanup_pending"):
+            self._update_game_offer(None)
             self._show_cleanup_pending()
             return
         if self._host is not None and (
@@ -84,7 +88,29 @@ class WebJoinControls(QObject):
         if self._host is not None and self._host.state == "connected":
             self.allow_action.setText("Web guest connected (higher delay)")
             self.copy_action.setEnabled(False)
+        current = self._host
+        self._update_game_offer(current if current is not None and current.state == "connected"
+                                and self._server is server and server is not None else None)
         self._render_panel()
+
+    def _update_game_offer(self, host):
+        panel = self._game_panel
+        if not callable(getattr(panel, "set_play_grant_source", None)) or host is self._game_offer_owner:
+            return
+        self._game_offer_owner = host
+        panel.set_enrolled_browser_guest_count(int(host is not None))
+
+        def send(index):
+            if (index != 0 or self._host is not host or self._game_offer_owner is not host
+                    or self._server is None or self._owned_server() is not self._server
+                    or self._cleanup_pending or self._retired_hosts):
+                return ""
+            try:
+                return host.offer_chess()
+            except TransportProcessError:
+                return ""
+
+        panel.set_play_grant_source(send if host is not None else None)
 
     def _current_panel_context(self, context):
         return (context is self._panel_context and self._owned_server() is self._panel_server
@@ -238,6 +264,7 @@ class WebJoinControls(QObject):
         self._render_panel()
 
     def stop(self) -> bool:
+        self._update_game_offer(None)
         self._error = ""
         self._error_server = None
         self._copy_when_ready = False

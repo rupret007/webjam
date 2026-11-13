@@ -29,7 +29,7 @@ import unicodedata
 from collections import deque
 from collections.abc import Callable
 from contextlib import nullcontext
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, BinaryIO
 
@@ -186,6 +186,7 @@ class TransportEvent:
     session_path: str = ""
     relay_bytes: int = 0
     expires_at_unix: int = 0
+    game_grant_digest: str = field(default="", repr=False)
 
 
 def _decode_web_join_envelope(value: Any) -> bytes:
@@ -202,6 +203,19 @@ def _decode_web_join_envelope(value: Any) -> bytes:
 
 def _parse_web_join_event(raw: dict, event_id: int, event_type: str) -> TransportEvent:
     fields = {"version", "id", "type", "code", "state", "generation"}
+    if event_type == "web_join_chess_sent":
+        state = raw.get("state")
+        digest = raw.get("signal", "")
+        if state == "connected":
+            fields.add("signal")
+            valid = isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest) is not None
+        else:
+            valid = state == "unavailable" and "signal" not in raw
+        if not valid or set(raw) != fields or event_id == 0 or raw.get("code") != "ok":
+            raise TransportProtocolError("The transport process sent invalid data.")
+        generation = _strict_int(raw.get("generation"), minimum=1, maximum=2**32 - 1)
+        return TransportEvent(event_id, event_type, code="ok", state=state, generation=generation,
+                              game_grant_digest=digest)
     if event_type == "web_join_offer":
         fields.update({"signal", "expires_at_unix"})
     if set(raw) != fields or raw.get("code") != "ok":
@@ -335,7 +349,7 @@ def parse_transport_event(encoded: bytes) -> TransportEvent:
         raise TransportProtocolError("The transport process is not compatible.")
     event_id = _strict_int(raw.get("id"), minimum=0, maximum=2**63 - 1)
     event_type = raw.get("type")
-    if isinstance(event_type, str) and event_type in {"web_join_offer", "web_join_answer_applied", "web_join_closed", "web_join_connected"}:
+    if isinstance(event_type, str) and event_type in {"web_join_offer", "web_join_answer_applied", "web_join_closed", "web_join_connected", "web_join_chess_sent"}:
         return _parse_web_join_event(raw, event_id, event_type)
     if "expires_at_unix" in raw:
         raise TransportProtocolError("The transport process sent invalid data.")
@@ -1058,7 +1072,7 @@ class TransportProcess:
 
     def open_web_join(
         self, *, session_id: bytes, capability: bytes, bridge_port: int,
-        bridge_token: bytes, generation: int, expires_at_unix: int,
+        bridge_token: bytes, generation: int, expires_at_unix: int, chess_offers: bool = False,
     ) -> TransportEvent:
         """Explicit session opt-in; all network configuration stays compiled."""
         event = self._request(
@@ -1069,6 +1083,7 @@ class TransportProcess:
             bridge_port=self._command_int(bridge_port, minimum=1, maximum=65535),
             generation=self._command_int(generation, minimum=1, maximum=2**32 - 1),
             expires_at_unix=self._command_int(expires_at_unix, minimum=1, maximum=2**63 - 1),
+            **({"chess_offers": True} if chess_offers is True else {}),
         )
         if (
             event.event_type != "web_join_offer"
@@ -1089,6 +1104,14 @@ class TransportProcess:
         if event.event_type != "web_join_answer_applied" or event.generation != generation:
             raise TransportProtocolError("The transport process sent invalid data.")
         return event
+
+    def send_web_join_chess(self, *, generation: int) -> str:
+        event = self._request(
+            "web_join_send_chess", generation=self._command_int(generation, minimum=1, maximum=2**32 - 1)
+        )
+        if event.event_type != "web_join_chess_sent" or event.generation != generation:
+            raise TransportProtocolError("The transport process sent invalid data.")
+        return event.game_grant_digest
 
     def close_web_join(self, *, generation: int) -> TransportEvent:
         return self._request(
@@ -1467,7 +1490,8 @@ class TransportProcess:
                                 "The transport process sent an unexpected response."
                             )
                         self._pending[event.event_id] = event
-                    callback_event = event
+                    callback_event = replace(event, game_grant_digest="") if event.game_grant_digest else event
+                    event = callback_event
                     if not event.event_type.startswith(("help_", "room_state_")):
                         if event.signal:
                             event = TransportEvent(

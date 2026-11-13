@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/rupret007/webjam/transport/internal/limits"
@@ -15,6 +17,7 @@ const (
 	commandWebJoinOpen   CommandType = "web_join_open"
 	commandWebJoinAnswer CommandType = "web_join_answer"
 	commandWebJoinClose  CommandType = "web_join_close"
+	commandWebJoinGame   CommandType = "web_join_send_chess"
 	maxWebJoinEnvelope               = 8192
 )
 
@@ -29,6 +32,7 @@ type webJoinCommand struct {
 	generation  uint32
 	expires     time.Time
 	answer      []byte
+	chessOffers bool
 }
 
 func (w *webJoinCommand) clear() {
@@ -47,7 +51,7 @@ func parseWebJoinCommand(line []byte, now time.Time) (Command, bool, error) {
 		return Command{}, false, nil
 	}
 	kind := CommandType(header.Type)
-	if kind != commandWebJoinOpen && kind != commandWebJoinAnswer && kind != commandWebJoinClose {
+	if kind != commandWebJoinOpen && kind != commandWebJoinAnswer && kind != commandWebJoinClose && kind != commandWebJoinGame {
 		return Command{}, false, nil
 	}
 	var fields map[string]json.RawMessage
@@ -57,6 +61,9 @@ func parseWebJoinCommand(line []byte, now time.Time) (Command, bool, error) {
 	expected := 4
 	if kind == commandWebJoinOpen {
 		expected = 9
+		if _, present := fields["chess_offers"]; present {
+			expected++
+		}
 	}
 	if kind == commandWebJoinAnswer {
 		expected = 5
@@ -80,6 +87,7 @@ func parseWebJoinCommand(line []byte, now time.Time) (Command, bool, error) {
 		Generation  uint32        `json:"generation"`
 		Expires     *int64        `json:"expires_at_unix,omitempty"`
 		Answer      *strictString `json:"answer,omitempty"`
+		ChessOffers *bool         `json:"chess_offers,omitempty"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(line))
 	decoder.DisallowUnknownFields()
@@ -102,11 +110,12 @@ func parseWebJoinCommand(line []byte, now time.Time) (Command, bool, error) {
 			return fail()
 		}
 		w.bridgePort = *wire.BridgePort
-	case commandWebJoinAnswer, commandWebJoinClose:
-		if wire.Session != nil || wire.Capability != nil || wire.BridgeToken != nil || wire.BridgePort != nil || wire.Expires != nil {
+		w.chessOffers = wire.ChessOffers != nil && *wire.ChessOffers
+	case commandWebJoinAnswer, commandWebJoinClose, commandWebJoinGame:
+		if wire.ChessOffers != nil || wire.Session != nil || wire.Capability != nil || wire.BridgeToken != nil || wire.BridgePort != nil || wire.Expires != nil {
 			return fail()
 		}
-		if kind == commandWebJoinClose {
+		if kind != commandWebJoinAnswer {
 			if wire.Answer != nil {
 				return fail()
 			}
@@ -137,7 +146,7 @@ func decodeWebJoinEnvelope(encoded string) ([]byte, error) {
 }
 
 func isWebJoinEvent(kind string) bool {
-	return kind == "web_join_offer" || kind == "web_join_answer_applied" || kind == "web_join_closed" || kind == "web_join_connected"
+	return kind == "web_join_offer" || kind == "web_join_answer_applied" || kind == "web_join_closed" || kind == "web_join_connected" || kind == "web_join_chess_sent"
 }
 
 func validateWebJoinEvent(e *Event) error {
@@ -160,6 +169,18 @@ func validateWebJoinEvent(e *Event) error {
 		if e.State != "closed" || e.Signal != "" || e.ExpiresAtUnix != 0 {
 			return ErrProtocol
 		}
+	case "web_join_chess_sent":
+		if e.ID == 0 || e.ExpiresAtUnix != 0 {
+			return ErrProtocol
+		}
+		if e.State == "unavailable" && e.Signal == "" {
+			return nil
+		}
+		if e.State != "connected" || len(e.Signal) != 64 || strings.ToLower(e.Signal) != e.Signal {
+			return ErrProtocol
+		}
+		_, err := hex.DecodeString(e.Signal)
+		return err
 	case "web_join_connected":
 		if e.ID != 0 || e.State != "connected" || e.Signal != "" || e.ExpiresAtUnix != 0 {
 			return ErrProtocol
@@ -224,7 +245,7 @@ func (s *runnerState) handleWebJoin(ctx context.Context, command *Command, event
 			return failure(CodeOpenFailed)
 		}
 		endpoint, err := webjoin.New(ctx, webjoin.Config{
-			Enabled: true, SessionID: w.session, Capability: w.capability,
+			Enabled: true, ChessOffers: w.chessOffers, SessionID: w.session, Capability: w.capability,
 			Generation: w.generation, ExpiresAt: w.expires, ICE: ice, Bridge: bridge,
 		})
 		if err != nil {
@@ -252,6 +273,15 @@ func (s *runnerState) handleWebJoin(ctx context.Context, command *Command, event
 			return failure(CodeEnrollmentInvalid)
 		}
 		return events.emit(Event{ID: command.ID, Type: "web_join_answer_applied", Code: CodeOK, State: "connecting", Generation: w.generation})
+	case commandWebJoinGame:
+		result := Event{ID: command.ID, Type: "web_join_chess_sent", Code: CodeOK, State: "unavailable", Generation: w.generation}
+		if s.webJoin != nil && s.webJoin.generation == w.generation && s.webJoin.endpoint.Authorized() {
+			if digest, err := s.webJoin.endpoint.SendGameOffer("Your host"); err == nil {
+				result.State = "connected"
+				result.Signal = digest
+			}
+		}
+		return events.emit(result)
 	case commandWebJoinClose:
 		// Even a stale-generation kick removes authority immediately.
 		s.closeWebJoin()

@@ -44,6 +44,37 @@ from webjam_qt.theme.tokens import Space
 
 LOGGER = logging.getLogger("webjam.qt.webex_embed")
 
+# Chess seats two. The host sits first, so one enrolled browser guest can be offered a seat.
+_CHESS_SEATS = 2
+_CHESS_GUEST_SEATS = 1
+
+
+def _grant_hash(value: object) -> bool:
+    """Accept the Worker's lowercase hex SHA-256 digest."""
+    return type(value) is str and len(value) == 64 and all(char in "0123456789abcdef" for char in value)
+
+
+def chess_host_page(grant_hashes: Sequence[str]) -> str | None:
+    """Host Hang Out page with grant hashes in the fragment only.
+
+    No deliver flag: the host page must wait for a host tap before it issues seats.
+    """
+    entrance = game_night_page()
+    if entrance is None or isinstance(grant_hashes, (str, bytes)) or not isinstance(grant_hashes, Sequence):
+        return None
+    if not grant_hashes or len(grant_hashes) > _CHESS_GUEST_SEATS:
+        return None
+    if any(not _grant_hash(item) for item in grant_hashes):
+        return None
+    fragment = "grants=" + ",".join(grant_hashes)
+    page = entrance + "&table=chess#" + fragment
+    query, sep, frag = page.partition("#")
+    if sep != "#" or "deliver" in page or "?" in frag or "&" in frag or frag != fragment:
+        return None
+    if any(item in query for item in grant_hashes):
+        return None
+    return page
+
 
 class _LessonRequestName(QLabel):
     """A bounded, plain label must not make a narrow card grow."""
@@ -148,6 +179,9 @@ class WebexEmbed(QFrame):
         self._native_focus_restore: QPushButton | None = None
         self._service_label = ""
         self._launch_status = "Not opened"
+        self._browser_grant_hashes: tuple[str, ...] = ()
+        self._browser_guest_count = 0
+        self._play_grant_source = None
 
         self._title_label = QLabel("Conversation")
         self._title_label.setObjectName("WebexEmbedTitle")
@@ -282,6 +316,20 @@ class WebexEmbed(QFrame):
         self._game_night_btn.setVisible(game_night_page() is not None)
         self._game_night_btn.clicked.connect(self._open_game_night)
 
+        self._play_btn = QPushButton("Play")
+        self._play_btn.setObjectName("GhostButton")
+        self._play_btn.setAutoDefault(False)
+        self._play_btn.setAccessibleName("Play")
+        self._play_btn.setAccessibleDescription(
+            "Offer Chess to people who joined in the browser. WebJam asks "
+            "before it opens the host page. Native Jamulus guests keep Share invite."
+        )
+        self._play_btn.setToolTip(
+            "Offer Chess to enrolled browser guests. Native Jamulus guests keep Share invite."
+        )
+        self._play_btn.setVisible(game_night_page() is not None)
+        self._play_btn.clicked.connect(self._open_play)
+
         header = self._header_layout = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(Space.SM)
@@ -291,7 +339,13 @@ class WebexEmbed(QFrame):
         text_column = QVBoxLayout()
         text_column.setSpacing(0)
         text_column.addLayout(header)
-        text_column.addWidget(self._game_night_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        game_row = QHBoxLayout()
+        game_row.setContentsMargins(0, 0, 0, 0)
+        game_row.setSpacing(Space.SM)
+        game_row.addWidget(self._game_night_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        game_row.addWidget(self._play_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        game_row.addStretch(1)
+        text_column.addLayout(game_row)
         text_column.addWidget(self._mode_label)
         self._sound_tips_button = QPushButton("Sound and sharing tips")
         self._sound_tips_button.setObjectName("GhostButton")
@@ -370,6 +424,94 @@ class WebexEmbed(QFrame):
             return
         if not QDesktopServices.openUrl(QUrl(destination)):
             QMessageBox.warning(self, "Game Night", "The browser could not open Game Night. Try again.")
+
+    def set_enrolled_browser_grants(self, grant_hashes: Sequence[str]) -> None:
+        """Remember hash(value) for each enrolled Web Join guest.
+
+        The one-time value never enters this widget. Native Jamulus guests
+        stay on Share invite and are not included.
+        """
+        if isinstance(grant_hashes, (str, bytes)) or not isinstance(grant_hashes, Sequence):
+            self._browser_grant_hashes = ()
+            return
+        clean: list[str] = []
+        for item in grant_hashes:
+            if not _grant_hash(item):
+                self._browser_grant_hashes = ()
+                return
+            clean.append(item)
+        self._browser_grant_hashes = tuple(clean)
+
+    def set_enrolled_browser_guest_count(self, count: int) -> None:
+        """How many enrolled Web Join guests can be offered a seat. Native guests are not counted."""
+        if type(count) is not int or count < 0 or count > 8:
+            self._browser_guest_count = 0
+            return
+        self._browser_guest_count = count
+
+    def set_play_grant_source(self, source) -> None:
+        """Mint hash(value) after the host confirms.
+
+        ``source(index)`` is called only after Yes, for the chosen browser guest.
+        It must return the hash from ``SendGameOffer``, never the one-time value.
+        """
+        self._play_grant_source = source
+
+    def _open_play(self) -> None:
+        """Host Play hook. Chess only. The opened page must not issue seats on load."""
+        if game_night_page() is None:
+            return
+        choice, accepted = QInputDialog.getItem(
+            self, "Play", "Choose a game.", ["Chess"], 0, False,
+        )
+        if not accepted or choice != "Chess":
+            return
+        hashes = self._browser_grant_hashes
+        source = self._play_grant_source
+        count = len(hashes) if source is None else (self._browser_guest_count or len(hashes))
+        if count <= 0:
+            QMessageBox.information(
+                self,
+                "Play",
+                "Play reaches enrolled browser guests. Native Jamulus guests keep Share invite.",
+            )
+            return
+        seated_index = 0
+        if count > _CHESS_GUEST_SEATS:
+            labels = [f"Browser guest {index + 1}" for index in range(count)]
+            pick, accepted = QInputDialog.getItem(
+                self,
+                "Play",
+                "Choose who sits with you. Everyone else is up next game.",
+                labels,
+                0,
+                False,
+            )
+            if not accepted or pick not in labels:
+                return
+            seated_index = labels.index(pick)
+        answer = QMessageBox.question(
+            self,
+            "Play",
+            f"Seat {_CHESS_SEATS} people from your WebJam room in Chess?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        if source is not None:
+            produced = source(seated_index)
+            seated = [produced] if _grant_hash(produced) else []
+        elif seated_index < len(hashes):
+            seated = [hashes[seated_index]]
+        else:
+            seated = []
+        destination = chess_host_page(seated)
+        if not destination:
+            QMessageBox.warning(self, "Play", "Chess could not be opened. Try again.")
+            return
+        if not QDesktopServices.openUrl(QUrl(destination)):
+            QMessageBox.warning(self, "Play", "The browser could not open Chess. Try again.")
 
     def _build_lesson_request_panel(self, layout: QVBoxLayout) -> None:
         self._lesson_request_frame = QFrame()

@@ -44,19 +44,21 @@ type Bridge interface {
 // Config is host-only. Browser input cannot set ICE services, relay allowlists,
 // bridge ports, timeouts, quota, or the session's explicit permission bit.
 type Config struct {
-	Enabled    bool
-	SessionID  [32]byte
-	Capability [32]byte
-	Generation uint32
-	ExpiresAt  time.Time
-	ICE        ICEConfig
-	Bridge     Bridge
+	Enabled     bool
+	ChessOffers bool
+	SessionID   [32]byte
+	Capability  [32]byte
+	Generation  uint32
+	ExpiresAt   time.Time
+	ICE         ICEConfig
+	Bridge      Bridge
 }
 type Endpoint struct {
 	cfg                      Config
 	pc                       *webrtc.PeerConnection
 	track                    *webrtc.TrackLocalStaticRTP
 	enrollment               *webrtc.DataChannel
+	gameOffer                *gameOfferChannel
 	fingerprint              [32]byte
 	relays                   map[netip.Addr]bool
 	lab                      bool
@@ -219,7 +221,14 @@ func newEndpoint(ctx context.Context, cfg Config, lab bool) (*Endpoint, error) {
 		}
 		go e.sendMix()
 	})
-	// Extra channels are never application-authorized, even after enrollment.
+	if cfg.ChessOffers {
+		if err = openGameOfferChannel(e, pc); err != nil {
+			e.stop(err)
+			return nil, err
+		}
+	}
+	// Guest-created channels are never application-authorized, even after enrollment.
+	// webjoin-game-offer is host-created above and is not part of enrollment.
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) { _ = dc.Close(); e.stop(ErrEnrollment) })
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		switch state {

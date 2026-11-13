@@ -57,6 +57,7 @@ func TestMain(m *testing.M) {
 			_ = endpoint.Close()
 		}
 		cfg := testConfig()
+		cfg.ChessOffers = r.URL.Query().Get("chess") == "1"
 		bridge = &echoBridge{memoryBridge: newMemoryBridge()}
 		cfg.Bridge = bridge
 		var err error
@@ -92,6 +93,21 @@ func TestMain(m *testing.M) {
 			return
 		}
 		w.WriteHeader(204)
+	})
+	mux.HandleFunc("POST /chess", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if endpoint == nil {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		digest, err := endpoint.SendGameOffer("Lab host")
+		if err != nil {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(map[string]string{"digest": digest})
 	})
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()

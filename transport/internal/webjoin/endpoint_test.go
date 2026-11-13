@@ -68,9 +68,10 @@ type labPeer struct {
 	cfg     Config
 }
 
-func newLabPeer(t *testing.T, mutate func(*Signal)) *labPeer {
+func newLabPeer(t *testing.T, mutate func(*Signal), chessOffers ...bool) *labPeer {
 	t.Helper()
 	cfg := testConfig()
+	cfg.ChessOffers = len(chessOffers) == 1 && chessOffers[0]
 	host, err := newEndpoint(context.Background(), cfg, true)
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +96,11 @@ func newLabPeer(t *testing.T, mutate func(*Signal)) *labPeer {
 	}
 	t.Cleanup(func() { _ = guest.Close() })
 	peer := &labPeer{host: host, guest: guest, channel: make(chan *webrtc.DataChannel, 1), audio: make(chan Packet, 8), cfg: cfg}
-	guest.OnDataChannel(func(dc *webrtc.DataChannel) { dc.OnOpen(func() { peer.channel <- dc }) })
+	guest.OnDataChannel(func(dc *webrtc.DataChannel) {
+		if dc.Label() == "webjoin-enrollment" {
+			dc.OnOpen(func() { peer.channel <- dc })
+		}
+	})
 	guest.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		go func() {
 			for {

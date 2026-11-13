@@ -22,6 +22,16 @@ func TestWebJoinFixedShapeIPC(t *testing.T) {
 	if err != nil || cmd.WebJoin == nil || cmd.WebJoin.bridgePort != 22125 {
 		t.Fatalf("valid open: %v", err)
 	}
+	if cmd.WebJoin.chessOffers {
+		t.Fatal("Chess channel should default off")
+	}
+	private := webOpen(t)
+	private["chess_offers"] = true
+	privateOpen, _ := json.Marshal(private)
+	privateCommand, err := ParseCommandAt(privateOpen, now)
+	if err != nil || privateCommand.WebJoin == nil || !privateCommand.WebJoin.chessOffers {
+		t.Fatal("private Chess capability was dropped", err)
+	}
 	pointer := cmd.WebJoin
 	cmd.ClearSensitive()
 	if pointer.capability != ([32]byte{}) || pointer.session != ([32]byte{}) || pointer.bridgeToken != ([32]byte{}) {
@@ -128,5 +138,26 @@ func TestWebJoinOfferExpiryIsRequiredAndExclusive(t *testing.T) {
 		if _, err := MarshalEvent(event); err == nil {
 			t.Fatalf("accepted offer expiry on %s", event.Type)
 		}
+	}
+}
+
+func TestWebJoinChessDispatchWithoutCurrentPeer(t *testing.T) {
+	valid := []byte(`{"version":1,"id":7,"type":"web_join_send_chess","generation":1}`)
+	command, err := ParseCommand(valid)
+	if err != nil || command.WebJoin == nil || command.Type != commandWebJoinGame {
+		t.Fatal("invalid Chess command", err)
+	}
+	for _, bad := range []string{
+		`{"version":1,"id":7,"type":"web_join_send_chess","generation":0}`,
+		`{"version":1,"id":7,"type":"web_join_send_chess","generation":1,"answer":"injected"}`,
+	} {
+		if _, err = ParseCommand([]byte(bad)); err == nil {
+			t.Fatal("accepted invalid Chess command")
+		}
+	}
+	var output bytes.Buffer
+	err = Run(context.Background(), bytes.NewReader(append(valid, '\n')), &output, "test")
+	if err != nil || !bytes.Contains(output.Bytes(), []byte(`"state":"unavailable"`)) {
+		t.Fatal("expected nonterminal unavailable response", err)
 	}
 }
