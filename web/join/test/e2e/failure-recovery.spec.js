@@ -180,7 +180,11 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
           this.authorized = true;
           this.options.onStatus('Synthetic session connected.');
           window.reportConnectionRoute = this.options.onRoute;
-          window.endEnrolledSession = () => this.options.onError(new Error(JOIN_SIGNAL.SESSION_ENDED));
+          window.endEnrolledSession = () => {
+            this.close();
+            this.authorized = false;
+            this.options.onError(new Error(JOIN_SIGNAL.ICE_DISCONNECTED), true);
+          };
         }
         close() { this.options.stream.getTracks().forEach(track => track.stop()); }
       }`
@@ -197,7 +201,7 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
   await expect(routeIndicator).toHaveText('Relayed connection');
   await expect(page.locator('#leave')).toBeFocused();
   await page.evaluate(() => window.endEnrolledSession());
-  await expect(page.locator('#status')).toHaveText('The Web Join connection ended.');
+  await expect(page.locator('#status')).toHaveText(/WebJam could not reach your host/);
   await expect(page.locator('#status')).toBeFocused();
   await page.evaluate(() => window.reportConnectionRoute('relayed'));
   await expect(routeIndicator).toBeHidden();

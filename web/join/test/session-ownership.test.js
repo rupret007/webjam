@@ -108,3 +108,25 @@ test('a listen-only session closes without a microphone stream', () => {
   assert.equal(session.controller.signal.aborted, true);
   session.close();
 });
+
+test('session failure reports whether the invite was used before closing', () => {
+  for (const authorized of [false, true]) {
+    const calls = [];
+    const session = new WebJoinSession({
+      origin: 'https://relay.example',
+      invite: {},
+      stream: null,
+      audioContext: {},
+      onError: (error, wasAuthorized) => {
+        calls.push([error, wasAuthorized]);
+        assert.equal(session.authorized, false);
+        assert.equal(session.controller.signal.aborted, true);
+      },
+    });
+    session.authorized = authorized;
+    const error = new Error('Connection interrupted');
+    session.fail(error);
+    session.fail(error);
+    assert.deepEqual(calls, [[error, authorized]]);
+  }
+});

@@ -335,10 +335,9 @@ async function playSessionAudio(attempt) {
   if (restoreFocus) $("leave").focus();
 }
 
-function leave(message = "You left the session.", error) {
+function leave(message = "You left the session.", error, joined = session?.authorized === true) {
   const elements = failureElements();
   const restoreFocus = [elements.leave, $("play-audio")].includes(document.activeElement);
-  const joined = session?.authorized === true;
   clearAccessTime();
   activeAttempt?.abort();
   activeAttempt = null;
@@ -450,8 +449,8 @@ async function startJoin(listenOnly = false) {
         $("host-audio").srcObject = remote;
         void playSessionAudio(attempt);
       },
-      onError: (error) => {
-        if (isCurrent()) leave(undefined, error);
+      onError: (error, wasAuthorized) => {
+        if (isCurrent()) leave(undefined, error, wasAuthorized);
       },
     });
     session = joinedSession;

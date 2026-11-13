@@ -158,7 +158,12 @@ export class WebJoinSession {
     } catch (error) { this.fail(error); }
     finally { clearTimeout(timer); this.statsPending = false; }
   }
-  fail(error) { if (this.controller.signal.aborted) return; this.close(); this.onError(error); }
+  fail(error) {
+    if (this.controller.signal.aborted) return;
+    const wasAuthorized = this.authorized;
+    this.close();
+    this.onError(error, wasAuthorized);
+  }
   close() {
     if (this.controller.signal.aborted) return;
     this.accessExpiresAt = null;
