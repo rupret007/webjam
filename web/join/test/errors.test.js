@@ -87,7 +87,9 @@ test("host offline maps from no-answer and authentication timeout signals with R
     const view = mapJoinError(new Error(message));
     assert.equal(view.kind, "host_offline");
     assert.equal(view.showRetry, true);
-    assert.match(view.hint, /host/i);
+    assert.match(view.hint, /ask your host to keep the Music session open/i);
+    assert.match(view.hint, /select Retry/i);
+    assert.doesNotMatch(view.hint, /cop(?:y|ied)|fresh invite/i);
   }
 });
 
