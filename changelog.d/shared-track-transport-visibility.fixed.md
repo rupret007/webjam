@@ -1,0 +1,1 @@
+- Keep Shared Track playback controls in view while scrolling through track settings.

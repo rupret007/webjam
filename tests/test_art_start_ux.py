@@ -59,6 +59,29 @@ def _dialog(tmp_path: Path, profile_key: str = "art") -> LaunchDialog:
     return dialog
 
 
+@pytest.mark.parametrize(
+    ("commit", "title"),
+    [
+        ("c6eecdcbe6bd932f159bd5921022e7929370b340", "WebJam — Build c6eecdcbe6bd"),
+        ("23cfae6" + "a" * 33, "WebJam — Build 23cfae6aaaaa"),
+        ("", "WebJam"),
+    ],
+)
+def test_launch_title_distinguishes_builds_before_joining(qapp, tmp_path, commit, title):
+    with patch("core.build_info.packaged_build_id", return_value=commit):
+        dialog = _dialog(tmp_path, "music")
+    try:
+        dialog.show()
+        qapp.processEvents()
+        assert dialog.isVisible()
+        assert dialog.windowTitle() == title
+        assert dialog.selected_role == ""
+        assert not Path(dialog._settings.config_file).exists()
+    finally:
+        dialog.close()
+        dialog.deleteLater()
+
+
 def _visible_cards(dialog: LaunchDialog) -> list[StartCard]:
     return [card for card in dialog._visible_start_cards() if not card.isHidden()]
 

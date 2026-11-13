@@ -287,6 +287,11 @@ def _same_companion_view(left: object, right: object) -> bool:
     )
 
 
+_REMOTE_JOIN_TIMEOUT_RECOVERY = (
+    "The secure connection timed out. Check that both devices are online. "
+    "Ask the host for a new invitation, then choose Paste New Invite."
+)
+
 _STARTUP_FAILURE_COPY = {
     "host_start_failed": "WebJam couldn't start your private jam. Try again, or close another WebJam window first.",
     "feedback_required": "Connect wired headphones or an audio interface, then choose Try Again. You can also explicitly choose Start Anyway in the feedback warning.",
@@ -2145,6 +2150,7 @@ class ApplicationController(QObject):
             loop_end_s=getattr(shared, "loop_end_s", None),
             count_in_active=bool(getattr(shared, "count_in_active", False)),
             cleanup_pending=bool(getattr(shared, "cleanup_pending", False)),
+            muted=bool(getattr(shared, "muted", False)),
             error=(
                 "Shared Track needs host attention."
                 if bool(getattr(shared, "needs_attention", False))
@@ -9282,12 +9288,8 @@ class ApplicationController(QObject):
             self._render_remote_retry_hud()
             flash_message = "Choose Try Again to start the private connection."
         elif guest_enrollment:
-            # The sidecar entered open_guest(), so the reference service may
-            # have atomically consumed this one-use capability. Capture the
-            # profile before clearing so NAT timeouts keep distinct copy.
-            profile_id = getattr(
-                getattr(self, "_remote_invitation", None), "profile_id", ""
-            )
+            # The sidecar entered open_guest(), so the one-use invitation may
+            # already have been consumed.
             self._remote_invitation = None
             self._remote_invitation_requires_replacement = True
             self._reference_track_remote_route_pre_retired = False
@@ -9296,16 +9298,7 @@ class ApplicationController(QObject):
             )
             self._render_remote_fresh_invitation_hud()
             if getattr(error_code, "value", "") == "timed_out":
-                if profile_id == "direct-stun":
-                    flash_message = (
-                        "WebJam couldn't reach the host. Use home Wi-Fi on both "
-                        "computers, not a phone hotspot. Ask the host for a "
-                        "fresh invitation."
-                    )
-                else:
-                    flash_message = (
-                        "The connection timed out. Choose Paste New Invite."
-                    )
+                flash_message = _REMOTE_JOIN_TIMEOUT_RECOVERY
             elif getattr(error_code, "value", "") == "expired":
                 flash_message = (
                     "That invitation expired. Choose Paste New Invite."
@@ -9371,10 +9364,7 @@ class ApplicationController(QObject):
         snapshot = getattr(runtime, "snapshot", None)
         error_value = getattr(getattr(snapshot, "error_code", None), "value", "")
         if error_value == "timed_out":
-            return (
-                "The secure connection timed out. Ask the host for a new "
-                "invitation, then choose Paste New Invite."
-            )
+            return _REMOTE_JOIN_TIMEOUT_RECOVERY
         if error_value == "peer_protocol_unsupported":
             return (
                 "Update WebJam on both computers. Ask the host for a fresh "
@@ -10084,11 +10074,7 @@ class ApplicationController(QObject):
                 SessionPrimaryAction.NONE,
             )
         if self.audio.connection_timed_out:
-            self.window.session_hud.set_state(
-                "Something needs attention",
-                "Use home Wi-Fi on both computers, not a phone hotspot. Then use Try Again below.",
-                action_visible=False,
-            )
+            # The conductor presents the retry once the timeout is classified.
             return
         if self.audio.recovering:
             self.window.session_hud.set_state(
@@ -15630,6 +15616,11 @@ class ApplicationController(QObject):
                     lambda: controller.set_trim_db(float(trim))
                 )
             )
+            dialog.mute_requested.connect(
+                lambda muted: self._run_reference_track_fast(
+                    lambda: controller.set_muted(muted)
+                )
+            )
             dialog.count_in_requested.connect(
                 lambda beats, bpm: self._run_reference_track_fast(
                     lambda: controller.set_count_in(int(beats), float(bpm))
@@ -15775,6 +15766,7 @@ class ApplicationController(QObject):
                 needs_attention=bool(
                     peer_state == "failed" or getattr(snapshot, "error", "")
                 ),
+                muted=loaded and bool(getattr(snapshot, "muted", False)),
             )
         except Exception:  # noqa: BLE001 - peer boundary remains UI-optional
             if not getattr(self, "_shared_track_peer_publish_failed", False):

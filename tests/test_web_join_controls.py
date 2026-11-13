@@ -267,6 +267,75 @@ def test_copy_button_prepares_and_copies_only_for_the_current_invitation(control
         clipboard.clear()
 
 
+@pytest.mark.parametrize("music_context", [True, False])
+def test_hangout_invite_explains_that_a_hosted_music_session_is_required(controls, monkeypatch, music_context):
+    from webjam_qt.controllers import web_join
+
+    controls, controller, _ = controls
+    controller.settings.host_server_enabled = not music_context
+    controls._panel.set_music_visible(music_context)
+    messages = []
+    controller.window.flash_message = lambda message, **kwargs: messages.append(message)
+    monkeypatch.setattr(web_join.QMessageBox, "question", lambda *args: pytest.fail("Unexpected confirmation"))
+    monkeypatch.setattr(web_join, "WebJoinHost", lambda: pytest.fail("Unexpected browser guest preparation"))
+
+    controls._prepare_for_hangout("d" * 32)
+
+    assert len(messages) == 1
+    assert "Start a hosted Music session" in messages[0] and "Hang Out" in messages[0]
+    assert not controls.allow_action.isChecked()
+
+
+def test_hangout_invite_waits_for_native_confirmation_and_leaves_clipboard_alone(controls, monkeypatch):
+    from core import web_join_target
+    from webjam_qt.controllers import web_join
+
+    controls, _, app = controls
+    private_page = "https://stalemate-hangout-beta.jeffstory007.workers.dev/join/"
+    fragment = f"k={'A' * 43}&s={'0' * 64}&g=1&e=1800000000"
+    request = "b" * 32
+    opened = []
+
+    class Host:
+        state = "preparing"
+        invite = ""
+
+        def allow(self, port, *, generation):
+            self.state = "waiting"
+            self.invite = f"{private_page}#{fragment}"
+
+        def stop(self):
+            self.state = "closed"
+            self.invite = ""
+            return True
+
+    class InlineThread:
+        def __init__(self, *, target, **kwargs):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(web_join, "threading", SimpleNamespace(Thread=InlineThread))
+    monkeypatch.setattr(web_join, "WebJoinHost", Host)
+    monkeypatch.setattr(web_join, "web_join_page", lambda: private_page)
+    monkeypatch.setattr(web_join_target, "web_join_page", lambda: private_page)
+    monkeypatch.setattr(web_join.QDesktopServices, "openUrl", lambda url: opened.append(url.toString()) or True)
+    answers = iter([web_join.QMessageBox.StandardButton.No, web_join.QMessageBox.StandardButton.Yes])
+    monkeypatch.setattr(web_join.QMessageBox, "question", lambda *args: next(answers))
+    clipboard = app.clipboard()
+    clipboard.setText("existing text")
+    try:
+        controls._prepare_for_hangout(request)
+        assert not controls.allow_action.isChecked()
+        assert opened == []
+        controls._prepare_for_hangout(request)
+        assert opened == [f"{private_page}handoff.html#{request}&{fragment}"]
+        assert clipboard.text() == "existing text"
+    finally:
+        clipboard.clear()
+
+
 def test_pressed_copy_cannot_become_invite_after_server_replacement(controls, monkeypatch):
     controls, controller, _ = controls
     host = SimpleNamespace(state="waiting", invite="https://invalid/#synthetic", stop=lambda: True)

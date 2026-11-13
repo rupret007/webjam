@@ -12,7 +12,8 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, QUrl
+from PySide6.QtGui import QFileOpenEvent
 from PySide6.QtWidgets import QApplication
 
 from core.network_invite import create_invite_link
@@ -259,6 +260,63 @@ def test_invalid_file_open_retains_only_fixed_error_copy() -> None:
     assert "PRIVATE-SENTINEL" not in fake_application._pending_invitation_error
     assert raw not in repr(vars(fake_application))
     fake_application.invitation_error.emit.assert_called_once()
+
+
+def test_private_music_url_routes_only_through_the_beta_file_open_event() -> None:
+    request = "a" * 32
+    url = f"webjam-beta://hangout-music/{request}"
+    app = SimpleNamespace(
+        _startup_music_host_guidance=None,
+        activeModalWidget=lambda: None,
+        hangout_music_requested=MagicMock(),
+    )
+
+    assert WebJamApplication.event(app, QFileOpenEvent(QUrl(url))) is True
+    app.hangout_music_requested.emit.assert_called_once_with(request)
+    assert WebJamApplication.event(app, QFileOpenEvent(QUrl(f"{url}?redirect=bad"))) is True
+    app.hangout_music_requested.emit.assert_called_once()
+    assert qt_arguments_without_test_night(["WebJam", url]) == ["WebJam"]
+
+
+def test_cold_music_request_retains_only_guidance_until_the_launcher_opens() -> None:
+    request = "b" * 32
+    url = f"webjam-beta://hangout-music/{request}"
+    app = SimpleNamespace(
+        _startup_music_host_guidance=False,
+        hangout_music_requested=MagicMock(),
+    )
+
+    assert WebJamApplication.event(app, QFileOpenEvent(QUrl(url))) is True
+    assert WebJamApplication.take_startup_music_host_guidance(app) is True
+    assert WebJamApplication.take_startup_music_host_guidance(app) is False
+    app.hangout_music_requested.emit.assert_not_called()
+    assert request not in repr(vars(app))
+
+
+def test_music_request_on_the_launcher_keeps_the_existing_draft(qapp, tmp_path) -> None:
+    dialog = LaunchDialog(AppSettings(config_file=str(tmp_path / "settings.json")))
+    app = SimpleNamespace(
+        _startup_music_host_guidance=None,
+        activeModalWidget=lambda: dialog,
+        hangout_music_requested=MagicMock(),
+    )
+    try:
+        dialog.show()
+        dialog.show_join()
+        dialog._invite_input.setText("existing draft")
+        url = QUrl(f"webjam-beta://hangout-music/{'c' * 32}")
+        assert WebJamApplication.event(app, QFileOpenEvent(url)) is True
+        assert dialog._music_host_guidance.isVisible()
+        assert "Music" in dialog._music_host_guidance.text()
+        assert "Hang Out" in dialog._music_host_guidance.text()
+        assert dialog._pages.currentWidget() is dialog._join_page
+        assert dialog._invite_input.text() == "existing draft"
+        assert not Path(dialog._settings.config_file).exists()
+        app.hangout_music_requested.emit.assert_not_called()
+    finally:
+        dialog.reject()
+        dialog.deleteLater()
+        qapp.processEvents()
 
 
 def test_live_invitation_error_uses_keyword_only_flash_duration() -> None:

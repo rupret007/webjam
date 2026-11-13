@@ -84,6 +84,10 @@ class WebJoinPanel(QFrame):
         self._music_context = bool(visible)
         self._sync_visibility()
 
+    @property
+    def music_context(self):
+        return self._music_context
+
     def _sync_visibility(self):
         # Before there is an owned host, retain the lobby and Conversation
         # space. Once hosting is available the direct action stays on-page.

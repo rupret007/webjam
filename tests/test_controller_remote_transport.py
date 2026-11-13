@@ -780,26 +780,39 @@ def test_guest_enrollment_failure_flash_names_paste_new_invite_button(
     controller.shutdown()
 
 
-def test_direct_stun_timeout_flash_names_home_wifi(qapp, tmp_path) -> None:
+def test_direct_remote_timeout_gives_the_same_recovery_in_flash_and_hud(qapp, tmp_path) -> None:
     controller = _controller(tmp_path)
     controller.window.flash_message = mock.MagicMock()
+    failed = RemoteSessionSnapshot(
+        phase=RemoteSessionPhase.FAILED,
+        role=SessionRole.GUEST,
+        generation=1,
+        error_code=RemoteSessionErrorCode.TIMED_OUT,
+        stage=RemoteSessionStage.NEEDS_ATTENTION,
+    )
+    runtime = mock.MagicMock(snapshot=failed)
+    controller._remote_session = runtime
     controller._remote_invitation = issue_remote_invitation(
         "direct-stun",
         allowed_profiles={"direct-stun"},
         host_spki_sha256=bytes.fromhex("44" * 32),
     ).invitation
-    controller._show_remote_session_failure(
-        guest_enrollment=True,
-        retry_safe=False,
-        error_code=RemoteSessionErrorCode.TIMED_OUT,
-    )
-    flash = controller.window.flash_message.call_args.args[0]
-    assert "couldn't reach the host" in flash
-    assert "phone hotspot" in flash
-    assert "already be used" not in flash.casefold()
-    assert controller.window.session_hud._action.text() == "Paste New Invite"
-    assert controller._remote_invitation is None
-    controller.shutdown()
+    try:
+        controller._on_remote_session_snapshot(failed, source=runtime)
+        hud = controller.window.session_hud
+        flash = controller.window.flash_message.call_args.args[0]
+        assert flash == hud._detail.text()
+        assert "timed out" in flash
+        assert "both devices are online" in flash
+        assert "Paste New Invite" in flash
+        assert "Wi-Fi" not in flash and "hotspot" not in flash
+        assert hud._action.text() == "Paste New Invite"
+        assert hud._action_kind == "paste_invite"
+        assert controller._remote_invitation is None
+        assert controller._remote_invitation_requires_replacement
+    finally:
+        controller._remote_session = None
+        controller.shutdown()
 
 
 def test_guest_retry_safe_failure_flash_names_try_again_button(

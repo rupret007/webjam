@@ -225,7 +225,10 @@ test build when delivered. Physical sound, real-editor import and feel remain NO
 
 This section and the searchable Help below describe the workflow continuity
 PR/test build after v0.29.0. The source still reports v0.29.0; use the build ID
-to distinguish it from the published release. No new release is requested.
+to distinguish it from the published release. Compare the **Build** shown in
+the startup window title with the ID in your rehearsal instructions before
+choosing **Host** or **Join**. **About WebJam** in a workspace also shows the
+full ID and platform. No new release is requested.
 
 From the live workspace or a local Studio project, choose **File → Return to
 launch**. In a live room, first choose **End Session** or **Leave Session**.
@@ -866,6 +869,15 @@ Sign in with your private beta invitation, then start a room or accept the
 host’s Game Night invitation. Switch back to WebJam when you want to return to
 your session.
 
+
+When Conversation shares a narrow pane with Notes in Music, the audio
+handoff instructions appear above the meeting buttons. Before playing,
+disconnect Webex audio at both ends. To talk in Webex, leave or end Music
+before connecting meeting audio. On a short window, scroll the Music stage
+or Conversation to reach longer instructions. Tab brings the focused button
+into view. Open **Sound and sharing tips** for the steps to share a video or
+demonstration.
+
 Choose conversation devices in your meeting app. For Music, Jamulus owns the
 audio interface used for instruments; Art rooms do not start that audio path. Song tools read and write files only; picking a
 file or running a Music AI job never re-binds, re-routes, or borrows an input
@@ -893,8 +905,9 @@ extra setup, sound-confirmation, or Enter Jam click. Play a note and make sure
 you can hear each other—WebJam never treats a meter or connection as proof of
 that. Use Music's **Band Check**, Podcast's **Sound Check**, or Review's
 **Session Check (Preview)** if you need help.
-Copy Invite sends the whole message to people on the same Wi-Fi. Keep this
-room open.
+Use **Copy Invite** to share the complete message and keep the room open.
+For an invitation that says “same network,” the guest uses the host’s local
+network over Ethernet or Wi-Fi.
 
 If setup is interrupted, WebJam keeps only a private, bounded recovery record.
 It reuses progress only when the role and dedicated Jamulus profile fingerprint
@@ -911,7 +924,9 @@ invite—or open it from Finder. WebJam parses it at ingress,
 does not leave the bearer visible in the interface, and starts only the guest
 services required for that invitation. If setup fails, the in-memory intent is
 preserved only while it is safe to retry; WebJam never pretends an uncertain
-invitation succeeded.
+invitation succeeded. If a private remote invite times out and you see
+**Paste New Invite**, check that both devices are online and ask the host for
+a new invitation.
 
 The Join door contains one masked invitation field, one **Join** button, and a
 privacy reminder. When the field is empty, “Paste an invite to continue” explains
@@ -1071,10 +1086,10 @@ the installed app's publisher; use **Join / Open Meeting** there.
 
 For video beside live music, disconnect the meeting's audio at both ends or
 join with **Don't connect to audio**. Muting its microphone alone can leave
-meeting playback active. For conversation, leave/end WebJam music before
-connecting meeting audio; disconnect meeting audio again before restarting
-music with a fresh invite. WebJam monitor mute affects your local mix, not
-your instrument's send. Follow the
+meeting playback active. For conversation, leave or end Music before
+connecting meeting audio. To play again, everyone disconnects meeting audio.
+The host sends a fresh Music invitation. WebJam monitor mute changes
+only your local mix. Follow the
 [manual audio handoff](WEBEX_AUDIO_MODES.md#safe-rehearsal-habit); opening the
 meeting or seeing a muted microphone does not prove exclusive audio.
 
@@ -1239,6 +1254,11 @@ count-in, and separate route/cleanup state. Where the sender backend exists,
 **Recheck Route** refreshes route evidence without starting playback. Play,
 pause, stop, restart, paused seeking,
 loop in/out, source trim, and an audible count-in remain transport controls.
+Use **Mute** in Shared Track to silence the backing track for everyone while
+its playhead continues. **Unmute** restores its previous level. This control leaves
+microphones and each participant’s monitoring alone. Mute stays with the
+loaded track until you unmute it or load a new track. In desktop WebJam, the
+session strip shows the host’s mute state to the band.
 **Replace…** and **Remove** require a safe stopped state; an attempted change
 during playback is refused. Guests do not get the transport.
 

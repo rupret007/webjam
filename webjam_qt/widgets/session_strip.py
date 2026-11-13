@@ -106,14 +106,17 @@ def shared_track_status_label(snapshot: object) -> str:
         return "Cleanup pending"
     if shared_track_play_is_locked(snapshot):
         return shared_track_next_step_label(snapshot)
+    muted = bool(getattr(snapshot, "muted", False))
+    if state == "playing" and muted:
+        return "Muted"
     labels = {
         "unavailable": "Route locked",
         "idle": "Not loaded",
         "loading": "Loading…",
-        "ready": "Ready",
+        "ready": "Ready (muted)" if muted else "Ready",
         "routing": "Starting…",
         "playing": "Count-in" if count_in_active else "Playing",
-        "paused": "Paused",
+        "paused": "Paused (muted)" if muted else "Paused",
         "stopping": "Stopping…",
         "closed": "Closed",
     }
