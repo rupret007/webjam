@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from itertools import islice
+from time import monotonic
 
 from PySide6.QtCore import QEvent, Qt, QUrl, Signal
 from PySide6.QtGui import QAccessible, QAccessibleEvent, QDesktopServices
@@ -182,6 +183,7 @@ class WebexEmbed(QFrame):
         self._browser_grant_hashes: tuple[str, ...] = ()
         self._browser_guest_count = 0
         self._play_grant_source = None
+        self._pending_chess_browser = None
 
         self._title_label = QLabel("Conversation")
         self._title_label.setObjectName("WebexEmbedTitle")
@@ -456,6 +458,7 @@ class WebexEmbed(QFrame):
         It must return the hash from ``SendGameOffer``, never the one-time value.
         """
         self._play_grant_source = source
+        self._pending_chess_browser = None
 
     def _open_play(self) -> None:
         """Host Play hook. Chess only. The opened page must not issue seats on load."""
@@ -499,8 +502,19 @@ class WebexEmbed(QFrame):
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
+        if source is not self._play_grant_source:
+            QMessageBox.warning(self, "Play", "The browser guest changed. Open Play again for the current guest.")
+            return
         if source is not None:
-            produced = source(seated_index)
+            pending = self._pending_chess_browser
+            now = monotonic()
+            if pending and pending[0] == seated_index and now < pending[2]:
+                produced = pending[1]
+            else:
+                self._pending_chess_browser = None
+                produced = source(seated_index)
+                if _grant_hash(produced):
+                    self._pending_chess_browser = (seated_index, produced, now + 120)
             seated = [produced] if _grant_hash(produced) else []
         elif seated_index < len(hashes):
             seated = [hashes[seated_index]]
@@ -508,10 +522,16 @@ class WebexEmbed(QFrame):
             seated = []
         destination = chess_host_page(seated)
         if not destination:
-            QMessageBox.warning(self, "Play", "Chess could not be opened. Try again.")
+            QMessageBox.warning(
+                self, "Play",
+                "Couldn’t send a Chess offer. Check that your browser guest is still connected. "
+                "If you just sent an offer, try again after it expires.",
+            )
             return
-        if not QDesktopServices.openUrl(QUrl(destination)):
-            QMessageBox.warning(self, "Play", "The browser could not open Chess. Try again.")
+        if QDesktopServices.openUrl(QUrl(destination)):
+            self._pending_chess_browser = None
+        else:
+            QMessageBox.warning(self, "Play", "The browser couldn’t open Chess. Choose Play again to reopen the same offer.")
 
     def _build_lesson_request_panel(self, layout: QVBoxLayout) -> None:
         self._lesson_request_frame = QFrame()
