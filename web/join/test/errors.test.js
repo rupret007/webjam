@@ -124,6 +124,19 @@ test("relay outage keeps the existing unavailable wording and wires Retry visibl
   assert.equal(ui.join.hidden, false);
 });
 
+test("an interrupted listener can retry without microphone or headphone setup", () => {
+  const view = mapJoinError(new Error(JOIN_SIGNAL.JOIN_INTERRUPTED), { listenOnly: true });
+  const ui = controls();
+  applyJoinFailure(view, ui.elements);
+  assert.equal(view.kind, "interrupted");
+  assert.equal(ui.status.textContent, "Web Join was interrupted.");
+  assert.equal(ui.hint.textContent, "Check your connection, then select Retry to listen again.");
+  assert.equal(ui.retry.hidden, false);
+  assert.equal(ui.retry.disabled, false);
+  assert.equal(ui.join.hidden, true);
+  assert.match(mapJoinError(new Error(JOIN_SIGNAL.JOIN_INTERRUPTED)).headline, /microphone/);
+});
+
 test("Retry wiring hides Join while failure chrome is active", () => {
   const ui = controls();
   applyJoinFailure(mapJoinError(new Error(JOIN_SIGNAL.HOST_NO_ANSWER)), ui.elements);
