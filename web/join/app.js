@@ -9,6 +9,7 @@ import {
   startMicLevelMonitor,
 } from "./prejoin.js";
 import { JOIN_SIGNAL, applyJoinFailure, clearJoinFailure, mapJoinError } from "./errors.js";
+import { MIC_STILL_ON_MESSAGE, finishMicrophoneRelease, micTurnSuperseded } from "./mic-turn.js";
 
 const $ = (id) => document.getElementById(id);
 const PAGE_HEADING = "Join a WebJam session";
@@ -22,7 +23,17 @@ const failureElements = () => ({
 
 let invite;
 let session;
+let joinGeneration = 0;
 let context;
+
+function bumpJoinGeneration() {
+  joinGeneration += 1;
+}
+
+function micNow() {
+  return { session, generation: joinGeneration, micHeard, checkRunning, starting };
+}
+
 let starting = false;
 let activeAttempt;
 let prejoinStream;
@@ -103,11 +114,12 @@ function showAudioSettings(stream, warnings = []) {
 }
 
 async function showMicDevices(track, signal) {
+  const turn = micNow();
   const source = $("mic-source");
   source.textContent = track.label ? `Using ${track.label}` : "Microphone connected.";
   source.hidden = false;
   const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
-  if (signal.aborted) return;
+  if (signal.aborted || micTurnSuperseded(turn, micNow())) return;
   const choices = devices.filter(device => device.kind === "audioinput" && device.label &&
     device.deviceId && !["default", "communications"].includes(device.deviceId));
   const select = $("mic-device");
@@ -227,14 +239,16 @@ function showMicError(error) {
 async function publishMicrophone(signal) {
   const track = prejoinStream?.getAudioTracks()[0];
   if (!track || signal.aborted || !session) return;
+  const turn = micNow();
+  const stream = prejoinStream;
   $("mic-progress").textContent = "Turning the microphone on…";
   let on = false;
   try {
-    if (typeof session.attachMicrophone === "function") on = await session.attachMicrophone(prejoinStream) === true;
+    if (typeof turn.session.attachMicrophone === "function") on = await turn.session.attachMicrophone(stream) === true;
   } catch {
     on = false;
   }
-  if (signal.aborted) return;
+  if (signal.aborted || micTurnSuperseded(turn, micNow())) return;
   if (!on) {
     showMicError(new Error("The room cannot hear this microphone yet. You are still listening."));
     return;
@@ -248,6 +262,8 @@ async function publishMicrophone(signal) {
 
 async function runMicCheck() {
   if (expireUnusedInvite() || !invite || !session || checkRunning || starting) return;
+  bumpJoinGeneration();
+  const turn = micNow();
   resetMicCheck();
   checkRunning = true;
   refresh();
@@ -259,10 +275,15 @@ async function runMicCheck() {
       context = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
     }
     await context.resume();
-    if (signal.aborted || expireUnusedInvite()) return;
+    if (signal.aborted || micTurnSuperseded(turn, micNow())) return;
+    if (expireUnusedInvite()) return;
     $("mic-progress").textContent = "Allow microphone access in your browser.";
     const capture = await beginMicCheck(navigator.mediaDevices, $("mic-device").value);
-    if (signal.aborted || expireUnusedInvite()) {
+    if (signal.aborted || micTurnSuperseded(turn, micNow())) {
+      capture.stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    if (expireUnusedInvite()) {
       capture.stream.getTracks().forEach((track) => track.stop());
       return;
     }
@@ -298,7 +319,8 @@ async function runMicCheck() {
     refresh();
     await publishMicrophone(signal);
   } catch (error) {
-    if (!signal.aborted) showMicError(error);
+    if (signal.aborted || micTurnSuperseded(turn, micNow())) return;
+    showMicError(error);
   }
 }
 
@@ -312,17 +334,10 @@ $("mic-device").addEventListener("change", () => {
 });
 
 async function returnToListening() {
-  if (!micHeard || !session || checkRunning || starting) return;
-  let released = true;
-  if (typeof session.releaseMicrophone === "function") {
-    try {
-      released = await session.releaseMicrophone() === true;
-    } catch {
-      released = false;
-    }
-  }
-  if (!released || !session) {
-    $("mic-error").textContent = "The microphone is still on. You are still in the room.";
+  const outcome = await finishMicrophoneRelease(() => micNow());
+  if (outcome !== "still-on" && outcome !== "listen") return;
+  if (outcome === "still-on") {
+    $("mic-error").textContent = MIC_STILL_ON_MESSAGE;
     refresh();
     return;
   }
@@ -331,6 +346,7 @@ async function returnToListening() {
 }
 
 function leave(message = "You left the session.", error) {
+  bumpJoinGeneration();
   prejoinAbort?.abort();
   prejoinAbort = null;
   clearAccessTime();
@@ -421,6 +437,7 @@ async function startJoin() {
       },
     });
     session = joinedSession;
+    bumpJoinGeneration();
     clearTimeout(inviteExpiryTimer);
     await joinedSession.join();
     if (!isCurrent()) return;
