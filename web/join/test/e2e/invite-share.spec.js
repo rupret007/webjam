@@ -22,6 +22,7 @@ async function installShareSpy(page) {
         window.shareCalls.push({
           active,
           title: data && data.title,
+          text: data && data.text,
           url: data && data.url,
         });
         if (!active) return Promise.reject(new DOMException("denied", "NotAllowedError"));
@@ -35,18 +36,33 @@ function shareSummary(calls) {
   return calls.map((call) => ({
     active: call.active,
     title: call.title,
+    text: call.text,
     example: typeof call.url === "string" && call.url.startsWith("https://example.com/"),
     fragment: typeof call.url === "string" && call.url.includes("#") && call.url.split("#")[1].length > 0,
   }));
 }
 
-test("guest Join and the host invite dialog at phone and desktop sizes", async ({ page, browserName }, testInfo) => {
+test("opening an invite starts listen-only join, and the host dialog leads with Share", async ({ page, browserName }, testInfo) => {
   test.skip(browserName !== "chromium", "screenshots are Chromium only");
+  await page.route("**/session.js", (route) => route.fulfill({
+    contentType: "text/javascript",
+    body: `export class WebJoinSession {
+      constructor(options) { this.options = options; }
+      join() {
+        this.options.onStatus("Checking the host invitation…");
+        return new Promise(() => {});
+      }
+      close() {}
+    }`,
+  }));
   for (const [width, height] of [[390, 844], [1440, 900]]) {
     await page.setViewportSize({ width, height });
     await page.goto(guest());
-    const join = page.getByRole("button", { name: "Join", exact: true });
-    await expect(join).toBeEnabled();
+    await expect(page.locator("#status")).toHaveText("Checking the host invitation…");
+    await expect(page.locator("#join")).toBeHidden();
+    const leave = page.getByRole("button", { name: "Leave session", exact: true });
+    await expect(leave).toBeVisible();
+    await expect(leave).toHaveClass(/secondary/);
     await expect(page.locator("#prejoin")).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath(`guest-join-${width}x${height}.png`) });
   }
@@ -78,6 +94,7 @@ test("Share invite runs only from a trusted click", async ({ page }) => {
   expect(shareSummary(await page.evaluate(() => window.shareCalls))).toEqual([{
     active: false,
     title: "Join me on WebJam",
+    text: undefined,
     example: true,
     fragment: true,
   }]);
@@ -86,6 +103,7 @@ test("Share invite runs only from a trusted click", async ({ page }) => {
   expect(trusted).toEqual([{
     active: true,
     title: "Join me on WebJam",
+    text: "Tap to listen, no app, no microphone.",
     example: true,
     fragment: true,
   }]);
@@ -114,6 +132,21 @@ test("a no-activation share rejects and Copy stays usable", async ({ page }) => 
   await expect(copy).toBeEnabled();
 });
 
+test("Copy invite includes the listen sentence and the example link", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.copied = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (value) => { window.copied.push(String(value)); } },
+    });
+  });
+  await page.goto("/host.html");
+  await page.getByRole("button", { name: "Copy invite" }).click();
+  expect(await page.evaluate(() => window.copied)).toEqual([
+    "Tap to listen, no app, no microphone.\nhttps://example.com/join/#invite",
+  ]);
+});
+
 test("Email invite leads when navigator.share is absent", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
@@ -140,7 +173,8 @@ test("Email invite leads when navigator.share is absent", async ({ page }) => {
     return {
       protocol: parsed.protocol,
       subject: parsed.searchParams.get("subject"),
-      example: body.startsWith("https://example.com/"),
+      sentence: body.split("\n")[0],
+      example: (body.split("\n")[1] || "").startsWith("https://example.com/"),
       fragment: body.includes("#") && body.split("#")[1].length > 0,
       deliver: body.includes("deliver"),
     };
@@ -148,6 +182,7 @@ test("Email invite leads when navigator.share is absent", async ({ page }) => {
   expect(mailed).toEqual({
     protocol: "mailto:",
     subject: "Join me on WebJam",
+    sentence: "Tap to listen, no app, no microphone.",
     example: true,
     fragment: true,
     deliver: false,

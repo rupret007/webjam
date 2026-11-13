@@ -1,6 +1,7 @@
 import { readInvite } from "./crypto.js";
 import { closeAudioContext } from "./audio.js";
 import { WebJoinSession } from "./session.js";
+import { listeningLine } from "./listening.js";
 import { RELAY_ORIGIN } from "./config.js";
 import {
   beginMicCheck,
@@ -10,6 +11,8 @@ import {
 import { JOIN_SIGNAL, applyJoinFailure, clearJoinFailure, mapJoinError } from "./errors.js";
 
 const $ = (id) => document.getElementById(id);
+const LISTEN_NOTE = "You are listening. Headphones prevent echo and feedback if you turn the microphone on.";
+const PAGE_HEADING = "Join a WebJam session";
 const failureElements = () => ({
   status: $("status"),
   hint: $("error-hint"),
@@ -34,11 +37,8 @@ let inviteExpiryTimer = null;
 
 function expireUnusedInvite() {
   if (!invite || session || Date.now() < invite.expiresAt * 1000) return false;
-  const focused = document.activeElement;
   leave(undefined, new Error(JOIN_SIGNAL.INVITE_EXPIRED));
-  if ($("prejoin").contains(focused) || [ $("join"), $("retry"), $("leave") ].includes(focused)) {
-    $("status").focus({ preventScroll: true });
-  }
+  $("status").focus({ preventScroll: true });
   return true;
 }
 
@@ -167,13 +167,23 @@ const refresh = () => {
   const listening = Boolean(session) && !starting;
   $("prejoin").hidden = !listening;
   $("join").disabled = !joinReady();
+  $("leave").classList.toggle("secondary", starting);
+  const heading = $("heading");
+  if (heading) heading.textContent = listening ? listeningLine(session?.sessionName) : PAGE_HEADING;
+  const note = $("listen-note");
+  if (note) {
+    note.hidden = !listening || micHeard;
+    note.textContent = micHeard ? "" : LISTEN_NOTE;
+  }
   const guidance = $("join-guidance");
   if (guidance) {
     const message = starting
       ? "Connecting to your session…"
       : listening
         ? listeningGuidance($("headphones").checked, micHeard)
-        : "Join to listen. You do not need a microphone or headphones yet.";
+        : invite
+          ? "Join to listen. You do not need a microphone or headphones yet."
+          : "";
     if (guidance.textContent !== message) guidance.textContent = message;
   }
   $("mic-device").disabled = !listening || checkRunning;
@@ -252,7 +262,7 @@ async function runMicCheck() {
     })) return;
     showAudioSettings(prejoinStream, prejoinWarnings);
     void showMicDevices(track, signal);
-    $("mic-progress").textContent = "Speak or play a note to check your level.";
+    // The browser already allowed the microphone. Do not wait for a loud note.
     stopMeter = startMicLevelMonitor({
       audioContext: context,
       stream: prejoinStream,
@@ -263,14 +273,12 @@ async function runMicCheck() {
         $("mic-meter-fill").style.width = `${percent}%`;
         $("mic-meter").setAttribute("aria-valuenow", String(percent));
       },
-      onHeard: () => {
-        if (signal.aborted) return;
-        void publishMicrophone(signal);
-      },
+      onHeard: () => {},
     });
     checkRunning = false;
     $("check-mic").disabled = true;
     refresh();
+    await publishMicrophone(signal);
   } catch (error) {
     if (!signal.aborted) showMicError(error);
   }
@@ -320,7 +328,9 @@ async function startJoin() {
   refresh();
   delete $("status").dataset.failure;
   clearJoinFailure(failureElements(), "Connecting…");
+  $("join").hidden = true;
   $("leave").hidden = false;
+  refresh();
   const attempt = (activeAttempt = new AbortController());
   const isCurrent = () => activeAttempt === attempt && !attempt.signal.aborted;
   const cancel = () => attempt.abort();
@@ -329,7 +339,10 @@ async function startJoin() {
     if (!context || context.state === "closed") {
       context = new AudioContext({ sampleRate: 48000, latencyHint: "interactive" });
     }
-    await context.resume();
+    // Opening the invite is the join. Playback unlock can wait; the room cannot.
+    context.resume().catch(() => {
+      if (isCurrent()) leave("Tap Join again to resume audio.");
+    });
     if (!isCurrent() || expireUnusedInvite()) return;
     const joinedSession = new WebJoinSession({
       origin: RELAY_ORIGIN,
@@ -416,3 +429,4 @@ document.addEventListener("visibilitychange", () => {
 });
 refresh();
 scheduleUnusedInviteExpiry();
+if (invite) void startJoin();

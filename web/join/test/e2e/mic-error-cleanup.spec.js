@@ -49,7 +49,6 @@ async function openMicFailure(page, failure) {
   }));
   const expiry = Math.floor(Date.now() / 1000) + 300;
   await page.goto(`/#k=${Buffer.alloc(32, 17).toString('base64url')}&s=${'22'.repeat(32)}&g=1&e=${expiry}`);
-  await page.getByRole('button', { name: 'Join', exact: true }).click();
   await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
   return external;
 }

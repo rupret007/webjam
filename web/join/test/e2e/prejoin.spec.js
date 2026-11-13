@@ -22,18 +22,30 @@ async function connected(page) {
   }));
 }
 
-test("Join is on screen without a microphone or headphone step", async ({ page }) => {
+test("opening the invite starts listen-only join without a microphone or headphone step", async ({ page }) => {
+  await page.route("**/session.js", (route) => route.fulfill({
+    contentType: "text/javascript",
+    body: `export class WebJoinSession {
+      constructor(options) { this.options = options; }
+      join() {
+        this.options.onStatus("Checking the host invitation…");
+        return new Promise(() => {});
+      }
+      close() {}
+    }`,
+  }));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/${fragment(invite())}`);
-  const join = page.getByRole("button", { name: "Join", exact: true });
-  await expect(join).toBeEnabled();
-  await expect(join).toBeInViewport({ ratio: 1 });
+  await expect(page.locator("#status")).toHaveText("Checking the host invitation…");
+  await expect(page.locator("#join")).toBeHidden();
+  const leave = page.getByRole("button", { name: "Leave session", exact: true });
+  await expect(leave).toBeVisible();
+  await expect(leave).toHaveClass(/secondary/);
+  await expect(leave).toBeInViewport({ ratio: 1 });
   await expect(page.locator("#prejoin")).toBeHidden();
   await expect(page.getByRole("checkbox")).toBeHidden();
   await expect(page.getByRole("button", { name: "Use microphone" })).toBeHidden();
-  await expect(page.locator("#join-guidance")).toHaveText(
-    "Join to listen. You do not need a microphone or headphones yet.",
-  );
+  await expect(page.locator("#join-guidance")).toHaveText("Connecting to your session…");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
@@ -48,7 +60,6 @@ test("optional microphone stays after Join and a missing device can be retried",
   });
   await connected(page);
   await page.goto(`/${fragment(invite())}`);
-  await page.getByRole("button", { name: "Join", exact: true }).click();
   await expect(page.locator("#status")).toHaveText("Synthetic session connected.");
   await expect(page.locator("#prejoin")).toBeVisible();
   await page.getByRole("button", { name: "Use microphone" }).click();
@@ -64,9 +75,7 @@ test("optional headphones guidance is visible after Join and does not gate liste
   await page.setViewportSize({ width: 390, height: 844 });
   await connected(page);
   await page.goto(`/${fragment(invite())}`);
-  const join = page.getByRole("button", { name: "Join", exact: true });
-  await expect(join).toBeEnabled();
-  await join.click();
+  await expect(page.locator("#status")).toHaveText("Synthetic session connected.");
   await expect(page.getByRole("checkbox", { name: /headphones/i })).toBeVisible();
   await expect(page.locator("#join-guidance")).toContainText("Headphones prevent echo");
   await page.getByRole("checkbox", { name: /headphones/i }).check();

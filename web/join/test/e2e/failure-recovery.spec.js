@@ -44,9 +44,8 @@ async function openInvitation(page, width = 390, skipCheck = true, delayCapture 
   }, { skipCheck, delayCapture });
   const expires = Math.floor(Date.now() / 1000) + 300;
   // Local test-only capability, with no corresponding host or mailbox.
-  await page.goto(`/#k=${Buffer.alloc(32, 17).toString('base64url')}&s=${'22'.repeat(32)}&g=1&e=${expires}`);
-  await expect(page.getByRole('button', { name: 'Join', exact: true })).toBeEnabled();
-  await expect(page.locator('#prejoin')).toBeHidden();
+  // domcontentloaded: a listen-only join can start playback before the load event.
+  await page.goto(`/#k=${Buffer.alloc(32, 17).toString('base64url')}&s=${'22'.repeat(32)}&g=1&e=${expires}`, { waitUntil: 'domcontentloaded' });
 }
 
 async function expectExpiredInvite(page) {
@@ -57,9 +56,9 @@ async function expectExpiredInvite(page) {
 
 test('expiry on the audio screen explains how to recover and focuses the message', async ({ page }) => {
   await openInvitation(page);
-  const join = page.getByRole('button', { name: 'Join' });
-  await expect(join).toBeEnabled();
-  await join.focus();
+  const leave = page.locator('#leave');
+  if (await leave.isVisible()) await leave.focus();
+  else await page.locator('#status').focus();
   await page.clock.fastForward(301000);
   await expectExpiredInvite(page);
   await expect(page.locator('#status')).toBeFocused();
@@ -71,13 +70,12 @@ test('expiry on the audio screen explains how to recover and focuses the message
     location.hash = `k=${capability}&s=${'24'.repeat(32)}&g=1&e=${expires}`;
   }, capability);
   await expect(page.locator('#prejoin')).toBeHidden();
-  await expect(join).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Use microphone' })).toBeHidden();
+  await expect(page.locator('#status')).not.toHaveText('This browser invite has expired.');
 });
 
-test('expiry before Join never starts a microphone', async ({ page }) => {
+test('expiry before the room is usable never starts a microphone', async ({ page }) => {
   await openInvitation(page, 390, false);
-  await expect(page.locator('#join')).toBeEnabled();
   await expect(page.locator('#prejoin')).toBeHidden();
   expect(await page.evaluate(() => captureTracks.length)).toBe(0);
   await page.clock.fastForward(301000);
@@ -86,19 +84,21 @@ test('expiry before Join never starts a microphone', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);
 });
 
-test('Join rechecks expiry when the timer has not run', async ({ page }) => {
+test('a later join rechecks expiry when the timer has not run', async ({ page }) => {
   await openInvitation(page);
+  await expect(page.locator('#leave')).toBeHidden();
   const now = await page.evaluate(() => Date.now());
+  const contexts = await page.evaluate(() => audioContexts.length);
   await page.clock.setSystemTime(now + 301000);
-  await page.getByRole('button', { name: 'Join' }).click();
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await expectExpiredInvite(page);
   expect(await page.evaluate(() => captureTracks.length)).toBe(0);
-  expect(await page.evaluate(() => audioContexts.length)).toBe(0);
+  expect(await page.evaluate(() => audioContexts.length)).toBe(contexts);
+  expect(await page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);
 });
 
-test('Join does not request a microphone while an invite can still expire', async ({ page }) => {
+test('listen-only join does not request a microphone while an invite can still expire', async ({ page }) => {
   await openInvitation(page, 390, true, true);
-  await page.getByRole('button', { name: 'Join' }).click();
   expect(await page.evaluate(() => (window.pendingCaptures ?? []).length)).toBe(0);
   expect(await page.evaluate(() => captureTracks.length)).toBe(0);
   await page.clock.fastForward(301000);
@@ -106,15 +106,12 @@ test('Join does not request a microphone while an invite can still expire', asyn
   expect(await page.evaluate(() => captureTracks.length)).toBe(0);
 });
 
-test('Join is ready with no microphone or headphone step', async ({ page }) => {
+test('opening the invite needs no microphone or headphone step', async ({ page }) => {
   await openInvitation(page, 390, false);
-  await expect(page.locator('#join')).toBeEnabled();
   await expect(page.locator('#prejoin')).toBeHidden();
   await expect(page.getByRole('checkbox')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Use microphone' })).toBeHidden();
-  await expect(page.locator('#join-guidance')).toHaveText('Join to listen. You do not need a microphone or headphones yet.');
   expect(await page.evaluate(() => captureTracks.length)).toBe(0);
-  expect(await page.evaluate(() => audioContexts.length)).toBe(0);
 });
 
 test('losing an optional microphone after Join closes that attempt', async ({ page }) => {
@@ -129,7 +126,6 @@ test('losing an optional microphone after Join closes that attempt', async ({ pa
         }
       }` }));
     await openInvitation(page, 390, false);
-    await page.locator('#join').click();
     await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
     expect(await page.evaluate(() => captureTracks.length)).toBe(0);
     await page.getByRole('button', { name: 'Use microphone', exact: true }).click();
@@ -161,8 +157,6 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
   }));
   await openInvitation(page);
   const routeIndicator = page.locator('#connection-route');
-  await expect(routeIndicator).toBeHidden();
-  await page.locator('#join').click();
   await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
   await page.evaluate(() => window.reportConnectionRoute('direct'));
   await expect(routeIndicator).toHaveText('Direct connection');
@@ -184,9 +178,6 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
   await expect(page.locator('#error-hint')).toHaveText('Ask your host for a new browser invite and open the full link.');
   for (const id of ['join', 'retry', 'leave', 'prejoin']) await expect(page.locator('#' + id)).toBeHidden();
   await page.evaluate(hash => { location.hash = hash; }, `k=${capability}&s=${'24'.repeat(32)}&g=1&e=${now + 300}`);
-  await expect(page.locator('#prejoin')).toBeHidden();
-  await expect(page.locator('#join')).toBeEnabled();
-  await page.locator('#join').click();
   await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
   await page.locator('#leave').click();
   await expect.poll(() => page.evaluate(() => captureTracks.every(track => track.readyState === 'ended'))).toBe(true);
@@ -201,11 +192,11 @@ for (const width of [375, 390]) {
       // First fetch stalls until the real Mailbox deadline aborts it.
     });
     await openInvitation(page, width);
-    const join = page.getByRole('button', { name: 'Join', exact: true });
+    const join = page.locator('#join');
     const leave = page.getByRole('button', { name: 'Leave session', exact: true });
-    await join.click();
     await expect.poll(() => requests).toBe(1);
     await expect(leave).toBeInViewport();
+    await expect(leave).toHaveClass(/secondary/);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.clock.fastForward(13000);
     await expect(page.locator('#status')).toContainText('timed out');
@@ -231,7 +222,6 @@ for (const dailyHint of [false, true]) test(`a confirmed relay cap closes guest 
     else await route.fulfill({ status: 503, json: { error: 'unavailable' } });
   });
   await openInvitation(page);
-  await page.getByRole('button', { name: 'Join', exact: true }).click();
   await expect(page.locator('#status')).toHaveText('Web Join reached a usage limit.');
   await expect(page.locator('#error-hint')).toContainText(dailyHint ? 'daily request allowance resets around' : 'Ask for a new browser invite');
   for (const id of ['join', 'retry', 'leave', 'prejoin']) await expect(page.locator('#' + id)).toBeHidden();
@@ -243,9 +233,6 @@ for (const dailyHint of [false, true]) test(`a confirmed relay cap closes guest 
   const capability = Buffer.alloc(32, 17).toString('base64url');
   const expires = Math.floor(Date.now() / 1000) + 300;
   await page.evaluate(hash => { location.hash = hash; }, `k=${capability}&s=${'24'.repeat(32)}&g=1&e=${expires}`);
-  await expect(page.locator('#prejoin')).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Join', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Join', exact: true }).click();
   await expect(page.locator('#status')).toContainText('Web Join is unavailable');
   await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeEnabled();
   expect(requests).toBe(2);
@@ -258,8 +245,7 @@ test('Leave during a stalled fetch stays a deliberate exit, then allows another 
     if (requests > 1) await route.fulfill({ status: 503, body: 'unavailable' });
   });
   await openInvitation(page);
-  const join = page.getByRole('button', { name: 'Join', exact: true });
-  await join.click();
+  const join = page.locator('#join');
   await expect.poll(() => requests).toBe(1);
   await page.getByRole('button', { name: 'Leave session', exact: true }).click();
   await page.clock.fastForward(13000);
@@ -304,9 +290,8 @@ for (const scenario of ['left', 'rejoined', 'active']) {
     await openInvitation(page);
     // A connected Join is hidden; retain its disabled-state and naming checks.
     const join = page.locator('#join');
-    await expect(join).toHaveAccessibleName('Join');
+    await expect(join).toHaveText('Join');
     const leave = page.getByRole('button', { name: 'Leave session', exact: true });
-    await join.click();
     await expect.poll(() => page.evaluate(() => rejectPlayback.length)).toBe(1);
     if (scenario !== 'active') await leave.click();
     if (scenario === 'rejoined') {
@@ -353,9 +338,8 @@ for (const scenario of ['left', 'rejoined', 'active']) {
     await openInvitation(page);
     // A connected Join is hidden; retain its disabled-state and naming checks.
     const join = page.locator('#join');
-    await expect(join).toHaveAccessibleName('Join');
+    await expect(join).toHaveText('Join');
     const leave = page.getByRole('button', { name: 'Leave session', exact: true });
-    await join.click();
     await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
     await page.evaluate(async () => {
       const audio = testSessions[0].options.audioContext;
@@ -404,10 +388,12 @@ for (const outcome of ['rejoining', 'failed']) {
         close() { this.closed = true; (this.options.stream?.getTracks() ?? []).forEach(t => t.stop()); }
       }` }));
     await openInvitation(page);
-    const join = page.getByRole('button', { name: 'Join', exact: true });
+    const join = page.locator('#join');
     const leave = page.getByRole('button', { name: 'Leave session', exact: true });
-    await join.click(); await expect(page.locator('#status')).toHaveText('Attempt 1 pending.');
-    await leave.click(); await join.click();
+    await expect(page.locator('#status')).toHaveText('Attempt 1 pending.');
+    await leave.click();
+    await expect(join).toBeEnabled();
+    await join.click();
     await expect(page.locator('#status')).toHaveText('Attempt 2 pending.');
     if (outcome === 'failed') await page.evaluate(() => pendingSessions[1].options.onError(new Error('Current enrollment failed.')));
     await page.evaluate(() => pendingSessions[0].finish());
@@ -420,33 +406,50 @@ for (const outcome of ['rejoining', 'failed']) {
 }
 
 test('a retired initial resume cannot enable Join while the next resume is pending', async ({ page }) => {
-  await openInvitation(page);
-  await page.evaluate(() => {
+  await page.addInitScript(() => {
     window.pendingResumes = [];
     const nativeResume = AudioContext.prototype.resume;
     AudioContext.prototype.resume = function () {
-      // Delay the JS completion, preserving WebKit's real context lifecycle.
+      // Delay only the promise the page sees. WebKit may never settle the
+      // native resume without a gesture, so the test release must not wait on it.
       const resumed = nativeResume.call(this);
       resumed.catch(() => {});
-      return new Promise((resolve, reject) => pendingResumes.push(() => resumed.then(resolve, reject)));
+      return new Promise((resolve) => pendingResumes.push(resolve));
     };
   });
-  const join = page.getByRole('button', { name: 'Join', exact: true });
-  await join.click(); await expect.poll(() => page.evaluate(() => pendingResumes.length)).toBe(1);
-  await expect(page.locator('#check-mic')).toBeDisabled();
+  await page.route('**/session.js', route => route.fulfill({
+    contentType: 'text/javascript',
+    body: `export class WebJoinSession {
+      constructor(options) { this.options = options; this.id = (window.pendingSessions ??= []).push(this); }
+      join() { this.options.onStatus('Attempt ' + this.id + ' pending.'); return new Promise(() => {}); }
+      close() { this.closed = true; }
+    }`,
+  }));
+  await openInvitation(page);
+  const join = page.locator('#join');
+  await expect.poll(() => page.evaluate(() => pendingResumes.length)).toBe(1);
+  await expect(page.locator('#status')).toHaveText('Attempt 1 pending.');
   await page.getByRole('button', { name: 'Leave session', exact: true }).click();
-  await join.click(); await expect.poll(() => page.evaluate(() => pendingResumes.length)).toBe(2);
+  await expect(join).toBeEnabled();
+  await join.click();
+  await expect.poll(() => page.evaluate(() => pendingResumes.length)).toBe(2);
+  await expect(page.locator('#status')).toHaveText('Attempt 2 pending.');
   await page.evaluate(() => pendingResumes[0]());
-  await expect(join).toBeDisabled();
+  await expect(page.locator('#status')).toHaveText('Attempt 2 pending.');
+  await expect(join).toBeHidden();
+  expect(await page.evaluate(() => !!pendingSessions[1].closed)).toBe(false);
   await page.getByRole('button', { name: 'Leave session', exact: true }).click();
   await page.evaluate(() => pendingResumes[1]());
-  await expect.poll(() => page.evaluate(() => audioContexts.every(context => context.state === 'closed'))).toBe(true);
 });
 
 test('Join does not request a microphone on the first or next attempt', async ({ page }) => {
   await openInvitation(page, 390, true, true);
-  const join = page.getByRole('button', { name: 'Join', exact: true });
-  await join.click();
+  expect(await page.evaluate(() => (window.pendingCaptures ?? []).length)).toBe(0);
+  expect(await page.evaluate(() => captureTracks.length)).toBe(0);
+  await expect(page.getByRole('button', { name: 'Use microphone' })).toBeHidden();
+  await expect(page.locator('#leave')).toBeHidden();
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.locator('#leave')).toBeHidden();
   expect(await page.evaluate(() => (window.pendingCaptures ?? []).length)).toBe(0);
   expect(await page.evaluate(() => captureTracks.length)).toBe(0);
   await expect(page.getByRole('button', { name: 'Use microphone' })).toBeHidden();

@@ -32,8 +32,7 @@ test("listen-only Join needs no microphone; a bad offer is still rejected", asyn
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ payload: toBase64Url(new Uint8Array([0, 1, ...envelope])) }) });
   });
   await page.goto(`/${fragment(value)}`);
-  const join = page.getByRole("button", { name: "Join", exact: true });
-  await expect(join).toBeEnabled();
+  await expect(page.locator("#join")).toBeHidden();
   await expect(page.locator("#prejoin")).toBeHidden();
   await expect(page.getByRole("checkbox")).toBeHidden();
   const delayNote = page.getByText("Browser audio usually has more delay", { exact: false });
@@ -42,7 +41,6 @@ test("listen-only Join needs no microphone; a bad offer is still rejected", asyn
   await expect(delayNote).toBeVisible();
   await page.getByText("Audio details", { exact: true }).click();
   expect(await page.evaluate(() => window.captureCalls)).toBe(0);
-  await join.click();
   await expect(page.locator("#status")).toContainText("Host identity or invite binding did not match");
   expect(await page.evaluate(() => window.captureCalls)).toBe(0);
   expect(requests.length).toBe(1);

@@ -3,6 +3,7 @@ import { Mailbox, BUSY_MESSAGE } from "./mailbox.js";
 import { candidateAllowed, offerHasReviewedAllocation, policySdp, SESSION_BYTES } from "./policy.js";
 import { musicSdp, tuneReceiver, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget, connectionRoute } from "./audio.js";
 import { JOIN_SIGNAL } from "./errors.js";
+import { listeningLine } from "./listening.js";
 
 const SEND_DIRECTIONS = new Set(["sendrecv", "sendonly"]);
 
@@ -71,8 +72,8 @@ export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReview
   return policySdp(pc.localDescription?.sdp ?? "", { allowReviewedAllocations, allowHostCandidates });
 }
 export class WebJoinSession {
-  constructor({ origin, invite, stream, audioContext, onStatus = () => {}, onTrack = () => {}, onLatency = () => {}, onRoute = () => {}, onError = () => {}, loopbackLab = false }) {
-    Object.assign(this, { invite, stream: stream || null, audioContext, onStatus, onTrack, onLatency, onRoute, onError });
+  constructor({ origin, invite, stream, audioContext, onStatus = () => {}, onTrack = () => {}, onLatency = () => {}, onRoute = () => {}, onError = () => {}, loopbackLab = false, sessionName = "" }) {
+    Object.assign(this, { invite, stream: stream || null, audioContext, onStatus, onTrack, onLatency, onRoute, onError, sessionName });
     // Tests only. Production join leaves this false and still strips host candidates.
     this.loopbackLab = loopbackLab === true;
     this.listenOnly = !this.stream;
@@ -196,7 +197,7 @@ export class WebJoinSession {
     this.stream?.getAudioTracks().forEach((track) => { track.enabled = true; });
     if (this.pendingStream) this.onTrack(this.pendingStream);
     this.pendingStream = null;
-    this.onStatus("Connected — Web Join, higher delay (about 60–120 ms).");
+    this.onStatus(listeningLine(this.sessionName));
     this.statsTimer = setInterval(() => this.updateStats(), 1000);
     // Credentials and their allocation authority are never retained past TTL.
     this.expiryTimer = setTimeout(() => this.fail(new Error("The free relay session expired. Ask the host for a new invite.")), Math.max(0, credentials.expiresAt - Date.now()));

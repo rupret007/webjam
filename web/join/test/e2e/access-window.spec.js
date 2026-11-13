@@ -45,16 +45,24 @@ async function invitation(page) {
   }));
   const expires = Math.floor(Date.now()/1000)+300;
   await page.goto(`/#k=${Buffer.alloc(32,17).toString('base64url')}&s=${'22'.repeat(32)}&g=1&e=${expires}`);
-  await expect(page.getByRole('button',{name:'Join',exact:true})).toBeEnabled();
-  await expect(page.locator('#prejoin')).toBeHidden();
+  await expect(page.locator('#status')).toHaveText('Synthetic authenticated session connected.');
+  await expect(page.locator('#heading')).toHaveText("You're listening.");
+  await expect(page.locator('#join')).toBeHidden();
+}
+
+async function openAudioDetails(page) {
+  const details = page.locator('#audio-details');
+  if (await details.getAttribute('open') === null) {
+    await page.getByText('Audio details', { exact: true }).click();
+  }
 }
 
 test('access time is visible, warns once near expiry, and stops updating on Leave', async ({ page }, testInfo) => {
   await invitation(page);
   await expect(page.locator('#access-window')).toBeHidden();
-  await page.getByRole('button',{name:'Join',exact:true}).click();
   await expect(page.locator('#join')).toBeHidden();
   await expect(page.getByRole('button',{name:'Leave session',exact:true})).toBeFocused();
+  await openAudioDetails(page);
   await expect(page.getByRole('timer')).toHaveText('Browser access ends in 1:35.');
   await expect(page.getByRole('timer')).toHaveAttribute('aria-live','off');
   await expect(page.locator('#access-warning')).toBeHidden();
@@ -90,12 +98,13 @@ test('access time is visible, warns once near expiry, and stops updating on Leav
 
 test('a fresh attempt has its own access window and a host-end error clears it', async ({ page }) => {
   await invitation(page);
-  await page.getByRole('button',{name:'Join',exact:true}).click();
+  await openAudioDetails(page);
   await page.clock.runFor(40000);
   await expect(page.locator('#access-warning')).toBeVisible();
   await page.getByRole('button',{name:'Leave session',exact:true}).click();
   await page.evaluate(()=>{window.accessFixtureLifetime=150000;});
   await page.getByRole('button',{name:'Join',exact:true}).click();
+  await openAudioDetails(page);
   await expect(page.getByRole('timer')).toHaveText('Browser access ends in 2:30.');
   await expect(page.locator('#access-warning')).toBeHidden();
   await page.clock.runFor(5000);

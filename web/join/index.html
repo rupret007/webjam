@@ -13,15 +13,15 @@
 <body>
   <main>
     <p class="eyebrow">WebJam</p>
-    <h1>Join a WebJam session</h1>
+    <h1 id="heading">Join a WebJam session</h1>
     <div class="join-card">
-      <p id="status" role="status" tabindex="-1" aria-describedby="error-hint">Open the invite link from your host.</p>
+      <p id="status" role="status" tabindex="-1" aria-describedby="error-hint">Opening your invite.</p>
       <p id="error-hint" class="error-hint" hidden></p>
-      <p id="join-guidance" class="join-guidance">Join to listen. You do not need a microphone or headphones yet.</p>
-      <div class="actions"><button id="join" aria-describedby="join-guidance" disabled>Join</button><button id="retry" hidden>Retry</button><button id="leave" hidden>Leave session</button></div>
+      <p id="join-guidance" class="join-guidance">Connecting to your session…</p>
+      <div class="actions"><button id="join" aria-describedby="join-guidance" hidden disabled>Join</button><button id="retry" hidden>Retry</button><button id="leave" class="secondary" hidden>Leave session</button></div>
       <section id="prejoin" hidden aria-labelledby="prejoin-heading">
         <h2 id="prejoin-heading">Optional microphone</h2>
-        <p>You are listening. Headphones prevent echo and feedback if you turn the microphone on.</p>
+        <p id="listen-note">You are listening. Headphones prevent echo and feedback if you turn the microphone on.</p>
         <label class="headphones"><input id="headphones" type="checkbox"> I’m wearing headphones to prevent echo.</label>
         <div class="mic-actions">
           <button type="button" id="check-mic" class="secondary">Use microphone</button>
@@ -40,17 +40,17 @@
         <p id="mic-heard" class="mic-heard" role="status" hidden>Microphone on.</p>
       </section>
       <p id="audio-quality" role="status"></p>
+      <p id="connection-route" hidden></p>
+    </div>
+    <details id="audio-details">
+      <summary>Audio details</summary>
+      <p>Browser audio usually has more delay than the desktop app (roughly 60–120 ms). For tight rehearsals, use the WebJam app.</p>
+      <p id="latency">Listening delay is estimated after you connect.</p>
       <div id="access-window" class="access-window" hidden>
         <p id="access-time" role="timer" aria-live="off"></p>
         <p class="access-note">The host may end the session sooner. To continue after access ends, ask for a fresh invite.</p>
         <p id="access-warning" role="status" hidden></p>
       </div>
-      <p id="connection-route" hidden></p>
-    </div>
-    <details>
-      <summary>Audio details</summary>
-      <p>Browser audio usually has more delay than the desktop app (roughly 60–120 ms). For tight rehearsals, use the WebJam app.</p>
-      <p id="latency">Listening delay is estimated after you connect.</p>
       <p id="warnings"></p>
       <p>On iPhone and iPad, keep this page visible while you listen or play along. Safari may add playback delay.</p>
     </details>

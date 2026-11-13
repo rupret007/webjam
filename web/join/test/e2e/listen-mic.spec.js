@@ -103,7 +103,6 @@ test("the mic stays off in the room until outbound audio is accepted", async ({ 
   }));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(invitePath());
-  await page.getByRole("button", { name: "Join", exact: true }).click();
   await expect(page.locator("#status")).toHaveText("Synthetic session connected.");
   await expect(page.locator("#mic-heard")).toBeHidden();
   await expect(page.locator("#join-guidance")).toHaveText("Listening only. Headphones prevent echo and feedback if you turn the microphone on.");
@@ -117,6 +116,9 @@ test("the mic stays off in the room until outbound audio is accepted", async ({ 
   await expect(page.locator("#mic-heard")).toBeVisible();
   await expect(page.locator("#mic-heard")).toHaveText("Microphone on.");
   await expect(page.locator("#join-guidance")).toHaveText("Microphone on. Headphones prevent echo and feedback.");
+  await expect(page.locator("#listen-note")).toBeHidden();
+  await expect(page.getByText("You are listening.", { exact: true })).toHaveCount(0);
+  await expect(page.locator("#mic-progress")).not.toHaveText(/Speak or play a note/);
   await expect(page.locator("#mic-error")).toHaveText("");
   expect(await page.evaluate(() => window.attachAttempts)).toBe(2);
 });
