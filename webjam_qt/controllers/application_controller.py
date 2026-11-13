@@ -74,7 +74,7 @@ from core.musician_guidance import (
     StudioGuidanceFacts,
     build_musician_guidance,
 )
-from core.network_invite import BandInvite
+from core.network_invite import BandInvite, invite_message_title
 from core.pocket_stage import (
     MobileParticipant,
     MobileParticipantState,
@@ -4534,7 +4534,7 @@ class ApplicationController(QObject):
             self._request_reference_track_teardown
         )
         strip.ready_check_requested.connect(self._on_ready_check)
-        strip.invite_requested.connect(self._copy_band_invite)
+        strip.invite_requested.connect(self._share_or_copy_person_invite)
         strip.reset_invite_requested.connect(self._confirm_reset_remote_invite)
         strip.tool_requested.connect(self._on_rail_view_changed)
         self.song_tools.connect()
@@ -8014,6 +8014,129 @@ class ApplicationController(QObject):
 
         self._paste_guest_reply()
 
+    def _hud_copy_invite_enabled(self) -> bool:
+        """True when the session bar is offering the host's invite action."""
+
+        hud = getattr(getattr(self, "window", None), "session_hud", None)
+        action = getattr(hud, "_action", None)
+        kind = str(getattr(hud, "_action_kind", "") or "")
+        return bool(
+            action is not None
+            and kind in {"invite", "copy_invite"}
+            and not action.isHidden()
+            and action.isEnabled()
+        )
+
+    def _prepared_person_invite_link(self) -> str:
+        """Return one single-line invite, or empty when nothing is shareable yet."""
+
+        owner = getattr(self, "_remote_invite_owner", None)
+        if owner is not None:
+            reveal = getattr(owner, "copy_for_clipboard", None)
+            if not callable(reveal):
+                return ""
+            try:
+                raw = reveal()
+            except Exception:  # noqa: BLE001 - a missing invite is not shareable yet
+                return ""
+            text = str(raw or "").strip()
+            # A sealed reply adds a second line. Sharing that payload would drop it.
+            if not text or "\n" in text or "\r" in text:
+                return ""
+            return text
+        current = getattr(self, "_current_invite_url", None)
+        if not callable(current):
+            return ""
+        readiness = None
+        share = getattr(self, "_host_share_readiness", None)
+        if callable(share):
+            try:
+                readiness = share()
+            except Exception:  # noqa: BLE001 - readiness failure means no invite yet
+                readiness = None
+        try:
+            link = current(readiness=readiness)
+        except TypeError:
+            try:
+                link = current()
+            except Exception:  # noqa: BLE001 - link generation stays fail-closed
+                return ""
+        except Exception:  # noqa: BLE001 - link generation stays fail-closed
+            return ""
+        text = str(link or "").strip()
+        if not text or any(char in text for char in ("\n", "\r", "\x00")):
+            return ""
+        return text
+
+    def _sync_prepared_person_invite(self) -> None:
+        """Offer Share or Email, with Copy secondary, when the HUD enables copy."""
+
+        from webjam_qt.widgets.webex_embed import WebexEmbed
+
+        embed = getattr(getattr(self, "window", None), "webex_embed", None)
+        if not isinstance(embed, WebexEmbed):
+            return
+        if not self._hud_copy_invite_enabled():
+            self._retire_prepared_person_invite(embed)
+            return
+        link = self._prepared_person_invite_link()
+        strip = getattr(self.window, "session_strip", None)
+        current_title = getattr(strip, "current_title", None)
+        session_name = str(current_title() or "") if callable(current_title) else ""
+        title = invite_message_title(session_name)
+        delivery = embed._invite_delivery
+        if (
+            delivery is not None
+            and not delivery.isHidden()
+            and embed._invite_link == link
+            and embed._invite_title == title
+        ):
+            return
+        if not link or not embed.offer_person_invite(link, title):
+            self._retire_prepared_person_invite(embed)
+            return
+        if embed.isHidden():
+            embed.setVisible(True)
+            self._person_invite_card_shown = True
+
+    def _retire_prepared_person_invite(self, embed) -> None:
+        delivery = getattr(embed, "_invite_delivery", None)
+        if delivery is not None and not delivery.isHidden():
+            delivery.hide()
+        if embed._invite_link or embed._invite_mailto or embed._invite_title:
+            embed._invite_link = ""
+            embed._invite_mailto = ""
+            embed._invite_title = ""
+        if getattr(self, "_person_invite_card_shown", False):
+            embed.setVisible(False)
+            self._person_invite_card_shown = False
+
+    def _share_or_copy_person_invite(self) -> None:
+        """Invite opens the send choices. Copy remains the fallback."""
+
+        from webjam_qt.widgets.webex_embed import WebexEmbed
+
+        if self._shutdown_cleanup_blocks_action():
+            return
+        embed = getattr(getattr(self, "window", None), "webex_embed", None)
+        delivery = getattr(embed, "_invite_delivery", None)
+        if (
+            isinstance(embed, WebexEmbed)
+            and delivery is not None
+            and not delivery.isHidden()
+            and not embed.isHidden()
+            and embed._invite_link
+        ):
+            primary = (
+                embed._email_invite_btn
+                if not embed._email_invite_btn.isHidden()
+                else embed._share_invite_btn
+            )
+            if not primary.isHidden():
+                primary.setFocus(Qt.FocusReason.OtherFocusReason)
+                return
+        self._copy_band_invite()
+
     def _copy_band_invite(self) -> None:
         """Copy one complete invitation; never make a musician parse it."""
         from PySide6.QtWidgets import QApplication
@@ -11043,6 +11166,7 @@ class ApplicationController(QObject):
         hud = getattr(getattr(self, "window", None), "session_hud", None)
         overlay = getattr(hud, "overlay_actions", None)
         if not callable(overlay):
+            self._sync_prepared_person_invite()
             return
         snapshot = getattr(getattr(self, "_remote_session", None), "snapshot", None)
         connected = getattr(getattr(snapshot, "phase", None), "name", "") == "CONNECTED"
@@ -11059,6 +11183,7 @@ class ApplicationController(QObject):
             updates["secondary_action_visible"] = True
         if updates:
             overlay(**updates)
+        self._sync_prepared_person_invite()
 
     def _copy_direct_stun_guest_reply_if_ready(self) -> None:
         """Copy reply is a visible HUD action; never overwrite the clipboard."""
@@ -11211,7 +11336,7 @@ class ApplicationController(QObject):
         elif action == "enter_jam":
             self._enter_startup_jam()
         elif action in {"invite", "copy_invite"}:
-            self._copy_band_invite()
+            self._share_or_copy_person_invite()
         elif action == "paste_reply":
             self._paste_guest_reply()
         elif action == "copy_reply":

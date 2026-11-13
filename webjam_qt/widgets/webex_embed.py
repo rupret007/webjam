@@ -12,15 +12,17 @@ import logging
 from collections.abc import Sequence
 from itertools import islice
 
-from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QAccessible, QAccessibleEvent
+from PySide6.QtCore import QEvent, Qt, QUrl, Signal
+from PySide6.QtGui import QAccessible, QAccessibleEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QBoxLayout,
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -35,6 +37,8 @@ from core.meeting_companion import (
 from core.meeting_link import is_allowed_meeting_link
 from core.lesson_request import LessonRequestIntent, LessonRequestNotice
 from core.follow_along import lesson_setup_steps, lesson_sound_guidance
+from core.network_invite import InviteLinkError, invite_mailto_url, invite_message_title
+from core.web_join_target import GAME_NIGHT_GAMES, game_night_destination, game_night_game_page, game_night_page
 from webjam_qt.widgets.lesson_handoff import LessonHandoffPanel
 from webjam_qt.widgets.scrollable_content import ScrollableContent
 from webjam_qt.theme.tokens import Space
@@ -145,6 +149,10 @@ class WebexEmbed(QFrame):
         self._native_focus_restore: QPushButton | None = None
         self._service_label = ""
         self._launch_status = "Not opened"
+        self._invite_link = ""
+        self._invite_mailto = ""
+        self._invite_title = ""
+        self._invite_delivery: QWidget | None = None
 
         self._title_label = QLabel("Conversation")
         self._title_label.setObjectName("WebexEmbedTitle")
@@ -270,15 +278,25 @@ class WebexEmbed(QFrame):
         self._recheck_btn.setVisible(False)
         self._recheck_btn.clicked.connect(self.recheck_webex_requested.emit)
 
+        self._game_night_btn = QPushButton("Open Game Night…")
+        self._game_night_btn.setObjectName("GhostButton")
+        self._game_night_btn.setAccessibleDescription(
+            "Choose a game to play with friends in the private Hang Out arcade."
+        )
+        self._game_night_btn.setAutoDefault(False)
+        self._game_night_btn.setVisible(game_night_page() is not None)
+        self._game_night_btn.clicked.connect(self._open_game_night)
+
         header = self._header_layout = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(Space.SM)
         header.addWidget(self._title_label, stretch=1)
         header.addWidget(self._app_status_label)
 
-        text_column = QVBoxLayout()
+        text_column = self._text_column = QVBoxLayout()
         text_column.setSpacing(0)
         text_column.addLayout(header)
+        text_column.addWidget(self._game_night_btn, alignment=Qt.AlignmentFlag.AlignLeft)
         text_column.addWidget(self._mode_label)
         self._sound_tips_button = QPushButton("Sound and sharing tips")
         self._sound_tips_button.setObjectName("GhostButton")
@@ -332,6 +350,117 @@ class WebexEmbed(QFrame):
         self._render_audio_guidance()
         self._render_launch_status()
         self._render_link_accessibility()
+
+    def _open_game_night(self) -> None:
+        if game_night_page() is None:
+            return
+        game_by_label = {label: game for game, label in GAME_NIGHT_GAMES.items()}
+        open_link = "Open a Game Night link…"
+        choice, accepted = QInputDialog.getItem(
+            self, "Game Night", "Choose a game to play with friends.", [*game_by_label, open_link], 0, False
+        )
+        if not accepted:
+            return
+        if choice == open_link:
+            link, accepted = QInputDialog.getText(
+                self, "Open a Game Night link", "Enter the game invitation or room address."
+            )
+            if not accepted:
+                return
+            destination = game_night_destination(link)
+        else:
+            destination = game_night_game_page(game_by_label.get(choice, ""))
+        if not destination:
+            QMessageBox.warning(self, "Game Night", "Use a Game Night invitation or room address from Hang Out.")
+            return
+        if not QDesktopServices.openUrl(QUrl(destination)):
+            QMessageBox.warning(self, "Game Night", "The browser could not open Game Night. Try again.")
+
+    def offer_person_invite(self, link: str, title: str = "") -> bool:
+        """Show Share, or Email when share is missing, with Copy as the backup.
+
+        The link is not written into a label. Share runs from this click.
+        """
+        clean_title = " ".join(str(title or "").split())[:120]
+        try:
+            mailto = invite_mailto_url(link, title=clean_title or invite_message_title())
+        except InviteLinkError:
+            return False
+        self._invite_link = str(link).strip()
+        self._invite_mailto = mailto
+        self._invite_title = clean_title or invite_message_title()
+        self._ensure_invite_delivery()
+        share = self._platform_share_available()
+        self._share_invite_btn.setVisible(share)
+        self._email_invite_btn.setVisible(not share)
+        self._share_invite_btn.setObjectName("PrimaryButton" if share else "GhostButton")
+        self._email_invite_btn.setObjectName("PrimaryButton" if not share else "GhostButton")
+        self._copy_invite_btn.setObjectName("GhostButton")
+        self._copy_invite_btn.setEnabled(True)
+        for button in (
+            self._share_invite_btn,
+            self._email_invite_btn,
+            self._copy_invite_btn,
+        ):
+            button.setAccessibleName(button.text())
+        self._invite_delivery.setVisible(True)
+        return True
+
+    def _ensure_invite_delivery(self) -> None:
+        if self._invite_delivery is not None:
+            return
+        self._invite_delivery = QWidget(self)
+        row = QHBoxLayout(self._invite_delivery)
+        row.setContentsMargins(0, Space.XS, 0, 0)
+        row.setSpacing(Space.SM)
+        self._share_invite_btn = QPushButton("Share invite")
+        self._email_invite_btn = QPushButton("Email invite")
+        self._copy_invite_btn = QPushButton("Copy invite")
+        for button in (
+            self._share_invite_btn,
+            self._email_invite_btn,
+            self._copy_invite_btn,
+        ):
+            button.setAutoDefault(False)
+            row.addWidget(button)
+        self._share_invite_btn.clicked.connect(self._share_person_invite)
+        self._email_invite_btn.clicked.connect(self._email_person_invite)
+        self._copy_invite_btn.clicked.connect(self._copy_person_invite)
+        # Keep Share / Email / Copy under the title so a short card still shows them.
+        self._text_column.insertWidget(1, self._invite_delivery)
+        self._invite_delivery.hide()
+
+    def _platform_share_available(self) -> bool:
+        """Qt has no share sheet here, so Email is the primary path."""
+        return False
+
+    def _open_platform_share(self, link: str, title: str) -> None:
+        """Run from the Share click. The default platform has no sheet."""
+        if not link or not title:
+            return
+
+    def _share_person_invite(self) -> None:
+        link = self._invite_link
+        title = self._invite_title
+        if not link or not self._platform_share_available():
+            return
+        try:
+            self._open_platform_share(link, title)
+        except Exception:  # noqa: BLE001 - a dismissed sheet must not log the invite
+            return
+
+    def _email_person_invite(self) -> None:
+        mailto = self._invite_mailto
+        if mailto:
+            QDesktopServices.openUrl(QUrl(mailto))
+
+    def _copy_person_invite(self) -> None:
+        link = self._invite_link
+        if not link:
+            return
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(link)
 
     def _build_lesson_request_panel(self, layout: QVBoxLayout) -> None:
         self._lesson_request_frame = QFrame()

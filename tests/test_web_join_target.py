@@ -8,6 +8,9 @@ from core import web_join_target as target
 
 BUILD = "a" * 40
 PRIVATE_PAGE = "https://stalemate-hangout-beta.jeffstory007.workers.dev/join/"
+GAME_NIGHT = "https://stalemate-hangout-beta.jeffstory007.workers.dev/beta/?game-night=1"
+ROOM_LINK = GAME_NIGHT + "&via=rad-dad#game=game-123456xabcdef&instance=" + "1" * 32
+GAME_INVITE = PRIVATE_PAGE.removesuffix("/join/") + "/beta/game-night/guest#invite=" + "a" * 32 + "." + "b" * 43
 
 
 def _canonical(value):
@@ -23,6 +26,15 @@ def test_private_package_selects_the_protected_community_page(tmp_path, monkeypa
     monkeypatch.setenv("WEBJAM_WEB_JOIN_TARGET", "https://untrusted.invalid/join/")
 
     assert target.web_join_page() == PRIVATE_PAGE
+    assert target.game_night_page() == GAME_NIGHT
+    assert target.game_night_destination("") == GAME_NIGHT
+    assert target.game_night_destination(" " + ROOM_LINK + "\n") == ROOM_LINK
+    assert target.game_night_destination(GAME_INVITE) == GAME_INVITE
+    for pasted in (ROOM_LINK, GAME_INVITE, GAME_NIGHT):
+        assert "deliver" not in target.game_night_destination(pasted)
+    for game in target.GAME_NIGHT_GAMES:
+        assert target.game_night_game_page(game) == GAME_NIGHT + "&table=" + game + "&deliver=share"
+    assert target.game_night_game_page("chess&via=other") is None
 
 
 def test_source_default_does_not_read_a_packaged_or_environment_override(monkeypatch):
@@ -34,6 +46,41 @@ def test_source_default_does_not_read_a_packaged_or_environment_override(monkeyp
 
     monkeypatch.setattr(target, "_manifest_path", unexpected_read)
     assert target.web_join_page() == "https://stalemate.band/join/"
+    assert target.game_night_page() is None
+    assert target.game_night_destination(ROOM_LINK) is None
+    assert target.game_night_destination(GAME_INVITE) is None
+    assert target.game_night_game_page("chess") is None
+
+
+@pytest.mark.parametrize("pasted", [
+    "https://external.invalid/beta/?game-night=1",
+    GAME_NIGHT.replace("https://", "http://"),
+    GAME_NIGHT.replace("https://", "https://someone@"),
+    GAME_NIGHT.replace("/beta/", "/join/"),
+    ROOM_LINK.replace("&via=rad-dad", "&via=other"),
+    ROOM_LINK.replace("instance=", "room="),
+    ROOM_LINK[:-1],
+    ROOM_LINK + "&invite=secret",
+    GAME_NIGHT + "#invite=secret",
+    GAME_NIGHT + "&game-night=1",
+    GAME_INVITE.replace("/guest#", "/guest?#"),
+    GAME_INVITE.replace("/guest#", "/guest/#"),
+    GAME_INVITE.replace("https://", "https://other.invalid/"),
+    GAME_INVITE[:-1],
+    GAME_INVITE + "&invite=extra",
+])
+def test_private_game_night_rejects_other_destinations_and_extra_parameters(monkeypatch, pasted):
+    monkeypatch.setattr(target, "web_join_page", lambda: PRIVATE_PAGE)
+    assert target.game_night_destination(pasted) is None
+
+
+def test_game_night_stays_hidden_when_private_manifest_is_unavailable(monkeypatch):
+    def unavailable():
+        raise target.WebJoinTargetUnavailable()
+
+    monkeypatch.setattr(target, "web_join_page", unavailable)
+    assert target.game_night_page() is None
+    assert target.game_night_destination("") is None
 
 
 def test_macos_uses_canonical_resources_instead_of_the_frameworks_data_alias(tmp_path, monkeypatch):

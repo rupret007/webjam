@@ -859,6 +859,13 @@ native app checks are exclusively for Webex. If Webex is missing, an explicit
 button opens Cisco's official installer in your browser; WebJam does not save
 a Webex password or install/update Webex silently.
 
+In a private community build, choose **Conversation → Open Game Night…** to
+open Hang Out in your browser. Paste a room link copied from **Share room link**
+in Hang Out, or leave the field blank to start at the Game Night entrance.
+Sign in with your private beta invitation, then start a room or accept the
+host’s Game Night invitation. Switch back to WebJam when you want to return to
+your session.
+
 Choose conversation devices in your meeting app. For Music, Jamulus owns the
 audio interface used for instruments; Art rooms do not start that audio path. Song tools read and write files only; picking a
 file or running a Music AI job never re-binds, re-routes, or borrows an input
@@ -967,7 +974,8 @@ still requires the host's explicit permission and the guest's audio consent.
 An earlier playback or background-audio resume attempt finishing after Leave
 cannot replace that exit message or disconnect your next Join. A playback problem in the current
 attempt still releases audio and offers an explicit retry.
-Use **Check microphone** to see your input level. When WebJam detects sound,
+Choose **Join to listen** to hear the room without opening a microphone.
+To play or talk, use **Check microphone** to see your input level. When WebJam detects sound,
 confirm your wired headphones and choose **Join with microphone**. Your browser
 may ask for microphone access during the check or when you join. Open
 **Audio details** for device readings and estimated listening delay. An earlier

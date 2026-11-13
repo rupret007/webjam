@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Share invite · WebJam</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="host.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">WebJam</p>
+    <h1>Share invite</h1>
+    <div class="join-card" id="invite-dialog" role="dialog" aria-modal="true" aria-labelledby="invite-heading">
+      <h2 id="invite-heading">Send this invite</h2>
+      <p id="invite-status" role="status" tabindex="-1">Invite ready. Your friend opens it and taps Join.</p>
+      <div class="actions">
+        <button type="button" id="share-invite">Share invite</button>
+        <a id="email-invite" class="action">Email invite</a>
+        <button type="button" id="copy-invite" class="secondary">Copy invite</button>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

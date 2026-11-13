@@ -27,6 +27,8 @@ p { line-height: 1.5; }
 .mic-picker select { display: block; width: 100%; height: max(44px, 2.75em); margin-top: 4px; padding: 8px; font: inherit; color: inherit; background: #23312e; border: 1px solid #73877c; border-radius: 8px; }
 #mic-source { margin: 6px 0 0; font-size: .9rem; color: #b4c2bd; }
 .actions { margin-top: 12px; }
+.actions[hidden] { display: none; }
+#listen-guidance { color: #b4c2bd; font-size: .95rem; }
 .mic-meter { height: 8px; margin-top: 12px; border-radius: 999px; background: #364341; overflow: hidden; }
 .mic-meter-fill { height: 100%; width: 0%; background: #bbe48b; transition: width 80ms linear; }
 #mic-progress, .mic-heard, .mic-error, #audio-quality { margin: 8px 0 0; font-size: .95rem; }

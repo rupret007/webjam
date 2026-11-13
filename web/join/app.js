@@ -21,6 +21,7 @@ let invite;
 let session;
 let context;
 let starting = false;
+let retryListening = false;
 let activeAttempt;
 let prejoinStream;
 let prejoinWarnings = [];
@@ -36,7 +37,7 @@ function expireUnusedInvite() {
   if (!invite || session || Date.now() < invite.expiresAt * 1000) return false;
   const focused = document.activeElement;
   leave(undefined, new Error(JOIN_SIGNAL.INVITE_EXPIRED));
-  if ($("prejoin").contains(focused) || [ $("join"), $("retry"), $("leave") ].includes(focused)) {
+  if ($("prejoin").contains(focused) || [ $("listen"), $("join"), $("retry"), $("leave") ].includes(focused)) {
     $("status").focus({ preventScroll: true });
   }
   return true;
@@ -162,6 +163,8 @@ function focusNextAudioCheckControl() {
 
 const refresh = () => {
   $("prejoin").hidden = !invite || starting || !!session;
+  $("listen-actions").hidden = $("join").hidden || !invite || starting || !!session;
+  $("listen").disabled = $("listen-actions").hidden;
   $("join").disabled = !joinReady();
   const guidance = $("join-guidance");
   if (guidance) {
@@ -352,7 +355,7 @@ function leave(message = "You left the session.", error) {
   else delete elements.status.dataset.failure;
   refresh();
   if (restoreFocus) {
-    const nextAction = [elements.retry, elements.join].find(
+    const nextAction = [elements.retry, retryListening && $("listen"), elements.join].filter(Boolean).find(
       (button) => !button.hidden && !button.disabled,
     );
     (nextAction || elements.status).focus();
@@ -360,16 +363,17 @@ function leave(message = "You left the session.", error) {
   scheduleUnusedInviteExpiry();
 }
 
-async function startJoin() {
-  if (expireUnusedInvite() || !joinReady()) return;
+async function startJoin(listenOnly = false) {
+  if (expireUnusedInvite() || !invite || starting || session || (!listenOnly && !joinReady())) return;
   const elements = failureElements();
   const activeControl = document.activeElement;
+  retryListening = listenOnly;
   starting = true;
   refresh();
   delete elements.status.dataset.failure;
   clearJoinFailure(elements, "Connecting…");
   elements.leave.hidden = false;
-  if (activeControl === elements.join || activeControl === elements.retry) {
+  if (activeControl === $("listen") || activeControl === elements.join || activeControl === elements.retry) {
     elements.leave.focus();
   }
   const attempt = (activeAttempt = new AbortController());
@@ -383,7 +387,10 @@ async function startJoin() {
     }
     await context.resume();
     if (!isCurrent() || expireUnusedInvite()) return;
-    if (prejoinStream?.getAudioTracks().some((track) => track.readyState === "live")) {
+    if (listenOnly) {
+      stopMicMonitoring(true);
+      showAudioSettings();
+    } else if (prejoinStream?.getAudioTracks().some((track) => track.readyState === "live")) {
       stream = prejoinStream;
       prejoinStream = null;
       prejoinAbort?.abort();
@@ -401,7 +408,7 @@ async function startJoin() {
       }
       showAudioSettings(stream, capture.warnings);
     }
-    if (!watchMicrophone(stream.getAudioTracks()[0], attempt.signal, () => {
+    if (stream && !watchMicrophone(stream.getAudioTracks()[0], attempt.signal, () => {
       leave(undefined, new Error(JOIN_SIGNAL.MICROPHONE_ENDED));
     })) return;
     const joinedSession = new WebJoinSession({
@@ -440,6 +447,7 @@ async function startJoin() {
     await joinedSession.join();
     if (!isCurrent()) return;
     showAccessTime(joinedSession.accessExpiresAt, isCurrent);
+    if (listenOnly) $("status").textContent = "Connected. You’re listening with your microphone off.";
     clearJoinFailure(failureElements(), $("status").textContent);
     $("join").hidden = true;
     const resumeAudio = $("play-audio");
@@ -471,8 +479,11 @@ async function startJoin() {
 $("join").addEventListener("click", () => {
   void startJoin();
 });
+$("listen").addEventListener("click", () => {
+  void startJoin(true);
+});
 $("retry").addEventListener("click", () => {
-  void startJoin();
+  void startJoin(retryListening);
 });
 $("play-audio").addEventListener("click", () => { void playSessionAudio(activeAttempt); });
 $("leave").addEventListener("click", () => leave());

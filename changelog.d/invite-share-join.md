@@ -1,0 +1,2 @@
+- An invited guest can choose Join to listen without granting microphone access, or check their microphone and join to play.
+- An invite can be shared from the click, or emailed when the device has no share sheet. Copy stays a secondary action.

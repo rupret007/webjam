@@ -7,7 +7,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QPoint, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -24,6 +24,77 @@ def test_card_constructs_without_webengine_or_token_state():
     assert not hasattr(embed, "_profile")
     assert not hasattr(embed, "_pending_token")
     assert not hasattr(embed, "load_meeting_with_guest_token")
+    assert embed._game_night_btn.isHidden()
+
+
+@pytest.mark.parametrize("value,accepted,opens,warns", [
+    ("", False, False, False),
+    ("https://external.invalid/beta/?game-night=1", True, False, True),
+    ("", True, True, False),
+    ("room", True, True, False),
+    ("game", True, True, False),
+])
+def test_private_game_night_opens_only_on_explicit_valid_choice(monkeypatch, value, accepted, opens, warns):
+    from core import web_join_target as target
+    from webjam_qt.widgets import webex_embed as module
+
+    base = "https://stalemate-hangout-beta.jeffstory007.workers.dev"
+    entrance = base + "/beta/?game-night=1"
+    link = entrance + "&via=rad-dad#game=game-123456xabcdef&instance=" + "1" * 32
+    game_link = base + "/beta/game-night/guest#invite=" + "a" * 32 + "." + "b" * 43
+    value = {"room": link, "game": game_link}.get(value, value)
+    opened, warnings, meeting_events = [], [], []
+    def record_open(url):
+        opened.append(url.toString())
+        return True
+
+    monkeypatch.setattr(target, "web_join_page", lambda: base + "/join/")
+    monkeypatch.setattr(module.QInputDialog, "getItem", lambda *args: (args[3][-1], True))
+    monkeypatch.setattr(module.QInputDialog, "getText", lambda *args: (value, accepted))
+    monkeypatch.setattr(module.QDesktopServices, "openUrl", record_open)
+    monkeypatch.setattr(module.QMessageBox, "warning", lambda *args: warnings.append(args[-1]))
+    embed = WebexEmbed()
+    embed.open_meeting_requested.connect(lambda: meeting_events.append("meeting"))
+    embed.set_meeting_configured(True)
+    embed.resize(800, 152)
+    embed.show()
+    _app.processEvents()
+    button, viewport = embed._game_night_btn, embed._scroll.viewport()
+    origin = button.mapTo(viewport, QPoint(0, 0))
+    assert button.isVisibleTo(embed)
+    assert viewport.rect().contains(origin)
+    assert origin.y() + button.height() <= viewport.height()
+    assert opened == []
+    embed._game_night_btn.click()
+    assert opened == ([value or entrance] if opens else [])
+    assert bool(warnings) is warns
+    assert meeting_events == []
+    embed.close()
+
+
+def test_private_game_night_selects_a_game_without_pasting(monkeypatch):
+    from core import web_join_target as target
+    from webjam_qt.widgets import webex_embed as module
+
+    monkeypatch.setattr(target, "web_join_page", lambda: target._PAGES["private-beta"])
+    opened = []
+
+    def choose(_parent, _title, _label, items, _index, editable):
+        assert tuple(items[:-1]) == tuple(target.GAME_NIGHT_GAMES.values())
+        assert not editable
+        return "Turd Rush Race", True
+
+    def record_open(url):
+        opened.append(url.toString())
+        return True
+
+    monkeypatch.setattr(module.QInputDialog, "getItem", choose)
+    monkeypatch.setattr(module.QInputDialog, "getText", lambda *_: pytest.fail("selecting a game must not ask for a link"))
+    monkeypatch.setattr(module.QDesktopServices, "openUrl", record_open)
+    embed = WebexEmbed()
+    embed._game_night_btn.click()
+    assert opened == [target.game_night_game_page("turdrush")]
+    embed.close()
 
 
 def test_compatibility_load_refuses_to_embed_even_a_valid_webex_link():
@@ -608,3 +679,66 @@ def test_copy_link_requires_a_configured_meeting():
     assert events == ["copy"]
     embed.set_meeting_configured(False)
     assert not embed._copy_link_btn.isEnabled()
+
+
+def test_person_invite_email_leads_when_the_platform_cannot_share(monkeypatch):
+    from urllib.parse import parse_qs, urlsplit
+
+    from webjam_qt.widgets import webex_embed as module
+
+    opened = []
+    monkeypatch.setattr(module.QDesktopServices, "openUrl", lambda url: opened.append(url.toString()) or True)
+    embed = WebexEmbed()
+    assert embed._platform_share_available() is False
+    assert embed.offer_person_invite("https://example.com/join/#invite", title="Join me on WebJam")
+    assert embed._share_invite_btn.isHidden()
+    assert not embed._email_invite_btn.isHidden()
+    assert embed._email_invite_btn.objectName() == "PrimaryButton"
+    assert embed._copy_invite_btn.objectName() == "GhostButton"
+    assert embed._copy_invite_btn.isEnabled()
+    embed._email_invite_btn.click()
+    parsed = urlsplit(opened[0])
+    query = parse_qs(parsed.query)
+    assert parsed.scheme == "mailto"
+    assert query["subject"] == ["Join me on WebJam"]
+    body = query["body"][0]
+    assert body.startswith("https://example.com/")
+    assert "deliver" not in body
+    assert "#" in body and body.split("#", 1)[1]
+    embed._copy_invite_btn.click()
+    assert embed._copy_invite_btn.isEnabled()
+    embed.close()
+
+
+def test_person_invite_share_runs_synchronously_from_the_click(monkeypatch):
+    calls = []
+
+    def share(self, link, title):
+        calls.append((title, link.startswith("https://example.com/"), "deliver" not in link))
+
+    monkeypatch.setattr(WebexEmbed, "_platform_share_available", lambda self: True)
+    monkeypatch.setattr(WebexEmbed, "_open_platform_share", share)
+    embed = WebexEmbed()
+    assert embed.offer_person_invite("https://example.com/join/#invite", title="Join me on WebJam")
+    assert not embed._share_invite_btn.isHidden()
+    assert embed._email_invite_btn.isHidden()
+    assert embed._share_invite_btn.objectName() == "PrimaryButton"
+    assert embed._copy_invite_btn.objectName() == "GhostButton"
+    embed._share_invite_btn.click()
+    assert calls == [("Join me on WebJam", True, True)]
+    embed.close()
+
+
+def test_dismissed_share_leaves_copy_usable(monkeypatch):
+    def refuse(self, link, title):
+        del self, link, title
+        raise RuntimeError("sheet dismissed")
+
+    monkeypatch.setattr(WebexEmbed, "_platform_share_available", lambda self: True)
+    monkeypatch.setattr(WebexEmbed, "_open_platform_share", refuse)
+    embed = WebexEmbed()
+    assert embed.offer_person_invite("https://example.com/join/#invite")
+    embed._share_invite_btn.click()
+    assert embed._copy_invite_btn.isEnabled()
+    assert not embed.offer_person_invite("https://evil.example/join")
+    embed.close()

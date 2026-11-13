@@ -94,3 +94,17 @@ test('connection diagnostics use the selected pair and clear when the path is un
   assert.deepEqual(routes, ['direct', null, 'relayed', null]);
   session.close();
 });
+
+test('a listen-only session closes without a microphone stream', () => {
+  const session = new WebJoinSession({
+    origin: 'https://relay.example',
+    invite: {},
+    stream: null,
+    audioContext: {},
+  });
+  assert.equal(session.listenOnly, true);
+  assert.equal(session.stream, null);
+  session.close();
+  assert.equal(session.controller.signal.aborted, true);
+  session.close();
+});

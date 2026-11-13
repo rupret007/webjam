@@ -376,3 +376,43 @@ def local_band_address() -> str:
         if usable:
             return usable
     return ""
+
+
+def invite_message_title(session_name: str = "") -> str:
+    """Short share/email title. Session names are labels, not secrets."""
+    clean = " ".join(str(session_name or "").split())[:80]
+    if not clean:
+        return "Join me on WebJam"
+    return f"Join me for {clean}"
+
+
+def preferred_invite_delivery(*, share_available: bool) -> str:
+    """Share is primary. Email leads when the platform has no share sheet."""
+    return "share" if share_available else "email"
+
+
+def invite_mailto_url(link: str, *, title: str) -> str:
+    """Build a mailto for an already-prepared invite. Does not add deliver."""
+    target = str(link or "").strip()
+    _require_shareable_invite(target)
+    subject = " ".join(str(title or "").split())[:120] or "Join me on WebJam"
+    return "mailto:?" + urlencode({"subject": subject, "body": target})
+
+
+def _require_shareable_invite(link: str) -> None:
+    if not link or any(char in link for char in ("\n", "\r", "\x00", " ")):
+        raise InviteLinkError("WebJam could not share that invite.")
+    if link.startswith("https://example.com/"):
+        parsed = urlsplit(link)
+        if (
+            parsed.scheme != "https"
+            or parsed.netloc != "example.com"
+            or parsed.username
+            or parsed.password
+        ):
+            raise InviteLinkError("WebJam could not share that invite.")
+        return
+    if link.startswith("webjam://"):
+        parse_invite_link(link)
+        return
+    raise InviteLinkError("WebJam could not share that invite.")
