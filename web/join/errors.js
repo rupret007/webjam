@@ -108,15 +108,12 @@ export function mapJoinError(error, { listenOnly = false } = {}) {
     };
   }
   if (NETWORK_SIGNALS.has(message)) {
-    const relayFailed = message === JOIN_SIGNAL.ICE_CONNECTION_FAILED || message === JOIN_SIGNAL.ICE_DISCONNECTED;
     return {
       kind: "network_blocked",
-      headline: relayFailed
-        ? "WebJam could not reach your host, even through the free relay."
-        : "This network blocked the direct connection to your host.",
-      hint: relayFailed
-        ? "Try another network or a phone hotspot, then tap Retry. Web Join will request fresh relay credentials."
-        : "WebJam is trying the free relay next. If joining still fails, try another network or a phone hotspot, then tap Retry.",
+      headline: message === JOIN_SIGNAL.ICE_DISCONNECTED
+        ? "Your WebJam connection dropped."
+        : "WebJam couldn’t connect to your host.",
+      hint: "Check your connection, then select Retry. If it still fails, try another network.",
       showRetry: true,
       needsFreshInvite: false,
     };

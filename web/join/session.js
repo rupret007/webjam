@@ -69,7 +69,7 @@ export class WebJoinSession {
       if (["failed", "closed"].includes(pc.connectionState) && !signal.aborted) {
         this.fail(new Error(this.authorized ? JOIN_SIGNAL.SESSION_ENDED : JOIN_SIGNAL.ICE_CONNECTION_FAILED));
       }
-      if (pc.connectionState === "disconnected") this.disconnectTimer ??= setTimeout(() => this.fail(new Error("The network connection timed out.")), 10000);
+      if (pc.connectionState === "disconnected") this.disconnectTimer ??= setTimeout(() => this.fail(new Error(JOIN_SIGNAL.ICE_DISCONNECTED)), 10000);
       if (pc.connectionState === "connected") { clearTimeout(this.disconnectTimer); this.disconnectTimer = null; }
     });
     let answer;

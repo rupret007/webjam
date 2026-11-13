@@ -201,7 +201,7 @@ test('a closed enrolled session releases audio and asks for a new invitation', a
   await expect(routeIndicator).toHaveText('Relayed connection');
   await expect(page.locator('#leave')).toBeFocused();
   await page.evaluate(() => window.endEnrolledSession());
-  await expect(page.locator('#status')).toHaveText(/WebJam could not reach your host/);
+  await expect(page.locator('#status')).toHaveText('Your WebJam connection dropped.');
   await expect(page.locator('#status')).toBeFocused();
   await page.evaluate(() => window.reportConnectionRoute('relayed'));
   await expect(routeIndicator).toBeHidden();

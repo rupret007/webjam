@@ -93,14 +93,18 @@ test("host offline maps from no-answer and authentication timeout signals with R
   }
 });
 
-test("network blocked maps direct and relay failure signals with Retry", () => {
-  const gather = mapJoinError(new Error(JOIN_SIGNAL.ICE_GATHER_TIMEOUT));
-  assert.equal(gather.kind, "network_blocked");
-  assert.match(gather.hint, /relay/i);
-  const relayFailed = mapJoinError(new Error(JOIN_SIGNAL.ICE_CONNECTION_FAILED));
-  assert.equal(relayFailed.kind, "network_blocked");
-  assert.match(relayFailed.headline, /relay/i);
-  assert.match(relayFailed.hint, /hotspot/i);
+test("network failures offer Retry without diagnosing the route", () => {
+  for (const signal of [JOIN_SIGNAL.ICE_GATHER_TIMEOUT, JOIN_SIGNAL.ICE_CONNECTION_FAILED,
+    JOIN_SIGNAL.ICE_DISCONNECTED, JOIN_SIGNAL.NO_NETWORK_PATH]) {
+    const view = mapJoinError(new Error(signal));
+    assert.equal(view.kind, "network_blocked");
+    assert.equal(view.headline, signal === JOIN_SIGNAL.ICE_DISCONNECTED
+      ? "Your WebJam connection dropped."
+      : "WebJam couldn’t connect to your host.");
+    assert.equal(view.showRetry, true);
+    assert.match(view.hint, /select Retry/i);
+    assert.doesNotMatch(view.headline + view.hint, /relay|direct/i);
+  }
 });
 
 test("an expired invite needs a new link and an expired relay session can retry", () => {
