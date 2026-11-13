@@ -50,8 +50,8 @@ const FRESH_INVITE_HINT = "Ask your host to send a new browser invite. If you jo
 
 /** @typedef {{ kind: string, headline: string, hint: string, showRetry: boolean, needsFreshInvite: boolean }} JoinFailureView */
 
-/** @param {unknown} error @returns {JoinFailureView} */
-export function mapJoinError(error) {
+/** @param {unknown} error @param {{ listenOnly?: boolean }} [options] @returns {JoinFailureView} */
+export function mapJoinError(error, { listenOnly = false } = {}) {
   const message = error instanceof Error ? error.message : String(error ?? "");
   if (message === JOIN_SIGNAL.MICROPHONE_ENDED) {
     return {
@@ -151,8 +151,10 @@ export function mapJoinError(error) {
   if (message === JOIN_SIGNAL.JOIN_INTERRUPTED || error instanceof Error && error.name === "AbortError") {
     return {
       kind: "interrupted",
-      headline: JOIN_SIGNAL.JOIN_INTERRUPTED,
-      hint: "Stay on this page, keep headphones on, and tap Retry when you are ready.",
+      headline: listenOnly ? "Web Join was interrupted." : JOIN_SIGNAL.JOIN_INTERRUPTED,
+      hint: listenOnly
+        ? "Check your connection, then select Retry to listen again."
+        : "Stay on this page, keep headphones on, and tap Retry when you are ready.",
       showRetry: true,
       needsFreshInvite: false,
     };

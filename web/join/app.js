@@ -339,7 +339,7 @@ function leave(message = "You left the session.", error) {
   $("leave").hidden = true;
   $("connection-route").hidden = true;
   $("latency").textContent = "Listening delay is estimated after you connect.";
-  let view = error ? mapJoinError(error) : null;
+  let view = error ? mapJoinError(error, { listenOnly: retryListening }) : null;
   if (joined && (!view || view.showRetry)) {
     view = {
       kind: view?.kind || "session_ended",
@@ -460,18 +460,7 @@ async function startJoin(listenOnly = false) {
     refresh();
   } catch (error) {
     stream?.getTracks().forEach((track) => track.stop());
-    if (isCurrent()) {
-      if (error.name === "AbortError") {
-        leave(
-          undefined,
-          new Error(
-            "Joining timed out or was interrupted. Check your connection and microphone, then try Join again.",
-          ),
-        );
-      } else {
-        leave(undefined, error);
-      }
-    }
+    if (isCurrent()) leave(undefined, error);
   } finally {
     $("leave").removeEventListener("click", cancel);
     if (!isCurrent()) {

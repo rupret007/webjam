@@ -64,7 +64,7 @@ test("guest Join and the host invite dialog at phone and desktop sizes", async (
   }
 });
 
-test("a guest joins to listen and leaves without requesting a microphone", async ({ page }) => {
+test("a guest retries listening and leaves without requesting a microphone", async ({ page }) => {
   await page.addInitScript(() => {
     window.micRequests = 0;
     navigator.mediaDevices.getUserMedia = () => {
@@ -74,11 +74,15 @@ test("a guest joins to listen and leaves without requesting a microphone", async
   });
   await page.route("**/session.js", (route) => route.fulfill({
     contentType: "text/javascript",
-    body: `export class WebJoinSession {
+    body: `let attempts = 0;
+    export class WebJoinSession {
       constructor(options) {
         if (options.stream) throw new Error("Unexpected microphone stream");
       }
-      async join() { this.authorized = true; }
+      async join() {
+        if (++attempts === 1) throw new DOMException("Interrupted", "AbortError");
+        this.authorized = true;
+      }
       close() {}
     }`,
   }));
@@ -86,6 +90,10 @@ test("a guest joins to listen and leaves without requesting a microphone", async
   const listen = page.getByRole("button", { name: "Join to listen" });
   await listen.focus();
   await listen.press("Enter");
+  await expect(page.getByText("Check your connection, then select Retry to listen again.")).toBeVisible();
+  const retry = page.getByRole("button", { name: "Retry", exact: true });
+  await expect(retry).toBeFocused();
+  await retry.press("Enter");
   await expect(page.getByRole("status").filter({ hasText: "You’re listening with your microphone off." })).toBeVisible();
   const leave = page.getByRole("button", { name: "Leave session" });
   await expect(leave).toBeFocused();
