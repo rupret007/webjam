@@ -632,3 +632,15 @@ def test_process_factory_failure_closes_published_bridge_owner():
         host.allow(22124)
     assert bridge.closed.is_set() and host.state == "closed"
     assert host._bridge is None
+
+
+def test_chess_dispatch_digest_stays_out_of_transport_diagnostics():
+    digest = "f" * 64
+    fields = dict(version=1, id=1, type="web_join_chess_sent", code="ok", state="connected", generation=2)
+    event = parse_transport_event(json.dumps({**fields, "signal": digest}).encode() + b"\n")
+    assert event.game_grant_digest == digest
+    assert digest not in repr(event)
+    assert parse_transport_event(json.dumps({**fields, "state": "unavailable"}).encode() + b"\n").game_grant_digest == ""
+    for changes in ({"signal": "F" * 64}, {"signal": "f" * 43}, {"signal": digest, "id": 0}, {"signal": digest, "state": "unavailable"}):
+        with pytest.raises(TransportProtocolError):
+            parse_transport_event(json.dumps({**fields, **changes}).encode() + b"\n")

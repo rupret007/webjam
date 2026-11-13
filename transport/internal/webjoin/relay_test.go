@@ -89,7 +89,11 @@ func TestWebJoinForcedTURNMedia(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = guest.Close() })
 			peer := &labPeer{host: host, guest: guest, cfg: cfg, channel: make(chan *webrtc.DataChannel, 1), audio: make(chan Packet, 1)}
-			guest.OnDataChannel(func(dc *webrtc.DataChannel) { dc.OnOpen(func() { peer.channel <- dc }) })
+			guest.OnDataChannel(func(dc *webrtc.DataChannel) {
+				if dc.Label() == "webjoin-enrollment" {
+					dc.OnOpen(func() { peer.channel <- dc })
+				}
+			})
 			guest.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 				go func() {
 					for {

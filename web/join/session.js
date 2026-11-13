@@ -1,4 +1,5 @@
 import { open, seal, validateOffer, sdpFingerprint, enrollmentProof } from "./crypto.js";
+import { bindGameOfferChannel, clearGameOffer } from "./game-offer.js";
 import { Mailbox, BUSY_MESSAGE } from "./mailbox.js";
 import { candidateAllowed, offerHasReviewedAllocation, policySdp, SESSION_BYTES } from "./policy.js";
 import { musicSdp, tuneReceiver, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget, connectionRoute } from "./audio.js";
@@ -77,6 +78,7 @@ export class WebJoinSession {
       this.enrollmentReject = reject;
       pc.addEventListener("datachannel", (event) => {
         const channel = event.channel;
+        if (channel.label === "webjoin-game-offer") { this._takeGameOffer(channel); return; }
         if (channelSeen || channel.label !== "webjoin-enrollment" || !channel.ordered || channel.maxRetransmits !== null || channel.maxPacketLifeTime !== null) { channel.close(); reject(new Error("Unexpected enrollment channel")); return; }
         channelSeen = true; this.channel = channel;
         let sent = false;
@@ -158,8 +160,15 @@ export class WebJoinSession {
     this.accessExpiresAt = null;
     this.controller.abort();
     clearInterval(this.statsTimer); clearTimeout(this.expiryTimer); clearTimeout(this.disconnectTimer);
-    this.channel?.close(); this.pc?.close();
-    this.stream.getTracks().forEach((track) => track.stop());
-    this.pendingStream = null; this._inboundReceiver = null; this.authorized = false;
+    this.authorized = false;
+    clearGameOffer();
+    this.gameOffer?.close(); this.channel?.close(); this.pc?.close();
+    this.stream?.getTracks().forEach((track) => track.stop());
+    this.pendingStream = null; this._inboundReceiver = null;
+  }
+  _takeGameOffer(channel) {
+    if (this.gameOffer || !channel.ordered || channel.maxRetransmits !== null || channel.maxPacketLifeTime !== null) { channel.close(); return; }
+    this.gameOffer = channel;
+    bindGameOfferChannel(channel, { authorized: () => this.authorized === true });
   }
 }
