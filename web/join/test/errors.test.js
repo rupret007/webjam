@@ -108,7 +108,8 @@ test("an expired invite needs a new link and an expired relay session can retry"
   assert.equal(invite.kind, "invite_expired");
   assert.equal(invite.needsFreshInvite, true);
   assert.equal(invite.showRetry, false);
-  assert.match(invite.hint, /new Web Join link/i);
+  assert.match(invite.hint, /new browser invite/i);
+  assert.match(invite.hint, /return to your Jam room/i);
   const turn = mapJoinError(new Error(JOIN_SIGNAL.RELAY_SESSION_EXPIRED));
   assert.equal(turn.kind, "turn_expired");
   assert.match(turn.hint, /fresh relay credentials/i);
