@@ -25,7 +25,9 @@ for (const width of [375, 390]) {
         `#k=${Buffer.alloc(32, 17).toString("base64url")}&s=${"22".repeat(32)}&g=1&e=${expires}`;
       await page.goto(`/${value}`);
       await expect(page.locator("#status")).toHaveAttribute("data-failure", "true");
-      await expect(page.locator("#error-hint")).toHaveText("Ask your host for a new browser invite and open the full link.");
+      await expect(page.locator("#error-hint")).toHaveText(kind === "expired"
+        ? "Ask your host to send a new browser invite. If you joined from Hang Out, return to your Jam room to accept it."
+        : "Ask your host for a new browser invite and open the full link.");
       await expect(page.locator("#error-hint")).not.toContainText(/retry/i);
       for (const id of ["prejoin", "join", "retry", "leave"]) await expect(page.locator(`#${id}`)).toBeHidden();
       expect(await page.evaluate(() => window.captureCalls)).toBe(0);
