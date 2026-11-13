@@ -35,14 +35,27 @@ export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReview
 }
 export class WebJoinSession {
   constructor({ origin, invite, stream, audioContext, onStatus = () => {}, onTrack = () => {}, onLatency = () => {}, onRoute = () => {}, onError = () => {} }) {
-    Object.assign(this, { invite, stream, audioContext, onStatus, onTrack, onLatency, onRoute, onError });
+    Object.assign(this, { invite, stream: stream || null, audioContext, onStatus, onTrack, onLatency, onRoute, onError });
+    this.listenOnly = !this.stream;
     this.controller = new AbortController();
     this.mailbox = new Mailbox(origin, invite, { signal: this.controller.signal });
     this.authorized = false; this.quotaBytes = SESSION_BYTES; this.previousBytes = 0;
     this.accessExpiresAt = null;
     this.route = null;
     this._jitterAdaptation = { targetMs: 20, lastChangeAt: 0 };
-    this.stream.getAudioTracks().forEach((track) => { track.enabled = false; });
+    this.stream?.getAudioTracks().forEach((track) => { track.enabled = false; });
+  }
+  async attachMicrophone(stream) {
+    const track = stream?.getAudioTracks?.()[0];
+    const sender = this.pc?.getSenders?.().find((item) => item.track === null || item.track?.kind === "audio");
+    if (!track || !sender || this.controller.signal.aborted) return false;
+    await sender.replaceTrack(track);
+    const transceiver = this.pc.getTransceivers?.().find((item) => item.sender === sender);
+    if (transceiver && transceiver.direction === "recvonly") transceiver.direction = "sendrecv";
+    this.stream = stream;
+    this.listenOnly = false;
+    track.enabled = true;
+    return true;
   }
   async join() {
     const signal = this.controller.signal;
@@ -99,7 +112,8 @@ export class WebJoinSession {
     // Observe early channel errors while gathering/sending the answer.
     enrolled.catch(() => {});
     await pc.setRemoteDescription({ type: "offer", sdp: remoteSDP });
-    pc.addTrack(this.stream.getAudioTracks()[0], this.stream);
+    if (this.stream?.getAudioTracks().length) pc.addTrack(this.stream.getAudioTracks()[0], this.stream);
+    else pc.addTransceiver("audio", { direction: "recvonly" });
     const description = await pc.createAnswer();
     await pc.setLocalDescription({ type: "answer", sdp: musicSdp(description.sdp) });
     // An older host rejects these addresses in an answer. Its authenticated
@@ -113,7 +127,7 @@ export class WebJoinSession {
       await Promise.race([enrolled, stopped, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Host authentication timed out. Ask for a new invite.")), 30000); })]);
     } finally { clearTimeout(timer); }
     if (signal.aborted) throw new DOMException("Stopped", "AbortError");
-    this.stream.getAudioTracks().forEach((track) => { track.enabled = true; });
+    this.stream?.getAudioTracks().forEach((track) => { track.enabled = true; });
     if (this.pendingStream) this.onTrack(this.pendingStream);
     this.pendingStream = null;
     this.onStatus("Connected — Web Join, higher delay (about 60–120 ms).");
@@ -159,7 +173,7 @@ export class WebJoinSession {
     this.controller.abort();
     clearInterval(this.statsTimer); clearTimeout(this.expiryTimer); clearTimeout(this.disconnectTimer);
     this.channel?.close(); this.pc?.close();
-    this.stream.getTracks().forEach((track) => track.stop());
+    this.stream?.getTracks().forEach((track) => track.stop());
     this.pendingStream = null; this._inboundReceiver = null; this.authorized = false;
   }
 }

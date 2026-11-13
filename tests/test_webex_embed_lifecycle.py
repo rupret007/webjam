@@ -679,3 +679,66 @@ def test_copy_link_requires_a_configured_meeting():
     assert events == ["copy"]
     embed.set_meeting_configured(False)
     assert not embed._copy_link_btn.isEnabled()
+
+
+def test_person_invite_email_leads_when_the_platform_cannot_share(monkeypatch):
+    from urllib.parse import parse_qs, urlsplit
+
+    from webjam_qt.widgets import webex_embed as module
+
+    opened = []
+    monkeypatch.setattr(module.QDesktopServices, "openUrl", lambda url: opened.append(url.toString()) or True)
+    embed = WebexEmbed()
+    assert embed._platform_share_available() is False
+    assert embed.offer_person_invite("https://example.com/join/#invite", title="Join me on WebJam")
+    assert embed._share_invite_btn.isHidden()
+    assert not embed._email_invite_btn.isHidden()
+    assert embed._email_invite_btn.objectName() == "PrimaryButton"
+    assert embed._copy_invite_btn.objectName() == "GhostButton"
+    assert embed._copy_invite_btn.isEnabled()
+    embed._email_invite_btn.click()
+    parsed = urlsplit(opened[0])
+    query = parse_qs(parsed.query)
+    assert parsed.scheme == "mailto"
+    assert query["subject"] == ["Join me on WebJam"]
+    body = query["body"][0]
+    assert body.startswith("https://example.com/")
+    assert "deliver" not in body
+    assert "#" in body and body.split("#", 1)[1]
+    embed._copy_invite_btn.click()
+    assert embed._copy_invite_btn.isEnabled()
+    embed.close()
+
+
+def test_person_invite_share_runs_synchronously_from_the_click(monkeypatch):
+    calls = []
+
+    def share(self, link, title):
+        calls.append((title, link.startswith("https://example.com/"), "deliver" not in link))
+
+    monkeypatch.setattr(WebexEmbed, "_platform_share_available", lambda self: True)
+    monkeypatch.setattr(WebexEmbed, "_open_platform_share", share)
+    embed = WebexEmbed()
+    assert embed.offer_person_invite("https://example.com/join/#invite", title="Join me on WebJam")
+    assert not embed._share_invite_btn.isHidden()
+    assert embed._email_invite_btn.isHidden()
+    assert embed._share_invite_btn.objectName() == "PrimaryButton"
+    assert embed._copy_invite_btn.objectName() == "GhostButton"
+    embed._share_invite_btn.click()
+    assert calls == [("Join me on WebJam", True, True)]
+    embed.close()
+
+
+def test_dismissed_share_leaves_copy_usable(monkeypatch):
+    def refuse(self, link, title):
+        del self, link, title
+        raise RuntimeError("sheet dismissed")
+
+    monkeypatch.setattr(WebexEmbed, "_platform_share_available", lambda self: True)
+    monkeypatch.setattr(WebexEmbed, "_open_platform_share", refuse)
+    embed = WebexEmbed()
+    assert embed.offer_person_invite("https://example.com/join/#invite")
+    embed._share_invite_btn.click()
+    assert embed._copy_invite_btn.isEnabled()
+    assert not embed.offer_person_invite("https://evil.example/join")
+    embed.close()

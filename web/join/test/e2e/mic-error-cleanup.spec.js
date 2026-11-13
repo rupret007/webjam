@@ -39,22 +39,33 @@ async function openMicFailure(page, failure) {
       },
     });
   }, failure);
+  await page.route('**/session.js', route => route.fulfill({
+    contentType: 'text/javascript',
+    body: `export class WebJoinSession {
+      constructor(options) { this.options = options; }
+      async join() { this.options.onStatus('Synthetic session connected.'); }
+      close() {}
+    }`,
+  }));
   const expiry = Math.floor(Date.now() / 1000) + 300;
   await page.goto(`/#k=${Buffer.alloc(32, 17).toString('base64url')}&s=${'22'.repeat(32)}&g=1&e=${expiry}`);
+  await page.getByRole('button', { name: 'Join', exact: true }).click();
+  await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
   return external;
 }
 
 for (const failure of ['NotAllowedError', 'NotFoundError']) {
   test(`a ${failure} microphone check closes audio before an explicit retry`, async ({ page }) => {
     const external = await openMicFailure(page, failure);
-    await page.getByRole('button', { name: 'Check microphone', exact: true }).click();
+    await page.getByRole('button', { name: 'Use microphone', exact: true }).click();
     await expect(page.locator('#mic-error')).toContainText(failure === 'NotAllowedError'
       ? 'Microphone access was blocked' : 'No microphone found');
-    await expect(page.locator('#join')).toBeDisabled();
-    await expect.poll(() => page.evaluate(() => micFailureContexts.map(c => c.state))).toEqual(['closed']);
+    await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
+    await expect(page.locator('#join')).toBeHidden();
+    await expect.poll(() => page.evaluate(() => micFailureContexts.every(c => c.state !== 'closed'))).toBe(true);
     expect(await page.evaluate(() => micFailureCalls)).toBe(1);
     await page.getByRole('button', { name: 'Try again', exact: true }).click();
-    await expect.poll(() => page.evaluate(() => micFailureContexts.map(c => c.state))).toEqual(['closed', 'closed']);
+    await expect.poll(() => page.evaluate(() => micFailureContexts.every(c => c.state !== 'closed'))).toBe(true);
     expect(await page.evaluate(() => micFailureCalls)).toBe(2);
     expect(await page.evaluate(() => micFailureTracks.length)).toBe(0);
     await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
@@ -64,11 +75,11 @@ for (const failure of ['NotAllowedError', 'NotFoundError']) {
 
 test('input-meter startup failure stops acquired capture and closes application audio', async ({ page }) => {
   const external = await openMicFailure(page, 'meter');
-  await page.getByRole('button', { name: 'Check microphone', exact: true }).click();
+  await page.getByRole('button', { name: 'Use microphone', exact: true }).click();
   await expect(page.locator('#mic-error')).toContainText('Synthetic input level failure');
   await expect.poll(() => page.evaluate(() => micFailureTracks.map(t => t.readyState))).toEqual(['ended']);
-  await expect.poll(() => page.evaluate(() => micFailureContexts.map(c => c.state))).toEqual(['closed']);
-  await expect(page.locator('#join')).toBeDisabled();
+  await expect(page.locator('#status')).toHaveText('Synthetic session connected.');
+  await expect(page.locator('#join')).toBeHidden();
   await expect(page.locator('#mic-heard')).toBeHidden();
   await expect(page.locator('#mic-source')).toBeHidden();
   await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();

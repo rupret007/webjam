@@ -1,5 +1,5 @@
 import { readInvite } from "./crypto.js";
-import { acquireMusicStream, closeAudioContext } from "./audio.js";
+import { closeAudioContext } from "./audio.js";
 import { WebJoinSession } from "./session.js";
 import { RELAY_ORIGIN } from "./config.js";
 import {
@@ -27,7 +27,6 @@ let prejoinStream;
 let prejoinWarnings = [];
 let stopMeter = null;
 let micHeard = false;
-let checkSkipped = false;
 let checkRunning = false;
 let prejoinAbort;
 let accessTimer = null;
@@ -139,7 +138,7 @@ function stopMicMonitoring(clearHeard = false) {
   $("mic-source").hidden = true;
   $("mic-error").textContent = "";
   $("mic-retry").hidden = true;
-  $("check-mic").disabled = checkSkipped || micHeard;
+  $("check-mic").disabled = micHeard;
 }
 
 function resetMicCheck() {
@@ -155,35 +154,35 @@ function watchMicrophone(track, signal, onLost) {
 }
 
 function joinReady() {
-  if (!invite || starting || session) return false;
-  if (checkSkipped) return $("headphones").checked;
-  return micHeard && $("headphones").checked;
+  return Boolean(invite) && !starting && !session;
 }
 
 const refresh = () => {
-  $("prejoin").hidden = !invite || starting || !!session;
+  const listening = Boolean(session) && !starting;
+  $("prejoin").hidden = !listening;
   $("join").disabled = !joinReady();
   const guidance = $("join-guidance");
   if (guidance) {
     const message = starting
       ? "Connecting to your session…"
-      : !micHeard && !checkSkipped
-        ? "Check your microphone first."
-        : !$("headphones").checked
-          ? "Confirm your headphones to enable Join."
-          : "Ready. Join to share your audio with the session.";
+      : listening
+        ? ($("headphones").checked
+          ? "Headphones are on. Your microphone stays off until you turn it on."
+          : "Listening only. Headphones prevent echo and feedback if you turn the microphone on.")
+        : "Join to listen. You do not need a microphone or headphones yet.";
     if (guidance.textContent !== message) guidance.textContent = message;
   }
-  $("skip-check").disabled = !invite || starting || !!session || checkSkipped;
-  $("mic-device").disabled = starting || !!session || checkRunning;
-  $("check-mic").disabled =
-    !invite || starting || !!session || checkRunning || checkSkipped || micHeard || !!stopMeter;
+  $("mic-device").disabled = !listening || checkRunning;
+  $("check-mic").disabled = !listening || checkRunning || micHeard || !!stopMeter;
 };
 
 function showMicError(error) {
   stopMicMonitoring(true);
-  void closeAudioContext(context);
-  context = null;
+  // A failed optional check must not tear down audio the room is already using.
+  if (!session) {
+    void closeAudioContext(context);
+    context = null;
+  }
   const failure = micCheckFailure(error?.cause ?? error);
   $("mic-progress").textContent = "";
   $("mic-error").textContent = failure.message;
@@ -193,8 +192,18 @@ function showMicError(error) {
   refresh();
 }
 
+async function attachOptionalMicrophone(signal) {
+  const track = prejoinStream?.getAudioTracks()[0];
+  if (!track || signal.aborted || !session) return;
+  try {
+    if (typeof session.attachMicrophone === "function") await session.attachMicrophone(prejoinStream);
+  } catch {
+    // Listening continues when the room cannot add a microphone yet.
+  }
+}
+
 async function runMicCheck() {
-  if (expireUnusedInvite() || !invite || checkRunning || starting || session) return;
+  if (expireUnusedInvite() || !invite || !session || checkRunning || starting) return;
   resetMicCheck();
   checkRunning = true;
   refresh();
@@ -217,6 +226,10 @@ async function runMicCheck() {
     prejoinWarnings = capture.warnings;
     const track = prejoinStream.getAudioTracks()[0];
     if (!watchMicrophone(track, signal, () => {
+      if (micHeard && session) {
+        leave(undefined, new Error(JOIN_SIGNAL.MICROPHONE_ENDED));
+        return;
+      }
       stopMicMonitoring(true);
       $("mic-device").value = "";
       showMicError(new Error("Microphone disconnected. Reconnect it or choose another input, then try again."));
@@ -240,6 +253,7 @@ async function runMicCheck() {
         $("mic-progress").textContent = "";
         $("mic-heard").hidden = false;
         refresh();
+        void attachOptionalMicrophone(signal);
       },
     });
     checkRunning = false;
@@ -254,15 +268,7 @@ $("headphones").addEventListener("change", refresh);
 $("check-mic").addEventListener("click", () => runMicCheck());
 $("mic-retry").addEventListener("click", () => runMicCheck());
 $("mic-device").addEventListener("change", () => {
-  checkSkipped = false;
   void runMicCheck();
-});
-$("skip-check").addEventListener("click", () => {
-  if (expireUnusedInvite() || !invite || session || checkSkipped) return;
-  resetMicCheck();
-  checkSkipped = true;
-  $("mic-progress").textContent = "Mic check skipped. Your browser may ask for access when you join.";
-  refresh();
 });
 
 function leave(message = "You left the session.", error) {
@@ -305,7 +311,6 @@ async function startJoin() {
   $("leave").hidden = false;
   const attempt = (activeAttempt = new AbortController());
   const isCurrent = () => activeAttempt === attempt && !attempt.signal.aborted;
-  let stream;
   const cancel = () => attempt.abort();
   $("leave").addEventListener("click", cancel, { once: true });
   try {
@@ -314,31 +319,10 @@ async function startJoin() {
     }
     await context.resume();
     if (!isCurrent() || expireUnusedInvite()) return;
-    if (prejoinStream?.getAudioTracks().some((track) => track.readyState === "live")) {
-      stream = prejoinStream;
-      prejoinStream = null;
-      prejoinAbort?.abort();
-      prejoinAbort = null;
-      stopMeter?.();
-      stopMeter = null;
-      showAudioSettings(stream, prejoinWarnings);
-    } else {
-      $("status").textContent = "Allow microphone access to play with your host.";
-      const capture = await acquireMusicStream(navigator.mediaDevices, $("mic-device").value);
-      stream = capture.stream;
-      if (!isCurrent() || expireUnusedInvite()) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      showAudioSettings(stream, capture.warnings);
-    }
-    if (!watchMicrophone(stream.getAudioTracks()[0], attempt.signal, () => {
-      leave(undefined, new Error(JOIN_SIGNAL.MICROPHONE_ENDED));
-    })) return;
     const joinedSession = new WebJoinSession({
       origin: RELAY_ORIGIN,
       invite,
-      stream,
+      stream: null,
       audioContext: context,
       onStatus: (message) => {
         if (!isCurrent()) return;
@@ -381,7 +365,6 @@ async function startJoin() {
     starting = false;
     refresh();
   } catch (error) {
-    stream?.getTracks().forEach((track) => track.stop());
     if (isCurrent()) {
       if (error.name === "AbortError") {
         leave(
@@ -396,9 +379,6 @@ async function startJoin() {
     }
   } finally {
     $("leave").removeEventListener("click", cancel);
-    if (!isCurrent()) {
-      stream?.getTracks().forEach((track) => track.stop());
-    }
   }
 }
 

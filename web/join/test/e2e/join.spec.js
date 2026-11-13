@@ -21,7 +21,7 @@ async function fakeAudio(page, nativeMockCapture = false) {
     } });
   }, nativeMockCapture);
 }
-test("headphones gate capture; encrypted offer pin rejection closes fake sine capture", async ({ page, browserName }) => {
+test("listen-only Join needs no microphone; a bad offer is still rejected", async ({ page, browserName }) => {
   await fakeAudio(page, browserName === "webkit");
   const value = invite();
   const badOffer = { v: 1, kind: "offer", session: value.session, generation: value.generation, expires_at: value.expiresAt, nonce: "33".repeat(16), host_pin: "44".repeat(32), guest_pin: "", sdp: `v=0\r\na=fingerprint:sha-256 ${Array(32).fill("55").join(":")}\r\n` };
@@ -32,22 +32,19 @@ test("headphones gate capture; encrypted offer pin rejection closes fake sine ca
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ payload: toBase64Url(new Uint8Array([0, 1, ...envelope])) }) });
   });
   await page.goto(`/${fragment(value)}`);
-  await expect(page.getByRole("button", { name: "Join with microphone" })).toBeDisabled();
+  const join = page.getByRole("button", { name: "Join", exact: true });
+  await expect(join).toBeEnabled();
+  await expect(page.locator("#prejoin")).toBeHidden();
+  await expect(page.getByRole("checkbox")).toBeHidden();
   const delayNote = page.getByText("Browser audio usually has more delay", { exact: false });
   await expect(delayNote).toBeHidden();
   await page.getByText("Audio details", { exact: true }).click();
   await expect(delayNote).toBeVisible();
   await page.getByText("Audio details", { exact: true }).click();
   expect(await page.evaluate(() => window.captureCalls)).toBe(0);
-  await page.getByRole("checkbox").check();
-  await expect(page.getByRole("button", { name: "Join with microphone" })).toBeDisabled();
-  await page.getByRole("button", { name: "Check microphone" }).click();
-  await expect(page.getByText("Microphone detected.", { exact: true })).toBeVisible();
-  await expect(page.locator("#join-guidance")).toHaveText("Ready. Join to share your audio with the session.");
-  await page.getByRole("button", { name: "Join with microphone" }).click();
+  await join.click();
   await expect(page.locator("#status")).toContainText("Host identity or invite binding did not match");
-  expect(await page.evaluate(() => window.captureCalls)).toBe(1);
-  expect(await page.evaluate(() => window.captureTracks.every((track) => track.readyState === "ended"))).toBe(true);
+  expect(await page.evaluate(() => window.captureCalls)).toBe(0);
   expect(requests.length).toBe(1);
   expect(requests[0].url()).not.toContain(toBase64Url(value.capability));
 });

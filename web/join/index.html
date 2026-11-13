@@ -17,11 +17,14 @@
     <div class="join-card">
       <p id="status" role="status" tabindex="-1" aria-describedby="error-hint">Open the invite link from your host.</p>
       <p id="error-hint" class="error-hint" hidden></p>
+      <p id="join-guidance" class="join-guidance">Join to listen. You do not need a microphone or headphones yet.</p>
+      <div class="actions"><button id="join" aria-describedby="join-guidance" disabled>Join</button><button id="retry" hidden>Retry</button><button id="leave" hidden>Leave session</button></div>
       <section id="prejoin" hidden aria-labelledby="prejoin-heading">
-        <h2 id="prejoin-heading">Check your audio</h2>
+        <h2 id="prejoin-heading">Optional microphone</h2>
+        <p>You are listening. Headphones prevent echo and feedback if you turn the microphone on.</p>
+        <label class="headphones"><input id="headphones" type="checkbox"> I’m wearing headphones to prevent echo.</label>
         <div class="mic-actions">
-          <button type="button" id="check-mic">Check microphone</button>
-          <button type="button" id="skip-check" class="skip-check">Skip check</button>
+          <button type="button" id="check-mic" class="secondary">Use microphone</button>
         </div>
         <p id="mic-error" class="mic-error" role="alert"></p>
         <button type="button" id="mic-retry" class="secondary" hidden>Try again</button>
@@ -35,10 +38,7 @@
         </div>
         <p id="mic-progress" role="status"></p>
         <p id="mic-heard" class="mic-heard" role="status" hidden>Microphone detected.</p>
-        <label class="headphones"><input id="headphones" type="checkbox"> I’m wearing headphones to prevent echo.</label>
-        <p id="join-guidance" class="join-guidance">Check your microphone first.</p>
       </section>
-      <div class="actions"><button id="join" aria-describedby="join-guidance" disabled>Join with microphone</button><button id="retry" hidden>Retry</button><button id="leave" hidden>Leave session</button></div>
       <p id="audio-quality" role="status"></p>
       <div id="access-window" class="access-window" hidden>
         <p id="access-time" role="timer" aria-live="off"></p>

@@ -40,19 +40,19 @@ async function invitation(page) {
         window.endAccessFixture=message=>this.options.onError(new Error(message));
         this.options.onStatus('Synthetic authenticated session connected.');
       }
-      close() {this.accessExpiresAt=null;this.options.stream.getTracks().forEach(track=>track.stop());}
+      close() {this.accessExpiresAt=null;(this.options.stream?.getTracks() ?? []).forEach(track=>track.stop());}
     }`
   }));
   const expires = Math.floor(Date.now()/1000)+300;
   await page.goto(`/#k=${Buffer.alloc(32,17).toString('base64url')}&s=${'22'.repeat(32)}&g=1&e=${expires}`);
-  await page.getByRole('checkbox').check();
-  await page.getByRole('button',{name:'Skip check',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Join',exact:true})).toBeEnabled();
+  await expect(page.locator('#prejoin')).toBeHidden();
 }
 
 test('access time is visible, warns once near expiry, and stops updating on Leave', async ({ page }, testInfo) => {
   await invitation(page);
   await expect(page.locator('#access-window')).toBeHidden();
-  await page.getByRole('button',{name:'Join with microphone',exact:true}).click();
+  await page.getByRole('button',{name:'Join',exact:true}).click();
   await expect(page.locator('#join')).toBeHidden();
   await expect(page.getByRole('button',{name:'Leave session',exact:true})).toBeFocused();
   await expect(page.getByRole('timer')).toHaveText('Browser access ends in 1:35.');
@@ -77,7 +77,7 @@ test('access time is visible, warns once near expiry, and stops updating on Leav
   }
   await page.getByRole('button',{name:'Leave session',exact:true}).click();
   await expect(page.locator('#access-window')).toBeHidden();
-  await expect(page.getByRole('button',{name:'Join with microphone',exact:true})).toBeEnabled();
+  await expect(page.getByRole('button',{name:'Join',exact:true})).toBeEnabled();
   await page.evaluate(()=>{
     window.timeUpdatesAfterLeave=0;
     new MutationObserver(()=>window.timeUpdatesAfterLeave++).observe(document.getElementById('access-time'),{childList:true});
@@ -90,12 +90,12 @@ test('access time is visible, warns once near expiry, and stops updating on Leav
 
 test('a fresh attempt has its own access window and a host-end error clears it', async ({ page }) => {
   await invitation(page);
-  await page.getByRole('button',{name:'Join with microphone',exact:true}).click();
+  await page.getByRole('button',{name:'Join',exact:true}).click();
   await page.clock.runFor(40000);
   await expect(page.locator('#access-warning')).toBeVisible();
   await page.getByRole('button',{name:'Leave session',exact:true}).click();
   await page.evaluate(()=>{window.accessFixtureLifetime=150000;});
-  await page.getByRole('button',{name:'Join with microphone',exact:true}).click();
+  await page.getByRole('button',{name:'Join',exact:true}).click();
   await expect(page.getByRole('timer')).toHaveText('Browser access ends in 2:30.');
   await expect(page.locator('#access-warning')).toBeHidden();
   await page.clock.runFor(5000);

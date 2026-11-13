@@ -1,0 +1,2 @@
+- Web Join now has one Join button and starts listen-only. Microphone and headphone choices are optional after you are in the room.
+- An invite can be shared from the click, or emailed when the device has no share sheet. Copy stays a secondary action.
