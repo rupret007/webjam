@@ -12,7 +12,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEvent, QUrl
+from PySide6.QtCore import QEvent, QTimer, QUrl
 from PySide6.QtGui import QFileOpenEvent
 from PySide6.QtWidgets import QApplication
 
@@ -25,6 +25,7 @@ from webjam_qt.app import (
     _show_live_invitation_error,
     qt_arguments_without_test_night,
 )
+from webjam_qt.startup_dialog import exec_startup_dialog
 from webjam_qt.windows.launch_dialog import LaunchDialog
 
 
@@ -268,6 +269,7 @@ def test_private_music_url_routes_only_through_the_beta_file_open_event() -> Non
     app = SimpleNamespace(
         _startup_music_host_guidance=None,
         activeModalWidget=lambda: None,
+        topLevelWidgets=lambda: [],
         hangout_music_requested=MagicMock(),
     )
 
@@ -291,6 +293,41 @@ def test_cold_music_request_retains_only_guidance_until_the_launcher_opens() -> 
     assert WebJamApplication.take_startup_music_host_guidance(app) is False
     app.hangout_music_requested.emit.assert_not_called()
     assert request not in repr(vars(app))
+
+
+def test_music_request_reaches_the_nonmodal_mac_startup_dialog(qapp, tmp_path) -> None:
+    app = SimpleNamespace(
+        _startup_music_host_guidance=None,
+        activeModalWidget=qapp.activeModalWidget,
+        topLevelWidgets=qapp.topLevelWidgets,
+        hangout_music_requested=MagicMock(),
+    )
+    settings = AppSettings(config_file=str(tmp_path / "settings.json"))
+    dialog = LaunchDialog(settings)
+    observed = []
+
+    def receive_from_browser():
+        try:
+            dialog.show_join()
+            dialog._invite_input.setText("existing draft")
+            url = QUrl(f"webjam-beta://hangout-music/{'c' * 32}")
+            WebJamApplication.event(app, QFileOpenEvent(url))
+            observed.append((
+                qapp.activeModalWidget(),
+                dialog._music_host_guidance.isVisible(),
+                dialog._invite_input.text(),
+                dialog.selected_role,
+            ))
+        finally:
+            dialog.reject()
+
+    QTimer.singleShot(0, dialog, receive_from_browser)
+    with patch("sys.platform", "darwin"), patch.object(QApplication, "platformName", return_value="cocoa"):
+        exec_startup_dialog(qapp, dialog)
+
+    assert observed == [(None, True, "existing draft", "")]
+    assert not Path(settings.config_file).exists()
+    app.hangout_music_requested.emit.assert_not_called()
 
 
 def test_music_request_on_the_launcher_keeps_the_existing_draft(qapp, tmp_path) -> None:

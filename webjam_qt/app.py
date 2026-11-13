@@ -110,6 +110,14 @@ class WebJamApplication(QApplication):
                         self._startup_music_host_guidance = True
                     else:
                         launch = self.activeModalWidget()
+                        if launch is None:
+                            # The standalone Mac launcher is nonmodal so
+                            # the system Quit menu stays available.
+                            launch = next((
+                                widget for widget in self.topLevelWidgets()
+                                if isinstance(widget, LaunchDialog)
+                                and widget.isVisible() and widget.parent() is None
+                            ), None)
                         if not isinstance(launch, LaunchDialog) or not launch.show_music_host_guidance():
                             self.hangout_music_requested.emit(request)
                 return True
