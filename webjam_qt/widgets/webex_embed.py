@@ -426,7 +426,8 @@ class WebexEmbed(QFrame):
         self._share_invite_btn.clicked.connect(self._share_person_invite)
         self._email_invite_btn.clicked.connect(self._email_person_invite)
         self._copy_invite_btn.clicked.connect(self._copy_person_invite)
-        self._text_column.addWidget(self._invite_delivery)
+        # Keep Share / Email / Copy under the title so a short card still shows them.
+        self._text_column.insertWidget(1, self._invite_delivery)
         self._invite_delivery.hide()
 
     def _platform_share_available(self) -> bool:

@@ -357,6 +357,8 @@ def test_changed_address_retries_stop_before_rebinding_and_rotating_invite(host,
     with rig.monkeypatch.context() as copy_patch:
         copy_patch.setattr(QApplication, "clipboard", lambda: rig.clipboard)
         app.window.session_hud._action.click()
+        # Invite opens Email or Share. Copy stays the secondary control.
+        app.window.webex_embed._copy_invite_btn.click()
     assert rig.clipboard.value
     assert not rig.launcher.joined
     _assert_no_external_work(rig, caplog)

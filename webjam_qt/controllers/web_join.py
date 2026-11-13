@@ -7,6 +7,7 @@ import threading
 from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
+from core.network_invite import invite_message_title
 from services.web_join_host import PREPARE_UNAVAILABLE, PREPARATION_FAILURE_MESSAGES, WebJoinHost
 
 
@@ -23,6 +24,8 @@ class WebJoinControls(QObject):
         self._generation = 0
         self._copy_when_ready = False
         self._invite_copied = False
+        self._person_invite_offered = False
+        self._person_invite_card_shown = False
         self._error = ""
         self._error_server = None
         self._panel = getattr(controller.window, "web_guest_panel", None)
@@ -206,11 +209,50 @@ class WebJoinControls(QObject):
             return
         self.allow_action.setText("Allow a web guest")
         self.copy_action.setEnabled(True)
+        offered = self._offer_prepared_person_invite()
         if self._copy_when_ready:
             self._copy_when_ready = False
-            self._copy()
+            if not offered:
+                self._copy()
         else:
             self._render_panel()
+
+    def _offer_prepared_person_invite(self) -> bool:
+        """Same moment Copy becomes available: Share or Email, Copy secondary."""
+
+        from webjam_qt.widgets.webex_embed import WebexEmbed
+
+        embed = getattr(self._controller.window, "webex_embed", None)
+        if not isinstance(embed, WebexEmbed):
+            return False
+        host = self._host
+        link = str(getattr(host, "invite", "") or "").strip() if host is not None else ""
+        strip = getattr(self._controller.window, "session_strip", None)
+        current_title = getattr(strip, "current_title", None)
+        session_name = str(current_title() or "") if callable(current_title) else ""
+        if not link or not embed.offer_person_invite(link, invite_message_title(session_name)):
+            return False
+        self._person_invite_offered = True
+        if embed.isHidden():
+            embed.setVisible(True)
+            self._person_invite_card_shown = True
+        return True
+
+    def _clear_offered_person_invite(self) -> None:
+        if not self._person_invite_offered and not self._person_invite_card_shown:
+            return
+        embed = getattr(self._controller.window, "webex_embed", None)
+        delivery = getattr(embed, "_invite_delivery", None)
+        if delivery is not None and not delivery.isHidden():
+            delivery.hide()
+        if embed is not None and self._person_invite_offered:
+            embed._invite_link = ""
+            embed._invite_mailto = ""
+            embed._invite_title = ""
+        if embed is not None and self._person_invite_card_shown:
+            embed.setVisible(False)
+        self._person_invite_offered = False
+        self._person_invite_card_shown = False
 
     def _copy(self):
         if (
@@ -242,6 +284,7 @@ class WebJoinControls(QObject):
         self._error_server = None
         self._copy_when_ready = False
         self._invite_copied = False
+        self._clear_offered_person_invite()
         owners = ([self._host] if self._host is not None else []) + self._retired_hosts
         self.allow_action.blockSignals(True)
         self.allow_action.setChecked(False)
