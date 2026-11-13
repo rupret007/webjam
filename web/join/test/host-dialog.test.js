@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  INVITE_READY_STATUS,
   INVITE_SHARED_STATUS,
   markInviteShared,
   nextDialogTabTarget,
@@ -23,10 +24,22 @@ test("the invite dialog is marked modal", () => {
   assert.match(hostHtml, /id="invite-status"[^>]*tabindex="-1"/);
 });
 
+test("the host strip leads with Share or Email and does not use retired invite wording", () => {
+  assert.match(hostHtml, new RegExp(INVITE_READY_STATUS.replace(/[.]/g, "\\.")));
+  const shareAt = hostHtml.indexOf('id="share-invite"');
+  const emailAt = hostHtml.indexOf('id="email-invite"');
+  const copyAt = hostHtml.indexOf('id="copy-invite"');
+  assert.ok(shareAt > 0 && emailAt > shareAt && copyAt > emailAt);
+  assert.match(hostHtml, /id="copy-invite"[^>]*class="secondary"/);
+  for (const retired of ["Copy browser invite", "paste it into a private message", "Headphones required", "taps Join"]) {
+    assert.equal(hostHtml.includes(retired), false, retired);
+  }
+});
+
 test("a successful share moves focus to the updated status", () => {
   const dialog = { hidden: true };
   const status = {
-    textContent: "Invite ready. Your friend opens it and taps Join.",
+    textContent: INVITE_READY_STATUS,
     tabIndex: 0,
     focused: false,
     focus() {

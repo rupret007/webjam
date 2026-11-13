@@ -1,6 +1,7 @@
-import { FIXTURE_INVITE_URL, INVITE_SHARE_TITLE, inviteMailto, shareWithoutActivation } from "./share.js";
+import { FIXTURE_INVITE_URL, INVITE_SHARE_TEXT, INVITE_SHARE_TITLE, inviteBody, inviteMailto, shareWithoutActivation } from "./share.js";
 
-export const INVITE_SHARED_STATUS = "Invite shared. Your friend opens it and taps Join.";
+export const INVITE_READY_STATUS = "Invite ready. Your friend opens the link to listen. No app, no microphone.";
+export const INVITE_SHARED_STATUS = "Invite shared. Your friend opens the link to listen. No app, no microphone.";
 
 export function tabbableDialogItems(dialog) {
   return [...dialog.querySelectorAll("button, a[href], input, select, textarea")].filter((node) => {
@@ -28,12 +29,13 @@ export function markInviteShared(status, dialog) {
 
 function bootHostInvite() {
   if (typeof document === "undefined") return;
-  const prepared = { title: INVITE_SHARE_TITLE, text: INVITE_SHARE_TITLE, url: FIXTURE_INVITE_URL };
+  const prepared = { title: INVITE_SHARE_TITLE, text: INVITE_SHARE_TEXT, url: FIXTURE_INVITE_URL };
   const shareButton = document.getElementById("share-invite");
   const emailLink = document.getElementById("email-invite");
   const copyButton = document.getElementById("copy-invite");
   const dialog = document.getElementById("invite-dialog");
   const status = document.getElementById("invite-status");
+  status.textContent = INVITE_READY_STATUS;
 
   emailLink.href = inviteMailto(prepared.url, prepared.title);
 
@@ -76,7 +78,7 @@ function bootHostInvite() {
   });
 
   copyButton.addEventListener("click", () => {
-    const write = navigator.clipboard?.writeText?.(prepared.url);
+    const write = navigator.clipboard?.writeText?.(inviteBody(prepared.url, prepared.text));
     if (write && typeof write.then === "function") {
       write.then(() => {
         copyButton.disabled = false;
