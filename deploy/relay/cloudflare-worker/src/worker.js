@@ -42,6 +42,7 @@ let quotaStates = {
   turn: emptyQuotaState(),
   mailbox: emptyQuotaState(),
   web: emptyQuotaState(),
+  video: emptyQuotaState(),
 };
 let usageCache = null;
 
@@ -50,6 +51,7 @@ export function resetWorkerState() {
     turn: emptyQuotaState(),
     mailbox: emptyQuotaState(),
     web: emptyQuotaState(),
+    video: emptyQuotaState(),
   };
   usageCache = null;
 }
@@ -125,6 +127,7 @@ function applyQuotaEnv(env) {
     MAILBOX_NET_DAILY_GB_S: env.MAILBOX_NET_DAILY_GB_S,
     MAILBOX_RATE_PREFIX_DAILY: env.MAILBOX_RATE_PREFIX_DAILY,
     WEB_DAILY_REQUESTS: env.WEB_DAILY_REQUESTS,
+    VIDEO_SIGNAL_DAILY_REQUESTS: env.VIDEO_SIGNAL_DAILY_REQUESTS,
   };
   globalThis.WEBJAM_QUOTA_ENV = quotaEnv;
   return quotaEnv;
@@ -145,6 +148,12 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all
   if (typeof deps.enforceAccess === "function") {
     return deps.enforceAccess(request, nowMs, rowWrites, charge, web);
   }
+  const url = new URL(request.url);
+  if (url.pathname.startsWith("/video-mailbox/") ||
+      (url.pathname === "/turn-credentials" && url.searchParams.get("client") === "web-video")) {
+    if (!videoQuotaConfigured(env)) return errorResponse(503, "misconfigured");
+    return enforceScope(request, env, nowMs, rowWrites, charge, "video");
+  }
   if (web) {
     if ((typeof env.MAILBOX_QUOTA?.idFromName !== "function" ||
          typeof env.MAILBOX_QUOTA?.get !== "function") &&
@@ -157,7 +166,14 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all
     if (denied) return denied;
   }
   return enforceScope(request, env, nowMs, rowWrites, charge,
-    quotaScope(new URL(request.url).pathname));
+    quotaScope(url.pathname));
+}
+
+function videoQuotaConfigured(env) {
+  const budget = Number(env.VIDEO_SIGNAL_DAILY_REQUESTS);
+  return Number.isSafeInteger(budget) && budget > 0 &&
+    ((typeof env.MAILBOX_QUOTA?.idFromName === "function" &&
+      typeof env.MAILBOX_QUOTA?.get === "function") || env.ENVIRONMENT === "development");
 }
 
 async function enforceScope(request, env, nowMs, rowWrites, charge, scope) {
@@ -299,6 +315,7 @@ async function handleAllowedRequest(request, env, deps) {
     return errorResponse(404, "not_found");
   }
 
+  const videoRequest = url.searchParams.get("client") === "web-video";
   const preliminaryWeb = web;
   const rateDenied = await enforceAccess(request, env, deps, nowMs, 0, "rate", preliminaryWeb);
   if (rateDenied) return rateDenied;
@@ -312,18 +329,23 @@ async function handleAllowedRequest(request, env, deps) {
   if (!validSessionInviteShape(body)) {
     return errorResponse(403, "unauthorized");
   }
-  if (web && !["web", "web-video"].includes(body.client)) {
+  if (videoRequest !== (body.client === "web-video")) {
     return errorResponse(403, "unauthorized");
   }
-  web ||= ["web", "web-video"].includes(body.client);
+  if (videoRequest) {
+    const denied = await enforceAccess(request, env, deps, nowMs, 0, "daily");
+    return denied ?? issueVideoCredentials(env, fetchImpl, deps, nowMs);
+  }
+  if (web && body.client !== "web") {
+    return errorResponse(403, "unauthorized");
+  }
+  web ||= body.client === "web";
   if (web && !preliminaryWeb) {
     const webRateDenied = await enforceScope(request, env, nowMs, 0, "rate", "web");
     if (webRateDenied) return webRateDenied;
   }
   const denied = await enforceAccess(request, env, deps, nowMs, 0, "daily", web);
   if (denied) return denied;
-
-  if (body.client === "web-video") return issueVideoCredentials(env, fetchImpl, deps, nowMs);
 
   const desktopKeyId = String(env.TURN_KEY_ID ?? "").trim();
   const webKeyId = String(env.WEB_TURN_KEY_ID ?? "").trim();
