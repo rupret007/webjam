@@ -28,12 +28,16 @@ export class VideoRoom {
     this.status = root.querySelector("[data-video-status]");
     this.buttonClick = () => void (this.state === "relay-off" ? this.checkRelay() : this.tap());
     this.switchClick = () => void this.tap(true);
+    this.devicesChanged = () => {
+      if (this.track) void this.refreshCameraDevices();
+    };
     this.visible = () => {
       if (!document.hidden && this.state === "relay-off" && Date.now() - (this.lastCheck ?? 0) >= 30000) void this.checkRelay();
     };
     this.camera.addEventListener("click", this.buttonClick);
     this.switcher.addEventListener("click", this.switchClick);
     document.addEventListener("visibilitychange", this.visible);
+    navigator.mediaDevices?.addEventListener?.("devicechange", this.devicesChanged);
     root.hidden = false;
     this.render("checking", "Checking camera availability…");
     this.expiryTimer = setTimeout(() => this.pause("Video paused. Ask your host for a fresh invite."), Math.max(0, invite.expiresAt * 1000 - Date.now()));
@@ -71,14 +75,26 @@ export class VideoRoom {
     } finally { this.checking = false; }
   }
 
+  async refreshCameraDevices() {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      if (!this.signal.aborted) {
+        this.cameraDevices = devices.filter(device => device.kind === "videoinput" && device.deviceId);
+      }
+    } catch {
+      // Facing-mode constraints are still available when device IDs are hidden.
+    }
+  }
+
   async capture(switchCamera) {
     if (!navigator.mediaDevices?.getUserMedia) throw new DOMException("Unavailable", "NotFoundError");
     const facingMode = this.facing === "environment" ? "user" : "environment";
     const currentId = this.track?.getSettings().deviceId;
     let video = cameraSizes;
     if (switchCamera) {
-      const options = await navigator.mediaDevices.enumerateDevices();
-      const alternative = options.find(device => device.kind === "videoinput" && device.deviceId && device.deviceId !== currentId);
+      const alternative = this.cameraDevices?.find(device => device.deviceId !== currentId);
+      // Call getUserMedia in the tap handler's turn. Enumerating here would
+      // yield before requesting the camera on browsers that require a gesture.
       video = alternative ? { ...cameraSizes, deviceId: { exact: alternative.deviceId } } :
         { ...cameraSizes, facingMode: { exact: facingMode } };
     }
@@ -105,6 +121,7 @@ export class VideoRoom {
     this.camera.disabled = true;
     this.switcher.disabled = true;
     const previous = this.track;
+    const previousPreview = this.preview.srcObject;
     let stream;
     let track;
     try {
@@ -123,9 +140,12 @@ export class VideoRoom {
       this.facing = track.getSettings().facingMode;
       previous?.stop();
       track.addEventListener("ended", () => {
-        if (this.track === track && !this.signal.aborted) this.render("camera-error", "Your camera stopped. Tap Try again. Music stays connected.");
+        if (this.track === track && !this.busy && !this.signal.aborted) {
+          this.render("camera-error", "Your camera stopped. Tap Try again. Music stays connected.");
+        }
       });
       this.busy = false;
+      void this.refreshCameraDevices();
       this.render(this.peer?.connectionState === "connected" ? "live" : "preview", this.cameraStatus());
       if (!this.peer && !this.connecting) {
         this.connecting = true;
@@ -137,8 +157,9 @@ export class VideoRoom {
       if (track !== this.track) stream?.getTracks().forEach(item => item.stop());
       if (this.signal.aborted) return;
       if (this.track === previous && previous?.readyState === "live") {
-        if (track) this.preview.srcObject = new MediaStream([previous]);
-        this.render("live", "Couldn’t switch cameras. Your current camera and music are still connected.");
+        this.preview.srcObject = previousPreview;
+        this.render(this.peer?.connectionState === "connected" ? "live" : "preview",
+          "Couldn’t switch cameras. Your current camera is still on. Music stays connected.");
       } else {
         this.track?.stop();
         this.track = null;
@@ -235,6 +256,7 @@ export class VideoRoom {
     clearTimeout(this.disconnectTimer);
     clearTimeout(this.expiryTimer);
     document.removeEventListener("visibilitychange", this.visible);
+    navigator.mediaDevices?.removeEventListener?.("devicechange", this.devicesChanged);
     this.camera.removeEventListener("click", this.buttonClick);
     this.switcher.removeEventListener("click", this.switchClick);
     this.track?.stop();

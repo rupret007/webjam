@@ -1,0 +1,1 @@
+- WebJam asks for the alternate camera directly from the Switch camera tap and keeps the current preview if switching fails.
