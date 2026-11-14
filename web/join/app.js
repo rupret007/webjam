@@ -423,7 +423,7 @@ async function startJoin() {
       $("status").textContent = "Connected to music";
       videoRoom = new VideoRoom({
         root: $("video-room"), origin: RELAY_ORIGIN, invite, host: false,
-        timingReady: () => joinedSession.authorized && !!joinedSession.videoBaseline && joinedSession.route !== "relayed",
+        timingReady: () => joinedSession.authorized && !!joinedSession.videoBaseline,
       });
     }
     clearJoinFailure(failureElements(), $("status").textContent);

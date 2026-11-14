@@ -19,7 +19,7 @@ async function syntheticDevices(page) {
     });
     window.labPeers = [];
     window.labRawMusicStats = null;
-    window.labRelayTrip = false;
+    window.labMusicRoute = "relayed";
     window.RTCPeerConnection = class extends native {
       constructor(configuration) {
         super(peerConfiguration(configuration));
@@ -36,12 +36,12 @@ async function syntheticDevices(page) {
             if (!pair || !audio?.jitterBufferEmittedCount) return rows;
             rows.set(audio.id, { ...audio, jitter: 0, packetsLost: 0,
               jitterBufferDelay: audio.jitterBufferEmittedCount * 0.02 });
-            rows.set(pair.id, { ...pair, nominated: true, currentRoundTripTime: 0.01 });
-            if (window.labRelayTrip) {
-              rows.set(transport.id, { ...transport, selectedCandidatePairId: "guard-pair" });
-              rows.set("guard-pair", { ...rows.get(pair.id), id: "guard-pair", localCandidateId: "guard-relay" });
-              rows.set("guard-relay", { type: "local-candidate", candidateType: "relay" });
-            }
+            const selected = "guard-" + window.labMusicRoute;
+            rows.set(transport.id, { ...transport, selectedCandidatePairId: selected });
+            rows.set(selected, { ...pair, id: selected, nominated: true, currentRoundTripTime: 0.01,
+              localCandidateId: "guard-local", remoteCandidateId: "guard-remote" });
+            rows.set("guard-local", { type: "local-candidate", candidateType: window.labMusicRoute === "relayed" ? "relay" : "host" });
+            rows.set("guard-remote", { type: "remote-candidate", candidateType: "host" });
             return rows;
           };
         }
@@ -270,6 +270,7 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
   // Let the initial audio/jitter-buffer ramp settle before comparing windows.
   await page.waitForTimeout(5000);
   const before = await musicWindow(page);
+  await expect(page.getByText("Relayed connection", { exact: true })).toBeAttached();
   await guestShow.click();
   await expect(page.locator("[data-self]")).toBeVisible();
   await expect(page.locator("[data-remote]")).toBeHidden();
@@ -321,9 +322,11 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
   expect(await page.evaluate(() => window.labCameraTracks.at(-1).enabled)).toBe(false);
   await guestShow.click();
   expect(await page.evaluate(() => [window.labPeers.length, window.labCameraCalls])).toEqual([2, 2]);
-  // Simulate a newly selected music relay only in browser stats. The music
-  // continues through the lab bridge, so guard behavior is observable.
-  await page.evaluate(() => { window.labRelayTrip = true; });
+  // Simulate route changes only in the guard's music stats.
+  await page.evaluate(() => { window.labMusicRoute = "direct"; });
+  await expect(page.getByText("Direct connection", { exact: true })).toBeAttached();
+  await expect(page.locator("[data-video-status]")).toHaveText("Cameras on.");
+  await page.evaluate(() => { window.labMusicRoute = "relayed"; });
   await expect(page.locator("[data-video-status]")).toHaveText("Video paused to protect music timing. Music stays connected.");
   await expect(page.getByRole("button", { name: "Leave", exact: true })).toBeInViewport({ ratio: 1 });
   expect(await page.evaluate(() => window.labPeers.map(pc => pc.connectionState))).toEqual(["connected", "closed"]);

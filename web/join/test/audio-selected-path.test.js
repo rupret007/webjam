@@ -126,3 +126,45 @@ test('adding a camera preserves the music estimate and a timing trip leaves musi
     session.close();
   }
 });
+
+test('video can start on relayed music and pauses when music moves back onto relay', async () => {
+  const stats = pathStats();
+  const track = { enabled: true, stop() {} };
+  const relay = { ...stats.get('fast'), localCandidateId: 'relay', remoteCandidateId: 'host' };
+  stats.set('relay', { type: 'local-candidate', candidateType: 'relay' });
+  stats.set('host', { type: 'remote-candidate', candidateType: 'host' });
+  stats.set('first-relay', relay);
+  stats.set('other-relay', { ...relay });
+  stats.set('fast', { ...stats.get('fast'), localCandidateId: 'direct', remoteCandidateId: 'host' });
+  stats.set('direct', { type: 'local-candidate', candidateType: 'host' });
+  const transport = stats.get('transport');
+  let camera;
+  let trips = 0;
+  const session = new WebJoinSession({ origin: 'https://relay.example', invite: {},
+    stream: { getAudioTracks: () => [track], getTracks: () => [track] },
+    audioContext: { baseLatency: 0.01 }, videoPeer: () => camera, onVideoTrip() { trips++; },
+    onError: error => assert.fail(error),
+  });
+  session.pc = { connectionState: 'connected', getStats: async () => stats, close() {} };
+  session.authorized = true;
+  track.enabled = true;
+  session.videoBaselineDeadline = Date.now() + 30000;
+  try {
+    transport.selectedCandidatePairId = 'first-relay';
+    for (let i = 0; i < 20; i++) await session.updateStats();
+    assert.equal(session.videoBaseline.route, 'relayed');
+    camera = { connectionState: 'connected' };
+    for (const pair of ['first-relay', 'other-relay', 'fast', 'missing']) {
+      transport.selectedCandidatePairId = pair;
+      await session.updateStats();
+      assert.equal(trips, 0, pair);
+    }
+    transport.selectedCandidatePairId = 'first-relay';
+    await session.updateStats();
+    assert.equal(trips, 1);
+    assert.equal(session.authorized, true);
+    assert.equal(track.enabled, true);
+  } finally {
+    session.close();
+  }
+});

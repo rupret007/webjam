@@ -144,17 +144,16 @@ export class WebJoinSession {
       const next = adaptJitterBufferTarget(stats, previous);
       const latency = latencyMs(stats, this.audioContext.baseLatency);
       const video = this.videoPeer();
+      const sample = musicSample(stats, selectedPairId, latency, next.targetMs);
       if (videoPeerOpen(video) && this.videoBaseline) {
         if (Number.isFinite(latency)) this.videoLatency = [...this.videoLatency.slice(-4), latency];
-        const trip = musicVideoTrip(video, () => musicSample(stats, selectedPairId, latency, next.targetMs),
-          this.videoBaseline, this.videoLatency);
+        const trip = musicVideoTrip(video, () => sample, this.videoBaseline, this.videoLatency, this.videoMusicPath);
         this._jitterAdaptation = next.targetMs > this.videoBaseline.targetMs ? previous : next;
         if (trip) this.onVideoTrip();
       } else {
         this._jitterAdaptation = next;
         this.videoLatency = [];
         if (!this.videoBaseline && Date.now() <= this.videoBaselineDeadline && Number.isFinite(latency)) {
-          const sample = musicSample(stats, selectedPairId, latency, next.targetMs);
           this.videoBaselineSamples.push(sample);
           if (this.videoBaselineSamples.length === 20) {
             this.videoBaseline = { ...sample,
@@ -164,6 +163,7 @@ export class WebJoinSession {
           }
         }
       }
+      if (sample.pairId && sample.route) this.videoMusicPath = sample;
       if (this._inboundReceiver) applyAdaptiveReceiverTarget(this._inboundReceiver, this._jitterAdaptation);
       this.onLatency(latency);
       // Web Join bundles audio and enrollment on one transport. With missing

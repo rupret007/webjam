@@ -1,0 +1,1 @@
+- WebJam cameras can start on an established music relay. Video pauses if music switches from a direct path onto relay.
