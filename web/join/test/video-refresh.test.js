@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
+import { VideoConflict } from "../video-mailbox.js";
 import { VideoRefresh } from "../video-refresh.js";
 
 const clockStart = 100000;
@@ -156,4 +157,39 @@ test("a restart on the same relay stays live until the previous credential expir
   assert.deepEqual(events, ["configure", "restore"]);
   await advance(1);
   assert.deepEqual(events, ["configure", "restore", "expired"]);
+});
+
+test("a conflicting refresh stops both peers without creating another generation", async t => {
+  const { refresh, peer, events, stored } = fixture(t);
+  const mailbox = refresh.mailbox;
+  const write = mailbox.write;
+  mailbox.write = async (round, kind, value) => {
+    if (round === "video-refresh-1") throw new VideoConflict("conflict");
+    await write(round, kind, value);
+  };
+  mailbox.abortRefresh = () => mailbox.write("video-refresh-abort", "offer", { v: 1, abort: "refresh" });
+  const host = new VideoRefresh({ peer, mailbox, credentials: previous, host: true,
+    signal: refresh.signal, onExpired: () => assert.fail("unexpected host expiry"),
+  });
+  t.after(() => host.close());
+  await refresh.run();
+  assert.equal(refresh.stopped, true);
+  assert.equal(peer.signalingState, "stable");
+  assert.deepEqual(peer.getConfiguration().iceServers, previous.iceServers);
+  await host.run();
+  assert.equal(host.stopped, true);
+  await refresh.run();
+  assert.equal(stored.has("video-refresh-gen-2/offer"), false);
+  assert.equal(events.filter(event => event === "video-refresh-abort").length, 1);
+  assert.equal(events.filter(event => event === "credentials").length, 1);
+});
+
+test("the guest stops after generation six without a new credential request", async t => {
+  const { refresh, events, stored } = fixture(t);
+  for (let gen = 1; gen <= 6; gen++) {
+    stored.set(`video-refresh-gen-${gen}/offer`, { v: 1, gen });
+  }
+  await refresh.run();
+  assert.equal(refresh.latestGeneration, 6);
+  assert.deepEqual(events, []);
 });
