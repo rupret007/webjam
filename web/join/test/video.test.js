@@ -4,6 +4,7 @@ import { mailboxId } from "../crypto.js";
 import { musicVideoTrip, videoRelayBudget } from "../video-guard.js";
 import { validateCredentials, validateVideoCredentials, VIDEO_BYTES } from "../policy.js";
 import { gatherVideo } from "../video-peer.js";
+import { VideoConflict, VideoMailbox } from "../video-mailbox.js";
 
 const pc = { connectionState: "connected", signalingState: "stable" };
 const base = { latency: 40, rttMs: 40, pairId: "first", loss: 0.02, targetMs: 30 };
@@ -49,6 +50,26 @@ test("video uses separate rounds and credentials", async () => {
   assert.equal(validateVideoCredentials(doc, 0).expiresAt, 600000);
   assert.throws(() => validateCredentials(doc));
   assert.throws(() => validateVideoCredentials({...doc, iceServers:[{urls:"stun:stun.cloudflare.com:3478"}]}));
+});
+
+test("a duplicate video slot requires identical sealed bytes", async () => {
+  const invite = { capability: new Uint8Array(32).fill(7), session: "1".repeat(64) };
+  const mailbox = new VideoMailbox("https://relay.example", invite);
+  const slots = new Map();
+  mailbox.request = async (path, options) => {
+    if (!options) return { status: 200, body: { payload: slots.get(path) } };
+    if (slots.has(path)) return { status: 409 };
+    slots.set(path, JSON.parse(options.body).payload);
+    return { status: 201 };
+  };
+  const round = "video-refresh-gen-1";
+  const marker = { v: 1, gen: 1 };
+  // Replay the exact same sealed request, then a fresh encryption of the same data.
+  const nonce = new Uint8Array(12).fill(2);
+  await mailbox.write(round, "offer", marker, nonce);
+  await mailbox.write(round, "offer", marker, nonce);
+  await assert.rejects(mailbox.write(round, "offer", marker, new Uint8Array(12).fill(3)), VideoConflict);
+  assert.deepEqual(await mailbox.read(round, "offer"), marker);
 });
 
 test("video waits for complete vanilla gathering and retains the end marker", async () => {
