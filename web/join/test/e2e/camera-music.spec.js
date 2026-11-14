@@ -168,6 +168,7 @@ async function musicWindow(page) {
     const values = [];
     for (let i = 0; i < 20; i++) {
       await new Promise(resolve => setTimeout(resolve, 1000));
+      if (pc.connectionState !== "connected") throw new Error("Music ended during the timing window");
       const ms = latencyMs(await pc.getStats(), window.labMusicBaseLatency);
       if (!Number.isFinite(ms)) throw new Error("Expected finite music timing");
       values.push(ms);
@@ -206,6 +207,7 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/${fragment}`);
   await host.goto(`/?cameras=1${fragment}`);
+  await page.bringToFront();
   await page.getByRole("button", { name: "Skip check" }).click();
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Join with microphone" }).click();
@@ -221,6 +223,8 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
   await expect(page.locator("[data-remote]")).toBeHidden();
   await page.screenshot({ path: info.outputPath("camera-preview-guest-390.png") });
   await host.getByRole("button", { name: "Show my camera" }).click();
+  // Keep the page producing the synthetic microphone foregrounded.
+  await page.bringToFront();
   for (const peer of [page, host]) {
     await expect(peer.locator("[data-video-status]")).toHaveText("Cameras on.", { timeout: 20000 });
     await expect.poll(() => decoded(peer)).toBeGreaterThan(0);
@@ -259,7 +263,10 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
   await writeFile(timingPath, JSON.stringify({ before, after, differenceMs }, null, 2));
   await info.attach("music timing (loopback)", { path: timingPath, contentType: "application/json" });
   const beforeSwitch = await decoded(host);
-  await expect(page.getByRole("button", { name: "Switch camera" })).toBeVisible();
+  const musicLab = await (await request.get("http://127.0.0.1:4175/status")).json();
+  const cameraStatus = (await page.locator("[data-video-status]").textContent())?.trim();
+  expect(musicLab.authorized, `Pion fixture state: ${musicLab.error || "no host error"}`).toBe(true);
+  await expect(page.getByRole("button", { name: "Switch camera" }), cameraStatus).toBeVisible();
   await page.getByRole("button", { name: "Switch camera" }).click();
   await expect.poll(() => page.evaluate(() => window.labCameraTracks.map(track => track.readyState))).toEqual(["ended", "live"]);
   await expect.poll(() => decoded(host)).toBeGreaterThan(beforeSwitch);
