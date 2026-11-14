@@ -1,0 +1,1 @@
+- A camera relay renewal keeps a working video path up to its original expiry if the browser has not selected a new path.

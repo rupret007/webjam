@@ -210,8 +210,9 @@ export class VideoRefresh {
 
   async connected(n, next, priorPair) {
     const until = Date.now() + 15000;
+    let selected;
     while (Date.now() < until && !this.signal.aborted) {
-      const selected = await selectedVideoPair(this.peer);
+      selected = await selectedVideoPair(this.peer);
       if (this.peer.connectionState === "connected" && selected && selected.id !== priorPair?.id) {
         this.completed = n;
         this.credentials = next;
@@ -221,6 +222,16 @@ export class VideoRefresh {
       }
       await delay(250, this.signal);
     }
-    if (!this.signal.aborted) this.onExpired();
+    if (this.signal.aborted) return;
+    if (this.peer.connectionState === "connected" && selected?.route === "relayed" &&
+        selected.id === priorPair?.id && Date.now() < this.credentials.expiresAt) {
+      // The previous allocation still works. Keep its original expiry since
+      // the new allocation was never observed on the selected pair.
+      try {
+        changeServers(this.peer, this.credentials.iceServers);
+        return;
+      } catch { /* Pause video if the old configuration cannot be restored. */ }
+    }
+    this.onExpired();
   }
 }

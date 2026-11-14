@@ -140,3 +140,20 @@ test("a short-lived direct replacement keeps expiry without reissuing credential
   await advance(59000);
   assert.deepEqual(events, ["credentials", "configure"]);
 });
+
+test("a restart on the same relay stays live until the previous credential expires", async t => {
+  const { refresh, peer, events, advance } = fixture(t);
+  refresh.arm();
+  peer.setConfiguration({ iceServers: next.iceServers });
+  const checking = refresh.connected(1, next, { id: "pair", route: "relayed" });
+  await advance(0);
+  await advance(15000);
+  await checking;
+  assert.deepEqual(events, ["configure", "restore"]);
+  assert.equal(refresh.credentials, previous);
+  assert.equal(refresh.completed, 0);
+  await advance(74999);
+  assert.deepEqual(events, ["configure", "restore"]);
+  await advance(1);
+  assert.deepEqual(events, ["configure", "restore", "expired"]);
+});
