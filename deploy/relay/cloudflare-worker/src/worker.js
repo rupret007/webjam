@@ -4,7 +4,7 @@
  * ship in the WebJam client.
  */
 
-import { Mailbox, validMailboxId } from "./mailbox.js";
+import { Mailbox, VideoMailbox, validMailboxId } from "./mailbox.js";
 import { allowedOrigin, corsGate, withCors } from "./cors.js";
 import {
   FETCH_TIMEOUT_MS,
@@ -95,10 +95,10 @@ async function readCredentialBody(request) {
   return JSON.parse(new TextDecoder().decode(bytes.subarray(0, size)));
 }
 
-function parseMailboxPath(path) {
+function parseMailboxPath(path, prefix = "mailbox") {
   const parts = String(path || "").split("/");
   const first = parts.findIndex(Boolean);
-  if (parts[first] !== "mailbox") {
+  if (parts[first] !== prefix) {
     return null;
   }
   // Match the canonical pathname used by the mailbox quota scope and backend.
@@ -215,7 +215,7 @@ function closeAcceptedSocket(response) {
   }
 }
 
-async function handleMailbox(request, env, deps, mailbox, nowMs, web) {
+async function handleMailbox(request, env, deps, mailbox, nowMs, web, binding = env.MAILBOX) {
   if (mailbox.invalid) {
     return errorResponse(404, "not_found");
   }
@@ -241,13 +241,13 @@ async function handleMailbox(request, env, deps, mailbox, nowMs, web) {
   let response;
   if (typeof deps.mailboxFetch === "function") {
     response = await deps.mailboxFetch(request, mailbox, nowMs);
-  } else if (!env.MAILBOX || typeof env.MAILBOX.idFromName !== "function") {
+  } else if (!binding || typeof binding.idFromName !== "function") {
     response = errorResponse(503, "misconfigured");
   } else {
     const headers = new Headers(request.headers);
     headers.set("X-WebJam-Now", String(nowMs));
     try {
-      const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailbox.id));
+      const stub = binding.get(binding.idFromName(mailbox.id));
       response = await stub.fetch(new Request(request, { headers }));
     } catch {
       response = errorResponse(503, "unavailable");
@@ -285,6 +285,13 @@ async function handleAllowedRequest(request, env, deps) {
   if (mailbox) {
     return handleMailbox(request, env, deps, mailbox, nowMs, web);
   }
+  const videoMailbox = parseMailboxPath(path, "video-mailbox");
+  if (videoMailbox) {
+    if (videoMailbox.invalid || !["offer", "answer"].includes(videoMailbox.slot)) return errorResponse(404, "not_found");
+    if (!["GET", "POST"].includes(request.method) || request.headers.has("Upgrade")) return errorResponse(405, "method");
+    if (!env.VIDEO_MAILBOX) return errorResponse(503, "misconfigured");
+    return handleMailbox(request, env, deps, videoMailbox, nowMs, true, env.VIDEO_MAILBOX);
+  }
   if (request.method !== "POST") {
     return errorResponse(405, "method");
   }
@@ -305,16 +312,18 @@ async function handleAllowedRequest(request, env, deps) {
   if (!validSessionInviteShape(body)) {
     return errorResponse(403, "unauthorized");
   }
-  if (web && body.client !== "web") {
+  if (web && !["web", "web-video"].includes(body.client)) {
     return errorResponse(403, "unauthorized");
   }
-  web ||= body.client === "web";
+  web ||= ["web", "web-video"].includes(body.client);
   if (web && !preliminaryWeb) {
     const webRateDenied = await enforceScope(request, env, nowMs, 0, "rate", "web");
     if (webRateDenied) return webRateDenied;
   }
   const denied = await enforceAccess(request, env, deps, nowMs, 0, "daily", web);
   if (denied) return denied;
+
+  if (body.client === "web-video") return issueVideoCredentials(env, fetchImpl, deps, nowMs);
 
   const desktopKeyId = String(env.TURN_KEY_ID ?? "").trim();
   const webKeyId = String(env.WEB_TURN_KEY_ID ?? "").trim();
@@ -374,6 +383,38 @@ async function handleAllowedRequest(request, env, deps) {
     document.allowed_relay_ips = ["141.101.90.1", "162.159.207.1"];
   }
   return jsonResponse(200, document);
+}
+
+async function issueVideoCredentials(env, fetchImpl, deps, nowMs) {
+  const key = String(env.VIDEO_TURN_KEY_ID ?? "").trim();
+  const bearer = String(env.VIDEO_TURN_KEY_API_TOKEN ?? "").trim();
+  const account = String(env.CLOUDFLARE_ACCOUNT_ID ?? "").trim();
+  const analytics = analyticsBearerToken(env);
+  const cap = Number(env.VIDEO_TURN_MONTHLY_CAP_BYTES);
+  if (!key || !bearer || !account || !analytics || !Number.isSafeInteger(cap) || cap <= 0 ||
+      [env.TURN_KEY_ID, env.WEB_TURN_KEY_ID].some(value => key === String(value ?? "").trim())) {
+    return errorResponse(503, "misconfigured");
+  }
+  // Meter the separate key. Music usage and admission never include this key.
+  const { dateFrom, dateTo } = utcMonthDateRange(new Date(nowMs));
+  const timeout = Number(deps.fetchTimeoutMs ?? FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetchWithTimeout(fetchImpl, GRAPHQL_URL, {
+      method: "POST",
+      headers: { authorization: `Bearer ${analytics}`, "content-type": "application/json" },
+      body: JSON.stringify(usageAnalyticsQuery(account, key, dateFrom, dateTo)),
+    }, timeout);
+    const used = response.ok ? readUsageBytes(await response.json()) : null;
+    const decision = decideCap(used, cap);
+    if (!decision.allow) return errorResponse(decision.code === "cap" ? 429 : 503, decision.code);
+    const ttl = credentialTtlSeconds(env.TURN_CREDENTIAL_TTL_SECONDS, true);
+    const document = iceServersDocument(await generateIceServers(fetchImpl, key, bearer, ttl, timeout), 64 * 1024 * 1024);
+    return document
+      ? jsonResponse(200, { ...document, ttl, client: "web-video", allowed_relay_ips: ["141.101.90.1", "162.159.207.1"] })
+      : errorResponse(503, "unavailable");
+  } catch {
+    return errorResponse(503, "unavailable");
+  }
 }
 
 async function monthUsageBytes(
@@ -472,7 +513,7 @@ async function generateIceServers(
   return response.json();
 }
 
-export { Mailbox, MailboxQuota };
+export { Mailbox, VideoMailbox, MailboxQuota };
 
 export default {
   async fetch(request, env) {

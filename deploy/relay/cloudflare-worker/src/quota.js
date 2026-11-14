@@ -175,7 +175,7 @@ export function compactQuotaState(state) {
 }
 
 export function quotaScope(path) {
-  return String(path || "").startsWith("/mailbox") ? "mailbox" : "turn";
+  return String(path || "").startsWith("/mailbox") || String(path || "").startsWith("/video-mailbox/") ? "mailbox" : "turn";
 }
 
 export function rateKey(ip) {
