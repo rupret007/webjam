@@ -144,7 +144,7 @@ export function validSessionInviteShape(body) {
   if (body == null || typeof body !== "object" || Array.isArray(body)) {
     return false;
   }
-  if (body.client !== undefined && body.client !== "web") return false;
+  if (body.client !== undefined && !["web", "web-video"].includes(body.client)) return false;
   const session = body.session_id;
   const token = body.invite_token ?? body.token;
   if (typeof session !== "string" || typeof token !== "string") return false;
