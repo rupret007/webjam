@@ -177,8 +177,7 @@ async function musicWindow(page) {
   });
 }
 
-test("WebJam camera and music run on separate real peers in the local lab", async ({ page, context, request, baseURL, browserName }, info) => {
-  test.skip(browserName !== "chromium", "Chromium loopback media fixture");
+test("WebJam camera and music run on separate real peers in the local lab", async ({ page, context, request, baseURL }, info) => {
   test.setTimeout(100000);
   const offerResponse = await request.get("http://127.0.0.1:4175/offer?journey=camera-music");
   expect(offerResponse.ok()).toBe(true);

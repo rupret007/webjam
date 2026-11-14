@@ -19,7 +19,9 @@ export default defineConfig({
         },
       },
     },
-    { name: "webkit", testIgnore: /prejoin\.spec\.js/, use: { browserName: "webkit", permissions: ["microphone"] } },
+    // The real Pion camera fixture maps Chromium ICE candidates and canvas
+    // capture. The separate video-room specs exercise camera UI in WebKit.
+    { name: "webkit", testIgnore: /(?:prejoin|camera-music)\.spec\.js/, use: { browserName: "webkit", permissions: ["microphone"] } },
   ],
   webServer: [
     { command: "node test/e2e/server.js", url: "http://127.0.0.1:4174", reuseExistingServer: false, timeout: 15000 },
