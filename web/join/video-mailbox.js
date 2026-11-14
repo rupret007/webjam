@@ -10,7 +10,7 @@ export class VideoMailbox extends Mailbox {
   }
 
   async credentials() {
-    const result = await this.request("/turn-credentials", {
+    const result = await this.request("/turn-credentials?client=web-video", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ session_id: this.invite.session, invite_token: await turnToken(this.invite), client: "web-video" }),
     });
