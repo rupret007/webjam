@@ -24,7 +24,8 @@ export class VideoMailbox extends Mailbox {
   }
 
   async write(round, kind, value, nonce) {
-    const bytes = await seal(this.invite, { round, kind, value }, nonce);
+    const plaintext = round === "video-refresh-abort" ? value : { round, kind, value };
+    const bytes = await seal(this.invite, plaintext, nonce);
     const count = Math.ceil(bytes.length / 2998);
     for (const index of [...Array.from({ length: count - 1 }, (_, i) => i + 1), 0]) {
       const path = await this.videoPath(round, kind, index);
@@ -51,6 +52,7 @@ export class VideoMailbox extends Mailbox {
       parts.push(...this.chunk(await this.request(await this.videoPath(round, kind, i)), i, first[1]).subarray(2));
     }
     const decoded = await open(this.invite, Uint8Array.from(parts));
+    if (round === "video-refresh-abort" && kind === "offer" && decoded.v === 1 && decoded.abort === "refresh") return decoded;
     if (decoded.round !== round || decoded.kind !== kind) throw new Error("Camera signaling did not match this round");
     return decoded.value;
   }
