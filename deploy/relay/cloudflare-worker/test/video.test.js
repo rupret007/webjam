@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { applyMailbox, applyVideoMailbox, emptyMailbox } from "../src/mailbox.js";
-import { handleRequest } from "../src/worker.js";
+import { handleRequest, resetWorkerState } from "../src/worker.js";
 
 const now = 1700000000000;
 const offer = { kind: "put", slot: "offer", payload: "sealed_offer" };
@@ -36,8 +36,9 @@ test("video signaling uses its own binding and cannot delete or upgrade", async 
 test("a video request cannot fall back to either music key, even without Origin", async () => {
   for (const video of [undefined, "web", "desktop"]) {
     for (const origin of [undefined,"https://stalemate.band"]) {
+      resetWorkerState();
       const request = new Request("https://relay.example/turn-credentials", {
-        method:"POST", headers:{"content-type":"application/json", ...(origin ? {origin} : {})},
+        method:"POST", headers:{"content-type":"application/json", "CF-Connecting-IP":"203.0.113.8", ...(origin ? {origin} : {})},
         body:JSON.stringify({client:"web-video", session_id:"1".repeat(64), invite_token:"a".repeat(43)}),
       });
       const response = await handleRequest(request, {
