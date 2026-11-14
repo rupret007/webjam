@@ -25,7 +25,7 @@ export class VideoRefresh {
   }
 
   start() {
-    this.arm();
+    this.arm(true);
     this.abortTimer = setInterval(() => {
       if (!this.running && !this.abortRead) void this.observeAbort().catch(() => {});
     }, 1000);
@@ -55,12 +55,16 @@ export class VideoRefresh {
     // Keep the old expiry enforced after a signaling conflict.
   }
 
-  arm() {
+  arm(initial = false) {
     if (this.stopped || this.signal.aborted) return;
     clearTimeout(this.refreshTimer);
     clearTimeout(this.expiryTimer);
     const expiry = this.credentials.expiresAt;
-    this.refreshTimer = setTimeout(() => void this.run(), Math.max(0, expiry - Date.now() - 90000));
+    const refreshDelay = expiry - Date.now() - 90000;
+    // A short-lived replacement might already be inside the renewal window.
+    // Keep its expiry enforced without entering a tight credential request loop.
+    this.refreshTimer = initial || refreshDelay > 0
+      ? setTimeout(() => void this.run(), Math.max(0, refreshDelay)) : null;
     this.expiryTimer = setTimeout(async () => {
       try {
         if ((await selectedVideoPair(this.peer))?.route !== "direct" && !this.signal.aborted) this.onExpired();
@@ -80,10 +84,11 @@ export class VideoRefresh {
     return this.latestGeneration;
   }
 
-  async renew(until) {
+  async renew(until, refreshWindow) {
     try { return await this.mailbox.credentials(); }
     catch (error) {
-      if (Date.now() + 15000 >= until) throw error;
+      if (refreshWindow.retried || Date.now() + 15000 >= until) throw error;
+      refreshWindow.retried = true;
       await delay(15000, this.signal);
       if (await this.observeAbort() || Date.now() >= until) throw error;
       return this.mailbox.credentials();
@@ -93,6 +98,7 @@ export class VideoRefresh {
   async run() {
     if (this.stopped || this.signal.aborted || this.running) return;
     const until = this.credentials.expiresAt - 30000;
+    const refreshWindow = { retried: false };
     this.running = true;
     try {
       if (await this.observeAbort()) return;
@@ -100,7 +106,7 @@ export class VideoRefresh {
       const route = (await selectedVideoPair(this.peer))?.route;
       if (route === "direct" && latest <= this.completed) {
         const priorExpiry = this.credentials.expiresAt;
-        const next = await this.renew(until);
+        const next = await this.renew(until, refreshWindow);
         if (await this.observeAbort()) return;
         changeServers(this.peer, next.iceServers);
         this.credentials = next;
@@ -111,11 +117,12 @@ export class VideoRefresh {
       if (this.host) {
         if (this.completed < 6) await this.answerUntil(this.credentials.expiresAt - 15000);
       } else {
-        for (let attempt = 0; attempt < 2 && Date.now() < until; attempt++) {
+        while (Date.now() < until) {
           if (await this.observeAbort()) return;
           const n = Math.max(this.completed, await this.latest()) + 1;
           if (n > 6 || this.peer.connectionState !== "connected" || this.peer.signalingState !== "stable") return;
-          if (await this.offer(n, until)) return;
+          if (await this.offer(n, until, refreshWindow) || refreshWindow.retried) return;
+          refreshWindow.retried = true;
         }
       }
     } catch (error) {
@@ -126,16 +133,18 @@ export class VideoRefresh {
     } finally { this.running = false; }
   }
 
-  async offer(n, until) {
+  async offer(n, until, refreshWindow) {
     const round = `video-refresh-${n}`;
     const previous = this.credentials;
     await this.mailbox.write(`video-refresh-gen-${n}`, "offer", { v: 1, gen: n });
     let answerApplied = false;
+    let serversChanged = false;
     try {
-      const next = await this.renew(until);
+      const next = await this.renew(until, refreshWindow);
       if (await this.observeAbort() || Date.now() >= until) return false;
       const priorPair = await selectedVideoPair(this.peer);
       changeServers(this.peer, next.iceServers);
+      serversChanged = true;
       await this.peer.setLocalDescription(await this.peer.createOffer({ iceRestart: true }));
       const description = await gatherVideo(this.peer, this.signal);
       if (await this.observeAbort()) return false;
@@ -157,7 +166,7 @@ export class VideoRefresh {
       if (error instanceof VideoConflict || this.signal.aborted) throw error;
       return false;
     } finally {
-      if (!answerApplied && !this.signal.aborted) {
+      if (serversChanged && !answerApplied && !this.signal.aborted) {
         try {
           if (this.peer.signalingState === "have-local-offer") await this.peer.setLocalDescription({ type: "rollback" });
           changeServers(this.peer, previous.iceServers);
