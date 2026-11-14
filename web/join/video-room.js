@@ -24,6 +24,7 @@ export class VideoRoom {
     this.switcher = root.querySelector("[data-camera-switch]");
     this.preview = root.querySelector("[data-self]");
     this.remote = root.querySelector("[data-remote]");
+    this.placeholder = root.querySelector(".video-placeholder");
     this.status = root.querySelector("[data-video-status]");
     this.buttonClick = () => void (this.state === "relay-off" ? this.checkRelay() : this.tap());
     this.switchClick = () => void this.tap(true);
@@ -43,6 +44,8 @@ export class VideoRoom {
     this.state = state;
     this.root.dataset.videoState = state;
     this.status.textContent = this.host ? message.replace(/ Music stays connected\.$/, "") : message;
+    const inactive = ["relay-off", "camera-error", "paused"].includes(state);
+    this.placeholder.textContent = inactive ? "Camera is off" : "Waiting for the other camera";
     const active = !!this.track?.enabled && this.track.readyState === "live";
     this.camera.textContent = state === "relay-off" ? "Retry" : state === "camera-error" ? "Try again" : active ? "Hide camera" : this.label;
     this.camera.disabled = this.busy || state === "checking" || state === "paused" || !this.credentials && state !== "relay-off";
@@ -125,15 +128,13 @@ export class VideoRoom {
       this.render(this.peer?.connectionState === "connected" ? "live" : "preview", this.cameraStatus());
       if (!this.peer && !this.connecting) {
         this.connecting = true;
-        await this.connect(stream);
+        void this.connect(stream).catch(() => {
+          if (!this.signal.aborted) this.pause("Video paused. The other camera didn’t connect. Music stays connected.");
+        });
       }
     } catch (error) {
       if (track !== this.track) stream?.getTracks().forEach(item => item.stop());
       if (this.signal.aborted) return;
-      if (this.connecting && !switchCamera && !cameraErrors[error.name]) {
-        this.pause("Video paused. The other camera didn’t connect. Music stays connected.");
-        return;
-      }
       if (this.track === previous && previous?.readyState === "live") {
         if (track) this.preview.srcObject = new MediaStream([previous]);
         this.render("live", "Couldn’t switch cameras. Your current camera and music are still connected.");
