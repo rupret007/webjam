@@ -89,3 +89,40 @@ test('session diagnostics clear a retired path estimate and recover on a new sel
     session.close();
   }
 });
+
+test('adding a camera preserves the music estimate and a timing trip leaves music open', async () => {
+  const stats = pathStats();
+  const delays = [], errors = [];
+  const track = { enabled: true, stop() {} };
+  let camera = null;
+  let trips = 0;
+  const session = new WebJoinSession({ origin: 'https://relay.example', invite: {},
+    stream: { getAudioTracks: () => [track], getTracks: () => [track] },
+    audioContext: { baseLatency: 0.01 }, onLatency: value => delays.push(value),
+    onError: error => errors.push(error), videoPeer: () => camera, onVideoTrip() {
+      trips++;
+      camera = null;
+    },
+  });
+  session.pc = { connectionState: 'connected', getStats: async () => stats, close() {} };
+  session.authorized = true;
+  track.enabled = true;
+  session.videoBaselineDeadline = Date.now() + 30000;
+  try {
+    for (let i = 0; i < 20; i++) await session.updateStats();
+    assert.equal(session.videoBaseline.latency, 50);
+    camera = { connectionState: 'connected', getStats: () => assert.fail('video stats are not music stats') };
+    for (let i = 0; i < 5; i++) await session.updateStats();
+    assert.deepEqual(delays.slice(-5), [50, 50, 50, 50, 50]);
+    assert.equal(trips, 0);
+
+    stats.get('fast').currentRoundTripTime = 0.062;
+    for (let i = 0; i < 3; i++) await session.updateStats();
+    assert.equal(trips, 1);
+    assert.equal(session.authorized, true);
+    assert.equal(track.enabled, true);
+    assert.deepEqual(errors, []);
+  } finally {
+    session.close();
+  }
+});

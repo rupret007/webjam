@@ -52,3 +52,31 @@ details p { margin: 6px 0; }
 @media (prefers-reduced-motion: reduce) {
   .mic-meter-fill { transition: none; }
 }
+
+.camera-layout { padding: max(12px, env(safe-area-inset-top)) 16px max(12px, env(safe-area-inset-bottom)); overflow-x: clip; }
+.camera-layout main { max-width: 960px; min-height: calc(100dvh - max(12px, env(safe-area-inset-top)) - max(12px, env(safe-area-inset-bottom))); display: flex; flex-direction: column; }
+.camera-layout main > :not(.video-room):not(.join-card):not(audio) { display: none; }
+.camera-layout .join-card { max-width: 560px; width: 100%; margin-inline: auto; border: 0; padding: 0; background: transparent; }
+.camera-layout .join-card > :not(#status):not(.actions) { display: none; }
+.camera-layout .actions { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); overflow: hidden; }
+.camera-layout .actions:focus-within { position: static; width: auto; height: auto; clip-path: none; overflow: visible; }
+.camera-layout #status { min-height: 28px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .9rem; }
+.camera-host .join-card { display: none; }
+.video-room:not([hidden]) { flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.video-status { font-size: .95rem; margin: 0; min-height: 40px; display: flex; align-items: center; }
+.video-stage { display: grid; place-items: center; position: relative; flex: 1; min-height: 180px; overflow: hidden; border: 1px solid #384744; border-radius: 14px; background: #172120; }
+.video-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.video-placeholder { color: #b4c2bd; text-align: center; padding: 12px; }
+[data-video-state="live"] .video-placeholder { visibility: hidden; }
+.video-footer { display: flex; flex-direction: column; gap: 12px; }
+.video-footer video { width: 96px; height: 128px; border-radius: 10px; object-fit: cover; transform: scaleX(-1); background: #172120; }
+.video-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.video-actions button:last-child { margin-left: auto; }
+@media (min-width: 1000px) and (min-height: 780px) {
+  .camera-layout main { justify-content: center; }
+  .video-room:not([hidden]) { flex: 0 1 auto; }
+  .video-stage { flex: none; width: 100%; aspect-ratio: 16/9; }
+  .video-footer { flex-direction: row; justify-content: space-between; align-items: center; min-height: 120px; }
+  .video-footer video { width: 160px; height: 120px; }
+  .video-actions { margin-inline-start: auto; }
+}

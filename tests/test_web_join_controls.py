@@ -170,7 +170,7 @@ def test_visible_browser_button_copy_and_end_use_the_existing_owner(controls):
     controller.window.show()
     app.processEvents()
     assert panel.primary.isVisible() and panel.primary.text() == "Copy browser invite"
-    host = SimpleNamespace(state="preparing", invite="", stop=lambda: True)
+    host = SimpleNamespace(state="preparing", invite="", camera_invite="", stop=lambda: True)
     controls._host, controls._server = host, controller.bridge.hosted_server_process
     controls._refresh()
     assert not panel.primary.isEnabled() and "Preparing" in panel.status.text()
@@ -225,6 +225,7 @@ def test_copy_button_prepares_and_copies_only_for_the_current_invitation(control
     class Host:
         state = "preparing"
         invite = ""
+        camera_invite = ""
 
         def allow(self, port, *, generation):
             assert port == 22124 and generation == 1
@@ -269,7 +270,7 @@ def test_copy_button_prepares_and_copies_only_for_the_current_invitation(control
 
 def test_pressed_copy_cannot_become_invite_after_server_replacement(controls, monkeypatch):
     controls, controller, _ = controls
-    host = SimpleNamespace(state="waiting", invite="https://invalid/#synthetic", stop=lambda: True)
+    host = SimpleNamespace(state="waiting", invite="https://invalid/#synthetic", camera_invite="", stop=lambda: True)
     controls._host, controls._server = host, controller.bridge.hosted_server_process
     controls._prepared(host, True)
     panel = controller.window.web_guest_panel

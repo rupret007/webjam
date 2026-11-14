@@ -447,7 +447,8 @@ def test_host_withholds_expired_or_consumed_invite(monkeypatch, answer_arrives_b
         mailbox_factory=DelayedMailbox,
     )
     try:
-        assert host.allow(22124) == host.invite
+        invitation = host.allow(22124)
+        assert invitation == host.invite == host.camera_invite
         assert waiting.wait(1)
         deadline = process.open_args["expires_at_unix"]
         if not answer_arrives_before_expiry:
@@ -457,8 +458,10 @@ def test_host_withholds_expired_or_consumed_invite(monkeypatch, answer_arrives_b
         expected_state = "expired"
         if answer_arrives_before_expiry:
             assert applied.wait(1) and not host.invite
+            assert host.camera_invite == invitation
             assert host.state == "connecting"
             now = deadline
+            assert not host.camera_invite
             host.stop()
             expected_state = "closed"
         host._worker.join(timeout=1)

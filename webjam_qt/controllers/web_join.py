@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import threading
+from urllib.parse import urlsplit, urlunsplit
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication
 
 from services.web_join_host import PREPARE_UNAVAILABLE, PREPARATION_FAILURE_MESSAGES, WebJoinHost
@@ -33,6 +35,7 @@ class WebJoinControls(QObject):
         if self._panel is not None:
             self._panel.primary_requested.connect(self._primary)
             self._panel.stop_requested.connect(self._stop_from_panel)
+            self._panel.camera_requested.connect(self._open_camera)
         menu = controller.window.menuBar().addMenu("Web Join")
         self.allow_action = menu.addAction("Allow a web guest")
         self.allow_action.setCheckable(True)
@@ -112,6 +115,20 @@ class WebJoinControls(QObject):
             self._copy_when_ready = True
             self.allow_action.setChecked(True)
 
+    def _open_camera(self, context):
+        if not self._current_panel_context(context) or self._host is None:
+            return
+        invite = self._host.camera_invite
+        if not invite or self._host.state not in {"waiting", "connecting", "connected"}:
+            self._refresh()
+            return
+        parts = urlsplit(invite)
+        if parts.scheme != "https" or not parts.fragment or parts.query:
+            return
+        camera = urlunsplit(parts._replace(query="cameras=1"))
+        if not QDesktopServices.openUrl(QUrl(camera)):
+            self._controller.window.flash_message("Could not open the camera page in your browser.", ms=5000)
+
     def _render_panel(self):
         if self._panel is None:
             return
@@ -121,7 +138,11 @@ class WebJoinControls(QObject):
             self._panel_context = object()
             self._panel_server, self._panel_host = server, self._host
         def render(state, message):
-            self._panel.render(state, message, self._panel_context)
+            camera_ready = (
+                state in {"ready", "connecting", "connected"} and self._host is not None
+                and bool(self._host.camera_invite)
+            )
+            self._panel.render(state, message, self._panel_context, camera_ready=camera_ready)
         if self._cleanup_pending or self._retired_hosts:
             render("cleanup", "The browser guest has not stopped completely. Retry ending it.")
         elif self._owned_server() is None:

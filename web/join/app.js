@@ -1,6 +1,7 @@
 import { readInvite } from "./crypto.js";
 import { acquireMusicStream, closeAudioContext } from "./audio.js";
 import { WebJoinSession } from "./session.js";
+import { VideoRoom } from "./video-room.js";
 import { RELAY_ORIGIN } from "./config.js";
 import {
   micCheckFailure,
@@ -19,6 +20,7 @@ const failureElements = () => ({
 
 let invite;
 let session;
+let videoRoom;
 let context;
 let starting = false;
 let activeAttempt;
@@ -282,9 +284,18 @@ $("skip-check").addEventListener("click", (event) => {
   if (continueCheck) focusNextAudioCheckControl();
 });
 
-function leave(message = "You left the session.", error) {
+async function leave(message = "You left the session.", error, unloading = false) {
+  const restoreCameraFocus = document.activeElement === document.querySelector("[data-video-leave]");
+  const closing = videoRoom;
+  videoRoom = null;
+  if (closing) {
+    if (unloading) closing.close();
+    else await closing.closed();
+    closing.root.hidden = true;
+    document.body.classList.remove("camera-layout");
+  }
   const elements = failureElements();
-  const restoreFocus = document.activeElement === elements.leave;
+  const restoreFocus = restoreCameraFocus || document.activeElement === elements.leave;
   clearAccessTime();
   activeAttempt?.abort();
   activeAttempt = null;
@@ -395,6 +406,9 @@ async function startJoin() {
           }
         });
       },
+      videoPeer: () => videoRoom?.peer,
+      onVideoTrip: () => videoRoom?.pause("Video paused to protect music timing. Music stays connected."),
+      beforeMusicClose: () => videoRoom?.closed(),
       onError: (error) => {
         if (isCurrent()) leave(undefined, error);
       },
@@ -404,9 +418,16 @@ async function startJoin() {
     await joinedSession.join();
     if (!isCurrent()) return;
     showAccessTime(joinedSession.accessExpiresAt, isCurrent);
+    if (joinedSession.authorized && document.getElementById("video-room")) {
+      document.body.classList.add("camera-layout");
+      videoRoom = new VideoRoom({
+        root: $("video-room"), origin: RELAY_ORIGIN, invite, host: false,
+        timingReady: () => joinedSession.authorized && !!joinedSession.videoBaseline && joinedSession.route !== "relayed",
+      });
+    }
     clearJoinFailure(failureElements(), $("status").textContent);
     $("join").hidden = true;
-    $("leave").focus({ preventScroll: true });
+    (videoRoom ? document.querySelector("[data-video-leave]") : $("leave")).focus({ preventScroll: true });
     starting = false;
     refresh();
   } catch (error) {
@@ -439,7 +460,7 @@ $("retry").addEventListener("click", () => {
 });
 $("leave").addEventListener("click", () => leave());
 window.addEventListener("hashchange", () => window.location.reload());
-window.addEventListener("pagehide", () => leave());
+window.addEventListener("pagehide", () => leave(undefined, undefined, true));
 document.addEventListener("visibilitychange", () => {
   if (document.hidden || expireUnusedInvite()) return;
   if (context?.state === "suspended") {
