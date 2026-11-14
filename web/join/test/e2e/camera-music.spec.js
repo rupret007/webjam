@@ -18,10 +18,33 @@ async function syntheticDevices(page) {
       return fields[1] === "1" && fields[2].toLowerCase() === "udp" ? rewrite(fields).join(" ") : line;
     });
     window.labPeers = [];
+    window.labRawMusicStats = null;
+    window.labRelayTrip = false;
     window.RTCPeerConnection = class extends native {
       constructor(configuration) {
         super(peerConfiguration(configuration));
         window.labPeers.push(this);
+        if (!location.search && window.labPeers.length === 1) {
+          window.labRawMusicStats = this.getStats.bind(this);
+          // Drive the safety inputs explicitly for the control walkthrough.
+          // The paired timing windows use the independent, raw browser stats.
+          this.getStats = async () => {
+            const rows = new Map(await window.labRawMusicStats());
+            const transport = [...rows.values()].find(row => row.type === "transport");
+            const pair = rows.get(transport?.selectedCandidatePairId);
+            const audio = [...rows.values()].find(row => row.type === "inbound-rtp" && row.kind === "audio");
+            if (!pair || !audio?.jitterBufferEmittedCount) return rows;
+            rows.set(audio.id, { ...audio, jitter: 0, packetsLost: 0,
+              jitterBufferDelay: audio.jitterBufferEmittedCount * 0.02 });
+            rows.set(pair.id, { ...pair, nominated: true, currentRoundTripTime: 0.01 });
+            if (window.labRelayTrip) {
+              rows.set(transport.id, { ...transport, selectedCandidatePairId: "guard-pair" });
+              rows.set("guard-pair", { ...rows.get(pair.id), id: "guard-pair", localCandidateId: "guard-relay" });
+              rows.set("guard-relay", { type: "local-candidate", candidateType: "relay" });
+            }
+            return rows;
+          };
+        }
       }
       get localDescription() {
         const description = localDescription.call(this);
@@ -169,7 +192,7 @@ async function musicWindow(page) {
     for (let i = 0; i < 20; i++) {
       await new Promise(resolve => setTimeout(resolve, 1000));
       if (pc.connectionState !== "connected") throw new Error("Music ended during the timing window");
-      const ms = latencyMs(await pc.getStats(), window.labMusicBaseLatency);
+      const ms = latencyMs(await window.labRawMusicStats(), window.labMusicBaseLatency);
       if (!Number.isFinite(ms)) throw new Error("Expected finite music timing");
       values.push(ms);
     }
@@ -276,20 +299,7 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
   expect(await page.evaluate(() => [window.labPeers.length, window.labCameraCalls])).toEqual([2, 2]);
   // Simulate a newly selected music relay only in browser stats. The music
   // continues through the lab bridge, so guard behavior is observable.
-  await page.evaluate(() => {
-    const music = window.labPeers[0];
-    const getStats = music.getStats.bind(music);
-    music.getStats = async () => {
-      const rows = new Map(await getStats());
-      const transport = [...rows.values()].find(row => row.type === "transport");
-      const pair = rows.get(transport?.selectedCandidatePairId);
-      if (!pair) throw new Error("No selected music candidate pair");
-      rows.set(transport.id, { ...transport, selectedCandidatePairId: "guard-pair" });
-      rows.set("guard-pair", { ...pair, id: "guard-pair", nominated: true, localCandidateId: "guard-relay" });
-      rows.set("guard-relay", { type: "local-candidate", candidateType: "relay" });
-      return rows;
-    };
-  });
+  await page.evaluate(() => { window.labRelayTrip = true; });
   await expect(page.locator("[data-video-status]")).toHaveText("Video paused to protect music timing. Music stays connected.");
   await expect(page.getByRole("button", { name: "Leave", exact: true })).toBeInViewport({ ratio: 1 });
   expect(await page.evaluate(() => window.labPeers.map(pc => pc.connectionState))).toEqual(["connected", "closed"]);
