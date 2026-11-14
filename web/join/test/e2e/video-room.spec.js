@@ -6,22 +6,6 @@ const invite = () => {
 };
 
 async function cameraPage(page, baseURL, relayStatus = 200, failure = "") {
-  await page.addInitScript((failure) => {
-    window.cameraCalls = 0;
-    window.peers = 0;
-    window.previewPlayed = false;
-    navigator.mediaDevices.getUserMedia = async ({audio}) => {
-      if (audio) throw Error("Camera must not open the microphone");
-      window.cameraCalls++;
-      if (failure) throw new DOMException("Fixture camera error", failure);
-      // Keep the layout fixture independent of camera permissions and canvas capture.
-      const track = Object.assign(new EventTarget(), {
-        readyState: "live", enabled: true, getSettings: () => ({}), stop() {},
-      });
-      return { getVideoTracks: () => [track], getTracks: () => [track] };
-    };
-    window.RTCPeerConnection = class { constructor() { window.peers++; } };
-  }, failure);
   await page.route("**/*", route => {
     const url = new URL(route.request().url());
     if (url.origin === baseURL) return route.continue();
@@ -36,7 +20,25 @@ async function cameraPage(page, baseURL, relayStatus = 200, failure = "") {
     throw Error("Unexpected request from camera test");
   });
   await page.goto(`/?cameras=1${invite()}`);
-  await page.locator("[data-self]").evaluate(preview => {
+  await page.evaluate((failure) => {
+    window.cameraCalls = 0;
+    window.peers = 0;
+    window.previewPlayed = false;
+    const getUserMedia = async ({audio}) => {
+      if (audio) throw Error("Camera must not open the microphone");
+      window.cameraCalls++;
+      if (failure) throw new DOMException("Fixture camera error", failure);
+      // Keep the layout fixture independent of camera permissions and canvas capture.
+      const track = Object.assign(new EventTarget(), {
+        readyState: "live", enabled: true, getSettings: () => ({}), stop() {},
+      });
+      return { getVideoTracks: () => [track], getTracks: () => [track] };
+    };
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia } });
+    window.RTCPeerConnection = class { constructor() { window.peers++; } };
+  }, failure);
+  await page.evaluate(() => {
+    const preview = document.querySelector("[data-self]");
     Object.defineProperties(preview, {
       srcObject: { configurable: true, writable: true, value: null },
       play: { configurable: true, value() {
@@ -57,8 +59,9 @@ for (const size of [{width:390,height:844},{width:1440,height:900}]) {
     expect(await page.evaluate(() => [window.cameraCalls, window.peers])).toEqual([0,0]);
     await expect(leave).toBeInViewport({ratio:1});
     await camera.click();
-    await expect(page.locator("[data-self]")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => [window.cameraCalls, window.previewPlayed])).toEqual([1,true]);
     await expect(page.locator("[data-video-status]")).toContainText("Camera preview is on");
+    await expect(page.locator("[data-self]")).toBeVisible();
     expect(await page.evaluate(() => [window.cameraCalls, window.peers, window.previewPlayed])).toEqual([1,0,true]);
     const stage = await page.locator(".video-stage").boundingBox();
     const preview = await page.locator("[data-self]").boundingBox();

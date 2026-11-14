@@ -185,9 +185,8 @@ export class WebJoinSession {
       this.close();
       this.onError?.(error);
     };
-    const pending = this.beforeMusicClose?.();
-    if (pending) void Promise.resolve(pending).then(finish, finish);
-    else finish();
+    if (!this.beforeMusicClose) return finish();
+    void Promise.resolve().then(this.beforeMusicClose).then(finish, finish);
   }
   close() {
     if (this.controller.signal.aborted) return;
