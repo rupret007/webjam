@@ -72,6 +72,7 @@ export class VideoRoom {
   }
 
   async capture(switchCamera) {
+    if (!navigator.mediaDevices?.getUserMedia) throw new DOMException("Unavailable", "NotFoundError");
     const facingMode = this.facing === "environment" ? "user" : "environment";
     const currentId = this.track?.getSettings().deviceId;
     let video = cameraSizes;
@@ -107,7 +108,6 @@ export class VideoRoom {
     let stream;
     let track;
     try {
-      if (!navigator.mediaDevices?.getUserMedia) throw new DOMException("Unavailable", "NotFoundError");
       stream = await this.capture(switchCamera);
       this.signal.throwIfAborted();
       track = stream.getVideoTracks()[0];
@@ -118,6 +118,7 @@ export class VideoRoom {
       catch { throw new DOMException("Preview blocked", "NotAllowedError"); }
       this.signal.throwIfAborted();
       if (this.sender) await this.sender.replaceTrack(track);
+      this.signal.throwIfAborted();
       this.track = track;
       this.facing = track.getSettings().facingMode;
       previous?.stop();

@@ -287,10 +287,10 @@ $("skip-check").addEventListener("click", (event) => {
 async function leave(message = "You left the session.", error, unloading = false) {
   const restoreCameraFocus = document.activeElement === document.querySelector("[data-video-leave]");
   const closing = videoRoom;
-  videoRoom = null;
   if (closing) {
     if (unloading) closing.close();
     else await closing.closed();
+    if (videoRoom === closing) videoRoom = null;
     closing.root.hidden = true;
     document.body.classList.remove("camera-layout");
   }
