@@ -420,6 +420,7 @@ async function startJoin() {
     showAccessTime(joinedSession.accessExpiresAt, isCurrent);
     if (joinedSession.authorized && document.getElementById("video-room")) {
       document.body.classList.add("camera-layout");
+      $("status").textContent = "Connected to music";
       videoRoom = new VideoRoom({
         root: $("video-room"), origin: RELAY_ORIGIN, invite, host: false,
         timingReady: () => joinedSession.authorized && !!joinedSession.videoBaseline && joinedSession.route !== "relayed",
