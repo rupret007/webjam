@@ -3,11 +3,13 @@ import { VideoConflict } from "./video-mailbox.js";
 import { cameraDescription, gatherVideo } from "./video-peer.js";
 import { connectionRoute } from "./audio.js";
 
-async function selectedRoute(peer) {
+export async function selectedVideoPair(peer) {
   const stats = await peer.getStats();
   const transport = [...stats.values()].find(row => row.type === "transport");
   const id = transport?.selectedCandidatePairId;
-  return stats.get(id)?.nominated === true ? connectionRoute(stats, id) : null;
+  const pair = stats.get(id);
+  if (!id || pair?.nominated !== true || pair.state !== "succeeded") return null;
+  return { id, route: connectionRoute(stats, id) };
 }
 
 function changeServers(peer, servers) {
@@ -19,37 +21,28 @@ export class VideoRefresh {
     Object.assign(this, { peer, mailbox, credentials, host, signal, onExpired });
     this.completed = 0;
     this.stopped = false;
-    this.pollPending = false;
   }
 
   start() {
     this.arm();
-    this.abortTimer = setInterval(() => {
-      if (!this.pollPending && !this.running) void this.observeAbort().catch(() => {});
-    }, 1000);
   }
 
   close() {
     this.stopped = true;
     clearTimeout(this.refreshTimer);
     clearTimeout(this.expiryTimer);
-    clearInterval(this.abortTimer);
   }
 
   async observeAbort() {
     if (this.stopped || this.signal.aborted) return true;
-    this.pollPending = true;
-    try {
-      const value = await this.mailbox.read("video-refresh-abort", "offer");
-      if (value?.v === 1 && value.abort === "refresh") this.stopRenewing();
-      return this.stopped || this.signal.aborted;
-    } finally { this.pollPending = false; }
+    const value = await this.mailbox.read("video-refresh-abort", "offer");
+    if (value?.v === 1 && value.abort === "refresh") this.stopRenewing();
+    return this.stopped || this.signal.aborted;
   }
 
   stopRenewing() {
     this.stopped = true;
     clearTimeout(this.refreshTimer);
-    clearInterval(this.abortTimer);
     // Keep the old expiry enforced after a signaling conflict.
   }
 
@@ -61,7 +54,7 @@ export class VideoRefresh {
     this.refreshTimer = setTimeout(() => void this.run(), Math.max(0, expiry - Date.now() - 90000));
     this.expiryTimer = setTimeout(async () => {
       try {
-        if (await selectedRoute(this.peer) !== "direct" && !this.signal.aborted) this.onExpired();
+        if ((await selectedVideoPair(this.peer))?.route !== "direct" && !this.signal.aborted) this.onExpired();
       } catch { if (!this.signal.aborted) this.onExpired(); }
     }, Math.max(0, expiry - Date.now()));
   }
@@ -85,25 +78,26 @@ export class VideoRefresh {
   }
 
   async run() {
-    if (this.stopped || this.signal.aborted) return;
+    if (this.stopped || this.signal.aborted || this.running) return;
     const until = this.credentials.expiresAt - 30000;
     this.running = true;
     try {
       if (await this.observeAbort()) return;
       const latest = await this.latest();
-      const route = await selectedRoute(this.peer);
+      const route = (await selectedVideoPair(this.peer))?.route;
       if (route === "direct" && latest <= this.completed) {
         const priorExpiry = this.credentials.expiresAt;
         const next = await this.renew(until);
         if (await this.observeAbort()) return;
         changeServers(this.peer, next.iceServers);
         this.credentials = next;
-        if (this.host) await this.answerUntil(priorExpiry - 15000, next);
+        if (this.host && this.completed < 6) await this.answerUntil(priorExpiry - 15000, next);
         this.arm();
         return;
       }
-      if (this.host) await this.answerUntil(this.credentials.expiresAt - 15000);
-      else {
+      if (this.host) {
+        if (this.completed < 6) await this.answerUntil(this.credentials.expiresAt - 15000);
+      } else {
         for (let attempt = 0; attempt < 2 && Date.now() < until; attempt++) {
           if (await this.observeAbort()) return;
           const n = Math.max(this.completed, await this.latest()) + 1;
@@ -127,6 +121,7 @@ export class VideoRefresh {
     try {
       const next = await this.renew(until);
       if (await this.observeAbort() || Date.now() >= until) return false;
+      const priorPair = await selectedVideoPair(this.peer);
       changeServers(this.peer, next.iceServers);
       await this.peer.setLocalDescription(await this.peer.createOffer({ iceRestart: true }));
       const description = await gatherVideo(this.peer, this.signal);
@@ -139,7 +134,7 @@ export class VideoRefresh {
           if (await this.observeAbort() || Date.now() >= deadline) return false;
           await this.peer.setRemoteDescription({ type: "answer", sdp: cameraDescription(answer) });
           answerApplied = true;
-          await this.connected(n, next);
+          await this.connected(n, next, priorPair);
           return true;
         }
         await delay(Math.min(500, Math.max(0, deadline - Date.now())), this.signal);
@@ -167,6 +162,7 @@ export class VideoRefresh {
         const previous = this.peer.getConfiguration().iceServers;
         const next = prefetched ?? await this.mailbox.credentials();
         if (Date.now() >= until || n !== await this.latest()) return;
+        const priorPair = await selectedVideoPair(this.peer);
         changeServers(this.peer, next.iceServers);
         let committed = false;
         try {
@@ -177,7 +173,7 @@ export class VideoRefresh {
           const answer = await gatherVideo(this.peer, this.signal, 10000);
           if (await this.observeAbort()) return;
           await this.mailbox.write(round, "answer", answer);
-          await this.connected(n, next);
+          await this.connected(n, next, priorPair);
         } catch (error) {
           if (committed && !(error instanceof VideoConflict) && !this.signal.aborted) this.onExpired();
           throw error;
@@ -190,10 +186,11 @@ export class VideoRefresh {
     }
   }
 
-  async connected(n, next) {
+  async connected(n, next, priorPair) {
     const until = Date.now() + 15000;
     while (Date.now() < until && !this.signal.aborted) {
-      if (this.peer.connectionState === "connected") {
+      const selected = await selectedVideoPair(this.peer);
+      if (this.peer.connectionState === "connected" && selected && selected.id !== priorPair?.id) {
         this.completed = n;
         this.credentials = next;
         clearTimeout(this.expiryTimer);

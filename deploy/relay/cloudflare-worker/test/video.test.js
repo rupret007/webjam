@@ -37,7 +37,7 @@ test("a video request cannot fall back to either music key, even without Origin"
   for (const video of [undefined, "web", "desktop"]) {
     for (const origin of [undefined,"https://stalemate.band"]) {
       resetWorkerState();
-      const request = new Request("https://relay.example/turn-credentials", {
+      const request = new Request("https://relay.example/turn-credentials?client=web-video", {
         method:"POST", headers:{"content-type":"application/json", "CF-Connecting-IP":"203.0.113.8", ...(origin ? {origin} : {})},
         body:JSON.stringify({client:"web-video", session_id:"1".repeat(64), invite_token:"a".repeat(43)}),
       });
@@ -49,4 +49,17 @@ test("a video request cannot fall back to either music key, even without Origin"
       assert.equal(response.status, 503);
     }
   }
+});
+
+test("video charges a separate budget and requires an explicit signaling limit", async () => {
+  resetWorkerState();
+  const env = { ENVIRONMENT: "development", VIDEO_MAILBOX: {}, MAILBOX: {} };
+  const deps = { nowMs: now, mailboxFetch: () => new Response(null, { status: 204 }) };
+  const request = route => new Request("https://relay.example/" + route + "/" + "a".repeat(64) + "/offer",
+    { headers: {"CF-Connecting-IP": "203.0.113.8"} });
+  assert.equal((await handleRequest(request("video-mailbox"), env, deps)).status, 503);
+  env.VIDEO_SIGNAL_DAILY_REQUESTS = "1";
+  assert.equal((await handleRequest(request("video-mailbox"), env, deps)).status, 204);
+  assert.equal((await handleRequest(request("video-mailbox"), env, deps)).status, 429);
+  assert.equal((await handleRequest(request("mailbox"), env, deps)).status, 204);
 });
