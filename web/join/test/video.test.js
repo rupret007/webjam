@@ -70,3 +70,40 @@ test("video waits for complete vanilla gathering and retains the end marker", as
   assert.match(sdp,/a=end-of-candidates/);
   assert.doesNotMatch(sdp,/trickle/);
 });
+
+test("direct video renews 90 seconds before expiry without an ICE restart", async t => {
+  const { VideoRefresh } = await import("../video-refresh.js");
+  t.mock.timers.enable({ apis: ["Date", "setTimeout", "setInterval"], now: 100000 });
+  let renewed;
+  const refreshDone = new Promise(resolve => { renewed = resolve; });
+  const next = { expiresAt: 710000, iceServers: [] };
+  const peer = {
+    getStats: async () => new Map([
+      ["t", { type:"transport", selectedCandidatePairId:"p" }],
+      ["p", { type:"candidate-pair", nominated:true, state:"succeeded", localCandidateId:"l", remoteCandidateId:"r" }],
+      ["l", { candidateType:"host" }], ["r", { candidateType:"srflx" }],
+    ]),
+    getConfiguration: () => ({}),
+    setConfiguration: ({ iceServers }) => renewed(iceServers),
+    createOffer: () => assert.fail("direct refresh must not create an offer"),
+  };
+  let requests = 0;
+  const mailbox = {
+    read: async () => null,
+    write: () => assert.fail("direct refresh must not reserve a generation"),
+    credentials: async () => { requests++; return next; },
+  };
+  const refresh = new VideoRefresh({ peer, mailbox, credentials: { expiresAt: 200000 },
+    signal: new AbortController().signal, onExpired: () => assert.fail("unexpected expiry") });
+  refresh.start();
+  try {
+    t.mock.timers.tick(9999);
+    assert.equal(requests, 0);
+    t.mock.timers.tick(1);
+    assert.deepEqual(await refreshDone, []);
+    assert.equal(requests, 1);
+    assert.equal(refresh.credentials, next);
+  } finally {
+    refresh.close();
+  }
+});

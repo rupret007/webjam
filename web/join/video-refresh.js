@@ -20,22 +20,30 @@ export class VideoRefresh {
   constructor({ peer, mailbox, credentials, host, signal, onExpired }) {
     Object.assign(this, { peer, mailbox, credentials, host, signal, onExpired });
     this.completed = 0;
+    this.latestGeneration = 0;
     this.stopped = false;
   }
 
   start() {
     this.arm();
+    this.abortTimer = setInterval(() => {
+      if (!this.running && !this.abortRead) void this.observeAbort().catch(() => {});
+    }, 1000);
   }
 
   close() {
     this.stopped = true;
     clearTimeout(this.refreshTimer);
     clearTimeout(this.expiryTimer);
+    clearInterval(this.abortTimer);
   }
 
   async observeAbort() {
     if (this.stopped || this.signal.aborted) return true;
-    const value = await this.mailbox.read("video-refresh-abort", "offer");
+    this.abortRead ??= this.mailbox.read("video-refresh-abort", "offer").finally(() => {
+      this.abortRead = null;
+    });
+    const value = await this.abortRead;
     if (value?.v === 1 && value.abort === "refresh") this.stopRenewing();
     return this.stopped || this.signal.aborted;
   }
@@ -43,6 +51,7 @@ export class VideoRefresh {
   stopRenewing() {
     this.stopped = true;
     clearTimeout(this.refreshTimer);
+    clearInterval(this.abortTimer);
     // Keep the old expiry enforced after a signaling conflict.
   }
 
@@ -60,11 +69,15 @@ export class VideoRefresh {
   }
 
   async latest() {
-    for (let n = 6; n >= 1; n--) {
-      const mark = await this.mailbox.read(`video-refresh-gen-${n}`, "offer");
-      if (mark?.v === 1 && mark.gen === n) return n;
+    // A generation is reserved before an offer is written. The guest only
+    // reserves the next index, so the host can check consecutive markers.
+    while (this.latestGeneration < 6) {
+      const next = this.latestGeneration + 1;
+      const mark = await this.mailbox.read(`video-refresh-gen-${next}`, "offer");
+      if (mark?.v !== 1 || mark.gen !== next) break;
+      this.latestGeneration = next;
     }
-    return 0;
+    return this.latestGeneration;
   }
 
   async renew(until) {
