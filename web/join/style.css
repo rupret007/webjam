@@ -71,6 +71,9 @@ details p { margin: 6px 0; }
 .video-footer { display: flex; flex-direction: column; gap: 12px; }
 .video-footer video { width: 96px; height: 128px; border-radius: 10px; object-fit: cover; transform: scaleX(-1); background: #172120; }
 .video-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 480px) {
+  .video-actions button { padding-inline: 10px; }
+}
 .video-actions button:last-child { margin-left: auto; }
 @media (min-width: 1000px) and (min-height: 780px) {
   .camera-layout main { justify-content: center; }
