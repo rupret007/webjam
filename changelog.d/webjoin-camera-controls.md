@@ -1,0 +1,1 @@
+Add optional in-room camera controls and a mirrored local preview to Web Join. Music continues when a camera pauses.
