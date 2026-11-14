@@ -186,23 +186,50 @@ function decoded(page) {
 
 async function musicWindow(page) {
   return page.evaluate(async () => {
-    const { latencyMs } = await import("/audio.js");
+    const { connectionRoute, latencyMs } = await import("/audio.js");
     const pc = window.labPeers[0];
-    const values = [];
-    for (let i = 0; i < 20; i++) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    const read = async () => {
       if (pc.connectionState !== "connected") throw new Error("Music ended during the timing window");
-      const ms = latencyMs(await window.labRawMusicStats(), window.labMusicBaseLatency);
-      if (!Number.isFinite(ms)) throw new Error("Expected finite music timing");
-      values.push(ms);
+      const stats = await window.labRawMusicStats();
+      const transport = [...stats.values()].find(row => row.type === "transport");
+      const audio = [...stats.values()].find(row => row.type === "inbound-rtp" && row.kind === "audio");
+      return { stats, audio, pairId: transport?.selectedCandidatePairId };
+    };
+    const elapsed = [], appEstimate = [], pairs = new Set(), routes = new Set();
+    let previous = await read();
+    for (let i = 0; i < 30 && elapsed.length < 20; i++) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const current = await read();
+      const count = current.audio?.jitterBufferEmittedCount - previous.audio?.jitterBufferEmittedCount;
+      const delay = current.audio?.jitterBufferDelay - previous.audio?.jitterBufferDelay;
+      const pair = current.stats.get(current.pairId);
+      const route = connectionRoute(current.stats, current.pairId) ?? "unclassified";
+      const ms = latencyMs(current.stats, window.labMusicBaseLatency);
+      const sameAudio = current.audio?.id === previous.audio?.id;
+      previous = current;
+      if (current.pairId) pairs.add(current.pairId);
+      routes.add(route);
+      // ICE stats can briefly omit RTT or mark the pair in-progress. Keep
+      // the sampling window bounded and never estimate from those reports.
+      if (!Number.isFinite(ms) || !Number.isFinite(count) || count <= 0 || !Number.isFinite(delay) || delay < 0 ||
+          !sameAudio || !pair?.nominated) continue;
+      appEstimate.push(ms);
+      // Attribute jitter buffering to this interval. The UI estimate uses
+      // lifetime counters and may carry startup or earlier samples forward.
+      elapsed.push((pair.currentRoundTripTime / 2 + delay / count + window.labMusicBaseLatency) * 1000);
     }
-    values.sort((a, b) => a - b);
-    return { samples: values.length, medianMs: (values[9] + values[10]) / 2 };
+    if (elapsed.length < 20) throw new Error(`Only ${elapsed.length} of 20 music samples available within 30 seconds`);
+    const median = values => {
+      values.sort((a, b) => a - b);
+      return (values[9] + values[10]) / 2;
+    };
+    return { pairIds: [...pairs], routes: [...routes], samples: elapsed.length,
+      medianMs: median(elapsed), appEstimateMedianMs: median(appEstimate) };
   });
 }
 
 test("WebJam camera and music run on separate real peers in the local lab", async ({ page, context, request, baseURL }, info) => {
-  test.setTimeout(100000);
+  test.setTimeout(160000);
   const offerResponse = await request.get("http://127.0.0.1:4175/offer?journey=camera-music");
   expect(offerResponse.ok()).toBe(true);
   const nativeHost = await offerResponse.json();
@@ -240,6 +267,8 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
   expect(await host.evaluate(() => [window.labPeers.length, window.labCameraCalls])).toEqual([0, 0]);
   await guestShow.click();
   await expect(page.locator("[data-video-status]")).toContainText("Music timing isn't measurable");
+  // Let the initial audio/jitter-buffer ramp settle before comparing windows.
+  await page.waitForTimeout(5000);
   const before = await musicWindow(page);
   await guestShow.click();
   await expect(page.locator("[data-self]")).toBeVisible();
@@ -279,12 +308,7 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
     expect(await status.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`camera-and-music-${size.width}.png`) });
   }
-  const after = await musicWindow(page);
-  expect(after.medianMs - before.medianMs).toBeLessThanOrEqual(10);
-  const timingPath = info.outputPath("music-timing.json");
-  const differenceMs = after.medianMs - before.medianMs;
-  await writeFile(timingPath, JSON.stringify({ before, after, differenceMs }, null, 2));
-  await info.attach("music timing (loopback)", { path: timingPath, contentType: "application/json" });
+  const withCamera = await musicWindow(page);
   const beforeSwitch = await decoded(host);
   const musicLab = await (await request.get("http://127.0.0.1:4175/status")).json();
   const cameraStatus = (await page.locator("[data-video-status]").textContent())?.trim();
@@ -308,6 +332,24 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
   expect(musicState.received).toBeGreaterThan(0);
   expect(musicState.sent).toBeGreaterThan(0);
   await page.screenshot({ path: info.outputPath("video-paused-music-connected.png") });
+  const after = await musicWindow(page);
+  const windows = [before, withCamera, after];
+  // ICE pair identifiers stay in memory. Save only route classes, numeric
+  // timing and whether all three windows used the same music pair.
+  const sameMusicPair = new Set(windows.flatMap(window => window.pairIds)).size === 1;
+  const summarize = ({ pairIds, ...window }) => window;
+  const timing = { before: summarize(before), withCamera: summarize(withCamera),
+    after: summarize(after), sameMusicPair,
+    differenceFromBeforeMs: withCamera.medianMs - before.medianMs,
+    differenceFromAfterMs: withCamera.medianMs - after.medianMs };
+  const timingPath = info.outputPath("music-timing.json");
+  await writeFile(timingPath, JSON.stringify(timing, null, 2));
+  await info.attach("music timing (loopback)", { path: timingPath, contentType: "application/json" });
+  expect(sameMusicPair).toBe(true);
+  // The local fixture has no ICE servers, and its peer-reflexive pair may
+  // have no route classification in the production stats helper.
+  expect(windows.flatMap(window => window.routes)).not.toContain("relayed");
+  expect(Math.max(timing.differenceFromBeforeMs, timing.differenceFromAfterMs)).toBeLessThanOrEqual(10);
   await page.getByRole("button", { name: "Leave", exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.labPeers.map(pc => pc.connectionState))).toEqual(["closed", "closed"]);
   await host.close();
