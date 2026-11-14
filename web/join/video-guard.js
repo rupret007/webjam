@@ -26,12 +26,16 @@ export function musicSample(stats, pairId, latency, targetMs) {
   };
 }
 
-export function musicVideoTrip(peer, current, baseline, latencyWindow) {
+export function musicVideoTrip(peer, current, baseline, latencyWindow, previousPath = baseline) {
   if (!videoPeerOpen(peer) || !baseline) return false;
   const metrics = current();
+  const movedOntoRelay = !!metrics.pairId && metrics.route === "relayed" &&
+    (previousPath.route === "direct" ||
+     (!previousPath.route && !!previousPath.pairId && previousPath.pairId !== metrics.pairId));
   return (latencyWindow.length >= 5 && median(latencyWindow) > baseline.latency + 10) ||
+    movedOntoRelay ||
     (!!metrics.pairId && !!baseline.pairId && metrics.pairId !== baseline.pairId &&
-      (metrics.route === "relayed" || (Number.isFinite(metrics.rttMs) && Number.isFinite(baseline.rttMs) && metrics.rttMs > baseline.rttMs + 10))) ||
+      Number.isFinite(metrics.rttMs) && Number.isFinite(baseline.rttMs) && metrics.rttMs > baseline.rttMs + 10) ||
     (Number.isFinite(metrics.loss) && Number.isFinite(baseline.loss) && metrics.received >= 50 && metrics.loss > baseline.loss + 0.01) ||
     metrics.targetMs > baseline.targetMs;
 }
