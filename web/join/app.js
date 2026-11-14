@@ -289,6 +289,13 @@ async function runMicCheck(control) {
 }
 
 $("headphones").addEventListener("change", refresh);
+$("headphones").addEventListener("click", (event) => {
+  // A keyboard confirmation should reach Join even in browsers whose
+  // default Tab order skips buttons. A pointer click keeps its focus.
+  if (event.detail !== 0 || document.activeElement !== event.currentTarget || !joinReady()) return;
+  refresh();
+  $("join").focus();
+});
 $("check-mic").addEventListener("click", (event) => runMicCheck(event.currentTarget));
 $("mic-retry").addEventListener("click", (event) => runMicCheck(event.currentTarget));
 $("mic-device").addEventListener("change", (event) => {

@@ -1,0 +1,1 @@
+- Move keyboard focus to Join after the guest confirms headphones and the audio check is ready.
