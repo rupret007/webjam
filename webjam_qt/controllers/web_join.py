@@ -162,6 +162,8 @@ class WebJoinControls(QObject):
                         "ready",
                         "Link copied. Share it in your Jam room or a private message. Keep this Music session open.",
                     )
+                elif self._person_invite_offered:
+                    render("ready", "Send this invite from the sharing panel. Headphones required.")
                 else:
                     render("ready", "The link is ready to copy. Headphones required.")
             elif state == "connected":
@@ -260,8 +262,8 @@ class WebJoinControls(QObject):
             self._copy_when_ready = False
             if not offered:
                 self._copy()
-        else:
-            self._render_panel()
+                return
+        self._render_panel()
 
     def _offer_prepared_person_invite(self) -> bool:
         """Same moment Copy becomes available: Share or Email, Copy secondary."""
