@@ -46,6 +46,7 @@ test("Leave releases the replacement camera before a pending switch finishes", a
 
   const switching = room.tap(true);
   assert.equal(await replacing, nextTrack);
+  assert.equal(room.status.textContent, "Switching cameras… Music stays connected.");
   room.close();
   assert.equal(nextTrack.readyState, "ended");
   assert.equal(room.preview.srcObject, null);
@@ -257,6 +258,7 @@ test("a pending camera request keeps keyboard focus and the retry in place", asy
   const pending = room.tap();
   assert.equal(camera.disabled, false);
   assert.equal(camera.getAttribute("aria-disabled"), "true");
+  assert.equal(room.status.textContent, "Waiting for camera access. If your browser asks, choose Allow. Music stays connected.");
   await room.tap();
   capture.reject(new DOMException("Fixture permission denied", "NotAllowedError"));
   await pending;

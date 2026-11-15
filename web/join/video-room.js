@@ -45,10 +45,14 @@ export class VideoRoom {
     void this.checkRelay();
   }
 
+  setStatus(message) {
+    this.status.textContent = this.host ? message.replace(/ Music stays connected\.$/, "") : message;
+  }
+
   render(state, message) {
     this.state = state;
     this.root.dataset.videoState = state;
-    this.status.textContent = this.host ? message.replace(/ Music stays connected\.$/, "") : message;
+    this.setStatus(message);
     const inactive = ["relay-off", "camera-error", "paused"].includes(state);
     this.placeholder.textContent = inactive ? "Camera is off" : "Waiting for the other camera";
     const active = !!this.track?.enabled && this.track.readyState === "live";
@@ -137,6 +141,9 @@ export class VideoRoom {
     }
     if (this.peer && !this.initialComplete) return;
     this.setCapturePending(true);
+    this.setStatus(switchCamera
+      ? "Switching cameras… Music stays connected."
+      : "Waiting for camera access. If your browser asks, choose Allow. Music stays connected.");
     const previous = this.track;
     const previousPreview = this.preview.srcObject;
     let stream;
