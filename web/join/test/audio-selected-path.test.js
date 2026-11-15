@@ -127,6 +127,45 @@ test('adding a camera preserves the music estimate and a timing trip leaves musi
   }
 });
 
+test('recent jitter-buffer delay pauses video before the lifetime estimate crosses the limit', async () => {
+  const stats = pathStats();
+  const audio = stats.get('audio');
+  Object.assign(audio, { id: 'music-inbound', jitterBufferEmittedCount: 10000, jitterBufferDelay: 200 });
+  const track = { enabled: true, stop() {} };
+  let camera = null;
+  let trips = 0;
+  const session = new WebJoinSession({
+    origin: 'https://relay.example', invite: {},
+    stream: { getAudioTracks: () => [track], getTracks: () => [track] },
+    audioContext: { baseLatency: 0.01 }, videoPeer: () => camera,
+    onVideoTrip() { trips++; camera = null; },
+    onError: error => assert.fail(error),
+  });
+  session.pc = { connectionState: 'connected', getStats: async () => stats, close() {} };
+  session.authorized = true;
+  session.videoBaselineDeadline = Date.now() + 30000;
+  track.enabled = true;
+  async function tick(bufferSeconds) {
+    audio.jitterBufferEmittedCount += 50;
+    audio.jitterBufferDelay += 50 * bufferSeconds;
+    await session.updateStats();
+  }
+  try {
+    for (let i = 0; i < 20; i++) await tick(0.02);
+    assert.equal(session.videoBaseline.intervalLatency, 50);
+    camera = { connectionState: 'connected' };
+    for (let i = 0; i < 4; i++) await tick(0.04);
+    assert.equal(trips, 0);
+    await tick(0.04);
+    assert.ok(latencyMs(stats, 0.01) < session.videoBaseline.latency + 10);
+    assert.equal(trips, 1);
+    assert.equal(session.authorized, true);
+    assert.equal(track.enabled, true);
+  } finally {
+    session.close();
+  }
+});
+
 test('video can start on relayed music and pauses when music moves back onto relay', async () => {
   const stats = pathStats();
   const track = { enabled: true, stop() {} };

@@ -2,7 +2,7 @@ import { open, seal, validateOffer, sdpFingerprint, enrollmentProof } from "./cr
 import { Mailbox, BUSY_MESSAGE } from "./mailbox.js";
 import { candidateAllowed, offerHasReviewedAllocation, policySdp, SESSION_BYTES } from "./policy.js";
 import { musicSdp, tuneReceiver, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget, connectionRoute } from "./audio.js";
-import { median, musicSample, musicVideoTrip, videoPeerOpen } from "./video-guard.js";
+import { intervalMusicLatency, median, musicSample, musicVideoTrip, videoPeerOpen } from "./video-guard.js";
 import { JOIN_SIGNAL } from "./errors.js";
 
 export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReviewedAllocations = false } = {}) {
@@ -39,6 +39,7 @@ export class WebJoinSession {
     Object.assign(this, { invite, stream, audioContext, onStatus, onTrack, onLatency, onRoute, onError, videoPeer, onVideoTrip, beforeMusicClose });
     this.videoBaselineSamples = [];
     this.videoLatency = [];
+    this.videoIntervalLatency = [];
     this.controller = new AbortController();
     this.mailbox = new Mailbox(origin, invite, { signal: this.controller.signal });
     this.authorized = false; this.quotaBytes = SESSION_BYTES; this.previousBytes = 0;
@@ -145,19 +146,28 @@ export class WebJoinSession {
       const latency = latencyMs(stats, this.audioContext.baseLatency);
       const video = this.videoPeer();
       const sample = musicSample(stats, selectedPairId, latency, next.targetMs);
+      sample.intervalLatency = intervalMusicLatency(sample, this.lastMusicPlayout, this.audioContext.baseLatency);
+      this.lastMusicPlayout = sample.playout;
       if (videoPeerOpen(video) && this.videoBaseline) {
         if (Number.isFinite(latency)) this.videoLatency = [...this.videoLatency.slice(-4), latency];
-        const trip = musicVideoTrip(video, () => sample, this.videoBaseline, this.videoLatency, this.videoMusicPath);
+        if (Number.isFinite(sample.intervalLatency)) {
+          this.videoIntervalLatency = [...this.videoIntervalLatency.slice(-4), sample.intervalLatency];
+        }
+        const trip = musicVideoTrip(video, () => sample, this.videoBaseline, this.videoLatency,
+          this.videoMusicPath, this.videoIntervalLatency);
         this._jitterAdaptation = next.targetMs > this.videoBaseline.targetMs ? previous : next;
         if (trip) this.onVideoTrip();
       } else {
         this._jitterAdaptation = next;
         this.videoLatency = [];
+        this.videoIntervalLatency = [];
         if (!this.videoBaseline && Date.now() <= this.videoBaselineDeadline && Number.isFinite(latency)) {
           this.videoBaselineSamples.push(sample);
           if (this.videoBaselineSamples.length === 20) {
+            const intervals = this.videoBaselineSamples.map(item => item.intervalLatency).filter(Number.isFinite);
             this.videoBaseline = { ...sample,
               latency: median(this.videoBaselineSamples.map(item => item.latency)),
+              intervalLatency: intervals.length >= 5 ? median(intervals) : null,
               rttMs: median(this.videoBaselineSamples.map(item => item.rttMs)),
             };
           }
