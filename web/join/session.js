@@ -2,7 +2,7 @@ import { open, seal, validateOffer, sdpFingerprint, enrollmentProof } from "./cr
 import { Mailbox, BUSY_MESSAGE } from "./mailbox.js";
 import { candidateAllowed, offerHasReviewedAllocation, policySdp, SESSION_BYTES } from "./policy.js";
 import { musicSdp, tuneReceiver, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget, connectionRoute } from "./audio.js";
-import { median, musicSample, musicVideoTrip, videoPeerOpen } from "./video-guard.js";
+import { musicBaseline, musicSample, musicVideoTrip, videoPeerOpen } from "./video-guard.js";
 import { JOIN_SIGNAL } from "./errors.js";
 
 export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReviewedAllocations = false } = {}) {
@@ -120,7 +120,6 @@ export class WebJoinSession {
     if (this.pendingStream) this.onTrack(this.pendingStream);
     this.pendingStream = null;
     this.onStatus("Connected — Web Join, higher delay (about 60–120 ms).");
-    this.videoBaselineDeadline = Date.now() + 30000;
     this.statsTimer = setInterval(() => this.updateStats(), 1000);
     // Credentials and their allocation authority are never retained past TTL.
     this.expiryTimer = setTimeout(() => this.fail(new Error("The free relay session expired. Ask the host for a new invite.")), Math.max(0, credentials.expiresAt - Date.now()));
@@ -149,17 +148,23 @@ export class WebJoinSession {
         if (Number.isFinite(latency)) this.videoLatency = [...this.videoLatency.slice(-4), latency];
         const trip = musicVideoTrip(video, () => sample, this.videoBaseline, this.videoLatency, this.videoMusicPath);
         this._jitterAdaptation = next.targetMs > this.videoBaseline.targetMs ? previous : next;
-        if (trip) this.onVideoTrip();
+        this.videoBaselineSamples = [];
+        if (trip) {
+          // Video stays off until a fresh music window shows timing is healthy again.
+          this.videoReference ??= this.videoBaseline;
+          this.videoBaseline = null;
+          this.onVideoTrip();
+        }
       } else {
         this._jitterAdaptation = next;
         this.videoLatency = [];
-        if (!this.videoBaseline && Date.now() <= this.videoBaselineDeadline && Number.isFinite(latency)) {
-          this.videoBaselineSamples.push(sample);
+        if (!this.videoBaseline && Number.isFinite(latency)) {
+          // A rolling 30 s window lets a slow start still form a baseline later.
+          const now = Date.now();
+          this.videoBaselineSamples = [...this.videoBaselineSamples.filter(item => now - item.at <= 30000),
+            { ...sample, at: now }].slice(-20);
           if (this.videoBaselineSamples.length === 20) {
-            this.videoBaseline = { ...sample,
-              latency: median(this.videoBaselineSamples.map(item => item.latency)),
-              rttMs: median(this.videoBaselineSamples.map(item => item.rttMs)),
-            };
+            this.videoBaseline = musicBaseline(this.videoBaselineSamples, this.videoReference);
           }
         }
       }

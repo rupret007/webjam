@@ -63,7 +63,9 @@ details p { margin: 6px 0; }
 .camera-layout #status { min-height: 28px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .9rem; }
 .camera-host .join-card { display: none; }
 .video-room:not([hidden]) { flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-.video-status { font-size: .95rem; margin: 0; min-height: 40px; display: flex; align-items: center; }
+.video-status { font-size: .95rem; margin: 0; min-height: 40px; line-height: 40px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Prompts, errors and pauses carry the next step, so let those wrap instead of truncating. */
+:is([data-video-state="needs-gesture"], [data-video-state="camera-error"], [data-video-state="relay-off"], [data-video-state="paused"]) .video-status { white-space: normal; line-height: 1.4; display: flex; align-items: center; }
 .video-stage { display: grid; place-items: center; position: relative; flex: 1; min-height: 180px; overflow: hidden; border: 1px solid #384744; border-radius: 14px; background: #172120; }
 .video-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .video-placeholder { color: #b4c2bd; text-align: center; padding: 12px; }

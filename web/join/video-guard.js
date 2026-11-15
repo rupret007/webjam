@@ -26,6 +26,39 @@ export function musicSample(stats, pairId, latency, targetMs) {
   };
 }
 
+function mostCommon(values) {
+  const counts = new Map();
+  for (const value of values) if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
+  let best = null;
+  for (const [value, count] of counts) if (count > (counts.get(best) ?? 0)) best = value;
+  return best;
+}
+
+// A representative music baseline from a window of samples. After a timing
+// trip, `reference` is the first baseline: a fresh window only counts once it
+// is no worse than that, and the trip limits stay anchored to it so repeated
+// restarts cannot ratchet music timing upward.
+export function musicBaseline(samples, reference = null) {
+  const pairId = mostCommon(samples.map(item => item.pairId));
+  const onPair = samples.filter(item => item.pairId === pairId);
+  const latest = samples.at(-1);
+  const fresh = {
+    latency: median(samples.map(item => item.latency)),
+    targetMs: median(samples.map(item => item.targetMs)),
+    rttMs: median(onPair.map(item => item.rttMs)),
+    pairId,
+    route: mostCommon(onPair.map(item => item.route)),
+    received: latest.received,
+    loss: latest.loss,
+  };
+  if (!Number.isFinite(fresh.latency)) return null;
+  if (!reference) return fresh;
+  if (fresh.latency > reference.latency + 10 || fresh.targetMs > reference.targetMs ||
+      (Number.isFinite(fresh.loss) && Number.isFinite(reference.loss) && fresh.loss > reference.loss + 0.01)) return null;
+  const anchored = key => Number.isFinite(reference[key]) ? reference[key] : fresh[key];
+  return { ...fresh, latency: reference.latency, targetMs: reference.targetMs, rttMs: anchored("rttMs"), loss: anchored("loss") };
+}
+
 export function musicVideoTrip(peer, current, baseline, latencyWindow, previousPath = baseline) {
   if (!videoPeerOpen(peer) || !baseline) return false;
   const metrics = current();

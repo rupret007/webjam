@@ -17,8 +17,11 @@ function changeServers(peer, servers) {
 }
 
 export class VideoRefresh {
-  constructor({ peer, mailbox, credentials, host, signal, onExpired }) {
-    Object.assign(this, { peer, mailbox, credentials, host, signal, onExpired });
+  constructor({ peer, mailbox, credentials, host, signal, onExpired, prefix = "" }) {
+    Object.assign(this, { peer, mailbox, credentials, host, signal, onExpired, prefix });
+    // A restarted camera call gets its own rounds, so an earlier call's
+    // generation markers or abort never apply to it.
+    this.abortRound = `${prefix}video-refresh-abort`;
     this.completed = 0;
     this.latestGeneration = 0;
     this.stopped = false;
@@ -40,7 +43,7 @@ export class VideoRefresh {
 
   async observeAbort() {
     if (this.stopped || this.signal.aborted) return true;
-    this.abortRead ??= this.mailbox.read("video-refresh-abort", "offer").finally(() => {
+    this.abortRead ??= this.mailbox.read(this.abortRound, "offer").finally(() => {
       this.abortRead = null;
     });
     const value = await this.abortRead;
@@ -77,7 +80,7 @@ export class VideoRefresh {
     // reserves the next index, so the host can check consecutive markers.
     while (this.latestGeneration < 6) {
       const next = this.latestGeneration + 1;
-      const mark = await this.mailbox.read(`video-refresh-gen-${next}`, "offer");
+      const mark = await this.mailbox.read(`${this.prefix}video-refresh-gen-${next}`, "offer");
       if (mark?.v !== 1 || mark.gen !== next) break;
       this.latestGeneration = next;
     }
@@ -128,15 +131,18 @@ export class VideoRefresh {
     } catch (error) {
       if (error instanceof VideoConflict && !this.signal.aborted) {
         this.stopRenewing();
-        await this.mailbox.abortRefresh().catch(() => {});
+        // The shared abort slot uses a fixed nonce. A restarted call writes its
+        // own slot; if both peers race, either write leaves an abort to read.
+        await (this.prefix ? this.mailbox.write(this.abortRound, "offer", { v: 1, abort: "refresh" })
+          : this.mailbox.abortRefresh()).catch(() => {});
       }
     } finally { this.running = false; }
   }
 
   async offer(n, until, refreshWindow) {
-    const round = `video-refresh-${n}`;
+    const round = `${this.prefix}video-refresh-${n}`;
     const previous = this.credentials;
-    await this.mailbox.write(`video-refresh-gen-${n}`, "offer", { v: 1, gen: n });
+    await this.mailbox.write(`${this.prefix}video-refresh-gen-${n}`, "offer", { v: 1, gen: n });
     let answerApplied = false;
     let serversChanged = false;
     try {
@@ -178,7 +184,7 @@ export class VideoRefresh {
   async answerUntil(until, prefetched) {
     while (Date.now() < until && !await this.observeAbort()) {
       const n = await this.latest();
-      const round = `video-refresh-${n}`;
+      const round = `${this.prefix}video-refresh-${n}`;
       const offer = n > this.completed ? await this.mailbox.read(round, "offer") : null;
       if (offer && Date.now() < until && this.peer.signalingState === "stable" && n === await this.latest()) {
         const previous = this.peer.getConfiguration().iceServers;

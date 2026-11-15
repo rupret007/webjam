@@ -1,0 +1,4 @@
+- In-room camera: after video pauses to protect music timing, or the camera connection drops, you can tap to restart video once music timing is steady again (up to four camera calls per session). Relay expiry and relay budget pauses stay final.
+- In-room camera: if music timing can't be measured at first, the camera tap starts working on its own once timing is measurable, instead of saying "Try again shortly" forever.
+- In-room camera: the music timing baseline uses the most common music path, so a later move onto the relay still pauses video.
+- In-room camera: Leave no longer waits up to a second for video to close before ending music. Short camera status lines stay on one line; prompts and errors still wrap.

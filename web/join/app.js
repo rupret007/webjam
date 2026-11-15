@@ -407,7 +407,7 @@ async function startJoin() {
         });
       },
       videoPeer: () => videoRoom?.peer,
-      onVideoTrip: () => videoRoom?.pause("Video paused to protect music timing. Music stays connected."),
+      onVideoTrip: () => videoRoom?.pause("Video paused to protect music timing. Music stays connected.", { resumable: true }),
       beforeMusicClose: () => videoRoom?.closed(),
       onError: (error) => {
         if (isCurrent()) leave(undefined, error);
