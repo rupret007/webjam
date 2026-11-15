@@ -334,7 +334,7 @@ async function handleAllowedRequest(request, env, deps) {
   }
   if (videoRequest) {
     const denied = await enforceAccess(request, env, deps, nowMs, 0, "daily");
-    return denied ?? issueVideoCredentials(env, fetchImpl, deps, nowMs);
+    return denied ?? issueVideoCredentials(env, fetchImpl, deps, nowMs, body);
   }
   if (web && body.client !== "web") {
     return errorResponse(403, "unauthorized");
@@ -407,7 +407,40 @@ async function handleAllowedRequest(request, env, deps) {
   return jsonResponse(200, document);
 }
 
-async function issueVideoCredentials(env, fetchImpl, deps, nowMs) {
+async function checkVideoAdmission(binding, body) {
+  if (typeof binding?.fetch !== "function") return 503;
+  const digest = await crypto.subtle.digest("SHA-256",
+    new TextEncoder().encode(body.invite_token ?? body.token));
+  const inviteDigest = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+  const controller = new AbortController();
+  let timer;
+  try {
+    const response = await Promise.race([
+      binding.fetch(new Request("https://video-admission.invalid/v1/check", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ session_id: body.session_id, invite_digest: inviteDigest }),
+        redirect: "error",
+        signal: controller.signal,
+      })),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error("Video admission timed out"));
+        }, FETCH_TIMEOUT_MS);
+      }),
+    ]);
+    if (response.body) void response.body.cancel().catch(() => {});
+    if (response.status === 204) return 204;
+    return response.status === 403 ? 403 : 503;
+  } catch {
+    return 503;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function issueVideoCredentials(env, fetchImpl, deps, nowMs, body) {
   const key = String(env.VIDEO_TURN_KEY_ID ?? "").trim();
   const bearer = String(env.VIDEO_TURN_KEY_API_TOKEN ?? "").trim();
   const account = String(env.CLOUDFLARE_ACCOUNT_ID ?? "").trim();
@@ -416,6 +449,10 @@ async function issueVideoCredentials(env, fetchImpl, deps, nowMs) {
   if (!key || !bearer || !account || !analytics || !Number.isSafeInteger(cap) || cap <= 0 ||
       [env.TURN_KEY_ID, env.WEB_TURN_KEY_ID].some(value => key === String(value ?? "").trim())) {
     return errorResponse(503, "misconfigured");
+  }
+  const admission = await checkVideoAdmission(env.VIDEO_ADMISSION, body);
+  if (admission !== 204) {
+    return errorResponse(admission, admission === 403 ? "unauthorized" : "unavailable");
   }
   // Meter the separate key. Music usage and admission never include this key.
   const { dateFrom, dateTo } = utcMonthDateRange(new Date(nowMs));

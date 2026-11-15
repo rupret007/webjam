@@ -1,0 +1,1 @@
+- Require current private session admission before issuing or renewing browser video relay credentials.
