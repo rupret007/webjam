@@ -69,7 +69,7 @@ async function syntheticDevices(page) {
     window.labCameraCalls = 0;
     window.labCameraTracks = [];
     const contexts = [];
-    const frameTimers = [];
+    const frameTimers = new Set();
     Object.defineProperty(navigator.mediaDevices, "enumerateDevices", {
       value: async () => [{ kind: "videoinput", deviceId: "lab-camera-2" }],
     });
@@ -95,9 +95,19 @@ async function syntheticDevices(page) {
             context.fill();
           };
           draw();
-          frameTimers.push(setInterval(draw, 66));
           const stream = canvas.captureStream(15);
-          window.labCameraTracks.push(stream.getVideoTracks()[0]);
+          const [track] = stream.getVideoTracks();
+          const timer = setInterval(() => {
+            // Track.stop() need not dispatch an ended event.
+            if (track.readyState === "ended") {
+              clearInterval(timer);
+              frameTimers.delete(timer);
+              return;
+            }
+            draw();
+          }, 66);
+          frameTimers.add(timer);
+          window.labCameraTracks.push(track);
           return stream;
         }
         const context = new AudioContext({ sampleRate: 48000 });
@@ -286,6 +296,9 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
     peer.getSenders().map(sender => sender.track?.kind).filter(Boolean)))).toEqual([["audio"], ["video"]]);
   expect(await host.evaluate(() => window.labPeers.map(peer =>
     peer.getSenders().map(sender => sender.track?.kind).filter(Boolean)))).toEqual([["video"]]);
+  // Match the before window's viewport and leave screenshot work outside
+  // this window so its CPU load cannot be attributed to the video call.
+  const withCamera = await musicWindow(page);
   const phone = { width: 390, height: 844 };
   const desktop = { width: 1440, height: 900 };
   for (const size of [phone, desktop]) {
@@ -309,7 +322,7 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
     expect(await status.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`camera-and-music-${size.width}.png`) });
   }
-  const withCamera = await musicWindow(page);
+  await page.setViewportSize(phone);
   const beforeSwitch = await decoded(host);
   const musicLab = await (await request.get("http://127.0.0.1:4175/status")).json();
   const cameraStatus = (await page.locator("[data-video-status]").textContent())?.trim();
@@ -334,8 +347,8 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
   expect(musicState.authorized).toBe(true);
   expect(musicState.received).toBeGreaterThan(0);
   expect(musicState.sent).toBeGreaterThan(0);
-  await page.screenshot({ path: info.outputPath("video-paused-music-connected.png") });
   const after = await musicWindow(page);
+  await page.screenshot({ path: info.outputPath("video-paused-music-connected.png") });
   const windows = [before, withCamera, after];
   // ICE pair identifiers stay in memory. Save only route classes, numeric
   // timing and whether all three windows used the same music pair.
