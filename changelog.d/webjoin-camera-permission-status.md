@@ -1,0 +1,1 @@
+- Show what to do while Web Join waits for camera permission and keep Leave available.

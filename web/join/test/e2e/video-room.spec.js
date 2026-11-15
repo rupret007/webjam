@@ -101,6 +101,10 @@ test("keyboard focus stays on the camera through a delayed permission denial", a
   await page.keyboard.press("Enter");
   await expect(camera).toHaveAttribute("aria-disabled", "true");
   await expect(camera).toBeFocused();
+  await expect(page.locator("[data-video-status]")).toHaveText(
+    "Waiting for camera access. If your browser asks, choose Allow.",
+  );
+  await expect(page.getByRole("button", { name: "Leave", exact: true })).toBeInViewport({ ratio: 1 });
   await page.keyboard.press("Enter");
   expect(await page.evaluate(() => window.promptRequests)).toBe(1);
   await page.evaluate(() => window.finishCameraPrompt());
