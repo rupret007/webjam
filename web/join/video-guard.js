@@ -23,16 +23,31 @@ export function musicSample(stats, pairId, latency, targetMs) {
     latency, targetMs, received, loss, pairId: confirmed ? pairId : null,
     rttMs: confirmed && Number.isFinite(pair.currentRoundTripTime) && pair.currentRoundTripTime >= 0 ? pair.currentRoundTripTime * 1000 : null,
     route: confirmed ? connectionRoute(stats, pairId) : null,
+    playout: audio && { id: audio.id, emitted: audio.jitterBufferEmittedCount, delay: audio.jitterBufferDelay },
   };
 }
 
-export function musicVideoTrip(peer, current, baseline, latencyWindow, previousPath = baseline) {
+export function intervalMusicLatency(sample, previous, baseLatency) {
+  const current = sample.playout;
+  if (!current?.id || current.id !== previous?.id || !Number.isFinite(sample.rttMs)) return null;
+  const packets = current.emitted - previous.emitted;
+  const delay = current.delay - previous.delay;
+  if (!Number.isFinite(packets) || packets <= 0 || !Number.isFinite(delay) || delay < 0) return null;
+  return sample.rttMs / 2 + 1000 * (delay / packets + (Number.isFinite(baseLatency) ? baseLatency : 0));
+}
+
+function latencyRises(baseline, samples) {
+  return Number.isFinite(baseline) && samples.length >= 5 && median(samples) > baseline + 10;
+}
+
+export function musicVideoTrip(peer, current, baseline, latencyWindow, previousPath = baseline, intervalWindow = []) {
   if (!videoPeerOpen(peer) || !baseline) return false;
   const metrics = current();
   const movedOntoRelay = !!metrics.pairId && metrics.route === "relayed" &&
     (previousPath.route === "direct" ||
      (!previousPath.route && !!previousPath.pairId && previousPath.pairId !== metrics.pairId));
-  return (latencyWindow.length >= 5 && median(latencyWindow) > baseline.latency + 10) ||
+  return latencyRises(baseline.latency, latencyWindow) ||
+    latencyRises(baseline.intervalLatency, intervalWindow) ||
     movedOntoRelay ||
     (!!metrics.pairId && !!baseline.pairId && metrics.pairId !== baseline.pairId &&
       Number.isFinite(metrics.rttMs) && Number.isFinite(baseline.rttMs) && metrics.rttMs > baseline.rttMs + 10) ||
