@@ -159,6 +159,29 @@ test("a restart on the same relay stays live until the previous credential expir
   assert.deepEqual(events, ["configure", "restore", "expired"]);
 });
 
+test("an earlier expiry check cannot pause a successfully renewed video pair", async t => {
+  const { refresh, peer, events, advance } = fixture(t);
+  const priorStats = await peer.getStats();
+  const expiryStats = Promise.withResolvers();
+  refresh.arm();
+  peer.getStats = () => expiryStats.promise;
+  await advance(90000);
+
+  const renewedStats = new Map(priorStats);
+  renewedStats.set("transport", { ...priorStats.get("transport"), selectedCandidatePairId: "renewed" });
+  renewedStats.set("renewed", priorStats.get("pair"));
+  peer.getStats = async () => renewedStats;
+  await refresh.connected(1, next, { id: "pair", route: "relayed" });
+  assert.equal(refresh.credentials, next);
+
+  expiryStats.resolve(priorStats);
+  await advance(0);
+  assert.deepEqual(events, []);
+  refresh.stopRenewing();
+  await advance(next.expiresAt - Date.now());
+  assert.deepEqual(events, ["expired"]);
+});
+
 test("a conflicting refresh stops both peers without creating another generation", async t => {
   const { refresh, peer, events, stored } = fixture(t);
   const mailbox = refresh.mailbox;
