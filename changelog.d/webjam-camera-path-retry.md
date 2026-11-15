@@ -1,0 +1,1 @@
+- Let a participant retry camera setup when gathering fails before signaling, while keeping music connected.

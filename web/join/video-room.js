@@ -53,7 +53,7 @@ export class VideoRoom {
     const active = !!this.track?.enabled && this.track.readyState === "live";
     this.camera.textContent = state === "relay-off" ? "Retry" : state === "camera-error" ? "Try again" : active ? "Hide camera" : this.label;
     this.camera.disabled = this.busy || state === "checking" || state === "paused" || !this.credentials && state !== "relay-off";
-    this.switcher.hidden = !this.sender || !active;
+    this.switcher.hidden = !this.initialComplete || !active;
     this.switcher.disabled = this.busy;
     this.preview.hidden = !active;
     this.remote.hidden = state !== "live";
@@ -106,7 +106,7 @@ export class VideoRoom {
   }
 
   async tap(switchCamera = false) {
-    if (this.busy || this.signal.aborted || !this.credentials) return;
+    if (this.busy || this.signal.aborted || !this.credentials || (switchCamera && !this.initialComplete)) return;
     if (!this.peer && !this.timingReady()) {
       this.render("needs-gesture", "Music timing isn't measurable yet. Try again shortly.");
       return;
@@ -117,6 +117,7 @@ export class VideoRoom {
         this.track.enabled ? this.cameraStatus() : "Your camera is off. Music stays connected.");
       return;
     }
+    if (this.peer && !this.initialComplete) return;
     this.busy = true;
     this.camera.disabled = true;
     this.switcher.disabled = true;
@@ -151,7 +152,7 @@ export class VideoRoom {
       this.render(this.peer?.connectionState === "connected" ? "live" : "preview", this.cameraStatus());
       if (!this.peer && !this.connecting) {
         this.connecting = true;
-        void this.connect(stream).catch(() => {
+        void this.connect().catch(() => {
           if (!this.signal.aborted) this.pause("Video paused. The other camera didn’t connect. Music stays connected.");
         });
       }
@@ -180,7 +181,7 @@ export class VideoRoom {
     return this.peer?.connectionState === "connected" ? "Cameras on." : "Camera preview is on. Waiting for the other person.";
   }
 
-  async connect(stream) {
+  async connect() {
     const until = this.invite.expiresAt * 1000;
     const offer = this.host ? await this.mailbox.wait("video", "offer", until, 2500) : null;
     if (this.host && !offer) throw new Error("The other camera did not connect");
@@ -193,13 +194,16 @@ export class VideoRoom {
       certificates: [cert], iceServers: this.credentials.iceServers, iceTransportPolicy: "all", bundlePolicy: "max-bundle",
     });
     peer.addEventListener("track", event => {
-      if (event.track.kind !== "video" || this.signal.aborted) return;
+      if (this.peer !== peer || event.track.kind !== "video" || this.signal.aborted) return;
       this.remote.srcObject = event.streams[0] ?? new MediaStream([event.track]);
       void this.remote.play().catch(() => {});
     });
-    peer.addEventListener("connectionstatechange", () => this.connectionChanged());
+    peer.addEventListener("connectionstatechange", () => {
+      if (this.peer === peer) this.connectionChanged();
+    });
     if (this.host) await peer.setRemoteDescription({ type: "offer", sdp: cameraDescription(offer) });
-    this.sender = peer.addTrack(this.track, stream);
+    this.signal.throwIfAborted();
+    this.sender = peer.addTrack(this.track, this.preview.srcObject);
     preferVp8(peer, this.sender);
     const parameters = this.sender.getParameters();
     if (parameters.encodings?.length) {
@@ -208,7 +212,29 @@ export class VideoRoom {
       await this.sender.setParameters(parameters);
     }
     await peer.setLocalDescription(await (this.host ? peer.createAnswer() : peer.createOffer()));
-    await this.mailbox.write("video", this.host ? "answer" : "offer", await gatherVideo(peer, this.signal));
+    let description;
+    try {
+      description = await gatherVideo(peer, this.signal);
+    } catch {
+      if (!this.signal.aborted) {
+        // Gathering failed before any write. This side can still use its
+        // original write-once slot on the next explicit camera tap.
+        this.peer = null;
+        this.sender = null;
+        this.connecting = false;
+        clearTimeout(this.disconnectTimer);
+        this.disconnectTimer = null;
+        peer.close();
+        const track = this.track;
+        this.track = null;
+        track?.stop();
+        this.preview.srcObject = null;
+        this.remote.srcObject = null;
+        this.render("camera-error", "Camera couldn't find a network path. Tap Try again. Music stays connected.");
+      }
+      return;
+    }
+    await this.mailbox.write("video", this.host ? "answer" : "offer", description);
     if (!this.host) {
       const answer = await this.mailbox.wait("video", "answer", until, 2500);
       if (!answer) throw new Error("The other camera did not connect");
