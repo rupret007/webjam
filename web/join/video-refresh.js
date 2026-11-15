@@ -100,10 +100,11 @@ export class VideoRefresh {
     const until = this.credentials.expiresAt - 30000;
     const refreshWindow = { retried: false };
     this.running = true;
+    let route;
     try {
       if (await this.observeAbort()) return;
       const latest = await this.latest();
-      const route = (await selectedVideoPair(this.peer))?.route;
+      route = (await selectedVideoPair(this.peer))?.route;
       if (route === "direct" && latest <= this.completed) {
         const priorExpiry = this.credentials.expiresAt;
         const next = await this.renew(until, refreshWindow);
@@ -129,6 +130,9 @@ export class VideoRefresh {
       if (error instanceof VideoConflict && !this.signal.aborted) {
         this.stopRenewing();
         await this.mailbox.abortRefresh().catch(() => {});
+      } else if (!this.signal.aborted && route !== "direct") {
+        this.stopRenewing();
+        this.onExpired();
       }
     } finally { this.running = false; }
   }
@@ -139,8 +143,10 @@ export class VideoRefresh {
     await this.mailbox.write(`video-refresh-gen-${n}`, "offer", { v: 1, gen: n });
     let answerApplied = false;
     let serversChanged = false;
+    let renewing = true;
     try {
       const next = await this.renew(until, refreshWindow);
+      renewing = false;
       if (await this.observeAbort() || Date.now() >= until) return false;
       const priorPair = await selectedVideoPair(this.peer);
       changeServers(this.peer, next.iceServers);
@@ -163,7 +169,7 @@ export class VideoRefresh {
       }
       return false;
     } catch (error) {
-      if (error instanceof VideoConflict || this.signal.aborted) throw error;
+      if (error instanceof VideoConflict || this.signal.aborted || renewing) throw error;
       return false;
     } finally {
       if (serversChanged && !answerApplied && !this.signal.aborted) {

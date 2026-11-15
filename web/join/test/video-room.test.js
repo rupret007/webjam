@@ -192,6 +192,105 @@ test("a camera path failure releases the camera and can reuse the unwritten slot
   assert.deepEqual(writes, [["video", "offer"]]);
 });
 
+test("an ended camera cannot write its pending offer and Try again waits for cleanup", async t => {
+  const peers = [];
+  const writes = [];
+  const sdp = ["v=0", "m=video 9 UDP/TLS/RTP/SAVPF 96", "a=sendrecv", "a=rtpmap:96 VP8/90000",
+    "a=fingerprint:sha-256 " + Array(32).fill("A1").join(":"),
+    "a=candidate:1 1 udp 100 8.8.8.8 10500 typ srflx"].join("\r\n");
+  class Peer extends EventTarget {
+    static async generateCertificate() { return {}; }
+    constructor() { super(); this.iceGatheringState = "gathering"; this.connectionState = "connecting";
+      this.transceiver = { sender: { getParameters: () => ({}) } }; peers.push(this); }
+    addTrack() { return this.transceiver.sender; }
+    getTransceivers() { return [this.transceiver]; }
+    async createOffer() { return { type: "offer", sdp }; }
+    async setLocalDescription(description) { this.localDescription = description; }
+    async setRemoteDescription() {}
+    close() { this.connectionState = "closed"; this.dispatchEvent(new Event("connectionstatechange")); }
+  }
+  Object.defineProperty(globalThis, "RTCPeerConnection", { value: Peer, configurable: true });
+  t.after(() => { delete globalThis.RTCPeerConnection; });
+  const room = Object.assign(Object.create(VideoRoom.prototype), {
+    host: false, controller: new AbortController(), invite: { expiresAt: Infinity },
+    credentials: { expiresAt: Infinity }, timingReady: () => true,
+    camera: {}, switcher: {}, root: { dataset: {} }, placeholder: {}, status: {},
+    preview: { play: async () => {} }, remote: {},
+    capture: async () => {
+      const track = Object.assign(new EventTarget(), { enabled: true, readyState: "live",
+        getSettings: () => ({}), stop() { this.readyState = "ended"; this.dispatchEvent(new Event("ended")); } });
+      return { getVideoTracks: () => [track], getTracks: () => [track] };
+    },
+    mailbox: { async write(round, kind) { writes.push([round, kind]); },
+      async wait() { return { sdp, pin: "a1".repeat(32) }; } },
+  });
+  room.signal = room.controller.signal;
+  await room.tap();
+  while (!peers.length || !peers[0].localDescription) await new Promise(resolve => setImmediate(resolve));
+  room.track.stop();
+  assert.equal(room.state, "camera-error");
+  assert.equal(room.camera.disabled, true);
+  await room.tap();
+  assert.equal(peers.length, 1);
+  peers[0].iceGatheringState = "complete";
+  peers[0].dispatchEvent(new Event("icegatheringstatechange"));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(writes, []);
+  assert.equal(room.peer, null);
+  assert.equal(room.camera.disabled, false);
+  assert.equal(room.track, null);
+  room.controller.abort();
+});
+
+for (const failure of ["failed", "closed"]) test(`a host peer ${failure} before writing the answer frees its slot for a new tap`, async t => {
+  const peers = [];
+  const writes = [];
+  const sdp = ["v=0", "m=video 9 UDP/TLS/RTP/SAVPF 96", "a=sendrecv", "a=rtpmap:96 VP8/90000",
+    "a=fingerprint:sha-256 " + Array(32).fill("A1").join(":"),
+    "a=candidate:1 1 udp 100 8.8.8.8 10500 typ srflx"].join("\r\n");
+  class Peer extends EventTarget {
+    static async generateCertificate() { return {}; }
+    constructor() { super(); this.iceGatheringState = "gathering"; this.connectionState = "connecting";
+      this.transceiver = { sender: { getParameters: () => ({}) } }; peers.push(this); }
+    async setRemoteDescription() {}
+    addTrack() { return this.transceiver.sender; }
+    getTransceivers() { return [this.transceiver]; }
+    async createAnswer() { return { type: "answer", sdp }; }
+    async setLocalDescription(description) { this.localDescription = description; }
+    close() { this.connectionState = "closed"; this.dispatchEvent(new Event("connectionstatechange")); }
+  }
+  Object.defineProperty(globalThis, "RTCPeerConnection", { value: Peer, configurable: true });
+  t.after(() => { delete globalThis.RTCPeerConnection; });
+  const room = Object.assign(Object.create(VideoRoom.prototype), {
+    host: true, controller: new AbortController(), invite: { expiresAt: Infinity },
+    credentials: { expiresAt: Infinity }, timingReady: () => true,
+    camera: {}, switcher: {}, root: { dataset: {} }, placeholder: {}, status: {},
+    preview: { play: async () => {} }, remote: {},
+    capture: async () => { const track = Object.assign(new EventTarget(), { enabled: true, readyState: "live",
+      getSettings: () => ({}), stop() { this.readyState = "ended"; } });
+      return { getVideoTracks: () => [track], getTracks: () => [track] }; },
+    mailbox: { async wait() { return { sdp, pin: "a1".repeat(32) }; },
+      async write(round, kind) { writes.push([round, kind]); } },
+  });
+  room.signal = room.controller.signal;
+  await room.tap();
+  while (!peers.length || !peers[0].localDescription) await new Promise(resolve => setImmediate(resolve));
+  peers[0].connectionState = failure;
+  peers[0].dispatchEvent(new Event("connectionstatechange"));
+  assert.equal(room.state, "camera-error");
+  assert.equal(room.signal.aborted, false);
+  assert.equal(room.peer, null);
+  assert.deepEqual(writes, []);
+  await room.tap();
+  while (peers.length < 2 || !peers[1].localDescription) await new Promise(resolve => setImmediate(resolve));
+  peers[1].iceGatheringState = "complete";
+  peers[1].dispatchEvent(new Event("icegatheringstatechange"));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(writes, [["video", "answer"]]);
+  assert.equal(room.initialComplete, true);
+  room.controller.abort();
+});
+
 test("a camera constraint failure after Leave cannot request the camera again", async (t) => {
   const firstRequest = Promise.withResolvers();
   const requests = [];

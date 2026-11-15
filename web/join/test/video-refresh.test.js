@@ -93,6 +93,20 @@ test("a failed issuer request retries in the same generation and spends the wind
   assert.equal(stored.has("video-refresh-gen-2/offer"), false);
 });
 
+test("a refused renewal promptly ends a relayed call after the retry", async t => {
+  const { refresh, events, advance } = fixture(t, { failCredentials: 2 });
+  refresh.arm();
+  const running = refresh.run();
+  await advance(0);
+  await advance(14999);
+  assert.equal(events.includes("expired"), false);
+  await advance(1);
+  await running;
+  assert.deepEqual(events, ["video-refresh-gen-1", "credentials", "credentials", "expired"]);
+  assert.equal(refresh.stopped, true);
+  assert.equal(refresh.credentials, previous);
+});
+
 test("a missing answer spends the single retry on a fresh generation", async t => {
   const { refresh, peer, events, stored, advance } = fixture(t);
   const running = refresh.run();

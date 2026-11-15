@@ -407,7 +407,7 @@ async function handleAllowedRequest(request, env, deps) {
   return jsonResponse(200, document);
 }
 
-async function checkVideoAdmission(binding, body) {
+async function checkVideoAdmission(binding, body, timeoutMs = FETCH_TIMEOUT_MS) {
   if (typeof binding?.fetch !== "function") return 503;
   const digest = await crypto.subtle.digest("SHA-256",
     new TextEncoder().encode(body.invite_token ?? body.token));
@@ -427,7 +427,7 @@ async function checkVideoAdmission(binding, body) {
         timer = setTimeout(() => {
           controller.abort();
           reject(new Error("Video admission timed out"));
-        }, FETCH_TIMEOUT_MS);
+        }, timeoutMs);
       }),
     ]);
     if (response.body) void response.body.cancel().catch(() => {});
@@ -450,7 +450,7 @@ async function issueVideoCredentials(env, fetchImpl, deps, nowMs, body) {
       [env.TURN_KEY_ID, env.WEB_TURN_KEY_ID].some(value => key === String(value ?? "").trim())) {
     return errorResponse(503, "misconfigured");
   }
-  const admission = await checkVideoAdmission(env.VIDEO_ADMISSION, body);
+  const admission = await checkVideoAdmission(env.VIDEO_ADMISSION, body, Number(deps.fetchTimeoutMs ?? FETCH_TIMEOUT_MS));
   if (admission !== 204) {
     return errorResponse(admission, admission === 403 ? "unauthorized" : "unavailable");
   }

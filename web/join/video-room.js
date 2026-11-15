@@ -52,7 +52,9 @@ export class VideoRoom {
     this.placeholder.textContent = inactive ? "Camera is off" : "Waiting for the other camera";
     const active = !!this.track?.enabled && this.track.readyState === "live";
     this.camera.textContent = state === "relay-off" ? "Retry" : state === "camera-error" ? "Try again" : active ? "Hide camera" : this.label;
-    this.camera.disabled = this.busy || state === "checking" || state === "paused" || !this.credentials && state !== "relay-off";
+    this.camera.disabled = this.busy || state === "checking" || state === "paused" ||
+      (this.peer && !this.initialComplete && this.track?.readyState !== "live") ||
+      !this.credentials && state !== "relay-off";
     this.switcher.hidden = !this.initialComplete || !active;
     this.switcher.disabled = this.busy;
     this.preview.hidden = !active;
@@ -217,24 +219,15 @@ export class VideoRoom {
     try {
       description = await gatherVideo(peer, this.signal);
     } catch {
-      if (!this.signal.aborted) {
-        // Gathering failed before any write. This side can still use its
-        // original write-once slot on the next explicit camera tap.
-        this.peer = null;
-        this.sender = null;
-        this.connecting = false;
-        clearTimeout(this.disconnectTimer);
-        this.disconnectTimer = null;
-        peer.close();
-        const track = this.track;
-        this.track = null;
-        track?.stop();
-        this.preview.srcObject = null;
-        this.remote.srcObject = null;
-        this.render("camera-error", "Camera couldn't find a network path. Tap Try again. Music stays connected.");
-      }
+      this.retryUnwritten(peer);
       return;
     }
+    if (this.peer !== peer || this.signal.aborted) return;
+    if (this.track?.readyState !== "live" || ["failed", "closed"].includes(peer.connectionState)) {
+      this.retryUnwritten(peer);
+      return;
+    }
+    this.initialWriteStarted = true;
     await this.mailbox.write("video", this.host ? "answer" : "offer", description);
     if (!this.host) {
       const answer = await this.mailbox.wait("video", "answer", until, 2500);
@@ -249,7 +242,11 @@ export class VideoRoom {
     if (this.signal.aborted) return;
     const state = this.peer.connectionState;
     if (state !== "disconnected") { clearTimeout(this.disconnectTimer); this.disconnectTimer = null; }
-    if (state === "failed" || state === "closed") this.pause("Video paused. The camera connection dropped. Music stays connected.");
+    if (state === "failed" || state === "closed") {
+      if (!this.initialWriteStarted) this.retryUnwritten(this.peer);
+      else this.pause("Video paused. The camera connection dropped. Music stays connected.");
+      return;
+    }
     if (state === "disconnected") this.disconnectTimer ??= setTimeout(() => this.pause("Video paused. The camera connection dropped. Music stays connected."), 10000);
     if (state !== "connected" || !this.initialComplete || this.refresh) return;
     this.render("live", "Cameras on.");
@@ -271,6 +268,23 @@ export class VideoRoom {
       } catch { this.pause("Video paused. Camera network statistics are unavailable. Music stays connected."); }
       finally { this.statsPending = false; }
     }, 1000);
+  }
+
+  retryUnwritten(peer) {
+    if (this.signal.aborted || this.peer !== peer || this.initialWriteStarted) return;
+    // The original write-once slot is still available after this cleanup.
+    this.peer = null;
+    this.sender = null;
+    this.connecting = false;
+    clearTimeout(this.disconnectTimer);
+    this.disconnectTimer = null;
+    peer.close();
+    const track = this.track;
+    this.track = null;
+    track?.stop();
+    this.preview.srcObject = null;
+    this.remote.srcObject = null;
+    this.render("camera-error", "Camera couldn't find a network path. Tap Try again. Music stays connected.");
   }
 
   pause(message) {

@@ -130,3 +130,34 @@ test("a configured video key requires active admission before contacting Cloudfl
   assert.equal(upstream.length, 2);
   assert.equal(checks, 4);
 });
+
+test("video admission timeout and redirect fail closed before a provider call", async t => {
+  const config = {
+    ENVIRONMENT: "development", TURN_KEY_ID: "desktop", WEB_TURN_KEY_ID: "web",
+    VIDEO_TURN_KEY_ID: "video", VIDEO_TURN_KEY_API_TOKEN: "fixture", VIDEO_TURN_MONTHLY_CAP_BYTES: "1000",
+    CLOUDFLARE_ACCOUNT_ID: "fixture", CLOUDFLARE_ANALYTICS_API_TOKEN: "fixture",
+  };
+  const request = () => new Request("https://relay.example/turn-credentials?client=web-video", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ client: "web-video", session_id: "1".repeat(64), invite_token: "a".repeat(43) }),
+  });
+  const originalClear = globalThis.clearTimeout;
+  let cleared = 0;
+  t.mock.method(globalThis, "clearTimeout", timer => { cleared++; return originalClear(timer); });
+  const deps = { nowMs: now, enforceAccess: () => null, fetch: () => assert.fail("provider contacted"), fetchTimeoutMs: 5 };
+  let aborted = false;
+  const hanging = { fetch(req) { return new Promise((_, reject) => {
+    req.signal.addEventListener("abort", () => { aborted = true; reject(new Error("aborted")); }, { once: true });
+  }); } };
+  assert.equal((await handleRequest(request(), { ...config, VIDEO_ADMISSION: hanging }, deps)).status, 503);
+  assert.equal(aborted, true);
+  assert.ok(cleared >= 1);
+
+  const beforeRedirect = cleared;
+  const redirecting = { fetch(req) {
+    assert.equal(req.redirect, "error");
+    return Response.redirect("https://other.example/v1/check");
+  } };
+  assert.equal((await handleRequest(request(), { ...config, VIDEO_ADMISSION: redirecting }, deps)).status, 503);
+  assert.ok(cleared > beforeRedirect);
+});
