@@ -93,18 +93,20 @@ test("keyboard focus stays on the camera through a delayed permission denial", a
       return capture(request);
     };
   });
-  const camera = page.locator("[data-camera]");
+  const camera = page.getByRole("button", { name: "Show my camera", exact: true });
+  await expect(camera).toBeVisible();
   await expect(camera).toBeEnabled();
   await camera.focus();
+  await expect(camera).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(camera).toHaveAttribute("aria-disabled", "true");
   await expect(camera).toBeFocused();
   await page.keyboard.press("Enter");
   expect(await page.evaluate(() => window.promptRequests)).toBe(1);
   await page.evaluate(() => window.finishCameraPrompt());
-  await expect(camera).toHaveText("Try again");
-  await expect(camera).toBeEnabled();
-  await expect(camera).toBeFocused();
+  const retry = page.getByRole("button", { name: "Try again", exact: true });
+  await expect(retry).toBeEnabled();
+  await expect(retry).toBeFocused();
   expect(await page.evaluate(() => [window.cameraCalls, window.peers])).toEqual([1, 0]);
 });
 
