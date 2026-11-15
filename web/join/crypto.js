@@ -30,7 +30,7 @@ export function readInvite(hash, now = Date.now()) {
   return { capability, session, generation, expiresAt };
 }
 export async function mailboxId(invite, kind, index, round = "direct") {
-  if (!["offer", "answer"].includes(kind) || round !== "direct" || !Number.isInteger(index) || index < 0 || index > 2) throw new Error("Invalid mailbox slot");
+  if (!["offer", "answer"].includes(kind) || !/^(?:direct|video|video-refresh-(?:gen-)?[1-6]|video-refresh-abort)$/.test(round) || !Number.isInteger(index) || index < 0 || index > 2) throw new Error("Invalid mailbox slot");
   const root = await hkdf(invite.capability, fromHex(invite.session), DOMAIN);
   return toHex(await hkdf(root, new Uint8Array(), `webjam/v3/mailbox/id/${round}/${kind}/${index}`));
 }

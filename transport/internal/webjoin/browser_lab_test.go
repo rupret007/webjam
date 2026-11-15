@@ -57,6 +57,10 @@ func TestMain(m *testing.M) {
 			_ = endpoint.Close()
 		}
 		cfg := testConfig()
+		// The camera journey takes two 20-sample timing windows plus negotiation.
+		if r.URL.Query().Get("journey") == "camera-music" {
+			cfg.ExpiresAt = time.Now().Add(2 * time.Minute)
+		}
 		bridge = &echoBridge{memoryBridge: newMemoryBridge()}
 		cfg.Bridge = bridge
 		var err error

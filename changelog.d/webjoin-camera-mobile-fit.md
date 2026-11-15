@@ -1,0 +1,1 @@
+- Keep camera controls and music status on screen during browser Web Join.

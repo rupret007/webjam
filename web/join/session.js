@@ -2,6 +2,7 @@ import { open, seal, validateOffer, sdpFingerprint, enrollmentProof } from "./cr
 import { Mailbox, BUSY_MESSAGE } from "./mailbox.js";
 import { candidateAllowed, offerHasReviewedAllocation, policySdp, SESSION_BYTES } from "./policy.js";
 import { musicSdp, tuneReceiver, latencyMs, adaptJitterBufferTarget, applyAdaptiveReceiverTarget, connectionRoute } from "./audio.js";
+import { intervalMusicLatency, median, musicSample, musicVideoTrip, videoPeerOpen } from "./video-guard.js";
 import { JOIN_SIGNAL } from "./errors.js";
 
 export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReviewedAllocations = false } = {}) {
@@ -34,9 +35,12 @@ export async function gatherAnswerSDP(pc, signal, { timeout = 15000, allowReview
   return policySdp(pc.localDescription?.sdp ?? "", { allowReviewedAllocations });
 }
 export class WebJoinSession {
-  constructor({ origin, invite, stream, audioContext, onStatus = () => {}, onTrack = () => {}, onLatency = () => {}, onRoute = () => {}, onError = () => {} }) {
-    Object.assign(this, { invite, stream: stream || null, audioContext, onStatus, onTrack, onLatency, onRoute, onError });
+  constructor({ origin, invite, stream, audioContext, onStatus = () => {}, onTrack = () => {}, onLatency = () => {}, onRoute = () => {}, onError = null, videoPeer = () => null, onVideoTrip = () => {}, beforeMusicClose = null }) {
+    Object.assign(this, { invite, stream: stream || null, audioContext, onStatus, onTrack, onLatency, onRoute, onError, videoPeer, onVideoTrip, beforeMusicClose });
     this.listenOnly = !this.stream;
+    this.videoBaselineSamples = [];
+    this.videoLatency = [];
+    this.videoIntervalLatency = [];
     this.controller = new AbortController();
     this.mailbox = new Mailbox(origin, invite, { signal: this.controller.signal });
     this.authorized = false; this.quotaBytes = SESSION_BYTES; this.previousBytes = 0;
@@ -123,6 +127,7 @@ export class WebJoinSession {
     if (this.pendingStream) this.onTrack(this.pendingStream);
     this.pendingStream = null;
     this.onStatus("Connected — Web Join, higher delay (about 60–120 ms).");
+    this.videoBaselineDeadline = Date.now() + 30000;
     this.statsTimer = setInterval(() => this.updateStats(), 1000);
     // Credentials and their allocation authority are never retained past TTL.
     this.expiryTimer = setTimeout(() => this.fail(new Error("The free relay session expired. Ask the host for a new invite.")), Math.max(0, credentials.expiresAt - Date.now()));
@@ -142,11 +147,41 @@ export class WebJoinSession {
       }
       if (!transports || bytes < this.previousBytes || bytes >= this.quotaBytes * 0.9) throw new Error(BUSY_MESSAGE);
       this.previousBytes = bytes;
-      this._jitterAdaptation = adaptJitterBufferTarget(stats, this._jitterAdaptation);
-      if (this._inboundReceiver) {
-        applyAdaptiveReceiverTarget(this._inboundReceiver, this._jitterAdaptation);
+      const previous = this._jitterAdaptation;
+      const next = adaptJitterBufferTarget(stats, previous);
+      const latency = latencyMs(stats, this.audioContext.baseLatency);
+      const video = this.videoPeer();
+      const sample = musicSample(stats, selectedPairId, latency, next.targetMs);
+      sample.intervalLatency = intervalMusicLatency(sample, this.lastMusicPlayout, this.audioContext.baseLatency);
+      this.lastMusicPlayout = sample.playout;
+      if (videoPeerOpen(video) && this.videoBaseline) {
+        if (Number.isFinite(latency)) this.videoLatency = [...this.videoLatency.slice(-4), latency];
+        if (Number.isFinite(sample.intervalLatency)) {
+          this.videoIntervalLatency = [...this.videoIntervalLatency.slice(-4), sample.intervalLatency];
+        }
+        const trip = musicVideoTrip(video, () => sample, this.videoBaseline, this.videoLatency,
+          this.videoMusicPath, this.videoIntervalLatency);
+        this._jitterAdaptation = next.targetMs > this.videoBaseline.targetMs ? previous : next;
+        if (trip) this.onVideoTrip();
+      } else {
+        this._jitterAdaptation = next;
+        this.videoLatency = [];
+        this.videoIntervalLatency = [];
+        if (!this.videoBaseline && Date.now() <= this.videoBaselineDeadline && Number.isFinite(latency)) {
+          this.videoBaselineSamples.push(sample);
+          if (this.videoBaselineSamples.length === 20) {
+            const intervals = this.videoBaselineSamples.map(item => item.intervalLatency).filter(Number.isFinite);
+            this.videoBaseline = { ...sample,
+              latency: median(this.videoBaselineSamples.map(item => item.latency)),
+              intervalLatency: intervals.length >= 5 ? median(intervals) : null,
+              rttMs: median(this.videoBaselineSamples.map(item => item.rttMs)),
+            };
+          }
+        }
       }
-      this.onLatency(latencyMs(stats, this.audioContext.baseLatency));
+      if (sample.pairId && sample.route) this.videoMusicPath = sample;
+      if (this._inboundReceiver) applyAdaptiveReceiverTarget(this._inboundReceiver, this._jitterAdaptation);
+      this.onLatency(latency);
       // Web Join bundles audio and enrollment on one transport. With missing
       // or ambiguous stats, leave the route unknown.
       const route = transports === 1 && this.pc.connectionState === "connected"
@@ -159,10 +194,16 @@ export class WebJoinSession {
     finally { clearTimeout(timer); this.statsPending = false; }
   }
   fail(error) {
-    if (this.controller.signal.aborted) return;
+    if (this.controller.signal.aborted || this.failing) return;
+    this.failing = true;
     const wasAuthorized = this.authorized;
-    this.close();
-    this.onError(error, wasAuthorized);
+    const finish = () => {
+      if (this.controller.signal.aborted) return;
+      this.close();
+      this.onError?.(error, wasAuthorized);
+    };
+    if (!this.beforeMusicClose) return finish();
+    void Promise.resolve().then(this.beforeMusicClose).then(finish, finish);
   }
   close() {
     if (this.controller.signal.aborted) return;

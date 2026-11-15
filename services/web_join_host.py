@@ -230,6 +230,8 @@ class WebJoinHost:
         self._generation = 0
         self._invite = ""
         self._offer_expiry = 0
+        self._camera_invite = ""
+        self._camera_expiry = 0
         self._expired = False
         self._state = "disabled"
         self._failure_stage = ""
@@ -248,6 +250,13 @@ class WebJoinHost:
             if self._offer_expiry and time.time() >= self._offer_expiry:
                 return ""
             return self._invite
+
+    @property
+    def camera_invite(self):
+        with self._lock:
+            if self._stop.is_set() or time.time() >= self._camera_expiry:
+                return ""
+            return self._camera_invite
 
     @property
     def failure_reason(self):
@@ -332,6 +341,7 @@ class WebJoinHost:
                     raise WebJoinUnavailable("This web invitation has ended.")
                 self._invite = f"{join_page}#k={_b64(capability)}&s={session.hex()}&g={generation}&e={offer_expiry}"
                 self._offer_expiry = offer_expiry
+                self._camera_invite, self._camera_expiry = self._invite, offer_expiry
                 self._state = "waiting"
                 self._worker = threading.Thread(
                     target=self._wait_guest,
@@ -379,6 +389,8 @@ class WebJoinHost:
             self._expired = True
         self._offer_expiry = 0
         self._invite = ""
+        self._camera_invite = ""
+        self._camera_expiry = 0
 
     def _on_event(self, event):
         if event.event_type == "web_join_connected":

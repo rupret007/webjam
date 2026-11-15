@@ -1,0 +1,1 @@
+- Release a camera immediately when someone leaves Web Join while their preview or camera switch is starting.

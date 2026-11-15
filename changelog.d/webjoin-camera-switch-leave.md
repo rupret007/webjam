@@ -1,0 +1,1 @@
+- Release the new camera if WebJam leaves the room during a camera switch.

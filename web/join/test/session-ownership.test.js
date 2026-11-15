@@ -130,3 +130,34 @@ test('session failure reports whether the invite was used before closing', () =>
     assert.deepEqual(calls, [[error, authorized]]);
   }
 });
+
+test('an enrolled listening guest waits for camera teardown before the fresh-invite result', async () => {
+  let finishCamera;
+  const cameraClosed = new Promise(resolve => { finishCamera = resolve; });
+  const events = [];
+  const session = new WebJoinSession({
+    origin: 'https://relay.example',
+    invite: {},
+    stream: null,
+    audioContext: {},
+    beforeMusicClose: () => {
+      events.push('camera closing');
+      return cameraClosed;
+    },
+    onError: (error, wasAuthorized) => {
+      events.push([error, wasAuthorized]);
+      assert.equal(session.authorized, false);
+      assert.equal(session.controller.signal.aborted, true);
+    },
+  });
+  session.authorized = true;
+  const error = new Error('Connection interrupted');
+  session.fail(error);
+  session.fail(error);
+  await Promise.resolve();
+  assert.deepEqual(events, ['camera closing']);
+  assert.equal(session.controller.signal.aborted, false);
+  finishCamera();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(events, ['camera closing', [error, true]]);
+});

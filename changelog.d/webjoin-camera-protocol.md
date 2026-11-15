@@ -1,0 +1,1 @@
+- Add an isolated camera-only browser connection with separate ICE refresh and music timing protection.

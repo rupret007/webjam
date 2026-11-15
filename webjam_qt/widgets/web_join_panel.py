@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QBoxLayout, QFrame, QHBoxLayout, QLabel, QPushButt
 class WebJoinPanel(QFrame):
     primary_requested = Signal(str, object)
     stop_requested = Signal(object)
+    camera_requested = Signal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -36,6 +37,13 @@ class WebJoinPanel(QFrame):
         self.stop_button.clicked.connect(self._submit_stop)
         row.addWidget(self.primary)
         row.addWidget(self.stop_button)
+        self.camera_button = QPushButton("Open camera page")
+        self.camera_button.setObjectName("GhostButton")
+        self.camera_button.setMinimumHeight(36)
+        self.camera_button.pressed.connect(lambda: setattr(self, "_camera_context", self._context))
+        self.camera_button.clicked.connect(self._submit_camera)
+        self._camera_context = None
+        row.addWidget(self.camera_button)
         row.addStretch(1)
         layout.addLayout(row)
         self.status = QLabel()
@@ -59,7 +67,12 @@ class WebJoinPanel(QFrame):
         if context is not None:
             self.stop_requested.emit(context)
 
-    def render(self, state, message, context=None):
+    def _submit_camera(self):
+        context, self._camera_context = self._camera_context, None
+        if context is not None:
+            self.camera_requested.emit(context)
+
+    def render(self, state, message, context=None, *, camera_ready=False):
         self._state, self._context = state, context
         self._sync_visibility()
         text = {"preparing": "Preparing link…", "connecting": "Connecting browser guest…",
@@ -72,6 +85,8 @@ class WebJoinPanel(QFrame):
         can_stop = state in {"preparing", "connecting", "connected", "ready", "expiring", "cleanup"}
         self.stop_button.setVisible(can_stop)
         self.stop_button.setEnabled(can_stop)
+        self.camera_button.setVisible(camera_ready)
+        self.camera_button.setEnabled(camera_ready)
         self.stop_button.setText(
             {"preparing": "Cancel", "connecting": "Cancel", "cleanup": "Retry ending browser guest"}.get(
                 state, "End browser invite"
@@ -94,7 +109,7 @@ class WebJoinPanel(QFrame):
         parent = self.parentWidget()
         available = min(self.width(), parent.width()) if parent is not None else self.width()
         available -= margins.left() + margins.right()
-        buttons = [button for button in (self.primary, self.stop_button) if not button.isHidden()]
+        buttons = [button for button in (self.primary, self.stop_button, self.camera_button) if not button.isHidden()]
         needed = sum(button.minimumSizeHint().width() for button in buttons)
         needed += max(0, len(buttons) - 1) * self._actions.spacing()
         direction = (QBoxLayout.Direction.TopToBottom if needed > available

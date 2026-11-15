@@ -1,0 +1,1 @@
+- Limit WebJam camera relay renewal to one retry per window and keep music independent during camera recovery.

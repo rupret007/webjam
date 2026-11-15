@@ -1,0 +1,1 @@
+- Pause Web Join video when recent music delay rises, even if the session-wide average has barely moved.

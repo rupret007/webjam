@@ -73,6 +73,18 @@ export function applyMailbox(state, action, nowMs, ttlMs = DEFAULT_TTL_SECONDS *
   return { status: 404, code: "not_found" };
 }
 
+export function applyVideoMailbox(state, action, nowMs) {
+  if (!state || !Number.isFinite(nowMs) || nowMs < 0) return { status: 503, code: "unreadable" };
+  if (state.alarmAt && nowMs >= state.alarmAt) return { status: 410, code: "expired", clear: true };
+  if (!["get", "put"].includes(action.kind)) return { status: 405, code: "method" };
+  const result = applyMailbox(state, action, nowMs, Infinity);
+  if (result.status === 201) {
+    state.alarmAt = Math.min(nowMs + DEFAULT_TTL_SECONDS * 1000, state.createdAt + 3600000);
+    return { ...result, notify: false };
+  }
+  return result;
+}
+
 function jsonResponse(status, body) {
   return new Response(JSON.stringify(body), {
     status,
@@ -105,6 +117,10 @@ export class Mailbox {
     }
   }
 
+  apply(state, action, nowMs) { return applyMailbox(state, action, nowMs); }
+
+  alarmTime(state) { return state.createdAt + DEFAULT_TTL_SECONDS * 1000; }
+
   async _handle(request) {
     const url = new URL(request.url);
     const nowMs = Number(request.headers.get("X-WebJam-Now") ?? Date.now());
@@ -134,13 +150,13 @@ export class Mailbox {
     }
     const stored = await this.ctx.storage.get("mailbox");
     const state = stored && typeof stored === "object" ? stored : emptyMailbox();
-    const result = applyMailbox(state, action, nowMs);
+    const result = this.apply(state, action, nowMs);
     if (result.clear) {
       // Prepaid: Worker POST charges the later TTL/host delete.
       await this.ctx.storage.deleteAll();
     } else if (result.status === 201) {
       await this.ctx.storage.put("mailbox", state);
-      await this.ctx.storage.setAlarm(state.createdAt + DEFAULT_TTL_SECONDS * 1000);
+      await this.ctx.storage.setAlarm(this.alarmTime(state));
     }
     if (result.notify) {
       this._notifyWaiters();
@@ -186,5 +202,19 @@ export class Mailbox {
         // Hibernated sockets can already be gone.
       }
     }
+  }
+}
+
+
+export class VideoMailbox extends Mailbox {
+  apply(state, action, nowMs) { return applyVideoMailbox(state, action, nowMs); }
+
+  alarmTime(state) { return state.alarmAt; }
+
+  async _handle(request) {
+    if (!["GET", "POST"].includes(request.method) || request.headers.has("Upgrade")) {
+      return jsonResponse(405, { error: "method" });
+    }
+    return super._handle(request);
   }
 }

@@ -109,7 +109,7 @@ test("a guest retries listening and leaves without requesting a microphone", asy
   await expect(retry).toHaveAccessibleDescription("Check your connection, then select Retry to listen again.");
   await retry.press("Enter");
   await expect(page.getByRole("status").filter({ hasText: "You’re listening with your microphone off." })).toBeVisible();
-  const leave = page.getByRole("button", { name: "Leave session" });
+  const leave = page.getByRole("button", { name: "Leave", exact: true });
   await expect(leave).toBeFocused();
   await leave.press("Enter");
   await expect(page.locator("#status")).toHaveAccessibleDescription(/return to your Jam room to accept it/i);
@@ -150,7 +150,7 @@ test("choosing listening immediately releases a microphone check already in prog
   await page.waitForFunction(() => window.micStopped === true);
   await page.evaluate(() => window.completeListeningResume());
   await expect(page.locator("#status")).toContainText("listening with your microphone off");
-  await page.getByRole("button", { name: "Leave session" }).press("Enter");
+  await page.getByRole("button", { name: "Leave", exact: true }).press("Enter");
   await expect(page.locator("#status")).toBeFocused();
 });
 

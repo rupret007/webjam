@@ -38,9 +38,17 @@ class_name = "Mailbox"
 name = "MAILBOX_QUOTA"
 class_name = "MailboxQuota"
 
+[[durable_objects.bindings]]
+name = "VIDEO_MAILBOX"
+class_name = "VideoMailbox"
+
 [[migrations]]
 tag = "v1-mailbox"
 new_sqlite_classes = ["Mailbox", "MailboxQuota"]
+
+[[migrations]]
+tag = "v2-video-mailbox"
+new_sqlite_classes = ["VideoMailbox"]
 
 # Required secrets (do not put values here):
 #   wrangler secret put TURN_KEY_ID
@@ -53,3 +61,6 @@ new_sqlite_classes = ["Mailbox", "MailboxQuota"]
 #   wrangler secret put WEB_TURN_KEY_API_TOKEN
 # Missing web secrets fail closed (503). Web Join requires web quota admission
 # for every connection path, including direct ICE.
+
+# Phase 1 video stays off until VIDEO_TURN_KEY_ID, VIDEO_TURN_KEY_API_TOKEN,
+# and a reviewed VIDEO_TURN_MONTHLY_CAP_BYTES are separately configured.

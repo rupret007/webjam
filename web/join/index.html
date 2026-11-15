@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' https://webjam-turn-credentials.jeffstory007.workers.dev; media-src 'self' blob:; base-uri 'none'; form-action 'none'">
   <title>Web Join · WebJam</title>
   <link rel="stylesheet" href="style.css">
-  <script type="module" src="app.js"></script>
+  <script type="module" src="join-entry.js"></script>
 </head>
 <body>
   <main>
@@ -64,6 +64,21 @@
       <p id="warnings"></p>
       <p>On iPhone and iPad, keep this page visible while you listen or play along. Safari may add playback delay.</p>
     </details>
+    <section id="video-room" class="video-room" aria-label="In-room camera" hidden>
+      <p data-video-status role="status" class="video-status"></p>
+      <div class="video-stage">
+        <video data-remote muted playsinline aria-label="Other person" hidden></video>
+        <span class="video-placeholder">Waiting for the other camera</span>
+      </div>
+      <div class="video-footer">
+        <video data-self muted playsinline aria-label="Your camera preview" hidden></video>
+        <div class="video-actions">
+          <button data-camera type="button">Show camera</button>
+          <button data-camera-switch class="secondary" type="button" hidden>Switch camera</button>
+          <button data-video-leave class="secondary" type="button">Leave</button>
+        </div>
+      </div>
+    </section>
     <audio id="host-audio" autoplay playsinline></audio>
     <p class="privacy">Join only with an invite from someone you trust. WebJam encrypts connection setup.</p>
   </main>

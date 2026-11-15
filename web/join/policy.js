@@ -43,7 +43,15 @@ export function policySdp(sdp, { remote = false, allowReviewedAllocations = true
   return `${result.join("\r\n")}\r\n`;
 }
 export function validateCredentials(document, now = Date.now()) {
-  if (!document || document.client !== "web" || !Number.isFinite(document.ttl) || document.ttl <= 0 || document.ttl > 3600 || !Number.isSafeInteger(document.quota_bytes) || document.quota_bytes <= 0 || document.quota_bytes > SESSION_BYTES || !Array.isArray(document.iceServers) || document.iceServers.length < 1 || document.iceServers.length > 8) throw new Error(RELAY_UNAVAILABLE_MESSAGE);
+  return validateRelay(document, now, "web", SESSION_BYTES);
+}
+export const VIDEO_BYTES = 64 * 1024 * 1024;
+export function validateVideoCredentials(document, now = Date.now()) {
+  if (document?.quota_bytes !== VIDEO_BYTES) throw new Error(RELAY_UNAVAILABLE_MESSAGE);
+  return validateRelay(document, now, "web-video", VIDEO_BYTES);
+}
+function validateRelay(document, now, client, maxBytes) {
+  if (!document || document.client !== client || !Number.isFinite(document.ttl) || document.ttl <= 0 || document.ttl > 3600 || !Number.isSafeInteger(document.quota_bytes) || document.quota_bytes <= 0 || document.quota_bytes > maxBytes || !Array.isArray(document.iceServers) || document.iceServers.length < 1 || document.iceServers.length > 8) throw new Error(RELAY_UNAVAILABLE_MESSAGE);
   if (document.allowed_relay_ips !== undefined && (!Array.isArray(document.allowed_relay_ips) || document.allowed_relay_ips.some((ip) => !RELAY_IPS.includes(ip)))) throw new Error("Untrusted relay address");
   let hasTurn = false;
   for (const server of document.iceServers) {

@@ -4,7 +4,7 @@
  * ship in the WebJam client.
  */
 
-import { Mailbox, validMailboxId } from "./mailbox.js";
+import { Mailbox, VideoMailbox, validMailboxId } from "./mailbox.js";
 import { allowedOrigin, corsGate, withCors } from "./cors.js";
 import {
   FETCH_TIMEOUT_MS,
@@ -42,6 +42,7 @@ let quotaStates = {
   turn: emptyQuotaState(),
   mailbox: emptyQuotaState(),
   web: emptyQuotaState(),
+  video: emptyQuotaState(),
 };
 let usageCache = null;
 
@@ -50,6 +51,7 @@ export function resetWorkerState() {
     turn: emptyQuotaState(),
     mailbox: emptyQuotaState(),
     web: emptyQuotaState(),
+    video: emptyQuotaState(),
   };
   usageCache = null;
 }
@@ -95,10 +97,10 @@ async function readCredentialBody(request) {
   return JSON.parse(new TextDecoder().decode(bytes.subarray(0, size)));
 }
 
-function parseMailboxPath(path) {
+function parseMailboxPath(path, prefix = "mailbox") {
   const parts = String(path || "").split("/");
   const first = parts.findIndex(Boolean);
-  if (parts[first] !== "mailbox") {
+  if (parts[first] !== prefix) {
     return null;
   }
   // Match the canonical pathname used by the mailbox quota scope and backend.
@@ -125,6 +127,7 @@ function applyQuotaEnv(env) {
     MAILBOX_NET_DAILY_GB_S: env.MAILBOX_NET_DAILY_GB_S,
     MAILBOX_RATE_PREFIX_DAILY: env.MAILBOX_RATE_PREFIX_DAILY,
     WEB_DAILY_REQUESTS: env.WEB_DAILY_REQUESTS,
+    VIDEO_SIGNAL_DAILY_REQUESTS: env.VIDEO_SIGNAL_DAILY_REQUESTS,
   };
   globalThis.WEBJAM_QUOTA_ENV = quotaEnv;
   return quotaEnv;
@@ -145,6 +148,12 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all
   if (typeof deps.enforceAccess === "function") {
     return deps.enforceAccess(request, nowMs, rowWrites, charge, web);
   }
+  const url = new URL(request.url);
+  if (url.pathname.startsWith("/video-mailbox/") ||
+      (url.pathname === "/turn-credentials" && url.searchParams.get("client") === "web-video")) {
+    if (!videoQuotaConfigured(env)) return errorResponse(503, "misconfigured");
+    return enforceScope(request, env, nowMs, rowWrites, charge, "video");
+  }
   if (web) {
     if ((typeof env.MAILBOX_QUOTA?.idFromName !== "function" ||
          typeof env.MAILBOX_QUOTA?.get !== "function") &&
@@ -157,7 +166,14 @@ async function enforceAccess(request, env, deps, nowMs, rowWrites, charge = "all
     if (denied) return denied;
   }
   return enforceScope(request, env, nowMs, rowWrites, charge,
-    quotaScope(new URL(request.url).pathname));
+    quotaScope(url.pathname));
+}
+
+function videoQuotaConfigured(env) {
+  const budget = Number(env.VIDEO_SIGNAL_DAILY_REQUESTS);
+  return Number.isSafeInteger(budget) && budget > 0 &&
+    ((typeof env.MAILBOX_QUOTA?.idFromName === "function" &&
+      typeof env.MAILBOX_QUOTA?.get === "function") || env.ENVIRONMENT === "development");
 }
 
 async function enforceScope(request, env, nowMs, rowWrites, charge, scope) {
@@ -215,7 +231,7 @@ function closeAcceptedSocket(response) {
   }
 }
 
-async function handleMailbox(request, env, deps, mailbox, nowMs, web) {
+async function handleMailbox(request, env, deps, mailbox, nowMs, web, binding = env.MAILBOX) {
   if (mailbox.invalid) {
     return errorResponse(404, "not_found");
   }
@@ -241,13 +257,13 @@ async function handleMailbox(request, env, deps, mailbox, nowMs, web) {
   let response;
   if (typeof deps.mailboxFetch === "function") {
     response = await deps.mailboxFetch(request, mailbox, nowMs);
-  } else if (!env.MAILBOX || typeof env.MAILBOX.idFromName !== "function") {
+  } else if (!binding || typeof binding.idFromName !== "function") {
     response = errorResponse(503, "misconfigured");
   } else {
     const headers = new Headers(request.headers);
     headers.set("X-WebJam-Now", String(nowMs));
     try {
-      const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailbox.id));
+      const stub = binding.get(binding.idFromName(mailbox.id));
       response = await stub.fetch(new Request(request, { headers }));
     } catch {
       response = errorResponse(503, "unavailable");
@@ -285,6 +301,13 @@ async function handleAllowedRequest(request, env, deps) {
   if (mailbox) {
     return handleMailbox(request, env, deps, mailbox, nowMs, web);
   }
+  const videoMailbox = parseMailboxPath(path, "video-mailbox");
+  if (videoMailbox) {
+    if (videoMailbox.invalid || !["offer", "answer"].includes(videoMailbox.slot)) return errorResponse(404, "not_found");
+    if (!["GET", "POST"].includes(request.method) || request.headers.has("Upgrade")) return errorResponse(405, "method");
+    if (!env.VIDEO_MAILBOX) return errorResponse(503, "misconfigured");
+    return handleMailbox(request, env, deps, videoMailbox, nowMs, true, env.VIDEO_MAILBOX);
+  }
   if (request.method !== "POST") {
     return errorResponse(405, "method");
   }
@@ -292,6 +315,7 @@ async function handleAllowedRequest(request, env, deps) {
     return errorResponse(404, "not_found");
   }
 
+  const videoRequest = url.searchParams.get("client") === "web-video";
   const preliminaryWeb = web;
   const rateDenied = await enforceAccess(request, env, deps, nowMs, 0, "rate", preliminaryWeb);
   if (rateDenied) return rateDenied;
@@ -304,6 +328,13 @@ async function handleAllowedRequest(request, env, deps) {
   }
   if (!validSessionInviteShape(body)) {
     return errorResponse(403, "unauthorized");
+  }
+  if (videoRequest !== (body.client === "web-video")) {
+    return errorResponse(403, "unauthorized");
+  }
+  if (videoRequest) {
+    const denied = await enforceAccess(request, env, deps, nowMs, 0, "daily");
+    return denied ?? issueVideoCredentials(env, fetchImpl, deps, nowMs, body);
   }
   if (web && body.client !== "web") {
     return errorResponse(403, "unauthorized");
@@ -374,6 +405,75 @@ async function handleAllowedRequest(request, env, deps) {
     document.allowed_relay_ips = ["141.101.90.1", "162.159.207.1"];
   }
   return jsonResponse(200, document);
+}
+
+async function checkVideoAdmission(binding, body) {
+  if (typeof binding?.fetch !== "function") return 503;
+  const digest = await crypto.subtle.digest("SHA-256",
+    new TextEncoder().encode(body.invite_token ?? body.token));
+  const inviteDigest = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+  const controller = new AbortController();
+  let timer;
+  try {
+    const response = await Promise.race([
+      binding.fetch(new Request("https://video-admission.invalid/v1/check", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ session_id: body.session_id, invite_digest: inviteDigest }),
+        redirect: "manual",
+        signal: controller.signal,
+      })),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error("Video admission timed out"));
+        }, FETCH_TIMEOUT_MS);
+      }),
+    ]);
+    if (response.body) void response.body.cancel().catch(() => {});
+    if (response.status === 204) return 204;
+    return response.status === 403 ? 403 : 503;
+  } catch {
+    return 503;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function issueVideoCredentials(env, fetchImpl, deps, nowMs, body) {
+  const key = String(env.VIDEO_TURN_KEY_ID ?? "").trim();
+  const bearer = String(env.VIDEO_TURN_KEY_API_TOKEN ?? "").trim();
+  const account = String(env.CLOUDFLARE_ACCOUNT_ID ?? "").trim();
+  const analytics = analyticsBearerToken(env);
+  const cap = Number(env.VIDEO_TURN_MONTHLY_CAP_BYTES);
+  if (!key || !bearer || !account || !analytics || !Number.isSafeInteger(cap) || cap <= 0 ||
+      [env.TURN_KEY_ID, env.WEB_TURN_KEY_ID].some(value => key === String(value ?? "").trim())) {
+    return errorResponse(503, "misconfigured");
+  }
+  const admission = await checkVideoAdmission(env.VIDEO_ADMISSION, body);
+  if (admission !== 204) {
+    return errorResponse(admission, admission === 403 ? "unauthorized" : "unavailable");
+  }
+  // Meter the separate key. Music usage and admission never include this key.
+  const { dateFrom, dateTo } = utcMonthDateRange(new Date(nowMs));
+  const timeout = Number(deps.fetchTimeoutMs ?? FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetchWithTimeout(fetchImpl, GRAPHQL_URL, {
+      method: "POST",
+      headers: { authorization: `Bearer ${analytics}`, "content-type": "application/json" },
+      body: JSON.stringify(usageAnalyticsQuery(account, key, dateFrom, dateTo)),
+    }, timeout);
+    const used = response.ok ? readUsageBytes(await response.json()) : null;
+    const decision = decideCap(used, cap);
+    if (!decision.allow) return errorResponse(decision.code === "cap" ? 429 : 503, decision.code);
+    const ttl = credentialTtlSeconds(env.TURN_CREDENTIAL_TTL_SECONDS, true);
+    const document = iceServersDocument(await generateIceServers(fetchImpl, key, bearer, ttl, timeout), 64 * 1024 * 1024);
+    return document
+      ? jsonResponse(200, { ...document, ttl, client: "web-video", allowed_relay_ips: ["141.101.90.1", "162.159.207.1"] })
+      : errorResponse(503, "unavailable");
+  } catch {
+    return errorResponse(503, "unavailable");
+  }
 }
 
 async function monthUsageBytes(
@@ -472,7 +572,7 @@ async function generateIceServers(
   return response.json();
 }
 
-export { Mailbox, MailboxQuota };
+export { Mailbox, VideoMailbox, MailboxQuota };
 
 export default {
   async fetch(request, env) {

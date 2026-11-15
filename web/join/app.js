@@ -1,6 +1,7 @@
 import { readInvite } from "./crypto.js";
 import { acquireMusicStream, closeAudioContext } from "./audio.js";
 import { WebJoinSession } from "./session.js";
+import { VideoRoom } from "./video-room.js";
 import { RELAY_ORIGIN } from "./config.js";
 import {
   micCheckFailure,
@@ -21,6 +22,7 @@ const failureElements = () => ({
 
 let invite;
 let session;
+let videoRoom;
 let context;
 let starting = false;
 let retryListening = false;
@@ -314,6 +316,7 @@ $("skip-check").addEventListener("click", (event) => {
 
 function setPlaybackRecovery(blocked) {
   $("play-audio").hidden = !blocked;
+  document.body.classList.toggle("playback-blocked", blocked);
   $("leave").classList.toggle("secondary", blocked);
   $("playback-help").textContent = blocked
     ? "You’re still connected. Select Play session audio to hear your host."
@@ -333,18 +336,32 @@ async function playSessionAudio(attempt) {
       return;
     }
     setPlaybackRecovery(true);
-    if (document.activeElement === $("leave")) $("play-audio").focus();
+    if ([$("leave"), document.querySelector("[data-video-leave]")].includes(document.activeElement)) {
+      $("play-audio").focus();
+    }
     return;
   }
   if (!isCurrent()) return;
   const restoreFocus = document.activeElement === $("play-audio");
   setPlaybackRecovery(false);
-  if (restoreFocus) $("leave").focus();
+  if (restoreFocus) (videoRoom ? document.querySelector("[data-video-leave]") : $("leave")).focus();
 }
 
-function leave(message = "You left the session.", error, joined = session?.authorized === true) {
+async function leave(message = "You left the session.", error, joined = session?.authorized === true, unloading = false) {
   const elements = failureElements();
-  const restoreFocus = [elements.leave, $("play-audio")].includes(document.activeElement);
+  const activeControl = document.activeElement;
+  const restoreFocus = [elements.leave, $("play-audio"), document.querySelector("[data-video-leave]")]
+    .includes(activeControl);
+  const closing = videoRoom;
+  if (closing) {
+    const attempt = activeAttempt;
+    if (unloading) closing.close();
+    else await closing.closed();
+    if (activeAttempt !== attempt) return;
+    videoRoom = null;
+    closing.root.hidden = true;
+    document.body.classList.remove("camera-layout");
+  }
   clearAccessTime();
   activeAttempt?.abort();
   activeAttempt = null;
@@ -456,6 +473,9 @@ async function startJoin(listenOnly = false) {
         $("host-audio").srcObject = remote;
         void playSessionAudio(attempt);
       },
+      videoPeer: () => videoRoom?.peer,
+      onVideoTrip: () => videoRoom?.pause("Video paused to protect music timing. Music stays connected."),
+      beforeMusicClose: () => videoRoom?.closed(),
       onError: (error, wasAuthorized) => {
         if (isCurrent()) leave(undefined, error, wasAuthorized);
       },
@@ -466,10 +486,19 @@ async function startJoin(listenOnly = false) {
     if (!isCurrent()) return;
     showAccessTime(joinedSession.accessExpiresAt, isCurrent);
     if (listenOnly) $("status").textContent = "Connected. You’re listening with your microphone off.";
+    if (joinedSession.authorized && $("video-room")) {
+      document.body.classList.add("camera-layout");
+      if (!listenOnly) $("status").textContent = "Connected to music";
+      videoRoom = new VideoRoom({
+        root: $("video-room"), origin: RELAY_ORIGIN, invite, host: false,
+        timingReady: () => joinedSession.authorized && !!joinedSession.videoBaseline,
+      });
+    }
     clearJoinFailure(failureElements(), $("status").textContent);
     $("join").hidden = true;
     const resumeAudio = $("play-audio");
-    (resumeAudio.hidden ? $("leave") : resumeAudio).focus({ preventScroll: resumeAudio.hidden });
+    const leaveControl = videoRoom ? document.querySelector("[data-video-leave]") : $("leave");
+    (resumeAudio.hidden ? leaveControl : resumeAudio).focus({ preventScroll: resumeAudio.hidden });
     starting = false;
     refresh();
   } catch (error) {
@@ -495,7 +524,7 @@ $("retry").addEventListener("click", () => {
 $("play-audio").addEventListener("click", () => { void playSessionAudio(activeAttempt); });
 $("leave").addEventListener("click", () => leave());
 window.addEventListener("hashchange", () => window.location.reload());
-window.addEventListener("pagehide", () => leave());
+window.addEventListener("pagehide", () => leave(undefined, undefined, undefined, true));
 document.addEventListener("visibilitychange", () => {
   if (document.hidden || expireUnusedInvite()) return;
   if (context?.state === "suspended") {
