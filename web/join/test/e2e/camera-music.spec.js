@@ -238,8 +238,7 @@ async function musicWindow(page) {
   });
 }
 
-test("WebJam camera and music run on separate real peers in the local lab", async ({ page, context, request, baseURL }, info) => {
-  test.setTimeout(160000);
+async function joinCameraMusicLab({ page, context, request, baseURL }) {
   const offerResponse = await request.get("http://127.0.0.1:4175/offer?journey=camera-music");
   expect(offerResponse.ok()).toBe(true);
   const nativeHost = await offerResponse.json();
@@ -275,6 +274,12 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
   await expect(guestShow).toBeEnabled();
   expect(await page.evaluate(() => [window.labPeers.length, window.labCameraCalls])).toEqual([1, 0]);
   expect(await host.evaluate(() => [window.labPeers.length, window.labCameraCalls])).toEqual([0, 0]);
+  return { host, guestShow };
+}
+
+test("WebJam camera and music run on separate real peers in the local lab", async ({ page, context, request, baseURL }, info) => {
+  test.setTimeout(160000);
+  const { host, guestShow } = await joinCameraMusicLab({ page, context, request, baseURL });
   await guestShow.click();
   await expect(page.locator("[data-video-status]")).toContainText("Music timing isn't measurable");
   // Let the initial audio/jitter-buffer ramp settle before comparing windows.
@@ -372,3 +377,66 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
   await expect.poll(() => page.evaluate(() => window.labPeers.map(pc => pc.connectionState))).toEqual(["closed", "closed"]);
   await host.close();
 });
+
+for (const trial of ["music-only", "camera-hide"]) {
+  test(`capture stable-route latency for ${trial}`, async ({ page, context, request, baseURL }, info) => {
+    test.setTimeout(140000);
+    const { host, guestShow } = await joinCameraMusicLab({ page, context, request, baseURL });
+    const settle = async (when) => {
+      const remaining = when - performance.now();
+      expect(remaining, "missed the preset sampling window").toBeGreaterThan(0);
+      await page.waitForTimeout(remaining);
+    };
+    // Keep the viewport, fixture route and initial settling interval identical.
+    await page.waitForTimeout(5000);
+    const before = await musicWindow(page);
+    const middleStart = performance.now() + 12000;
+    if (trial === "camera-hide") {
+      await guestShow.click();
+      await expect(page.locator("[data-self]")).toBeVisible();
+      await host.getByRole("button", { name: "Show my camera", exact: true }).click();
+      await page.bringToFront();
+      for (const cameraPage of [page, host]) {
+        await expect(cameraPage.locator("[data-video-status]")).toHaveText("Cameras on.");
+        await expect.poll(() => decoded(cameraPage)).toBeGreaterThan(0);
+      }
+    }
+    await settle(middleStart);
+    const middle = await musicWindow(page);
+    const afterStart = performance.now() + 5000;
+    if (trial === "camera-hide") {
+      for (const cameraPage of [host, page]) {
+        await cameraPage.getByRole("button", { name: "Hide camera", exact: true }).click();
+        expect(await cameraPage.evaluate(() => window.labCameraTracks.every(track => !track.enabled))).toBe(true);
+      }
+      await page.bringToFront();
+    }
+    await settle(afterStart);
+    const after = await musicWindow(page);
+    const state = await page.evaluate(() => ({
+      musicState: window.labPeers[0].connectionState,
+      currentGuardRoute: window.labMusicRoute,
+      cameraRequests: window.labCameraCalls,
+      videoState: window.labPeers[1]?.connectionState ?? "unused",
+    }));
+    expect(state.musicState).toBe("connected");
+    expect(state.currentGuardRoute).toBe("relayed");
+    expect(state.cameraRequests).toBe(trial === "camera-hide" ? 1 : 0);
+    const windows = [before, middle, after];
+    const sameMusicPair = new Set(windows.flatMap(window => window.pairIds)).size === 1;
+    expect(sameMusicPair).toBe(true);
+    const summarize = ({ pairIds, ...window }) => window;
+    const summary = {
+      trial, state, sameMusicPair, before: summarize(before), middle: summarize(middle), after: summarize(after),
+      absoluteChangeFromBeforeToAfterMs: Math.abs(after.medianMs - before.medianMs),
+      offDelayComparedToBeforeMs: after.medianMs - before.medianMs,
+      middleDelayComparedToBeforeMs: middle.medianMs - before.medianMs,
+    };
+    const path = info.outputPath("stable-route-timing.json");
+    await writeFile(path, JSON.stringify(summary, null, 2));
+    await info.attach("stable-route timing (loopback)", { path, contentType: "application/json" });
+    console.log("WEBJAM_STABLE_ROUTE", JSON.stringify(summary));
+    await page.getByRole("button", { name: "Leave", exact: true }).click();
+    await host.close();
+  });
+}
