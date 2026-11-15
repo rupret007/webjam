@@ -101,6 +101,7 @@ export class VideoRoom {
     try { return await navigator.mediaDevices.getUserMedia({ video, audio: false }); }
     catch (error) {
       if (error.name !== "OverconstrainedError" || switchCamera) throw error;
+      this.signal.throwIfAborted();
       return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
     }
   }
