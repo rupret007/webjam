@@ -96,6 +96,7 @@ test("a configured video key requires active admission before contacting Cloudfl
     async fetch(req) {
       checks++;
       assert.equal(req.method, "POST");
+      assert.equal(req.redirect, "manual");
       assert.equal(new URL(req.url).pathname, "/v1/check");
       assert.equal(req.headers.has("Authorization"), false);
       const proof = await req.json();
@@ -109,6 +110,8 @@ test("a configured video key requires active admission before contacting Cloudfl
   const env = { ...config, VIDEO_ADMISSION };
   assert.equal((await call(env)).status, 403);
   status = 200;
+  assert.equal((await call(env)).status, 503);
+  status = 302;
   assert.equal((await call(env)).status, 503);
   const unavailable = { fetch() { throw new Error("Admission service unavailable"); } };
   assert.equal((await call({ ...env, VIDEO_ADMISSION: unavailable })).status, 503);
@@ -128,5 +131,5 @@ test("a configured video key requires active admission before contacting Cloudfl
   status = 403;
   assert.equal((await call(env)).status, 403);
   assert.equal(upstream.length, 2);
-  assert.equal(checks, 4);
+  assert.equal(checks, 5);
 });

@@ -420,7 +420,7 @@ async function checkVideoAdmission(binding, body) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ session_id: body.session_id, invite_digest: inviteDigest }),
-        redirect: "error",
+        redirect: "manual",
         signal: controller.signal,
       })),
       new Promise((_, reject) => {
