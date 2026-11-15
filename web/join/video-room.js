@@ -284,8 +284,9 @@ export class VideoRoom {
         const result = videoRelayBudget(stats, budget);
         if (result === "stop") this.pause("Video paused. Video relay budget used. Music stays connected.");
         if (result === "warning") this.render(this.state, "Camera relay is nearly used up. Music stays connected.");
-      } catch { this.pause("Video paused. Camera network statistics are unavailable. Music stays connected."); }
-      finally { this.statsPending = false; }
+      } catch {
+        if (!this.signal.aborted) this.pause("Video paused. Camera network statistics are unavailable. Music stays connected.");
+      } finally { this.statsPending = false; }
     }, 1000);
   }
 

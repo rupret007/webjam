@@ -1,0 +1,1 @@
+Keep the camera leave or pause message visible when a statistics request finishes after the camera has closed.
