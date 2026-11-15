@@ -2,6 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { VideoRoom } from "../video-room.js";
 
+
+function cameraButton() {
+  const attributes = new Map();
+  return Object.assign(new EventTarget(), {
+    disabled: false,
+    getAttribute: name => attributes.get(name) ?? null,
+    setAttribute: (name, value) => attributes.set(name, value),
+    removeAttribute: name => attributes.delete(name),
+  });
+}
+
 function leavingRoom(t, { stream, preview, mediaDevices = {}, ...overrides }) {
   t.mock.method(globalThis, "navigator", () => ({ mediaDevices }), { getter: true });
   const document = new EventTarget();
@@ -10,7 +21,7 @@ function leavingRoom(t, { stream, preview, mediaDevices = {}, ...overrides }) {
   const controller = new AbortController();
   return Object.assign(Object.create(VideoRoom.prototype), {
     controller, signal: controller.signal, credentials: {},
-    camera: new EventTarget(), switcher: new EventTarget(), status: {}, remote: {},
+    camera: cameraButton(), switcher: cameraButton(), status: {}, remote: {},
     capture: async () => stream, preview,
     render: () => assert.fail("Leave must prevent a later camera update"),
     ...overrides,
@@ -97,7 +108,7 @@ test("a failed switch restores the local preview without falsely showing the rem
   const stream = { getVideoTracks: () => [rejected], getTracks: () => [rejected] };
   const room = Object.assign(Object.create(VideoRoom.prototype), {
     signal: new AbortController().signal, credentials: {}, track, preview,
-    camera: {}, switcher: {}, status: {}, initialComplete: true, peer: { connectionState: "connecting" },
+    camera: cameraButton(), switcher: cameraButton(), status: {}, initialComplete: true, peer: { connectionState: "connecting" },
     sender: { async replaceTrack() { throw new Error("Switch refused"); } },
     capture: async () => stream,
     render(state, message) {
@@ -158,7 +169,7 @@ test("a camera path failure releases the camera and can reuse the unwritten slot
   const room = Object.assign(Object.create(VideoRoom.prototype), {
     host: false, signal: new AbortController().signal, invite: { expiresAt: Infinity },
     credentials: { expiresAt: Infinity }, timingReady: () => true, capture,
-    preview: { play: async () => {} }, camera: {}, switcher: {}, remote: {}, status: {},
+    preview: { play: async () => {} }, camera: cameraButton(), switcher: cameraButton(), remote: {}, status: {},
     mailbox: {
       async write(round, kind) { writes.push([round, kind]); },
       async wait() { return { sdp: allowed, pin: "a1".repeat(32) }; },
@@ -232,4 +243,38 @@ test("an active camera request can fall back once without requesting a microphon
   assert.equal(requests.length, 2);
   assert.equal(requests[0].audio, false);
   assert.deepEqual(requests[1], { video: true, audio: false });
+});
+
+test("a pending camera request keeps keyboard focus and the retry in place", async t => {
+  const capture = Promise.withResolvers();
+  const camera = cameraButton();
+  const room = leavingRoom(t, {
+    capture: () => capture.promise, timingReady: () => true, camera,
+    root: { dataset: {} }, placeholder: {}, status: {}, preview: {},
+    state: "needs-gesture", render: VideoRoom.prototype.render,
+  });
+  document.activeElement = camera;
+  const pending = room.tap();
+  assert.equal(camera.disabled, false);
+  assert.equal(camera.getAttribute("aria-disabled"), "true");
+  await room.tap();
+  capture.reject(new DOMException("Fixture permission denied", "NotAllowedError"));
+  await pending;
+  assert.equal(camera.getAttribute("aria-disabled"), null);
+  assert.equal(camera.textContent, "Try again");
+  assert.equal(document.activeElement, camera);
+});
+
+test("pausing video moves camera keyboard focus to the pause status", t => {
+  const camera = cameraButton();
+  const room = leavingRoom(t, {
+    camera, root: { dataset: {} }, placeholder: {}, preview: {},
+    status: { focus() { document.activeElement = this; } },
+    render: VideoRoom.prototype.render,
+  });
+  document.activeElement = room.switcher;
+  room.render("paused", "Video paused. Music stays connected.");
+  assert.equal(room.status.textContent, "Video paused. Music stays connected.");
+  assert.equal(document.activeElement, room.status);
+  assert.equal(camera.disabled, true);
 });

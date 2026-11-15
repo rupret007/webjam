@@ -339,8 +339,10 @@ test("WebJam camera and music run on separate real peers in the local lab", asyn
   await page.evaluate(() => { window.labMusicRoute = "direct"; });
   await expect(page.getByText("Direct connection", { exact: true })).toBeAttached();
   await expect(page.locator("[data-video-status]")).toHaveText("Cameras on.");
+  await page.getByRole("button", { name: "Switch camera" }).focus();
   await page.evaluate(() => { window.labMusicRoute = "relayed"; });
   await expect(page.locator("[data-video-status]")).toHaveText("Video paused to protect music timing. Music stays connected.");
+  await expect(page.locator("[data-video-status]")).toBeFocused();
   await expect(page.getByRole("button", { name: "Leave", exact: true })).toBeInViewport({ ratio: 1 });
   expect(await page.evaluate(() => window.labPeers.map(pc => pc.connectionState))).toEqual(["connected", "closed"]);
   const musicState = await (await request.get("http://127.0.0.1:4175/status")).json();

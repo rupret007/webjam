@@ -26,6 +26,7 @@ export class VideoRoom {
     this.remote = root.querySelector("[data-remote]");
     this.placeholder = root.querySelector(".video-placeholder");
     this.status = root.querySelector("[data-video-status]");
+    this.status.tabIndex = -1;
     this.buttonClick = () => void (this.state === "relay-off" ? this.checkRelay() : this.tap());
     this.switchClick = () => void this.tap(true);
     this.devicesChanged = () => {
@@ -52,9 +53,16 @@ export class VideoRoom {
     this.placeholder.textContent = inactive ? "Camera is off" : "Waiting for the other camera";
     const active = !!this.track?.enabled && this.track.readyState === "live";
     this.camera.textContent = state === "relay-off" ? "Retry" : state === "camera-error" ? "Try again" : active ? "Hide camera" : this.label;
-    this.camera.disabled = this.busy || state === "checking" || state === "paused" || !this.credentials && state !== "relay-off";
-    this.switcher.hidden = !this.initialComplete || !active;
-    this.switcher.disabled = this.busy;
+    const cameraUnavailable = state === "checking" || state === "paused" || !this.credentials && state !== "relay-off";
+    const switchHidden = !this.initialComplete || !active;
+    const focused = document.activeElement;
+    if (cameraUnavailable && (focused === this.camera || focused === this.switcher)) {
+      this.status.focus();
+    } else if (switchHidden && focused === this.switcher) {
+      this.camera.focus();
+    }
+    this.camera.disabled = cameraUnavailable;
+    this.switcher.hidden = switchHidden;
     this.preview.hidden = !active;
     this.remote.hidden = state !== "live";
   }
@@ -106,6 +114,15 @@ export class VideoRoom {
     }
   }
 
+  setCapturePending(pending) {
+    this.busy = pending;
+    // A native disabled button loses keyboard focus during the permission prompt.
+    for (const button of [this.camera, this.switcher]) {
+      if (pending) button.setAttribute("aria-disabled", "true");
+      else button.removeAttribute("aria-disabled");
+    }
+  }
+
   async tap(switchCamera = false) {
     if (this.busy || this.signal.aborted || !this.credentials || (switchCamera && !this.initialComplete)) return;
     if (!this.peer && !this.timingReady()) {
@@ -119,9 +136,7 @@ export class VideoRoom {
       return;
     }
     if (this.peer && !this.initialComplete) return;
-    this.busy = true;
-    this.camera.disabled = true;
-    this.switcher.disabled = true;
+    this.setCapturePending(true);
     const previous = this.track;
     const previousPreview = this.preview.srcObject;
     let stream;
@@ -148,7 +163,6 @@ export class VideoRoom {
           this.render("camera-error", "Your camera stopped. Tap Try again. Music stays connected.");
         }
       });
-      this.busy = false;
       void this.refreshCameraDevices();
       this.render(this.peer?.connectionState === "connected" ? "live" : "preview", this.cameraStatus());
       if (!this.peer && !this.connecting) {
@@ -173,8 +187,10 @@ export class VideoRoom {
         this.render("camera-error", cameraErrors[error.name] ?? "Couldn’t start the camera. Try again. Music stays connected.");
       }
     } finally {
-      this.busy = false;
-      if (!this.signal.aborted) this.render(this.state, this.status.textContent);
+      if (!this.signal.aborted) {
+        this.setCapturePending(false);
+        this.render(this.state, this.status.textContent);
+      }
     }
   }
 
@@ -281,6 +297,7 @@ export class VideoRoom {
   close() {
     if (this.signal.aborted) return;
     this.controller.abort();
+    this.setCapturePending(false);
     this.refresh?.close();
     clearInterval(this.relayTimer);
     clearInterval(this.budgetTimer);

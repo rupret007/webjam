@@ -80,6 +80,36 @@ for (const size of [{width:390,height:844},{width:1440,height:900}]) {
   });
 }
 
+test("keyboard focus stays on the camera through a delayed permission denial", async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await cameraPage(page, baseURL, 200, "NotAllowedError");
+  await page.evaluate(() => {
+    const devices = navigator.mediaDevices;
+    const capture = devices.getUserMedia;
+    window.promptRequests = 0;
+    devices.getUserMedia = async request => {
+      window.promptRequests++;
+      await new Promise(resolve => { window.finishCameraPrompt = resolve; });
+      return capture(request);
+    };
+  });
+  const camera = page.getByRole("button", { name: "Show my camera", exact: true });
+  await expect(camera).toBeVisible();
+  await expect(camera).toBeEnabled();
+  await camera.focus();
+  await expect(camera).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(camera).toHaveAttribute("aria-disabled", "true");
+  await expect(camera).toBeFocused();
+  await page.keyboard.press("Enter");
+  expect(await page.evaluate(() => window.promptRequests)).toBe(1);
+  await page.evaluate(() => window.finishCameraPrompt());
+  const retry = page.getByRole("button", { name: "Try again", exact: true });
+  await expect(retry).toBeEnabled();
+  await expect(retry).toBeFocused();
+  expect(await page.evaluate(() => [window.cameraCalls, window.peers])).toEqual([1, 0]);
+});
+
 test("missing video relay leaves the camera off", async ({ page, baseURL }) => {
   await cameraPage(page, baseURL, 503);
   await expect(page.getByRole("button", { name:"Retry", exact:true })).toBeInViewport({ratio:1});
