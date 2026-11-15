@@ -2,7 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { VideoRoom } from "../video-room.js";
 
-test("a camera switch finishing after Leave releases the replacement track", async () => {
+function leavingRoom(t, { stream, preview, ...overrides }) {
+  t.mock.method(globalThis, "navigator", () => ({ mediaDevices: {} }), { getter: true });
+  const document = new EventTarget();
+  Object.defineProperty(globalThis, "document", { value: document, configurable: true });
+  t.after(() => { delete globalThis.document; });
+  const controller = new AbortController();
+  return Object.assign(Object.create(VideoRoom.prototype), {
+    controller, signal: controller.signal, credentials: {},
+    camera: new EventTarget(), switcher: new EventTarget(), status: {}, remote: {},
+    capture: async () => stream, preview,
+    render: () => assert.fail("Leave must prevent a later camera update"),
+    ...overrides,
+  });
+}
+
+test("Leave releases the replacement camera before a pending switch finishes", async (t) => {
   let replaceStarted;
   const replacing = new Promise(resolve => { replaceStarted = resolve; });
   let replaceComplete;
@@ -12,25 +27,42 @@ test("a camera switch finishing after Leave releases the replacement track", asy
     readyState: "live", getSettings: () => ({}), stop() { this.readyState = "ended"; },
   });
   const stream = { getTracks: () => [nextTrack], getVideoTracks: () => [nextTrack] };
-  const controller = new AbortController();
-  const room = Object.assign(Object.create(VideoRoom.prototype), {
-    signal: controller.signal, credentials: {}, peer: {},
-    track: previousTrack, camera: {}, switcher: {}, status: {}, capture: async () => stream,
+  const room = leavingRoom(t, {
+    stream, peer: { close() {} }, track: previousTrack,
     preview: { srcObject: null, play: async () => {} },
     sender: { replaceTrack(track) { replaceStarted(track); return replacement; } },
-    render: () => assert.fail("Leave must prevent a later camera update"),
   });
 
   const switching = room.tap(true);
   assert.equal(await replacing, nextTrack);
-  controller.abort();
-  room.track = null;
-  room.preview.srcObject = null;
+  room.close();
+  assert.equal(nextTrack.readyState, "ended");
+  assert.equal(room.preview.srcObject, null);
   replaceComplete();
   await switching;
   assert.equal(room.track, null);
   assert.equal(nextTrack.readyState, "ended");
   assert.equal(room.preview.srcObject, null);
+});
+
+test("Leave releases a new camera even while preview playback is pending", async (t) => {
+  const { promise: previewStarted, resolve: started } = Promise.withResolvers();
+  const { promise: playback, resolve: finish } = Promise.withResolvers();
+  const track = { readyState: "live", stop() { this.readyState = "ended"; } };
+  const stream = { getVideoTracks: () => [track], getTracks: () => [track] };
+  const room = leavingRoom(t, {
+    stream, timingReady: () => true,
+    preview: { srcObject: null, play() { started(); return playback; } },
+  });
+  const tapping = room.tap();
+  await previewStarted;
+  room.close();
+  assert.equal(track.readyState, "ended");
+  assert.equal(room.preview.srcObject, null);
+  finish();
+  await tapping;
+  assert.equal(room.peer, undefined);
+  assert.equal(room.pendingCapture, null);
 });
 
 test("Switch camera starts capture during the tap using the current facing mode or cached devices", async (t) => {

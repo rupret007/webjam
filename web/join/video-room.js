@@ -127,6 +127,7 @@ export class VideoRoom {
     try {
       stream = await this.capture(switchCamera);
       this.signal.throwIfAborted();
+      this.pendingCapture = stream;
       track = stream.getVideoTracks()[0];
       if (!track || track.readyState !== "live") throw new DOMException("Unavailable", "NotFoundError");
       this.preview.srcObject = stream;
@@ -137,6 +138,7 @@ export class VideoRoom {
       if (this.sender) await this.sender.replaceTrack(track);
       this.signal.throwIfAborted();
       this.track = track;
+      this.pendingCapture = null;
       this.facing = track.getSettings().facingMode;
       previous?.stop();
       track.addEventListener("ended", () => {
@@ -154,7 +156,9 @@ export class VideoRoom {
         });
       }
     } catch (error) {
-      if (track !== this.track) stream?.getTracks().forEach(item => item.stop());
+      // A pending stream may have already been released by close().
+      stream?.getTracks().forEach(item => { if (item !== this.track && item.readyState === "live") item.stop(); });
+      this.pendingCapture = null;
       if (this.signal.aborted) return;
       if (this.track === previous && previous?.readyState === "live") {
         this.preview.srcObject = previousPreview;
@@ -259,6 +263,8 @@ export class VideoRoom {
     navigator.mediaDevices?.removeEventListener?.("devicechange", this.devicesChanged);
     this.camera.removeEventListener("click", this.buttonClick);
     this.switcher.removeEventListener("click", this.switchClick);
+    this.pendingCapture?.getTracks().forEach(track => track.stop());
+    this.pendingCapture = null;
     this.track?.stop();
     this.track = null;
     this.peer?.close();
