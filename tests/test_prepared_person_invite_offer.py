@@ -125,9 +125,12 @@ def test_web_join_prepare_offers_person_invite(qapp):
         return real_offer(link, title)
 
     embed.offer_person_invite = spy
-    host = SimpleNamespace(state="waiting", invite=LINK, stop=lambda: True)
+    host = SimpleNamespace(state="waiting", invite=LINK, camera_invite=LINK, stop=lambda: True)
     controls._host = host
     controls._server = bridge.hosted_server_process
+    controls._copy_when_ready = True
+    clipboard = qapp.clipboard()
+    clipboard.setText("untouched")
     try:
         controls._prepared(host, True)
         assert calls == [(LINK, invite_message_title("Practice"))]
@@ -135,10 +138,14 @@ def test_web_join_prepare_offers_person_invite(qapp):
         assert embed._copy_invite_btn.objectName() == "GhostButton"
         assert controls.copy_action.isEnabled()
         assert not embed._invite_delivery.isHidden()
+        assert clipboard.text() == "untouched"
+        assert window.web_guest_panel.camera_button.isEnabled()
+        assert "sharing panel" in window.web_guest_panel.status.text()
         controls.stop()
         assert embed._invite_delivery.isHidden()
         assert embed._invite_link == ""
     finally:
         controls.stop()
         controls._timer.stop()
+        clipboard.clear()
         window.close()

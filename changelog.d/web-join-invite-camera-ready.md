@@ -1,0 +1,1 @@
+- The Music panel points to the invite sharing controls and shows the camera action as soon as the browser invite is ready.
