@@ -114,7 +114,74 @@ test("a recovered baseline keeps the first trip limits", () => {
 
   assert.equal(musicBaseline(Array.from({ length: 20 }, () => sample(61, 20, "fast", "direct")), reference), null);
   assert.equal(musicBaseline(Array.from({ length: 20 }, () => sample(50, 30, "fast", "direct")), reference), null);
-  const recovered = musicBaseline(Array.from({ length: 20 }, () => sample(55, 20, "relay", "relayed")), reference);
-  // The path follows the fresh window; the limits stay where music started.
-  assert.deepEqual([recovered.latency, recovered.targetMs, recovered.pairId, recovered.route], [50, 20, "relay", "relayed"]);
+  // A direct start does not recover onto the relay. A direct window may change
+  // pair, and the trip limits stay where music started.
+  assert.equal(musicBaseline(Array.from({ length: 20 }, () => sample(55, 20, "relay", "relayed")), reference), null);
+  const trailingRelay = Array.from({ length: 19 }, () => sample(50, 20, "fast", "direct"));
+  trailingRelay.push(sample(50, 20, "relay", "relayed"));
+  assert.equal(musicBaseline(trailingRelay, reference), null);
+  const recovered = musicBaseline(Array.from({ length: 20 }, () => sample(55, 20, "other", "direct")), reference);
+  assert.deepEqual([recovered.latency, recovered.targetMs, recovered.pairId, recovered.route, recovered.loss], [50, 20, "other", "direct", 0]);
+  assert.equal(recovered.directOnly, true);
+  const noisy = loss => ({ latency: 50, targetMs: 20, pairId: "fast", route: "direct", rttMs: 40, received: 100, loss });
+  assert.equal(musicBaseline(Array.from({ length: 20 }, () => noisy(0.02)), reference), null);
+  assert.equal(musicBaseline(Array.from({ length: 20 }, () => noisy(null)), reference), null);
+  const measured = Array.from({ length: 19 }, () => noisy(0));
+  measured.push(noisy(null));
+  assert.equal(musicBaseline(measured, reference).loss, 0);
+});
+
+test("one confirmed sample does not choose the music path", () => {
+  const blind = { latency: 50, targetMs: 20, pairId: null, route: null, rttMs: null, received: 100, loss: 0 };
+  const seen = { ...blind, pairId: "fast", route: "direct", rttMs: 40 };
+  assert.equal(musicBaseline([...Array.from({ length: 19 }, () => blind), seen]), null);
+});
+
+test("baseline latency is the median of the common path", () => {
+  const direct = latency => ({ latency, targetMs: 20, pairId: "fast", route: "direct", rttMs: 40, received: 100, loss: 0 });
+  const relay = { latency: 200, targetMs: 20, pairId: "slow", route: "relayed", rttMs: 180, received: 100, loss: 0 };
+  const samples = [...Array.from({ length: 10 }, () => direct(10)), direct(100), ...Array.from({ length: 9 }, () => relay)];
+  const baseline = musicBaseline(samples);
+  assert.equal(baseline.pairId, "fast");
+  assert.equal(baseline.route, "direct");
+  assert.equal(baseline.latency, 10);
+  assert.equal(baseline.directOnly, true);
+});
+
+test("a recovered baseline stays direct, so music on the relay still trips the next camera call", async t => {
+  const stats = musicStats();
+  let camera = null;
+  let trips = 0;
+  const session = musicSession(t, stats, { videoPeer: () => camera, onVideoTrip() { trips++; camera = null; } });
+  const transport = stats.get("transport");
+  await seconds(t, session, 20);
+  assert.equal(session.videoBaseline.route, "direct");
+  assert.equal(session.videoBaseline.directOnly, true);
+
+  camera = { connectionState: "connected" };
+  stats.get("fast").currentRoundTripTime = 0.062;
+  await seconds(t, session, 5);
+  assert.equal(trips, 1);
+  assert.equal(session.videoBaseline, null);
+
+  stats.get("fast").currentRoundTripTime = 0.04;
+  transport.selectedCandidatePairId = "first-relay";
+  await seconds(t, session, 20);
+  assert.equal(session.videoBaseline, null, "a relay window cannot recover a direct baseline");
+
+  transport.selectedCandidatePairId = "fast";
+  await seconds(t, session, 20);
+  assert.equal(session.videoBaseline.route, "direct");
+  assert.equal(session.videoBaseline.pairId, "fast");
+  assert.equal(session.videoBaseline.latency, 50);
+  assert.equal(session.videoBaseline.directOnly, true);
+
+  // The path can move while the camera is off. The stored baseline stays direct.
+  transport.selectedCandidatePairId = "first-relay";
+  await seconds(t, session, 3);
+  assert.equal(session.videoBaseline.route, "direct");
+  assert.equal(session.videoMusicPath.route, "relayed");
+  camera = { connectionState: "connected" };
+  await seconds(t, session, 1);
+  assert.equal(trips, 2);
 });

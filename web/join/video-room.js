@@ -238,6 +238,8 @@ export class VideoRoom {
       if (!signal.aborted && peer === this.peer) this.connectionChanged();
     });
     if (this.host) await peer.setRemoteDescription({ type: "offer", sdp: cameraDescription(offer) });
+    // A pause during that await closed this peer; never keep its sender.
+    signal.throwIfAborted();
     const sender = this.sender = peer.addTrack(this.track, stream);
     preferVp8(peer, sender);
     const parameters = sender.getParameters();
@@ -281,9 +283,12 @@ export class VideoRoom {
     const budget = this.relayBudget;
     budget.watermark = 0;
     const peer = this.peer;
+    // The pending flag belongs to this call, so a late read from an earlier
+    // call cannot let two reads of this peer update the budget at once.
+    let pending = false;
     this.budgetTimer = setInterval(async () => {
-      if (this.statsPending) return;
-      this.statsPending = true;
+      if (pending || signal.aborted) return;
+      pending = true;
       try {
         const stats = await peer.getStats();
         if (signal.aborted) return;
@@ -292,7 +297,7 @@ export class VideoRoom {
         if (result === "warning") this.render(this.state, "Camera relay is nearly used up. Music stays connected.");
       } catch {
         if (!signal.aborted) this.pause("Video paused. Camera network statistics are unavailable. Music stays connected.");
-      } finally { this.statsPending = false; }
+      } finally { pending = false; }
     }, 1000);
   }
 
@@ -315,7 +320,8 @@ export class VideoRoom {
       this.waitForTiming(ready ?? `Music timing is steady again. Tap ${this.label} to restart video. Music stays connected.`);
       return;
     }
-    if (resumable) message = message.replace(/( Music stays connected\.)?$/, " Camera restarts are used up for this session.$1");
+    // Only a spent restart count says so; an expired invite keeps its own reason.
+    if (resumable && this.call >= MAX_CAMERA_CALLS) message = message.replace(/( Music stays connected\.)?$/, " Camera restarts are used up for this session.$1");
     this.close();
     this.render("paused", message);
   }
@@ -332,7 +338,7 @@ export class VideoRoom {
     this.track = null;
     this.peer?.close();
     this.peer = this.sender = null;
-    this.initialComplete = this.connecting = this.statsPending = false;
+    this.initialComplete = this.connecting = false;
     this.preview.srcObject = null;
     this.remote.srcObject = null;
   }

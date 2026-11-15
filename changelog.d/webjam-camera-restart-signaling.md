@@ -1,0 +1,2 @@
+- In-room camera: a restarted camera call signals on its own mailbox rounds, so the restart can connect instead of ending video for the session.
+- In-room camera: when music started on a direct path, a recovered timing baseline stays direct, and a later move onto the relay pauses video again.

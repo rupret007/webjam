@@ -43,8 +43,16 @@ test("video charges bytes only when the route is confirmed", () => {
 test("video uses separate rounds and credentials", async () => {
   const invite = { capability: new Uint8Array(32).fill(7), session:"1".repeat(64) };
   assert.notEqual(await mailboxId(invite,"offer",0), await mailboxId(invite,"offer",0,"video"));
+  assert.notEqual(await mailboxId(invite,"offer",0,"video"), await mailboxId(invite,"offer",0,"video-call-2"));
+  await mailboxId(invite,"offer",0,"video-call-4");
+  await mailboxId(invite,"offer",0,"call-2-video-refresh-gen-1");
+  await mailboxId(invite,"offer",0,"call-4-video-refresh-abort");
   await assert.rejects(mailboxId(invite,"offer",0,"video2"));
   await assert.rejects(mailboxId(invite,"offer",0,"video-refresh-7"));
+  await assert.rejects(mailboxId(invite,"offer",0,"video-call-1"));
+  await assert.rejects(mailboxId(invite,"offer",0,"video-call-5"));
+  await assert.rejects(mailboxId(invite,"offer",0,"call-1-video-refresh-1"));
+  await assert.rejects(mailboxId(invite,"offer",0,"call-5-video-refresh-1"));
   const doc = { client:"web-video", ttl:600, quota_bytes:VIDEO_BYTES,
     iceServers:[{urls:"turn:turn.cloudflare.com:3478?transport=udp", username:"fixture", credential:"fixture"}] };
   assert.equal(validateVideoCredentials(doc, 0).expiresAt, 600000);

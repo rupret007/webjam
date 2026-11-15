@@ -26,44 +26,63 @@ export function musicSample(stats, pairId, latency, targetMs) {
   };
 }
 
+// Unconfirmed samples count, so one confirmed sample cannot choose the path.
+// A tie keeps the newest value.
 function mostCommon(values) {
   const counts = new Map();
-  for (const value of values) if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
+  for (const value of [...values].reverse()) counts.set(value ?? null, (counts.get(value ?? null) ?? 0) + 1);
   let best = null;
-  for (const [value, count] of counts) if (count > (counts.get(best) ?? 0)) best = value;
+  let most = 0;
+  for (const [value, count] of counts) if (count > most) { best = value; most = count; }
   return best;
 }
 
 // A representative music baseline from a window of samples. After a timing
 // trip, `reference` is the first baseline: a fresh window only counts once it
 // is no worse than that, and the trip limits stay anchored to it so repeated
-// restarts cannot ratchet music timing upward.
+// restarts cannot ratchet music timing upward. Music that started direct only
+// recovers on a direct path. That baseline stays direct-only, so a later move
+// onto the relay still trips video if it happened while the camera was off.
 export function musicBaseline(samples, reference = null) {
   const pairId = mostCommon(samples.map(item => item.pairId));
-  const onPair = samples.filter(item => item.pairId === pairId);
+  const onPair = samples.filter(item => (item.pairId ?? null) === pairId);
   const latest = samples.at(-1);
+  // Loss is cumulative, so the newest sample that measured it stands for the window.
+  const counted = samples.findLast(item => Number.isFinite(item.loss)) ?? latest;
   const fresh = {
-    latency: median(samples.map(item => item.latency)),
+    // Latency and RTT come from the baseline path only, so the medians never
+    // mix two paths.
+    latency: median(onPair.map(item => item.latency)),
     targetMs: median(samples.map(item => item.targetMs)),
     rttMs: median(onPair.map(item => item.rttMs)),
     pairId,
     route: mostCommon(onPair.map(item => item.route)),
-    received: latest.received,
-    loss: latest.loss,
+    received: counted.received,
+    loss: counted.loss,
   };
-  if (!Number.isFinite(fresh.latency)) return null;
-  if (!reference) return fresh;
-  if (fresh.latency > reference.latency + 10 || fresh.targetMs > reference.targetMs ||
-      (Number.isFinite(fresh.loss) && Number.isFinite(reference.loss) && fresh.loss > reference.loss + 0.01)) return null;
+  const directRoute = fresh.route === "direct";
+  // A confirmed pair can lack candidate types, so an unknown route still forms
+  // a baseline. No confirmed pair means the window has not chosen a path.
+  if (!Number.isFinite(fresh.latency) || !pairId) return null;
+  const startedDirect = reference?.directOnly === true || reference?.route === "direct";
+  if (!reference) return directRoute ? { ...fresh, directOnly: true } : fresh;
+  if (fresh.latency > reference.latency + 10 || fresh.targetMs > reference.targetMs) return null;
+  // An unmeasured loss cannot show that music is as healthy as it started.
+  if (Number.isFinite(reference.loss) && !(Number.isFinite(fresh.loss) && fresh.loss <= reference.loss + 0.01)) return null;
+  const newest = samples.findLast(item => item.pairId && item.route);
+  if (startedDirect && (!directRoute || newest?.route !== "direct")) return null;
   const anchored = key => Number.isFinite(reference[key]) ? reference[key] : fresh[key];
-  return { ...fresh, latency: reference.latency, targetMs: reference.targetMs, rttMs: anchored("rttMs"), loss: anchored("loss") };
+  return {
+    ...fresh, latency: reference.latency, targetMs: reference.targetMs, rttMs: anchored("rttMs"), loss: anchored("loss"),
+    directOnly: directRoute,
+  };
 }
 
 export function musicVideoTrip(peer, current, baseline, latencyWindow, previousPath = baseline) {
   if (!videoPeerOpen(peer) || !baseline) return false;
   const metrics = current();
   const movedOntoRelay = !!metrics.pairId && metrics.route === "relayed" &&
-    (previousPath.route === "direct" ||
+    (previousPath.route === "direct" || baseline.directOnly === true ||
      (!previousPath.route && !!previousPath.pairId && previousPath.pairId !== metrics.pairId));
   return (latencyWindow.length >= 5 && median(latencyWindow) > baseline.latency + 10) ||
     movedOntoRelay ||

@@ -29,8 +29,12 @@ export function readInvite(hash, now = Date.now()) {
   if (capability.length !== 32 || capability.every((byte) => byte === 0) || !/^[0-9a-f]{64}$/.test(session) || /^0+$/.test(session) || !/^[1-9][0-9]*$/.test(values.get("g")) || !Number.isSafeInteger(generation) || generation > 4294967295 || !/^[1-9][0-9]*$/.test(values.get("e")) || !Number.isSafeInteger(expiresAt) || expiresAt * 1000 <= now || expiresAt * 1000 > now + 630000) throw new Error("This Web Join invite is invalid or expired. Ask the host for a new link.");
   return { capability, session, generation, expiresAt };
 }
+// Camera call 1 signals on "video" and "video-refresh-*". A restarted call N
+// (2 to 4, see MAX_CAMERA_CALLS in video-room.js) signals on "video-call-N"
+// and "call-N-video-refresh-*", so write-once slots are never reused.
+const ROUNDS = /^(?:direct|video|video-call-[2-4]|(?:call-[2-4]-)?video-refresh-(?:(?:gen-)?[1-6]|abort))$/;
 export async function mailboxId(invite, kind, index, round = "direct") {
-  if (!["offer", "answer"].includes(kind) || !/^(?:direct|video|video-refresh-(?:gen-)?[1-6]|video-refresh-abort)$/.test(round) || !Number.isInteger(index) || index < 0 || index > 2) throw new Error("Invalid mailbox slot");
+  if (!["offer", "answer"].includes(kind) || !ROUNDS.test(round) || !Number.isInteger(index) || index < 0 || index > 2) throw new Error("Invalid mailbox slot");
   const root = await hkdf(invite.capability, fromHex(invite.session), DOMAIN);
   return toHex(await hkdf(root, new Uint8Array(), `webjam/v3/mailbox/id/${round}/${kind}/${index}`));
 }
