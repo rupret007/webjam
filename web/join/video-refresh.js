@@ -35,6 +35,7 @@ export class VideoRefresh {
     this.stopped = true;
     clearTimeout(this.refreshTimer);
     clearTimeout(this.expiryTimer);
+    this.expiryTimer = null;
     clearInterval(this.abortTimer);
   }
 
@@ -65,11 +66,15 @@ export class VideoRefresh {
     // Keep its expiry enforced without entering a tight credential request loop.
     this.refreshTimer = initial || refreshDelay > 0
       ? setTimeout(() => void this.run(), Math.max(0, refreshDelay)) : null;
-    this.expiryTimer = setTimeout(async () => {
+    const expiryTimer = setTimeout(async () => {
+      let route;
       try {
-        if ((await selectedVideoPair(this.peer))?.route !== "direct" && !this.signal.aborted) this.onExpired();
-      } catch { if (!this.signal.aborted) this.onExpired(); }
+        route = (await selectedVideoPair(this.peer))?.route;
+      } catch { /* Treat unavailable stats as an unclassified route. */ }
+      // A successful renewal or room close can supersede this check while stats are pending.
+      if (this.expiryTimer === expiryTimer && !this.signal.aborted && route !== "direct") this.onExpired();
     }, Math.max(0, expiry - Date.now()));
+    this.expiryTimer = expiryTimer;
   }
 
   async latest() {
