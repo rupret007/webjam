@@ -1,0 +1,1 @@
+- Stop camera setup from asking again when someone leaves before the first camera request finishes.

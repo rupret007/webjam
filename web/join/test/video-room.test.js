@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { VideoRoom } from "../video-room.js";
 
-function leavingRoom(t, { stream, preview, ...overrides }) {
-  t.mock.method(globalThis, "navigator", () => ({ mediaDevices: {} }), { getter: true });
+function leavingRoom(t, { stream, preview, mediaDevices = {}, ...overrides }) {
+  t.mock.method(globalThis, "navigator", () => ({ mediaDevices }), { getter: true });
   const document = new EventTarget();
   Object.defineProperty(globalThis, "document", { value: document, configurable: true });
   t.after(() => { delete globalThis.document; });
@@ -190,4 +190,46 @@ test("a camera path failure releases the camera and can reuse the unwritten slot
   assert.equal(peers.length, 2);
   assert.equal(room.track.readyState, "live");
   assert.deepEqual(writes, [["video", "offer"]]);
+});
+
+test("a camera constraint failure after Leave cannot request the camera again", async (t) => {
+  const firstRequest = Promise.withResolvers();
+  const requests = [];
+  const room = leavingRoom(t, {
+    capture: VideoRoom.prototype.capture,
+    timingReady: () => true,
+    preview: { srcObject: null, play() { assert.fail("Left camera preview started"); } },
+    mediaDevices: {
+      getUserMedia(options) {
+        requests.push(options);
+        return requests.length === 1 ? firstRequest.promise : Promise.resolve({ getTracks: () => [] });
+      },
+    },
+  });
+
+  const tapping = room.tap();
+  assert.equal(requests.length, 1);
+  room.close();
+  firstRequest.reject(new DOMException("Unsupported camera settings", "OverconstrainedError"));
+  await tapping;
+  assert.equal(requests.length, 1);
+  assert.equal(room.preview.srcObject, null);
+});
+
+test("an active camera request can fall back once without requesting a microphone", async (t) => {
+  const stream = {};
+  const requests = [];
+  const room = leavingRoom(t, {
+    mediaDevices: {
+      async getUserMedia(options) {
+        requests.push(options);
+        if (requests.length === 1) throw new DOMException("Unsupported settings", "OverconstrainedError");
+        return stream;
+      },
+    },
+  });
+  assert.equal(await VideoRoom.prototype.capture.call(room, false), stream);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].audio, false);
+  assert.deepEqual(requests[1], { video: true, audio: false });
 });
