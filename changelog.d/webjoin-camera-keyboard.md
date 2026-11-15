@@ -1,1 +1,1 @@
-Keep keyboard focus in the WebJam camera controls through permission prompts and make the reason clear when video pauses.
+- Keep keyboard focus in the WebJam camera controls through permission prompts and make the reason clear when video pauses.
