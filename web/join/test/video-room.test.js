@@ -28,7 +28,7 @@ test("Leave releases the replacement camera before a pending switch finishes", a
   });
   const stream = { getTracks: () => [nextTrack], getVideoTracks: () => [nextTrack] };
   const room = leavingRoom(t, {
-    stream, peer: { close() {} }, track: previousTrack,
+    stream, peer: { close() {} }, track: previousTrack, initialComplete: true,
     preview: { srcObject: null, play: async () => {} },
     sender: { replaceTrack(track) { replaceStarted(track); return replacement; } },
   });
@@ -97,7 +97,7 @@ test("a failed switch restores the local preview without falsely showing the rem
   const stream = { getVideoTracks: () => [rejected], getTracks: () => [rejected] };
   const room = Object.assign(Object.create(VideoRoom.prototype), {
     signal: new AbortController().signal, credentials: {}, track, preview,
-    camera: {}, switcher: {}, status: {}, peer: { connectionState: "connecting" },
+    camera: {}, switcher: {}, status: {}, initialComplete: true, peer: { connectionState: "connecting" },
     sender: { async replaceTrack() { throw new Error("Switch refused"); } },
     capture: async () => stream,
     render(state, message) {
@@ -112,4 +112,82 @@ test("a failed switch restores the local preview without falsely showing the rem
   assert.equal(rejected.readyState, "ended");
   assert.equal(room.state, "preview");
   assert.match(room.status.textContent, /Your current camera is still on/);
+});
+
+test("a camera path failure releases the camera and can reuse the unwritten slot", async (t) => {
+  const peers = [];
+  const writes = [];
+  const fingerprint = Array(32).fill("A1").join(":");
+  const sdp = [
+    "v=0", "m=video 9 UDP/TLS/RTP/SAVPF 96", "a=sendrecv", "a=rtpmap:96 VP8/90000",
+    "a=fingerprint:sha-256 " + fingerprint,
+  ].join("\r\n");
+  const allowed = sdp + "\r\na=candidate:1 1 udp 100 8.8.8.8 10500 typ srflx";
+  class Peer extends EventTarget {
+    static async generateCertificate() { return {}; }
+    constructor() {
+      super();
+      this.iceGatheringState = "complete";
+      this.connectionState = "connecting";
+      this.transceiver = { sender: { getParameters: () => ({}) } };
+      peers.push(this);
+    }
+    addTrack(track, stream) {
+      assert.equal(stream.getVideoTracks()[0], track);
+      return this.transceiver.sender;
+    }
+    getTransceivers() { return [this.transceiver]; }
+    async createOffer() { return { sdp: peers.length === 1 ? sdp : allowed }; }
+    async setLocalDescription(description) { this.localDescription = description; }
+    async setRemoteDescription() {}
+    close() {
+      this.connectionState = "closed";
+      this.dispatchEvent(new Event("connectionstatechange"));
+    }
+  }
+  Object.defineProperty(globalThis, "RTCPeerConnection", { value: Peer, configurable: true });
+  t.after(() => { delete globalThis.RTCPeerConnection; });
+  const capture = () => {
+    const track = Object.assign(new EventTarget(), {
+      enabled: true, readyState: "live", getSettings: () => ({}),
+      stop() { this.readyState = "ended"; },
+    });
+    return { getVideoTracks: () => [track], getTracks: () => [track] };
+  };
+  const failed = Promise.withResolvers();
+  const room = Object.assign(Object.create(VideoRoom.prototype), {
+    host: false, signal: new AbortController().signal, invite: { expiresAt: Infinity },
+    credentials: { expiresAt: Infinity }, timingReady: () => true, capture,
+    preview: { play: async () => {} }, camera: {}, switcher: {}, remote: {}, status: {},
+    mailbox: {
+      async write(round, kind) { writes.push([round, kind]); },
+      async wait() { return { sdp: allowed, pin: "a1".repeat(32) }; },
+    },
+    render(state, message) {
+      this.state = state;
+      this.status.textContent = message;
+      if (state === "camera-error") failed.resolve(message);
+    },
+  });
+
+  let connection;
+  room.connect = () => {
+    connection = VideoRoom.prototype.connect.call(room);
+    return connection;
+  };
+  await room.tap();
+  const first = room.track;
+  assert.match(await failed.promise, /Tap Try again.*Music stays connected/);
+  assert.equal(first.readyState, "ended");
+  assert.equal(peers[0].connectionState, "closed");
+  assert.equal(room.peer, null);
+  assert.equal(room.preview.srcObject, null);
+  assert.deepEqual(writes, []);
+
+  await room.tap();
+  await connection;
+  assert.equal(room.initialComplete, true);
+  assert.equal(peers.length, 2);
+  assert.equal(room.track.readyState, "live");
+  assert.deepEqual(writes, [["video", "offer"]]);
 });
