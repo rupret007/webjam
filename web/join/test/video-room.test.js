@@ -278,3 +278,28 @@ test("pausing video moves camera keyboard focus to the pause status", t => {
   assert.equal(document.activeElement, room.status);
   assert.equal(camera.disabled, true);
 });
+
+test("a late relay statistics failure preserves the final camera status", async t => {
+  const clock = 100000;
+  t.mock.timers.enable({ apis: ["Date", "setTimeout", "setInterval"], now: clock });
+  const stats = Promise.withResolvers();
+  const messages = [];
+  const room = leavingRoom(t, {
+    credentials: { expiresAt: clock + 600000 }, host: true, initialComplete: true,
+    mailbox: { read: async () => null },
+    peer: { connectionState: "connected", getStats: () => stats.promise, close() {} },
+    preview: {}, render: (_, message) => messages.push(message),
+  });
+  try {
+    room.connectionChanged();
+    t.mock.timers.tick(1000);
+    assert.equal(room.statsPending, true);
+    room.pause("You left the camera.");
+    stats.reject(new Error("Peer closed before stats arrived"));
+    await stats.promise.catch(() => {});
+    assert.equal(room.statsPending, false);
+    assert.deepEqual(messages, ["Cameras on.", "You left the camera."]);
+  } finally {
+    room.close();
+  }
+});
