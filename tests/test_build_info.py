@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from core.build_info import build_id, desktop_target
+from core.build_info import build_id, desktop_target, packaged_build_id
 
 
 def test_desktop_target_matches_every_release_matrix_name() -> None:
@@ -57,3 +57,22 @@ def test_frozen_build_fails_closed_without_bundled_provenance() -> None:
         "core.build_info.Path.read_text", side_effect=OSError
     ), patch("core.build_info.sys.frozen", True, create=True):
         assert build_id() == ""
+
+
+def test_frozen_build_fails_closed_on_unreadable_provenance() -> None:
+    invalid_ascii = UnicodeDecodeError("ascii", b"\xff", 0, 1, "invalid byte")
+    with patch.dict("os.environ", {"WEBJAM_BUILD_ID": "b" * 40}), patch(
+        "core.build_info.Path.read_text", side_effect=invalid_ascii
+    ), patch("core.build_info.sys.frozen", True, create=True):
+        assert build_id() == ""
+
+
+def test_launcher_build_label_reads_only_packaged_provenance() -> None:
+    with patch.dict("os.environ", {"WEBJAM_BUILD_ID": "b" * 40}), patch(
+        "core.build_info.subprocess.run"
+    ) as git:
+        with patch("core.build_info.Path.read_text", return_value="A" * 40 + "\n"):
+            assert packaged_build_id() == "a" * 40
+        with patch("core.build_info.Path.read_text", side_effect=OSError):
+            assert packaged_build_id() == ""
+    git.assert_not_called()

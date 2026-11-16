@@ -51,24 +51,31 @@ def desktop_target(
     return f"{operating_system}-{architecture}"
 
 
-def build_id() -> str:
-    """Return a validated source commit, or ``""`` when it is unavailable."""
+def packaged_build_id() -> str:
+    """Read the embedded build ID without environment or Git fallbacks."""
 
     packaged = Path(__file__).resolve().parents[1] / "webjam-build-id.txt"
     try:
         value = packaged.read_text(encoding="ascii").strip()
-    except OSError:
-        value = ""
+    except (OSError, UnicodeDecodeError):
+        return ""
+    return value.lower() if _COMMIT_RE.fullmatch(value) else ""
+
+
+def build_id() -> str:
+    """Return a validated source commit, or ``""`` when it is unavailable."""
+
+    value = packaged_build_id()
     if getattr(sys, "frozen", False):
         # A frozen app's signed bundle is the authority. Environment values
         # must never select a different expected sidecar build.
-        return value.lower() if _COMMIT_RE.fullmatch(value) else ""
+        return value
 
     configured = str(os.environ.get("WEBJAM_BUILD_ID", "") or "").strip()
     if _COMMIT_RE.fullmatch(configured):
         return configured.lower()
-    if _COMMIT_RE.fullmatch(value):
-        return value.lower()
+    if value:
+        return value
     try:
         completed = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -84,4 +91,4 @@ def build_id() -> str:
     return value.lower() if _COMMIT_RE.fullmatch(value) else ""
 
 
-__all__ = ["build_id", "desktop_target"]
+__all__ = ["build_id", "desktop_target", "packaged_build_id"]
