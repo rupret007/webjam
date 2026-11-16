@@ -2490,9 +2490,14 @@ def test_cold_launch_passes_command_line_invite_to_gate(qapp):
 
 
 def test_macos_bundle_registers_webjam_invitation_scheme():
+    from core.web_join_target import macos_web_join_identity
+
+    assert macos_web_join_identity("public") == ("com.webjam.app", ("webjam",))
+    assert macos_web_join_identity("private-beta") == ("com.webjam.app.beta", ("webjam", "webjam-beta"))
     spec = Path("webjam.spec").read_text(encoding="utf-8")
     assert '"CFBundleURLTypes"' in spec
-    assert '"CFBundleURLSchemes": ["webjam"]' in spec
+    assert "_bundle_identifier, _web_join_schemes = macos_web_join_identity(_web_join_target)" in spec
+    assert '"CFBundleURLSchemes": list(_web_join_schemes)' in spec
 
 
 class _ImmediateThread:

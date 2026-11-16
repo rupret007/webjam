@@ -1,0 +1,1 @@
+- Let private Hang Out hosts confirm a browser guest invitation in WebJam and return it to their Jam room without using the clipboard.
